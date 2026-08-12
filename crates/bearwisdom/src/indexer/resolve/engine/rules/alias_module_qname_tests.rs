@@ -32,7 +32,10 @@ fn apply_with_gate(
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
             implicit_root_types: &[],
-            alias_module_qname: true,
+            imports: crate::type_checker::profile::language_profile::ImportAxes {
+                alias_module_qname: true,
+                ..DEFAULT_PROFILE.imports
+            },
             ..DEFAULT_PROFILE
         };
     let r = call_ref(target);

@@ -78,6 +78,10 @@ struct ReexportLookup {
     reexports: Vec<(String, String)>,
     /// Symbols stored per file path for `in_module_from`.
     by_file: std::collections::HashMap<String, Vec<Symbol>>,
+    /// Fixed return for `resolve_module_via_language_resolver` — simulates a
+    /// language `ModuleResolver` hit for the rule's last-resort branch.
+    /// `None` (the default) falls through to the trait default (`None`).
+    language_resolved: Option<String>,
 }
 
 impl ReexportLookup {
@@ -100,9 +104,17 @@ impl ReexportLookup {
                 .map(|(a, b)| (a.to_string(), b.to_string()))
                 .collect(),
             by_file: file_map,
+            language_resolved: None,
         }
     }
+
+    fn with_language_resolved(mut self, path: &str) -> Self {
+        self.language_resolved = Some(path.to_string());
+        self
+    }
 }
+
+impl crate::indexer::resolve::engine::contract::FlowCacheLookup for ReexportLookup {}
 
 impl SymbolLookup for ReexportLookup {
     fn by_name(&self, name: &str) -> SymbolSet<'_> {
@@ -154,6 +166,14 @@ impl SymbolLookup for ReexportLookup {
             None => SymbolSet::empty(),
         }
     }
+    fn resolve_module_via_language_resolver(
+        &self,
+        _language: &str,
+        _source_file: &str,
+        _spec: &str,
+    ) -> Option<String> {
+        self.language_resolved.clone()
+    }
 }
 
 /// Named re-export: `./index.ts` re-exports `Foo` from `./foo.ts` where `Foo`
@@ -175,4 +195,74 @@ fn binds_via_named_reexport_hop() {
         is_wildcard: false,
     }];
     assert_eq!(apply(&lookup, "Foo", imports), Some(99));
+}
+
+// ---------------------------------------------------------------------------
+// Language-resolver fallback: the third branch, reached only when both the
+// module map AND `is_relative_specifier` miss.
+// ---------------------------------------------------------------------------
+
+/// A bare specifier that is neither in the module map nor `is_relative_specifier`
+/// (Dart's bare-relative `'foo.dart'` shape) reaches the rule's last-resort
+/// `resolve_module_via_language_resolver` hop, and the resolved path is walked
+/// through `follow_reexports` exactly like the first two branches' resolutions.
+#[test]
+fn binds_via_language_resolver_fallback_hop() {
+    let foo_sym = sym(77, "Foo", "Foo", "class", "./foo_impl.dart");
+    let inner = Lookup::new();
+    let lookup = ReexportLookup::new(
+        inner,
+        "lib/barrel.dart",
+        vec![("Foo", "./foo_impl.dart")],
+        vec![("./foo_impl.dart", foo_sym)],
+    )
+    .with_language_resolved("lib/barrel.dart");
+    let imports = vec![ImportEntry {
+        imported_name: "Foo".to_string(),
+        module_path: Some("foo.dart".to_string()),
+        alias: None,
+        is_wildcard: false,
+    }];
+    assert_eq!(apply(&lookup, "Foo", imports), Some(77));
+}
+
+/// TS regression: a bare specifier the language resolver ALSO declines (the
+/// default `Lookup` double, matching a real `NodeModuleResolver` decline for a
+/// genuine external package like `"lodash"`) still passes — the third branch's
+/// addition doesn't manufacture a match where none of the three branches find
+/// one. Mirrors `declines_unresolved_non_relative_import`, which exercises the
+/// exact same shape and is unchanged by this rule's edit.
+#[test]
+fn declines_when_language_resolver_also_misses() {
+    let lookup = Lookup::new();
+    let imports = vec![ImportEntry {
+        imported_name: "Foo".to_string(),
+        module_path: Some("lodash".to_string()),
+        alias: None,
+        is_wildcard: false,
+    }];
+    assert_eq!(apply(&lookup, "Foo", imports), None);
+}
+
+/// TS regression: an existing relative-specifier import (`is_relative_specifier`
+/// true) resolves through the SECOND branch exactly as before — the language
+/// resolver is never consulted (`language_resolved` stays `None` and would panic
+/// on no such fixture anyway; leaving it unset proves the branch is unreached).
+#[test]
+fn relative_specifier_never_reaches_language_resolver_branch() {
+    let foo_sym = sym(55, "Foo", "Foo", "class", "./foo.ts");
+    let inner = Lookup::new();
+    let lookup = ReexportLookup::new(
+        inner,
+        "./index.ts",
+        vec![("Foo", "./foo.ts")],
+        vec![("./foo.ts", foo_sym)],
+    );
+    let imports = vec![ImportEntry {
+        imported_name: "Foo".to_string(),
+        module_path: Some("./index.ts".to_string()),
+        alias: None,
+        is_wildcard: false,
+    }];
+    assert_eq!(apply(&lookup, "Foo", imports), Some(55));
 }

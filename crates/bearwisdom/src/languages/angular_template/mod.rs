@@ -82,8 +82,4 @@ impl LanguagePlugin for AngularTemplatePlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::ANGULAR_TEMPLATE_PROFILE)
     }
-
-    fn companion_file_for_imports(&self, file_path: &str) -> Option<String> {
-        crate::languages::angular::paired_ts_for_template(file_path)
-    }
 }

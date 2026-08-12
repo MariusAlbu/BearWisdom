@@ -12,7 +12,7 @@ use std::cell::RefCell;
 use rustc_hash::FxHashMap;
 
 use crate::indexer::resolve::engine::compilation::Compilation;
-use crate::indexer::resolve::engine::contract::{Symbol, SymbolLookup, SymbolSet};
+use crate::indexer::resolve::engine::contract::{FlowCacheLookup, Symbol, SymbolLookup, SymbolSet};
 use crate::type_checker::core::types::{TypeArena, TypeId};
 use crate::types::AliasTargetIds;
 
@@ -194,6 +194,15 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.resolve_module_from(source_file, spec)
     }
 
+    fn resolve_module_via_language_resolver(
+        &self,
+        language: &str,
+        source_file: &str,
+        spec: &str,
+    ) -> Option<String> {
+        self.tree.resolve_module_via_language_resolver(language, source_file, spec)
+    }
+
     fn in_module_from(&self, source_file: &str, spec: &str) -> SymbolSet<'_> {
         self.tree.in_module_from(source_file, spec)
     }
@@ -273,8 +282,10 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.package_id_for_file(file_path)
     }
 
-    // -- Flow cache: methods implemented over `locals` and `locals_id`. ------
+}
 
+// Flow cache: methods implemented over `locals` and `locals_id`.
+impl<'a> FlowCacheLookup for FileLookup<'a> {
     /// Return the inferred type of `name` from the per-file forward-inference
     /// cache. Returns `None` when the name has not been bound by an earlier ref.
     fn local_type(&self, name: &str) -> Option<String> {

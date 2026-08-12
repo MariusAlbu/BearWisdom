@@ -71,3 +71,83 @@ fn flutter_sdk_id_differs_from_dart_sdk() {
     use super::super::dart_sdk;
     assert_ne!(ID, dart_sdk::ID);
 }
+
+#[test]
+fn discover_sky_engine_ui_when_present() {
+    use tempfile::TempDir;
+
+    let tmp = TempDir::new().unwrap();
+    let flutter_root = tmp.path();
+    std::fs::create_dir_all(flutter_root.join("packages").join("flutter").join("lib")).unwrap();
+    let sky_ui = flutter_root
+        .join("bin")
+        .join("cache")
+        .join("pkg")
+        .join("sky_engine")
+        .join("lib")
+        .join("ui");
+    std::fs::create_dir_all(&sky_ui).unwrap();
+    std::fs::write(sky_ui.join("painting.dart"), "class Color {}\n").unwrap();
+
+    let saved = std::env::var_os("BEARWISDOM_FLUTTER_SDK");
+    std::env::set_var("BEARWISDOM_FLUTTER_SDK", flutter_root);
+    let roots = discover_flutter_sdk();
+    match saved {
+        Some(v) => std::env::set_var("BEARWISDOM_FLUTTER_SDK", v),
+        None => std::env::remove_var("BEARWISDOM_FLUTTER_SDK"),
+    }
+
+    let sky_root = roots
+        .iter()
+        .find(|r| r.ecosystem == super::super::dart_sdk::LEGACY_ECOSYSTEM_TAG)
+        .expect("sky_engine ui root discovered");
+    assert_eq!(sky_root.root, sky_ui);
+    assert_eq!(sky_root.module_path, "dart-sdk");
+}
+
+#[test]
+fn walk_dep_root_sky_engine_ui_matches_dart_sdk_scheme() {
+    use tempfile::TempDir;
+
+    let tmp = TempDir::new().unwrap();
+    let sky_lib = tmp.path().join("sky_engine").join("lib");
+    let sky_ui = sky_lib.join("ui");
+    std::fs::create_dir_all(&sky_ui).unwrap();
+    std::fs::write(sky_ui.join("painting.dart"), "class Color {}\n").unwrap();
+
+    let dep = ExternalDepRoot {
+        module_path: "dart-sdk".to_string(),
+        version: String::new(),
+        root: sky_ui,
+        ecosystem: super::super::dart_sdk::LEGACY_ECOSYSTEM_TAG,
+        package_id: None,
+        requested_imports: Vec::new(),
+    };
+    let files = walk_dep_root(&dep);
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].relative_path, "ext:dart-sdk:ui/painting.dart");
+    assert_eq!(files[0].language, "dart");
+}
+
+#[test]
+fn walk_dep_root_flutter_package_still_uses_flutter_sdk_scheme() {
+    use tempfile::TempDir;
+
+    let tmp = TempDir::new().unwrap();
+    let flutter_lib = tmp.path().join("lib");
+    let src = flutter_lib.join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(src.join("framework.dart"), "class Widget {}\n").unwrap();
+
+    let dep = ExternalDepRoot {
+        module_path: "flutter".to_string(),
+        version: String::new(),
+        root: flutter_lib,
+        ecosystem: LEGACY_ECOSYSTEM_TAG,
+        package_id: None,
+        requested_imports: Vec::new(),
+    };
+    let files = walk_dep_root(&dep);
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].relative_path, "ext:flutter-sdk:flutter/src/framework.dart");
+}

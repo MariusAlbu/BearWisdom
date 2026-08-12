@@ -65,6 +65,7 @@ const SWIFT_PRIMITIVES: &[(&str, PrimKind)] = &[
 pub const SWIFT_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
     implicit_prelude_namespaces: &[],
+    compiled_name_prefixes: &[],
     id: "swift",
     qname_separator: ".",
     self_keywords: &["self", "Self", "super"],
@@ -87,43 +88,45 @@ pub const SWIFT_PROFILE: LanguageProfile = LanguageProfile {
     chain_qualification: ChainQualification::None,
     builtin_skip: None,
     namespace_decline: None,
-    decline_qualified_when_prefix_imported: false,
+    imports: crate::type_checker::profile::language_profile::ImportAxes {
+        decline_qualified_when_prefix_imported: false,
+        import_resolution: None,
+        import_module_path:
+            crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
+        module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
+        module_anchor_terminal: false,
+        relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
+        external_by_import: None,
+        module_scope: crate::type_checker::profile::language_profile::ModuleScope::SourcesTargetSubtree,
+        // Swift has no `namespace` node — a declaration's qname never carries its
+        // module as a prefix, so `QnameUnder` can never match a whole-module
+        // import. `Foundation`/`UIKit` externals are indexed one file per module
+        // (`swift_foundation.rs`), so the module name IS the declaring file's
+        // stem — the same shape OCaml/Pascal match on.
+        wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::FileStem {
+            underscore_prefix: false,
+        },
+        // Whole-module wildcard-ness is carried per-ref by `push_import`
+        // (target "*" for a single-segment import), not by this blanket axis:
+        // Swift also has the declaration-specific `import struct Module.Symbol`
+        // form, which this flag cannot distinguish from a whole-module import.
+        namespace_imports_are_wildcards: false,
+        ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
+        head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
+        file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
+        alias_module_qname: false,
+        module_prefix_rewrites:
+            crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+        workspace_packages: false,
+        reexport_barrel_stems: &["index"],
+        self_package_root: None,
+        wildcard_workspace_scope: false,
+    },
     module_skip: None,
     ambient_namespace_prefixes: &[],
     wildcard_builtins: &[],
-    import_resolution: None,
-    import_module_path:
-        crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
-    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
-    module_anchor_terminal: false,
-    relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
-    external_by_import: None,
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
-    module_scope: crate::type_checker::profile::language_profile::ModuleScope::SourcesTargetSubtree,
-    // Swift has no `namespace` node — a declaration's qname never carries its
-    // module as a prefix, so `QnameUnder` can never match a whole-module
-    // import. `Foundation`/`UIKit` externals are indexed one file per module
-    // (`swift_foundation.rs`), so the module name IS the declaring file's
-    // stem — the same shape OCaml/Pascal match on.
-    wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::FileStem {
-        underscore_prefix: false,
-    },
-    // Whole-module wildcard-ness is carried per-ref by `push_import`
-    // (target "*" for a single-segment import), not by this blanket axis:
-    // Swift also has the declaration-specific `import struct Module.Symbol`
-    // form, which this flag cannot distinguish from a whole-module import.
-    namespace_imports_are_wildcards: false,
     delegate_wrappers: &[],
-    ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
-    head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
-    file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
-    alias_module_qname: false,
-    module_prefix_rewrites:
-        crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
-    workspace_packages: false,
-    reexport_barrel_stems: &["index"],
-    self_package_root: None,
-    wildcard_workspace_scope: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,
     associated_type_projection: false,

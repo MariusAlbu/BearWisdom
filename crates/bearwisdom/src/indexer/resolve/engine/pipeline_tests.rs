@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::indexer::resolve::engine::contract::SymbolLookup;
+use crate::indexer::resolve::engine::contract::{FlowCacheLookup, SymbolLookup};
 use crate::type_checker::core::types::TypeArena;
 use crate::types::ParsedFile;
 

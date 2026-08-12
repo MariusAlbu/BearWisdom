@@ -1,12 +1,12 @@
 // =============================================================================
 // engine/rules/external_by_import — import-scoped bind to an external symbol
 //
-// Gated on `profile.external_by_import: Option<&ExternalByImport>`.  When the
+// Gated on `profile.imports.external_by_import: Option<&ExternalByImport>`.  When the
 // profile opts in, a bare target with no dots or `::` is resolved against the
 // file's EXTERNAL symbol index, restricted to symbols whose file is reachable
 // from one of the file's non-relative imports.
 //
-// Two matching modes (`profile.ext_match`):
+// Two matching modes (`profile.imports.ext_match`):
 //   PkgSegment   — external file's `ext:<lang>:<pkg>` segment equals an import
 //                  root, or starts with `{root}-` (gem family: `aws-sdk-s3`
 //                  under `aws`).
@@ -29,7 +29,7 @@ impl LookupRule for ExternalByImportRule {
 
     fn apply(&self, ctx: &BinderContext) -> LookupResult {
         // Gated — opt-in per language.
-        if ctx.profile.external_by_import.is_none() {
+        if ctx.profile.imports.external_by_import.is_none() {
             return LookupResult::Pass;
         }
 
@@ -38,7 +38,7 @@ impl LookupRule for ExternalByImportRule {
             return LookupResult::Pass;
         }
         let edge_kind = ctx.edge_kind();
-        let ext_match = ctx.profile.ext_match;
+        let ext_match = ctx.profile.imports.ext_match;
 
         let matcher = match ext_match {
             ExtMatch::PkgSegment => {

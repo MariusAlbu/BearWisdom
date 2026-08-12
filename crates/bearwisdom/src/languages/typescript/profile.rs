@@ -103,6 +103,7 @@ pub(crate) const TS_PRIMITIVES: &[(&str, PrimKind)] = &[
 pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
     implicit_prelude_namespaces: &[],
+    compiled_name_prefixes: &[],
     id: "typescript",
     qname_separator: ".",
     // `this` is the only receiver keyword TS surfaces at the chain-walker
@@ -161,45 +162,47 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     // segments. The engine accepts both.
     builtin_skip: None,
     namespace_decline: None,
-    decline_qualified_when_prefix_imported: false,
+    imports: crate::type_checker::profile::language_profile::ImportAxes {
+        decline_qualified_when_prefix_imported: false,
+        import_resolution: None,
+        // Harvest the extractor's `TypeRef`-with-module import refs and the
+        // post-pass call refs that carry a `module` into the file's import table.
+        import_module_path:
+            crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
+        // Relative (`./x`) modules bind by exact name + kind in the resolved file;
+        // bare specifiers route to ByNameUnderModuleDir (the qname-rewrite path).
+        module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::On(
+            crate::type_checker::profile::language_profile::ModuleAnchorBind::NameExactKind,
+        ),
+        module_anchor_terminal: false,
+        relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::DotSlashPrefix,
+        external_by_import: None,
+        module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
+        wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
+        namespace_imports_are_wildcards: false,
+        ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
+        head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
+        file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
+        // DefinitelyTyped (`react` → `@types/react`) + deep-import peel
+        // (`rxjs/operators` → `rxjs`); a bare specifier never directory-matches a
+        // same-named project file.
+        alias_module_qname: false,
+        module_prefix_rewrites:
+            crate::type_checker::profile::language_profile::ModulePrefixRewrites::On {
+                definitely_typed: true,
+                deep_import_peel: true,
+                decline_bare_directory_match: true,
+            },
+        workspace_packages: true,
+        reexport_barrel_stems: &["index"],
+        self_package_root: None,
+        wildcard_workspace_scope: false,
+    },
     module_skip: None,
     ambient_namespace_prefixes: &[],
     wildcard_builtins: &[],
-    import_resolution: None,
-    // Harvest the extractor's `TypeRef`-with-module import refs and the
-    // post-pass call refs that carry a `module` into the file's import table.
-    import_module_path:
-        crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
-    // Relative (`./x`) modules bind by exact name + kind in the resolved file;
-    // bare specifiers route to ByNameUnderModuleDir (the qname-rewrite path).
-    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::On(
-        crate::type_checker::profile::language_profile::ModuleAnchorBind::NameExactKind,
-    ),
-    module_anchor_terminal: false,
-    relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::DotSlashPrefix,
-    external_by_import: None,
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
-    module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
-    wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
-    namespace_imports_are_wildcards: false,
     delegate_wrappers: &[],
-    ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
-    head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
-    file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
-    // DefinitelyTyped (`react` → `@types/react`) + deep-import peel
-    // (`rxjs/operators` → `rxjs`); a bare specifier never directory-matches a
-    // same-named project file.
-    alias_module_qname: false,
-    module_prefix_rewrites:
-        crate::type_checker::profile::language_profile::ModulePrefixRewrites::On {
-            definitely_typed: true,
-            deep_import_peel: true,
-            decline_bare_directory_match: true,
-        },
-    workspace_packages: true,
-    reexport_barrel_stems: &["index"],
-    self_package_root: None,
-    wildcard_workspace_scope: false,
     // Declaration merging: interface + variable under one qname.
     overload_pick_all: true,
     argument_dependent_lookup: false,

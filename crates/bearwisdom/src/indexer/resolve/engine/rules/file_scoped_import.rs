@@ -2,7 +2,7 @@
 // engine/rules/file_scoped_import — bare target named by a file-scoped
 // import (Robot resource, Python library import, HCL dynamic library)
 //
-// Gated on `ctx.profile.file_scoped_imports` (default `Off`).
+// Gated on `ctx.profile.imports.file_scoped_imports` (default `Off`).
 //
 // When `On`, a bare target is resolved in two passes:
 //   Pass 1 — match the target against a SYMBOL NAME in an imported file.
@@ -30,7 +30,7 @@ impl LookupRule for FileScopedImportRule {
         let FileScopedImports::On {
             wildcard_only,
             alias_decode,
-        } = ctx.profile.file_scoped_imports
+        } = ctx.profile.imports.file_scoped_imports
         else {
             return LookupResult::Pass;
         };

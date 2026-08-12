@@ -21,6 +21,7 @@ const ROBOT_NAME_NORM: NormSpec = NormSpec {
 pub const ROBOT_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
     implicit_prelude_namespaces: &[],
+    compiled_name_prefixes: &[],
     id: "robot",
     qname_separator: ".",
     self_keywords: &[],
@@ -43,45 +44,47 @@ pub const ROBOT_PROFILE: LanguageProfile = LanguageProfile {
     chain_qualification: ChainQualification::None,
     builtin_skip: None,
     namespace_decline: None,
-    decline_qualified_when_prefix_imported: false,
+    imports: crate::type_checker::profile::language_profile::ImportAxes {
+        decline_qualified_when_prefix_imported: false,
+        import_resolution: None,
+        import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
+        module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
+        module_anchor_terminal: false,
+        relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
+        external_by_import: None,
+        module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
+        wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
+        namespace_imports_are_wildcards: false,
+        ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
+        head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
+        // A `.robot` / `.resource` resource import or a Python-library import brings
+        // its file's keywords/variables into bare-name scope (the wildcard-flagged
+        // file imports built by `build_file_context`). The alias-decode pass binds
+        // dynamic-library keywords: a `@keyword("alias")` entry carries
+        // `Class::method` and binds the Python method; a `get_keyword_names` /
+        // `KEYWORDS` entry carries `Class` and binds that class; a module-level
+        // `KEYWORDS` dict carries no owner and falls back to the file's dispatch
+        // class.
+        file_scoped_imports: FileScopedImports::On {
+            wildcard_only: true,
+            alias_decode: Some(AliasDecode {
+                separator: "::",
+                fallback_kind: Some("class"),
+            }),
+        },
+        alias_module_qname: false,
+        module_prefix_rewrites:
+            crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+        workspace_packages: false,
+        reexport_barrel_stems: &["index"],
+        self_package_root: None,
+        wildcard_workspace_scope: false,
+    },
     module_skip: None,
     ambient_namespace_prefixes: &[],
     wildcard_builtins: &[],
-    import_resolution: None,
-    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
-    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
-    module_anchor_terminal: false,
-    relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
-    external_by_import: None,
     name_normalization: NameNormalization::Spec(ROBOT_NAME_NORM),
-    module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
-    wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
-    namespace_imports_are_wildcards: false,
     delegate_wrappers: &[],
-    ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
-    head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
-    // A `.robot` / `.resource` resource import or a Python-library import brings
-    // its file's keywords/variables into bare-name scope (the wildcard-flagged
-    // file imports built by `build_file_context`). The alias-decode pass binds
-    // dynamic-library keywords: a `@keyword("alias")` entry carries
-    // `Class::method` and binds the Python method; a `get_keyword_names` /
-    // `KEYWORDS` entry carries `Class` and binds that class; a module-level
-    // `KEYWORDS` dict carries no owner and falls back to the file's dispatch
-    // class.
-    file_scoped_imports: FileScopedImports::On {
-        wildcard_only: true,
-        alias_decode: Some(AliasDecode {
-            separator: "::",
-            fallback_kind: Some("class"),
-        }),
-    },
-    alias_module_qname: false,
-    module_prefix_rewrites:
-        crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
-    workspace_packages: false,
-    reexport_barrel_stems: &["index"],
-    self_package_root: None,
-    wildcard_workspace_scope: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,
     associated_type_projection: false,

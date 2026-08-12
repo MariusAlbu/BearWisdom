@@ -148,7 +148,7 @@ fn rust_import_module_path_is_from_module_field() {
     // imported_namespace rule cannot match bare type refs to their use-imported
     // crate symbols.
     assert!(matches!(
-        RUST_PROFILE.import_module_path,
+        RUST_PROFILE.imports.import_module_path,
         crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField
     ));
 }
@@ -156,10 +156,10 @@ fn rust_import_module_path_is_from_module_field() {
 #[test]
 fn rust_module_anchor_binds_by_name_under_module_dir() {
     assert!(matches!(
-        RUST_PROFILE.module_anchor,
+        RUST_PROFILE.imports.module_anchor,
         ModuleAnchor::On(ModuleAnchorBind::ByNameUnderModuleDir)
     ));
     // Non-terminal: a missed anchor falls through to the scope / import / qname
     // binders rather than ending the ladder.
-    assert!(!RUST_PROFILE.module_anchor_terminal);
+    assert!(!RUST_PROFILE.imports.module_anchor_terminal);
 }

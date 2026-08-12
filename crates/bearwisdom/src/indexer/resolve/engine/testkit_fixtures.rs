@@ -120,3 +120,15 @@ pub(crate) fn ref_ctx<'a>(
 pub(crate) fn accept_any(_: EdgeKind, _: &str) -> bool {
     true
 }
+
+// Flow-cache surface of the `Lookup` double: backed by the plain maps its
+// builders fill, so rule tests can seed local-binding types without a real
+// per-file cache.
+impl crate::indexer::resolve::engine::contract::FlowCacheLookup for super::testkit::Lookup {
+    fn local_type(&self, name: &str) -> Option<String> {
+        self.local_types.get(name).cloned()
+    }
+    fn local_callable_head(&self, name: &str) -> Option<String> {
+        self.local_callable_heads.get(name).cloned()
+    }
+}

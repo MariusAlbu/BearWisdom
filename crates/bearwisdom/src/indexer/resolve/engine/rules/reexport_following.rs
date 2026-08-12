@@ -57,22 +57,43 @@ impl LookupRule for ReexportFollowingRule {
                     ctx.kind,
                     ctx.lookup,
                     0,
-                    ctx.profile.reexport_barrel_stems,
+                    ctx.profile.imports.reexport_barrel_stems,
                 ) {
                     return LookupResult::Resolved(res);
                 }
             } else if is_relative_specifier(module) {
                 if let Some(res) =
-                    follow_reexports(module, target, edge_kind, ctx.kind, ctx.lookup, 0, ctx.profile.reexport_barrel_stems)
+                    follow_reexports(module, target, edge_kind, ctx.kind, ctx.lookup, 0, ctx.profile.imports.reexport_barrel_stems)
                 {
                     return LookupResult::Resolved(res);
                 }
                 for barrel in relative_reexport_candidates(ctx.lookup, from_file, module) {
                     if let Some(res) =
-                        follow_reexports(&barrel, target, edge_kind, ctx.kind, ctx.lookup, 0, ctx.profile.reexport_barrel_stems)
+                        follow_reexports(&barrel, target, edge_kind, ctx.kind, ctx.lookup, 0, ctx.profile.imports.reexport_barrel_stems)
                     {
                         return LookupResult::Resolved(res);
                     }
+                }
+            } else if let Some(resolved) = ctx.lookup.resolve_module_via_language_resolver(
+                &ctx.file_ctx.language,
+                from_file,
+                module,
+            ) {
+                // Neither the `ext:`-convention module map nor
+                // `is_relative_specifier` claimed this specifier — Dart's
+                // bare-relative (`'foo.dart'`) and same-project
+                // `package:<self>/...` forms are both neither. Last resort:
+                // the language's own `ModuleResolver` (indexer::module_resolution).
+                if let Some(res) = follow_reexports(
+                    &resolved,
+                    target,
+                    edge_kind,
+                    ctx.kind,
+                    ctx.lookup,
+                    0,
+                    ctx.profile.imports.reexport_barrel_stems,
+                ) {
+                    return LookupResult::Resolved(res);
                 }
             }
         }

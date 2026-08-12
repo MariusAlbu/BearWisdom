@@ -71,7 +71,7 @@ fn ruby_import_module_path_is_from_module_field() {
     // import table real entries — the `None` mode discards `module_path`
     // outright, starving import-scoped rules like `external_by_import`.
     assert!(matches!(
-        RUBY_PROFILE.import_module_path,
+        RUBY_PROFILE.imports.import_module_path,
         crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField
     ));
 }

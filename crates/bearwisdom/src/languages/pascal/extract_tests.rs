@@ -827,3 +827,106 @@ fn normalised_source_strips_specialize_and_generic_params() {
         "normalised source still contains 'specialize'"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Unit-qualified top-level qnames
+// ---------------------------------------------------------------------------
+
+fn qname_of<'a>(result: &'a crate::types::ExtractionResult, name: &str) -> &'a str {
+    result
+        .symbols
+        .iter()
+        .find(|s| s.name == name)
+        .unwrap_or_else(|| panic!("no symbol named {name} in {:?}", result.symbols))
+        .qualified_name
+        .as_str()
+}
+
+#[test]
+fn free_function_qname_is_unit_qualified() {
+    let src = r#"unit MyUnit;
+interface
+procedure DoThing;
+implementation
+procedure DoThing;
+begin
+end;
+end.
+"#;
+    let result = extract(src);
+    assert_eq!(qname_of(&result, "DoThing"), "MyUnit.DoThing");
+}
+
+#[test]
+fn top_level_class_qname_is_unit_qualified() {
+    let src = r#"unit MyUnit;
+interface
+type
+  TFoo = class
+    procedure Bar;
+  end;
+implementation
+end.
+"#;
+    let result = extract(src);
+    assert_eq!(qname_of(&result, "TFoo"), "MyUnit.TFoo");
+}
+
+#[test]
+fn class_member_declared_in_interface_stays_bare() {
+    // A method declared INSIDE a class body is a structural member
+    // (`parent_index` points at the class, not the unit) — resolved via
+    // `members_by_parent`, not the top-level qname rungs, so it must not be
+    // unit-qualified.
+    let src = r#"unit MyUnit;
+interface
+type
+  TFoo = class
+    procedure Bar;
+  end;
+implementation
+end.
+"#;
+    let result = extract(src);
+    assert_eq!(qname_of(&result, "Bar"), "Bar");
+}
+
+#[test]
+fn out_of_class_method_impl_is_not_double_prefixed() {
+    // `procedure TFoo.Bar;` already carries a dotted name (`TFoo.Bar`) from
+    // `find_proc_name`'s qualified-name branch — qualification must skip it
+    // rather than produce `MyUnit.TFoo.Bar`.
+    let src = r#"unit MyUnit;
+interface
+type
+  TFoo = class
+    procedure Bar;
+  end;
+implementation
+procedure TFoo.Bar;
+begin
+end;
+end.
+"#;
+    let result = extract(src);
+    let dotted = result
+        .symbols
+        .iter()
+        .find(|s| s.name == "TFoo.Bar")
+        .expect("TFoo.Bar impl symbol");
+    assert_eq!(dotted.qualified_name, "TFoo.Bar");
+}
+
+#[test]
+fn fragment_without_unit_header_keeps_bare_qnames() {
+    // A `.inc` fragment parses without a `unit`/`program` wrapper — index 0
+    // is never a `Namespace` symbol, so qualification is a no-op; the
+    // fragment's declarations reach their spliced-in unit's scope through
+    // `PascalPlugin::extra_wildcard_imports` instead.
+    let src = r#"procedure FragmentHelper;
+begin
+end;
+"#;
+    let result = extract(src);
+    assert_eq!(qname_of(&result, "FragmentHelper"), "FragmentHelper");
+}

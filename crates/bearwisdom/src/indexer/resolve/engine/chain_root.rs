@@ -149,7 +149,7 @@ fn open_namespaces(
         .filter_map(|imp| imp.module_path.clone())
         .filter(|m| !m.is_empty())
         .collect();
-    if profile.namespace_imports_are_wildcards {
+    if profile.imports.namespace_imports_are_wildcards {
         out.extend(
             lookup
                 .implicit_wildcard_namespaces(package_id)

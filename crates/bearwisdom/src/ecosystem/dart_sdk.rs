@@ -17,17 +17,23 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use rayon::prelude::*;
 use tracing::debug;
-use tree_sitter::{Node, Parser};
 
 use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::ecosystem::symbol_index::SymbolLocationIndex;
 use crate::walker::WalkedFile;
 
+#[path = "dart_sdk_symbol_index.rs"]
+mod dart_sdk_symbol_index;
+pub(super) use dart_sdk_symbol_index::build_dart_symbol_index;
+
 pub const ID: EcosystemId = EcosystemId::new("dart-sdk");
-const LEGACY_ECOSYSTEM_TAG: &str = "dart-sdk";
+/// `dart-sdk` ecosystem tag. Also stamped on `FlutterSdkEcosystem`'s
+/// sky_engine `ui` dep root — `dart:ui` is a `dart:` import shipped by
+/// Flutter's bundled sky_engine instead of the plain Dart SDK, so it shares
+/// this scheme rather than getting a second `ext:` identity.
+pub(crate) const LEGACY_ECOSYSTEM_TAG: &str = "dart-sdk";
 const LANGUAGES: &[&str] = &["dart"];
 
 /// Sub-libraries of `lib/` that constitute the public Dart SDK stdlib.
@@ -38,6 +44,10 @@ pub(crate) const DART_SDK_LIBS: &[&str] = &[
     "convert",
     "io",
     "isolate",
+    // `dart:ui` sources ship in sky_engine (Flutter engine bindings), walked
+    // under the same `ext:dart-sdk:ui/` identity; a real Dart SDK has no
+    // `lib/ui`, so the walker probe simply misses there.
+    "ui",
     "math",
     "typed_data",
     "developer",
@@ -225,7 +235,12 @@ fn walk_dart_sdk(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     out
 }
 
-fn walk_sdk_dir(
+/// Walk `dir` recursively, emitting `ext:dart-sdk:<rel>` `WalkedFile`s with
+/// `rel` relative to `root`. Shared by `DartSdkEcosystem` (its own SDK
+/// `lib/` as both `dir` and `root`) and `FlutterSdkEcosystem` (sky_engine's
+/// `lib/ui/` as `dir`, sky_engine's `lib/` as `root`, so `rel` keeps the
+/// `ui/` segment and lands under the same scheme).
+pub(crate) fn walk_sdk_dir(
     dir: &Path,
     root: &Path,
     dep: &ExternalDepRoot,
@@ -274,230 +289,9 @@ fn walk_sdk_dir(
 }
 
 // ---------------------------------------------------------------------------
-// Symbol index — shared with flutter_sdk
-// ---------------------------------------------------------------------------
-
-/// Build a `(module, name) → file` index over the given dep roots using
-/// a header-only tree-sitter parse. Called by both `DartSdkEcosystem` and
-/// `FlutterSdkEcosystem` (via `super::dart_sdk::build_dart_symbol_index`).
-pub(super) fn build_dart_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
-    let mut work: Vec<(String, WalkedFile)> = Vec::new();
-    for dep in dep_roots {
-        collect_dart_files_recursive(&dep.root, dep, &mut work);
-    }
-    if work.is_empty() {
-        return SymbolLocationIndex::new();
-    }
-    let per_file: Vec<Vec<(String, String, PathBuf)>> = work
-        .par_iter()
-        .map(|(module, wf)| {
-            let Ok(src) = std::fs::read_to_string(&wf.absolute_path) else {
-                return Vec::new();
-            };
-            scan_dart_top_level(&src)
-                .into_iter()
-                .map(|name| (module.clone(), name, wf.absolute_path.clone()))
-                .collect()
-        })
-        .collect();
-    let mut index = SymbolLocationIndex::new();
-    for batch in per_file {
-        for (module, name, file) in batch {
-            index.insert(module, name, file);
-        }
-    }
-    index
-}
-
-fn collect_dart_files_recursive(
-    dir: &Path,
-    dep: &ExternalDepRoot,
-    out: &mut Vec<(String, WalkedFile)>,
-) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let Ok(ft) = entry.file_type() else {
-            continue;
-        };
-        let path = entry.path();
-        if ft.is_dir() {
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.starts_with('.') || matches!(name, "test" | "tests") {
-                    continue;
-                }
-            }
-            collect_dart_files_recursive(&path, dep, out);
-        } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-                continue;
-            };
-            if !name.ends_with(".dart") {
-                continue;
-            }
-            let rel = path.to_string_lossy().replace('\\', "/");
-            out.push((
-                dep.module_path.clone(),
-                WalkedFile {
-                    relative_path: format!("ext:{}:{}", dep.ecosystem, rel),
-                    absolute_path: path,
-                    language: "dart",
-                },
-            ));
-        }
-    }
-}
-
-/// Header-only tree-sitter scan — top-level class/mixin/enum/extension/fn names.
-fn scan_dart_top_level(source: &str) -> Vec<String> {
-    let language: tree_sitter::Language = tree_sitter_dart::LANGUAGE.into();
-    let mut parser = Parser::new();
-    if parser.set_language(&language).is_err() {
-        return Vec::new();
-    }
-    let Some(tree) = parser.parse(source, None) else {
-        return Vec::new();
-    };
-    let root = tree.root_node();
-    let bytes = source.as_bytes();
-    let mut out = Vec::new();
-    let mut cursor = root.walk();
-    for child in root.children(&mut cursor) {
-        collect_dart_top_level_name(&child, bytes, &mut out);
-    }
-    out
-}
-
-fn collect_dart_top_level_name(node: &Node, bytes: &[u8], out: &mut Vec<String>) {
-    match node.kind() {
-        "class_declaration"
-        | "class_definition"
-        | "mixin_declaration"
-        | "enum_declaration"
-        | "extension_declaration"
-        | "function_signature"
-        | "function_declaration"
-        | "getter_signature"
-        | "setter_signature"
-        | "type_alias" => {
-            if let Some(name_node) = node
-                .child_by_field_name("name")
-                .or_else(|| find_first_identifier(node))
-            {
-                if let Ok(t) = name_node.utf8_text(bytes) {
-                    out.push(t.to_string());
-                }
-            }
-        }
-        _ => {}
-    }
-}
-
-fn find_first_identifier<'a>(node: &'a Node<'a>) -> Option<Node<'a>> {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() == "identifier" {
-            return Some(child);
-        }
-    }
-    None
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ecosystem_identity() {
-        let e = DartSdkEcosystem;
-        assert_eq!(e.id(), ID);
-        assert_eq!(Ecosystem::kind(&e), EcosystemKind::Stdlib);
-        assert_eq!(Ecosystem::languages(&e), &["dart"]);
-    }
-
-    #[test]
-    fn activation_is_language_present() {
-        let e = DartSdkEcosystem;
-        assert!(matches!(
-            e.activation(),
-            EcosystemActivation::LanguagePresent("dart")
-        ));
-    }
-
-    #[test]
-    fn supports_reachability_and_demand_driven() {
-        let e = DartSdkEcosystem;
-        assert!(Ecosystem::supports_reachability(&e));
-        assert!(Ecosystem::uses_demand_driven_parse(&e));
-    }
-
-    #[test]
-    fn locate_roots_empty_on_missing_sdk() {
-        // Must not panic when Dart SDK is absent.
-        let e = DartSdkEcosystem;
-        let _ = Ecosystem::locate_roots(
-            &e,
-            &LocateContext {
-                project_root: std::path::Path::new("."),
-                manifests: &Default::default(),
-                active_ecosystems: &[],
-            },
-        );
-    }
-
-    #[test]
-    fn walk_root_empty_on_bogus_dep() {
-        let dep = ExternalDepRoot {
-            module_path: "dart-sdk".to_string(),
-            version: String::new(),
-            root: PathBuf::from("/nonexistent/dart/sdk/lib"),
-            ecosystem: LEGACY_ECOSYSTEM_TAG,
-            package_id: None,
-            requested_imports: Vec::new(),
-        };
-        let e = DartSdkEcosystem;
-        assert!(Ecosystem::walk_root(&e, &dep).is_empty());
-    }
-
-    #[test]
-    fn dart_sdk_libs_are_nonempty() {
-        assert!(!DART_SDK_LIBS.is_empty());
-        assert!(DART_SDK_LIBS.contains(&"core"));
-        assert!(DART_SDK_LIBS.contains(&"async"));
-    }
-
-    #[test]
-    fn scan_top_level_finds_class_and_function() {
-        let src = r#"
-class MyClass {}
-abstract class Base {}
-mixin Mixable {}
-enum Color { red, green }
-extension FooExt on int {}
-void myFunction() {}
-int get myGetter => 0;
-"#;
-        let names = scan_dart_top_level(src);
-        assert!(
-            names.contains(&"MyClass".to_string()),
-            "should find MyClass"
-        );
-        assert!(names.contains(&"Base".to_string()), "should find Base");
-        assert!(
-            names.contains(&"Mixable".to_string()),
-            "should find Mixable"
-        );
-        assert!(names.contains(&"Color".to_string()), "should find Color");
-    }
-
-    #[test]
-    fn build_symbol_index_empty_on_no_roots() {
-        let index = build_dart_symbol_index(&[]);
-        assert!(index.is_empty());
-    }
-}
+#[path = "dart_sdk_tests.rs"]
+mod tests;

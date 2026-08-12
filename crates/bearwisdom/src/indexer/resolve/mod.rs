@@ -4,8 +4,10 @@
 // Single-tier resolution: every ref is either engine-resolved at
 // `confidence = 1.0` via the rule-based `SemanticModel` and chain walker,
 // classified as external, or honestly unresolved. The full-index path runs
-// `engine::pipeline::resolve_single_pass`; the incremental path runs
-// `engine::pipeline::resolve_incremental_pass`.
+// `indexer::full_resolve_phase::resolve_with_plugin_refresh` (materialize +
+// build via `engine::pipeline::materialize_and_build_tree`, a plugin-state
+// refresh, then `engine::pipeline::resolve_from_tree`); the incremental path
+// runs `engine::pipeline::resolve_incremental_pass`.
 //
 // This file is the public API. The implementation splits across siblings:
 //

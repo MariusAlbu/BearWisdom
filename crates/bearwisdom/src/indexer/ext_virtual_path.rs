@@ -120,15 +120,20 @@ pub(crate) fn virtual_path_for_pulled(abs: &Path, language: &str) -> Option<Stri
             None
         }
         "dart" => {
-            // Flutter SDK layout: `.../packages/<pkg>/<rel>`. `ext:flutter-sdk:`
-            // is the eager walker's shape (flutter_sdk.rs), so demand-pulled SDK
-            // files dedupe against walker output and `ExtMatch::PkgSegment`
-            // reads a real package name instead of a drive-letter fragment.
+            // Flutter SDK layout: `.../packages/<pkg>/lib/<rel>`. `ext:flutter-
+            // sdk:<pkg>/<rel>` (rel WITHOUT the `lib/` segment) is the eager
+            // walker's shape (flutter_sdk.rs's `dep.root` is the package's
+            // `lib/` dir, so its own `rel` is already relative to `lib/`) — so
+            // demand-pulled SDK files dedupe against walker output and
+            // `ExtMatch::PkgSegment` reads a real package name instead of a
+            // drive-letter fragment.
             if let Some(pk_idx) = s.rfind("/packages/") {
                 let after = &s[pk_idx + "/packages/".len()..];
-                if let Some((pkg, rel)) = after.split_once('/') {
-                    if !pkg.is_empty() && !rel.is_empty() {
-                        return Some(format!("ext:flutter-sdk:{pkg}/{rel}"));
+                if let Some((pkg, rest)) = after.split_once('/') {
+                    if let Some(rel) = rest.strip_prefix("lib/") {
+                        if !pkg.is_empty() && !rel.is_empty() {
+                            return Some(format!("ext:flutter-sdk:{pkg}/{rel}"));
+                        }
                     }
                 }
             }

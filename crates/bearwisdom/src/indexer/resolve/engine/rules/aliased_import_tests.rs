@@ -30,6 +30,8 @@ impl AliasLookup {
     }
 }
 
+impl crate::indexer::resolve::engine::contract::FlowCacheLookup for AliasLookup {}
+
 impl SymbolLookup for AliasLookup {
     fn by_name(&self, name: &str) -> SymbolSet<'_> {
         self.inner.by_name(name)

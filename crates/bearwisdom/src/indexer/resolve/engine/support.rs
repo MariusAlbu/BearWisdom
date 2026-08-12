@@ -138,7 +138,7 @@ pub(crate) fn workspace_sub_path(specifier: &str, lookup: &dyn SymbolLookup) -> 
     None
 }
 
-/// When `specifier`'s leading segment is `profile.self_package_root`
+/// When `specifier`'s leading segment is `profile.imports.self_package_root`
 /// (Rust's `crate`), the sub-path remainder that follows it: `Some(None)` for
 /// the bare keyword (`crate`), `Some(Some(rest))` for a deeper path
 /// (`crate::thing` -> `Some(Some("thing"))`). `None` when the profile carries
@@ -148,7 +148,7 @@ pub(crate) fn self_package_sub_path(
     profile: &LanguageProfile,
     specifier: &str,
 ) -> Option<Option<String>> {
-    let keyword = profile.self_package_root?;
+    let keyword = profile.imports.self_package_root?;
     let rest = specifier.strip_prefix(keyword)?;
     if rest.is_empty() {
         return Some(None);

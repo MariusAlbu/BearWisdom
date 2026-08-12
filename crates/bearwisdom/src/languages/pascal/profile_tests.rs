@@ -68,7 +68,7 @@ fn pascal_case_folds_and_matches_units_by_file_stem() {
         NameNormalization::Spec(spec) if spec.case_insensitive
     ));
     assert!(matches!(
-        PASCAL_PROFILE.wildcard_match,
+        PASCAL_PROFILE.imports.wildcard_match,
         WildcardMatch::FileStem {
             underscore_prefix: true
         }
@@ -83,9 +83,9 @@ fn pascal_uses_clause_reaches_the_wildcard_rung() {
     // same as C#'s plain `using X;`), and it requires `module_path` to be
     // populated — `extract_uses` sets `ExtractedRef::module`, so the profile
     // must read it via `FromModuleField` rather than leaving it unset.
-    assert!(PASCAL_PROFILE.namespace_imports_are_wildcards);
+    assert!(PASCAL_PROFILE.imports.namespace_imports_are_wildcards);
     assert!(matches!(
-        PASCAL_PROFILE.import_module_path,
+        PASCAL_PROFILE.imports.import_module_path,
         ImportModulePath::FromModuleField
     ));
 }

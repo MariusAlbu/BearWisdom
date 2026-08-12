@@ -69,6 +69,7 @@ const CS_PRIMITIVES: &[(&str, PrimKind)] = &[
 pub const CSHARP_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &["Object", "object"],
     implicit_prelude_namespaces: &[],
+    compiled_name_prefixes: &[],
     id: "csharp",
     qname_separator: ".",
     self_keywords: &["this", "base"],
@@ -98,23 +99,35 @@ pub const CSHARP_PROFILE: LanguageProfile = LanguageProfile {
     chain_qualification: ChainQualification::SamePackageAndImports,
     builtin_skip: None,
     namespace_decline: None,
-    decline_qualified_when_prefix_imported: false,
+    imports: crate::type_checker::profile::language_profile::ImportAxes {
+        decline_qualified_when_prefix_imported: false,
+        import_resolution: None,
+        import_module_path:
+            crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
+        module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
+        module_anchor_terminal: false,
+        relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
+        external_by_import: None,
+        module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
+        wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
+        // A plain `using System;` opens the namespace's direct members to bare
+        // scope — the C# analogue of `import java.util.*`.
+        namespace_imports_are_wildcards: true,
+        ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
+        head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
+        file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
+        alias_module_qname: false,
+        module_prefix_rewrites:
+            crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+        workspace_packages: false,
+        reexport_barrel_stems: &["index"],
+        self_package_root: None,
+        wildcard_workspace_scope: false,
+    },
     module_skip: None,
     ambient_namespace_prefixes: &[],
     wildcard_builtins: &[],
-    import_resolution: None,
-    import_module_path:
-        crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
-    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
-    module_anchor_terminal: false,
-    relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
-    external_by_import: None,
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
-    module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
-    wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
-    // A plain `using System;` opens the namespace's direct members to bare
-    // scope — the C# analogue of `import java.util.*`.
-    namespace_imports_are_wildcards: true,
     // BCL delegate wrappers: a callee parameter of this shape carries the
     // callback's parameter types in its generic arguments.
     delegate_wrappers: &[
@@ -131,16 +144,6 @@ pub const CSHARP_PROFILE: LanguageProfile = LanguageProfile {
             crate::type_checker::profile::language_profile::DelegateShape::AllParams,
         ),
     ],
-    ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
-    head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
-    file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
-    alias_module_qname: false,
-    module_prefix_rewrites:
-        crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
-    workspace_packages: false,
-    reexport_barrel_stems: &["index"],
-    self_package_root: None,
-    wildcard_workspace_scope: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,
     associated_type_projection: false,

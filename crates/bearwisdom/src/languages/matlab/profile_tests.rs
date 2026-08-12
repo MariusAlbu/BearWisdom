@@ -22,7 +22,7 @@ fn matlab_module_scope_is_same_dir() {
     // MATLAB path semantics: a same-folder function sibling is the canonical
     // bind for a bare call. The same-dir rung is selected by SameDir.
     assert_eq!(
-        MATLAB_PROFILE.module_scope,
+        MATLAB_PROFILE.imports.module_scope,
         crate::type_checker::profile::language_profile::ModuleScope::SameDir
     );
 }

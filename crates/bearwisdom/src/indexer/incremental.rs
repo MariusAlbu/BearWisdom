@@ -323,7 +323,7 @@ fn run_incremental_pipeline(
     // Matches each symbol to its existing row by symbol_key: survivors keep
     // their id (inbound edges stay valid), only vanished keys are deleted and
     // only new keys inserted. The report carries the narrowed blast radius.
-    let (file_id_map, symbol_id_map, survivor_report) = if !parsed.is_empty() {
+    let (file_id_map, mut symbol_id_map, survivor_report) = if !parsed.is_empty() {
         let (fmap, smap, report) =
             write::write_parsed_files_incremental(db, &parsed, Some(workspace_arena.as_ref()))
                 .context("Failed to write index")?;
@@ -475,21 +475,17 @@ fn run_incremental_pipeline(
     );
 
     // --- Step 11a: Plugin-owned cross-file state ---
-    // Mirror the full-index Step 4b — populate the plugin state bag from
-    // each active plugin. This runs on every incremental save, closing the
-    // gap where Vue auto-imports and Robot library bindings were silently
-    // absent for the incremental path.
-    {
-        let registry = languages::default_registry();
-        let mut plugin_state = super::plugin_state::PluginStateBag::new();
-        for plugin in registry.all() {
-            if !project_ctx.language_presence.contains(plugin.id()) {
-                continue;
-            }
-            plugin.populate_project_state(&mut plugin_state, &parsed, project_root, &project_ctx);
-        }
-        project_ctx.plugin_state = plugin_state;
-    }
+    // Mirror the full-index Steps 4b/4d.2/4d.3 via the shared phase functions
+    // — closes the gap where Vue auto-imports, Robot library bindings, and
+    // Elixir `__using__` synthesis were silently absent on this path. No
+    // on-disk externals walk runs here, so `populate_post_externals` sees the
+    // same `parsed` as the pre-externals call; `robot_external_sources` is `None`.
+    use super::plugin_state_phase as psp;
+    psp::populate_pre_externals(registry, &mut project_ctx, &parsed, project_root);
+    psp::populate_post_externals(registry, &mut project_ctx, &parsed, project_root, None);
+    psp::synthesize_and_persist(
+        registry, &project_ctx, &mut parsed, db, &mut symbol_id_map, workspace_arena.as_ref(),
+    )?;
 
     let rstats = resolve::resolve_and_write_incremental_and_arena(
         db,

@@ -83,11 +83,11 @@ pub(crate) fn build_file_context(
     let entry_is_wildcard = |r: &crate::types::ExtractedRef| {
         !r.is_reexport
             && (r.target_name == "*"
-                || (profile.namespace_imports_are_wildcards
+                || (profile.imports.namespace_imports_are_wildcards
                     && r.kind == EdgeKind::Imports
                     && !r.is_import_binding))
     };
-    let mut imports: Vec<ImportEntry> = match profile.import_module_path {
+    let mut imports: Vec<ImportEntry> = match profile.imports.import_module_path {
         // Build entries from import-describing refs only: an explicit import
         // binding (`import { X } from 'm'`) or an `Imports`-kind ref (require /
         // side-effect). A bare usage ref now also carries `module` (set from the

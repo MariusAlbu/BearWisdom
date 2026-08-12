@@ -10,8 +10,11 @@ use crate::types::EdgeKind;
 
 static TERMINAL_ON_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
-    module_anchor_terminal: true,
-    module_anchor: ModuleAnchor::On(ModuleAnchorBind::NameExactKind),
+    imports: crate::type_checker::profile::language_profile::ImportAxes {
+        module_anchor_terminal: true,
+        module_anchor: ModuleAnchor::On(ModuleAnchorBind::NameExactKind),
+        ..DEFAULT_PROFILE.imports
+    },
     ..DEFAULT_PROFILE
 };
 
@@ -53,8 +56,11 @@ fn passes_when_terminal_flag_is_false() {
 fn passes_when_anchor_is_off() {
     static TERMINAL_ANCHOR_OFF: LanguageProfile = LanguageProfile {
         implicit_root_types: &[],
-        module_anchor_terminal: true,
-        module_anchor: ModuleAnchor::Off,
+        imports: crate::type_checker::profile::language_profile::ImportAxes {
+            module_anchor_terminal: true,
+            module_anchor: ModuleAnchor::Off,
+            ..DEFAULT_PROFILE.imports
+        },
         ..DEFAULT_PROFILE
     };
     assert!(matches!(
@@ -90,7 +96,7 @@ fn stops_when_all_conditions_hold() {
 
 #[test]
 fn default_profile_always_passes() {
-    // DEFAULT_PROFILE.module_anchor_terminal = false → always Pass.
+    // DEFAULT_PROFILE.imports.module_anchor_terminal = false → always Pass.
     assert!(matches!(
         run(&DEFAULT_PROFILE, Some("mymod"), EdgeKind::Calls),
         LookupResult::Pass

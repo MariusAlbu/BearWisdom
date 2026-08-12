@@ -117,13 +117,26 @@ fn ruby_pulled_file_windows_separators() {
 
 #[test]
 fn dart_pulled_flutter_package_file_matches_eager_walker_shape() {
+    // flutter_sdk.rs's eager walker sets `dep.root` to the package's `lib/`
+    // dir, so its `rel` (and therefore the virtual path) excludes the `lib/`
+    // segment — the demand-pulled shape must match exactly for the
+    // `already_walked` dedupe to recognize a re-pulled file.
     let abs = Path::new(
         r"C:\flutter\packages\flutter\lib\src\widgets\framework.dart",
     );
     assert_eq!(
         virtual_path_for_pulled(abs, "dart").as_deref(),
-        Some("ext:flutter-sdk:flutter/lib/src/widgets/framework.dart"),
+        Some("ext:flutter-sdk:flutter/src/widgets/framework.dart"),
     );
+}
+
+#[test]
+fn dart_pulled_flutter_package_file_without_lib_segment_is_none() {
+    // A path under `/packages/<pkg>/` that isn't rooted at `lib/` doesn't
+    // match flutter_sdk.rs's walked layout — falls through rather than
+    // emitting a virtual path with the wrong shape.
+    let abs = Path::new(r"C:\flutter\packages\flutter\pubspec.yaml");
+    assert_eq!(virtual_path_for_pulled(abs, "dart"), None);
 }
 
 #[test]

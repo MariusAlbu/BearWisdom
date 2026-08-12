@@ -48,8 +48,8 @@ pub(crate) struct Lookup {
     /// Generic args on an `extends`/`implements` edge: `(child_head, parent_head)`
     /// → args. Backs `parent_class_args` for the supertype-arg binding tests.
     inherits_args: FxHashMap<(String, String), Vec<String>>,
-    local_types: FxHashMap<String, String>,
-    local_callable_heads: FxHashMap<String, String>,
+    pub(crate) local_types: FxHashMap<String, String>,
+    pub(crate) local_callable_heads: FxHashMap<String, String>,
     enclosing: FxHashMap<String, String>,
     aliases: FxHashMap<String, AliasTargetIds>,
     /// Id-keyed alias targets — the collision-free counterpart of `aliases`.
@@ -296,6 +296,7 @@ fn is_type_like(kind: &str) -> bool {
         || matches!(kind, "trait" | "type" | "object" | "record")
 }
 
+
 impl SymbolLookup for Lookup {
     fn by_name(&self, name: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(self.by_name.get(name).map(|v| v.as_slice()).unwrap_or(&[]))
@@ -383,12 +384,6 @@ impl SymbolLookup for Lookup {
             .get(&(child_head.to_string(), parent_head.to_string()))
             .map(|v| v.as_slice())
             .unwrap_or(&[])
-    }
-    fn local_type(&self, name: &str) -> Option<String> {
-        self.local_types.get(name).cloned()
-    }
-    fn local_callable_head(&self, name: &str) -> Option<String> {
-        self.local_callable_heads.get(name).cloned()
     }
     fn enclosing_type_qname(&self, source_qname: &str) -> Option<&str> {
         self.enclosing.get(source_qname).map(|s| s.as_str())

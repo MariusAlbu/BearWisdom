@@ -47,8 +47,11 @@ fn pkg_segment_matches_import_root() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
             implicit_root_types: &[],
-            external_by_import: Some(ExternalByImport),
-            ext_match: ExtMatch::PkgSegment,
+            imports: crate::type_checker::profile::language_profile::ImportAxes {
+                external_by_import: Some(ExternalByImport),
+                ext_match: ExtMatch::PkgSegment,
+                ..DEFAULT_PROFILE.imports
+            },
             ..DEFAULT_PROFILE
         };
     let lookup =
@@ -63,8 +66,11 @@ fn pkg_segment_matches_family_prefix() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
             implicit_root_types: &[],
-            external_by_import: Some(ExternalByImport),
-            ext_match: ExtMatch::PkgSegment,
+            imports: crate::type_checker::profile::language_profile::ImportAxes {
+                external_by_import: Some(ExternalByImport),
+                ext_match: ExtMatch::PkgSegment,
+                ..DEFAULT_PROFILE.imports
+            },
             ..DEFAULT_PROFILE
         };
     let lookup = Lookup::new().with(sym(
@@ -84,8 +90,11 @@ fn file_stem_or_dir_matches_import_leaf() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
             implicit_root_types: &[],
-            external_by_import: Some(ExternalByImport),
-            ext_match: ExtMatch::FileStemOrDir,
+            imports: crate::type_checker::profile::language_profile::ImportAxes {
+                external_by_import: Some(ExternalByImport),
+                ext_match: ExtMatch::FileStemOrDir,
+                ..DEFAULT_PROFILE.imports
+            },
             ..DEFAULT_PROFILE
         };
     let lookup = Lookup::new().with(sym(
@@ -105,8 +114,11 @@ fn skips_non_external_symbols() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
             implicit_root_types: &[],
-            external_by_import: Some(ExternalByImport),
-            ext_match: ExtMatch::PkgSegment,
+            imports: crate::type_checker::profile::language_profile::ImportAxes {
+                external_by_import: Some(ExternalByImport),
+                ext_match: ExtMatch::PkgSegment,
+                ..DEFAULT_PROFILE.imports
+            },
             ..DEFAULT_PROFILE
         };
     // File path does NOT start with `ext:`.

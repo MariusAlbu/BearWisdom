@@ -7,6 +7,7 @@ use crate::type_checker::profile::language_profile::{
 pub const HCL_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
     implicit_prelude_namespaces: &[],
+    compiled_name_prefixes: &[],
     id: "hcl",
     qname_separator: ".",
     // `var.X` / `local.X` carry a sigil head the bare-name probes strip so the
@@ -35,37 +36,39 @@ pub const HCL_PROFILE: LanguageProfile = LanguageProfile {
     // classification brands them.
     builtin_skip: Some(super::keywords::is_terraform_meta_ref),
     namespace_decline: None,
-    decline_qualified_when_prefix_imported: false,
+    imports: crate::type_checker::profile::language_profile::ImportAxes {
+        decline_qualified_when_prefix_imported: false,
+        import_resolution: None,
+        import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
+        module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
+        module_anchor_terminal: false,
+        relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
+        external_by_import: None,
+        module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
+        wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
+        namespace_imports_are_wildcards: false,
+        ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
+        // A dotted target whose head names an in-file `provider` block
+        // (`google.compute_instance` → the `provider "google"` class) binds the
+        // head to that declaration. A `_`-bearing head is a resource TYPE
+        // (`aws_instance.web`), not an alias, and is declined by the strategy.
+        head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::OnSameFile {
+            require_kind: Some("class"),
+        },
+        file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
+        alias_module_qname: false,
+        module_prefix_rewrites:
+            crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+        workspace_packages: false,
+        reexport_barrel_stems: &["index"],
+        self_package_root: None,
+        wildcard_workspace_scope: false,
+    },
     module_skip: None,
     ambient_namespace_prefixes: &[],
     wildcard_builtins: &[],
-    import_resolution: None,
-    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
-    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
-    module_anchor_terminal: false,
-    relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
-    external_by_import: None,
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
-    module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
-    wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
-    namespace_imports_are_wildcards: false,
     delegate_wrappers: &[],
-    ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
-    // A dotted target whose head names an in-file `provider` block
-    // (`google.compute_instance` → the `provider "google"` class) binds the
-    // head to that declaration. A `_`-bearing head is a resource TYPE
-    // (`aws_instance.web`), not an alias, and is declined by the strategy.
-    head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::OnSameFile {
-        require_kind: Some("class"),
-    },
-    file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
-    alias_module_qname: false,
-    module_prefix_rewrites:
-        crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
-    workspace_packages: false,
-    reexport_barrel_stems: &["index"],
-    self_package_root: None,
-    wildcard_workspace_scope: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,
     associated_type_projection: false,

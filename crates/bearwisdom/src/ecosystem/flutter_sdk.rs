@@ -17,6 +17,11 @@
 //   packages/flutter/lib/*.dart   — barrel files
 //   packages/flutter_test/lib/    — if present
 //   packages/flutter_localizations/lib/ — if present
+//   bin/cache/pkg/sky_engine/lib/ui/ — dart:ui (Color, Offset, Canvas, ...),
+//     walked under the `dart-sdk` scheme (see `dart_sdk::LEGACY_ECOSYSTEM_TAG`)
+//     since `dart:ui` is a `dart:` import like the rest of the SDK, just
+//     shipped by Flutter's bundled sky_engine package instead of the plain
+//     Dart SDK — one identity, not a second `ext:flutter-sdk:` namespace.
 // =============================================================================
 
 use std::path::{Path, PathBuf};
@@ -67,7 +72,7 @@ impl Ecosystem for FlutterSdkEcosystem {
     }
 
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
-        walk_flutter_root(dep)
+        walk_dep_root(dep)
     }
 
     fn supports_reachability(&self) -> bool {
@@ -92,7 +97,7 @@ impl ExternalSourceLocator for FlutterSdkEcosystem {
         discover_flutter_sdk()
     }
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
-        walk_flutter_root(dep)
+        walk_dep_root(dep)
     }
 }
 
@@ -135,6 +140,28 @@ fn discover_flutter_sdk() -> Vec<ExternalDepRoot> {
                 requested_imports: Vec::new(),
             });
         }
+    }
+
+    // dart:ui lives in sky_engine (Flutter's engine bindings package), not in
+    // packages/flutter/ — conventionally at bin/cache/pkg/sky_engine/lib/ui/.
+    // Scoped to the `ui` subdirectory (not all of sky_engine/lib/) so its
+    // core/async/collection/... copies don't shadow the real dart-sdk's.
+    let sky_engine_ui = flutter_root
+        .join("bin")
+        .join("cache")
+        .join("pkg")
+        .join("sky_engine")
+        .join("lib")
+        .join("ui");
+    if sky_engine_ui.is_dir() {
+        roots.push(ExternalDepRoot {
+            module_path: "dart-sdk".to_string(),
+            version: String::new(),
+            root: sky_engine_ui,
+            ecosystem: super::dart_sdk::LEGACY_ECOSYSTEM_TAG,
+            package_id: None,
+            requested_imports: Vec::new(),
+        });
     }
 
     if roots.is_empty() {
@@ -233,6 +260,24 @@ fn well_known_flutter_paths() -> Vec<PathBuf> {
 // ---------------------------------------------------------------------------
 // Walk
 // ---------------------------------------------------------------------------
+
+/// Dispatch by the dep root's ecosystem tag: sky_engine's `ui` root (tagged
+/// `dart-sdk`, see `discover_flutter_sdk`) walks under the dart-sdk scheme so
+/// `dart:ui` shares one identity with the rest of the Dart SDK; every other
+/// root (packages/flutter, flutter_test, flutter_localizations) walks under
+/// the flutter-sdk scheme as before.
+fn walk_dep_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    if dep.ecosystem == super::dart_sdk::LEGACY_ECOSYSTEM_TAG {
+        let Some(lib_root) = dep.root.parent() else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        super::dart_sdk::walk_sdk_dir(&dep.root, lib_root, dep, &mut out, 0);
+        out
+    } else {
+        walk_flutter_root(dep)
+    }
+}
 
 fn walk_flutter_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     let mut out = Vec::new();

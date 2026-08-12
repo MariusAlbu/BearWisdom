@@ -40,7 +40,7 @@ defmodule MyApp.DataCase do
   end
 end
 "#;
-    let state = build_using_injection_map(&[ex_file("lib/data_case.ex", src)]);
+    let state = build_using_injection_map(&[ex_file("lib/data_case.ex", src)], std::path::Path::new(""));
     let set = state
         .injections_for("MyApp.DataCase")
         .expect("DataCase has an injection set");
@@ -72,7 +72,7 @@ defmodule MyApp.ConnCase do
   end
 end
 "#;
-    let state = build_using_injection_map(&[ex_file("lib/conn_case.ex", src)]);
+    let state = build_using_injection_map(&[ex_file("lib/conn_case.ex", src)], std::path::Path::new(""));
     let set = state
         .injections_for("MyApp.ConnCase")
         .expect("ConnCase has an injection set");
@@ -96,7 +96,7 @@ defmodule MyApp.WebCase do
   end
 end
 "#;
-    let state = build_using_injection_map(&[ex_file("lib/web_case.ex", src)]);
+    let state = build_using_injection_map(&[ex_file("lib/web_case.ex", src)], std::path::Path::new(""));
     let set = state.injections_for("MyApp.WebCase").unwrap();
     assert!(set.contains(&ElixirInjection::Alias {
         local: "Routes".to_string(),
@@ -115,7 +115,7 @@ defmodule MyApp.Case do
   end
 end
 "#;
-    let state = build_using_injection_map(&[ex_file("lib/case.ex", src)]);
+    let state = build_using_injection_map(&[ex_file("lib/case.ex", src)], std::path::Path::new(""));
     let set = state.injections_for("MyApp.Case").unwrap();
     assert!(set.contains(&ElixirInjection::Alias {
         local: "User".to_string(),
@@ -134,7 +134,7 @@ defmodule MyApp.Plain do
   def hello, do: :ok
 end
 "#;
-    let state = build_using_injection_map(&[ex_file("lib/plain.ex", src)]);
+    let state = build_using_injection_map(&[ex_file("lib/plain.ex", src)], std::path::Path::new(""));
     assert!(state.injections_for("MyApp.Plain").is_none());
 }
 
@@ -157,7 +157,7 @@ defmodule MyApp.Machina do
   end
 end
 "#;
-    let state = build_using_injection_map(&[ex_file("lib/machina.ex", src)]);
+    let state = build_using_injection_map(&[ex_file("lib/machina.ex", src)], std::path::Path::new(""));
     let set = state.injections_for("MyApp.Machina").unwrap();
     assert!(set.contains(&ElixirInjection::Def {
         name: "build".to_string(),
@@ -184,7 +184,7 @@ defmodule MyApp.Factory do
   end
 end
 "#;
-    let state = build_using_injection_map(&[ex_file("lib/factory.ex", src)]);
+    let state = build_using_injection_map(&[ex_file("lib/factory.ex", src)], std::path::Path::new(""));
     let set = state.injections_for("MyApp.Factory").unwrap();
     assert!(set.contains(&ElixirInjection::Use {
         module: "MyApp.Machina.Ecto".to_string()
@@ -225,7 +225,7 @@ defmodule MyApp.Factory do
   use MyApp.Machina.Ecto, repo: MyApp.Repo
 end
 "#;
-    let state = build_using_injection_map(&[ex_file("lib/all.ex", src)]);
+    let state = build_using_injection_map(&[ex_file("lib/all.ex", src)], std::path::Path::new(""));
     let flat = state.flattened_injections_for("MyApp.Factory");
     assert!(flat.contains(&&ElixirInjection::Def {
         name: "build".to_string(),
@@ -260,7 +260,7 @@ defmodule MyApp.B do
   end
 end
 "#;
-    let state = build_using_injection_map(&[ex_file("lib/cycle.ex", src)]);
+    let state = build_using_injection_map(&[ex_file("lib/cycle.ex", src)], std::path::Path::new(""));
     let flat = state.flattened_injections_for("MyApp.A");
     assert!(flat.contains(&&ElixirInjection::Import {
         module: "MyApp.FromA".to_string()
@@ -295,7 +295,7 @@ defmodule MyApp.CaseTemplate do
   end
 end
 "#;
-    let state = build_using_injection_map(&[ex_file("lib/case_template.ex", src)]);
+    let state = build_using_injection_map(&[ex_file("lib/case_template.ex", src)], std::path::Path::new(""));
     let set = state.injections_for("MyApp.CaseTemplate").unwrap();
     assert!(set.contains(&ElixirInjection::Import {
         module: "MyApp.Assertions".to_string()
@@ -354,7 +354,7 @@ defmodule MyApp.DataCase do
   end
 end
 "#;
-    let state = build_using_injection_map(&[ex_file("lib/all.ex", src)]);
+    let state = build_using_injection_map(&[ex_file("lib/all.ex", src)], std::path::Path::new(""));
     let flat = state.flattened_injections_for("MyApp.DataCase");
     assert!(flat.contains(&&ElixirInjection::Import {
         module: "MyApp.Assertions".to_string()

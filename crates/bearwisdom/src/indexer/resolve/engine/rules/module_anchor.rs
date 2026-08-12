@@ -31,7 +31,7 @@ impl LookupRule for ModuleAnchorRule {
     }
 
     fn apply(&self, ctx: &BinderContext) -> LookupResult {
-        let ModuleAnchor::On(bind) = ctx.profile.module_anchor else {
+        let ModuleAnchor::On(bind) = ctx.profile.imports.module_anchor else {
             return LookupResult::Pass;
         };
         let Some(module) = ctx.r().module.as_deref() else {
@@ -41,10 +41,10 @@ impl LookupRule for ModuleAnchorRule {
         let edge_kind = ctx.edge_kind();
         let norm = ctx.profile.name_normalization;
         let sep = ctx.profile.qname_separator;
-        let rewrites = ctx.profile.module_prefix_rewrites;
+        let rewrites = ctx.profile.imports.module_prefix_rewrites;
         let overload_pick_all = ctx.profile.overload_pick_all;
 
-        let is_relative = match ctx.profile.relative_marker {
+        let is_relative = match ctx.profile.imports.relative_marker {
             RelativeMarker::None => true,
             RelativeMarker::DotPrefix => module.starts_with('.'),
             RelativeMarker::DotSlashPrefix => {

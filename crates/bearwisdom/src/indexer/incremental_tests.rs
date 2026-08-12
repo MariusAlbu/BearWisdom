@@ -644,3 +644,60 @@ fn incremental_reproduces_full_index_method_qname_and_scope() {
         "incremental re-index must reproduce the full-index method scope_path"
     );
 }
+
+/// An incremental save of a file whose module `use`s a local `__using__`
+/// macro must re-run the plugin-state + synthesis phases, not just skip them
+/// — before this fix, `synthesize_project_symbols` never ran on the
+/// incremental path at all, so a member injected only via `__using__`
+/// (invisible to the extractor, no textual trace in the consumer's source)
+/// vanished from the DB the moment its file was touched: the survivor-match
+/// write drops any symbol the fresh extraction no longer emits, and nothing
+/// downstream re-added it.
+#[test]
+fn incremental_resynthesizes_using_injected_members() {
+    let src_v1 = r#"
+defmodule Local do
+  defmacro __using__(_opts) do
+    quote do
+      def greet, do: :ok
+    end
+  end
+end
+
+defmodule User do
+  use Local
+end
+"#;
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("a.ex"), src_v1).unwrap();
+
+    let mut db = Database::open_in_memory().unwrap();
+    crate::indexer::full::full_index(&mut db, dir.path(), None, None, None).unwrap();
+    assert!(
+        has_symbol(&db, "User.greet"),
+        "full index must synthesize the __using__-injected member"
+    );
+
+    // Touch the file (no semantic change) so it re-indexes incrementally.
+    // The extractor still emits no `greet` for `User` — only the synthesis
+    // phase can put it back.
+    fs::write(dir.path().join("a.ex"), format!("{src_v1}\n# touch\n")).unwrap();
+    let stats = incremental_index(&mut db, dir.path(), None).unwrap();
+    assert_eq!(stats.files_modified, 1, "the .ex file should re-index");
+
+    assert!(
+        has_symbol(&db, "User.greet"),
+        "incremental re-index must re-synthesize the __using__-injected member"
+    );
+}
+
+fn has_symbol(db: &Database, qualified_name: &str) -> bool {
+    db.conn()
+        .query_row(
+            "SELECT COUNT(*) FROM symbols WHERE qualified_name = ?1",
+            [qualified_name],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap_or(0)
+        > 0
+}

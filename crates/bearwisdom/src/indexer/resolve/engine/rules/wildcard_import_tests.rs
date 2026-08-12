@@ -10,15 +10,21 @@ use crate::type_checker::profile::language_profile::{
 
 static FILESTEM_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
-    wildcard_match: WildcardMatch::FileStem {
-        underscore_prefix: false,
+    imports: crate::type_checker::profile::language_profile::ImportAxes {
+        wildcard_match: WildcardMatch::FileStem {
+            underscore_prefix: false,
+        },
+        ..DEFAULT_PROFILE.imports
     },
     ..DEFAULT_PROFILE
 };
 
 static PACKAGE_ROOT_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
-    wildcard_match: WildcardMatch::PackageRoot,
+    imports: crate::type_checker::profile::language_profile::ImportAxes {
+        wildcard_match: WildcardMatch::PackageRoot,
+        ..DEFAULT_PROFILE.imports
+    },
     ..DEFAULT_PROFILE
 };
 
@@ -182,7 +188,10 @@ fn package_root_mode_internal_candidate_ignores_package_name_match() {
 
 static NAMESPACE_WILDCARD_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
-    namespace_imports_are_wildcards: true,
+    imports: crate::type_checker::profile::language_profile::ImportAxes {
+        namespace_imports_are_wildcards: true,
+        ..DEFAULT_PROFILE.imports
+    },
     ..DEFAULT_PROFILE
 };
 

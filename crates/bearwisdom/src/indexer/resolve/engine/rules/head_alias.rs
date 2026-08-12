@@ -3,7 +3,7 @@
 //
 // A dotted target (`foo.bar`) that starts with a HEAD segment which matches an
 // in-file symbol resolves to that in-file symbol. Gated on
-// `profile.head_alias`; `HeadAliasBind::Off` (the default) passes immediately.
+// `profile.imports.head_alias`; `HeadAliasBind::Off` (the default) passes immediately.
 //
 // Declines when the head is empty or contains `_` — a `_`-bearing head is a
 // provider resource type, not an alias. When `require_kind` is `Some`, the
@@ -22,7 +22,7 @@ impl LookupRule for HeadAliasRule {
     }
 
     fn apply(&self, ctx: &BinderContext) -> LookupResult {
-        let HeadAliasBind::OnSameFile { require_kind } = ctx.profile.head_alias else {
+        let HeadAliasBind::OnSameFile { require_kind } = ctx.profile.imports.head_alias else {
             return LookupResult::Pass;
         };
         let target = ctx.target();

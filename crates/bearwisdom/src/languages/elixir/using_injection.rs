@@ -107,14 +107,34 @@ impl ElixirProjectState {
 }
 
 /// Build the module-qname → injection-set map across the whole project.
-pub fn build_using_injection_map(parsed: &[ParsedFile]) -> ElixirProjectState {
+///
+/// The streaming index pipeline strips `ParsedFile.content` after each
+/// per-file write, so an internal file usually arrives content-less here —
+/// its source is re-read from disk under `project_root`. External files keep
+/// whatever content their pull carried; a content-less external (or an
+/// unreadable path) contributes nothing.
+pub fn build_using_injection_map(
+    parsed: &[ParsedFile],
+    project_root: &std::path::Path,
+) -> ElixirProjectState {
     let mut injections: HashMap<String, Vec<ElixirInjection>> = HashMap::new();
     for pf in parsed {
         if pf.language != "elixir" {
             continue;
         }
-        let Some(src) = pf.content.as_deref() else {
-            continue;
+        let reread;
+        let src = match pf.content.as_deref() {
+            Some(s) => s,
+            None if !pf.path.starts_with("ext:") => {
+                match std::fs::read_to_string(project_root.join(&pf.path)) {
+                    Ok(s) => {
+                        reread = s;
+                        &reread
+                    }
+                    Err(_) => continue,
+                }
+            }
+            None => continue,
         };
         collect_file_injections(src, &mut injections);
     }

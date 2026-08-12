@@ -921,7 +921,7 @@ fn full_index_inner(
         &mut project_ctx,
         &parsed,
         project_root,
-        robot_external_sources,
+        Some(robot_external_sources),
     );
 
     // `_` binds so compiler doesn't flag unused — these feed the Stage 2
@@ -987,24 +987,21 @@ fn full_index_inner(
     emit("resolving", 0.0, None);
     // One demand-driven pass over the Compilation: no SymbolIndex, no
     // iteration_0 + return-inference fixpoint, no old resolve loop.
+    // `resolve_with_plugin_refresh` covers materialize + build, a
+    // plugin-state refresh against any demand-pulled batch, and resolve —
+    // see `indexer::full_resolve_phase` for why the refresh point exists.
     let mut rstats: resolve::ResolutionStats = {
         let _t = phase_timer::scope("resolve.single_pass");
-        // Run the whole pass on the deep-stack resolve pool: it builds the
-        // Compilation and walks chains over external `.d.ts` whose CSTs nest far
-        // past the ~8 MB default stack (bundled/generated types — tRPC routers,
-        // recursive mapped types). Without this the build overflows on `main`.
-        let db_ref = &mut *db;
-        let parsed_ref = &parsed;
-        let sid_ref = &symbol_id_map;
-        let pctx_ref = &project_ctx;
-        let arena_c = std::sync::Arc::clone(&workspace_arena);
-        let index_c = std::sync::Arc::clone(&symbol_index);
-        let stats = crate::indexer::parse_file::with_resolve_pool(move || {
-            resolve::engine::pipeline::resolve_single_pass(
-                db_ref, parsed_ref, sid_ref, Some(pctx_ref), arena_c, index_c,
-            )
-        })
-        .context("SemanticModel single-pass resolve failed")?;
+        let stats = super::full_resolve_phase::resolve_with_plugin_refresh(
+            db,
+            &mut parsed,
+            &mut symbol_id_map,
+            &mut project_ctx,
+            registry,
+            project_root,
+            std::sync::Arc::clone(&workspace_arena),
+            std::sync::Arc::clone(&symbol_index),
+        )?;
         info!(
             "SemanticModel single pass: {} edges, {} unresolved",
             stats.resolved, stats.unresolved

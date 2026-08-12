@@ -81,10 +81,6 @@ impl LanguagePlugin for AdaPlugin {
         keywords::KEYWORDS
     }
 
-    fn companion_file_for_imports(&self, file_path: &str) -> Option<String> {
-        predicates::spec_for_body(file_path)
-    }
-
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {

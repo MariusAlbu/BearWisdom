@@ -50,6 +50,8 @@ impl FileLookup {
     }
 }
 
+impl crate::indexer::resolve::engine::contract::FlowCacheLookup for FileLookup {}
+
 impl SymbolLookup for FileLookup {
     fn by_name(&self, _: &str) -> SymbolSet<'_> {
         SymbolSet::empty()
@@ -110,7 +112,10 @@ const HBS_IR: ImportResolution = ImportResolution {
 
 static HBS_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
-    import_resolution: Some(HBS_IR),
+    imports: crate::type_checker::profile::language_profile::ImportAxes {
+        import_resolution: Some(HBS_IR),
+        ..DEFAULT_PROFILE.imports
+    },
     ..DEFAULT_PROFILE
 };
 

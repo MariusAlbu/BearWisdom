@@ -644,3 +644,72 @@ fn ref_class_inherits_decl() {
             .collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// Capitalized bare identifiers in value / pattern position
+// ---------------------------------------------------------------------------
+
+#[test]
+fn bare_union_case_in_value_position_emits_ref() {
+    let r = extract("module M\nlet x = None\nlet y = 0\n");
+    assert!(
+        r.refs
+            .iter()
+            .any(|f| f.kind == EdgeKind::Calls && f.target_name == "None"),
+        "bare `None` in value position must emit a Calls ref"
+    );
+}
+
+#[test]
+fn union_case_in_pattern_position_emits_ref() {
+    let r = extract(
+        "module M\nlet f v =\n    match v with\n    | Some x -> x\n    | None -> 0\nlet z = 0\n",
+    );
+    let names: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|f| f.kind == EdgeKind::Calls)
+        .map(|f| f.target_name.as_str())
+        .collect();
+    assert!(names.contains(&"Some"), "pattern `Some x` case name: {names:?}");
+    assert!(names.contains(&"None"), "pattern `None` case name: {names:?}");
+}
+
+#[test]
+fn lowercase_value_identifiers_do_not_emit_refs() {
+    let r = extract("module M\nlet helper = 1\nlet x = helper\nlet y = 0\n");
+    // `helper` appears in value position but is lowercase — locals and
+    // parameters stay untracked; only the capitalization gate admits names.
+    let bare_reads: Vec<&ExtractedRef> = r
+        .refs
+        .iter()
+        .filter(|f| f.target_name == "helper" && f.kind == EdgeKind::Calls)
+        .collect();
+    assert!(
+        bare_reads.is_empty(),
+        "lowercase value reads must not emit refs: {bare_reads:?}"
+    );
+}
+
+#[test]
+fn lowercase_rooted_dotted_chain_stays_unemitted() {
+    // `opt.Value` is ONE long_identifier_or_op node in this grammar; its
+    // lowercase head keeps it behind the capitalization gate — same
+    // no-ref outcome as before value-position emission existed.
+    let r = extract("module M\nlet n opt = opt.Value\nlet y = 0\n");
+    assert!(
+        !r.refs.iter().any(|f| f.target_name.contains("Value")),
+        "lowercase-rooted dotted chains must not emit value refs"
+    );
+}
+
+#[test]
+fn capitalized_dotted_value_ref_emits_once() {
+    let r = extract("module M\nlet x = Option.None\nlet y = 0\n");
+    let dotted = r
+        .refs
+        .iter()
+        .filter(|f| f.kind == EdgeKind::Calls && f.target_name == "Option.None")
+        .count();
+    assert_eq!(dotted, 1, "capitalized dotted value ref emits exactly once");
+}

@@ -35,6 +35,8 @@ impl SelectorLookup {
     }
 }
 
+impl crate::indexer::resolve::engine::contract::FlowCacheLookup for SelectorLookup {}
+
 impl SymbolLookup for SelectorLookup {
     fn by_name(&self, name: &str) -> SymbolSet<'_> {
         self.inner.by_name(name)

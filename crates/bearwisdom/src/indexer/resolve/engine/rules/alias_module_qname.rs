@@ -6,7 +6,7 @@
 // path. When an import's `imported_name` equals the bare target, the answer is
 // the symbol keyed by the import's `module_path` in the qname index.
 //
-// Gated on `profile.alias_module_qname`; `false` (the default) passes
+// Gated on `profile.imports.alias_module_qname`; `false` (the default) passes
 // immediately. Only fires for bare (non-dotted) targets.
 // =============================================================================
 
@@ -20,7 +20,7 @@ impl LookupRule for AliasModuleQnameRule {
     }
 
     fn apply(&self, ctx: &BinderContext) -> LookupResult {
-        if !ctx.profile.alias_module_qname {
+        if !ctx.profile.imports.alias_module_qname {
             return LookupResult::Pass;
         }
         let target = ctx.target();

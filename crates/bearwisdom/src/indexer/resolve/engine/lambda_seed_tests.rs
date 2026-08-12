@@ -26,6 +26,13 @@ impl SeedLookup {
     }
 }
 
+impl crate::indexer::resolve::engine::contract::FlowCacheLookup for SeedLookup {
+    fn record_local_type_id(&self, name: String, id: TypeId) {
+        self.seeded.borrow_mut().push((name, id));
+    }
+    fn record_local_type(&self, _: String, _: String) {}
+}
+
 impl SymbolLookup for SeedLookup {
     fn by_name(&self, _: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(&self.empty)
@@ -63,10 +70,6 @@ impl SymbolLookup for SeedLookup {
     fn is_external_name(&self, _: &str, _: &str) -> bool {
         false
     }
-    fn record_local_type_id(&self, name: String, id: TypeId) {
-        self.seeded.borrow_mut().push((name, id));
-    }
-    fn record_local_type(&self, _: String, _: String) {}
 }
 
 /// `map(fn: (value: T) => U): Array<U>` declared on `Array<T>`.

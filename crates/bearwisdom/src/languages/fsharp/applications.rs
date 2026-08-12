@@ -113,10 +113,76 @@ pub(super) fn collect_applications(
                     }
                 }
             }
+            // Union-case / module reference in PATTERN position: `| None -> …`,
+            // `| Some x -> …`. The case name is the pattern's leading
+            // identifier; nested binding patterns (`x` in `Some x`) fail the
+            // capitalization gate below.
+            "identifier_pattern" => {
+                if let Some(name) = leading_identifier_text(&child, src) {
+                    push_capitalized_value_ref(name, &child, source_idx, refs);
+                }
+            }
+            // Union-case / module reference in VALUE position: `let x = None`,
+            // `f x None`, `xs |> List.choose Some`. Locals are lowercase by F#
+            // convention, so the capitalization gate bounds emission to
+            // case/module-shaped names. A dot_expression's member side is
+            // excluded — the dot handler above owns it at a different byte
+            // offset; an application callee collapses in the pipeline's
+            // per-site dedup (same kind + name + byte offset).
+            "long_identifier_or_op" if node.kind() != "dot_expression" => {
+                let t = node_text(&child, src).to_string();
+                push_capitalized_value_ref(t, &child, source_idx, refs);
+            }
             _ => {}
         }
         collect_applications(&child, src, source_idx, refs);
     }
+}
+
+/// Emit a `Calls` ref for a capitalized bare/dotted value or pattern
+/// identifier. Lowercase names (locals, parameters) and keywords are dropped.
+fn push_capitalized_value_ref(
+    name: String,
+    node: &Node,
+    source_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let starts_upper = name.chars().next().is_some_and(|c| c.is_uppercase());
+    if !starts_upper || is_keyword(&name) {
+        return;
+    }
+    refs.push(ExtractedRef {
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: source_idx,
+        target_name: name,
+        kind: EdgeKind::Calls,
+        line: node.start_position().row as u32,
+        col: 0,
+        module: None,
+        chain: None,
+        byte_offset: node.start_byte() as u32,
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
+    });
+}
+
+/// The leading identifier of an `identifier_pattern` — the union-case or
+/// active-pattern name being matched, before any nested binding pattern.
+fn leading_identifier_text(node: &Node, src: &str) -> Option<String> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "long_identifier_or_op" | "long_identifier" | "identifier" => {
+                let t = node_text(&child, src).to_string();
+                if !t.is_empty() {
+                    return Some(t);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Extract the member name from a `dot_expression` node.

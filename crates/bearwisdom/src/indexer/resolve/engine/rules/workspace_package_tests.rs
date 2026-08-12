@@ -10,8 +10,11 @@ use crate::type_checker::profile::language_profile::{DEFAULT_PROFILE, LanguagePr
 
 static WS_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
-    workspace_packages: true,
-    reexport_barrel_stems: &["index"],
+    imports: crate::type_checker::profile::language_profile::ImportAxes {
+        workspace_packages: true,
+        reexport_barrel_stems: &["index"],
+        ..DEFAULT_PROFILE.imports
+    },
     ..DEFAULT_PROFILE
 };
 
@@ -84,6 +87,8 @@ impl WsLookup {
         self
     }
 }
+
+impl crate::indexer::resolve::engine::contract::FlowCacheLookup for WsLookup {}
 
 impl SymbolLookup for WsLookup {
     fn by_name(&self, name: &str) -> SymbolSet<'_> {

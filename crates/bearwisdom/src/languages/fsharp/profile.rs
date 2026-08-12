@@ -55,12 +55,23 @@ const FSHARP_PRIMITIVES: &[(&str, PrimKind)] = &[
 
 pub const FSHARP_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
-    // FSharp.Core's Option cases are always in scope without an `open`; the
-    // compiled surface keeps friendly member names (`FSharpOption.Some`), so
-    // the prelude rule can bind them directly. FSharpValueOption is
-    // deliberately absent: its compiled `.Some` would make the rule's
-    // distinct-qname ambiguity check decline both.
-    implicit_prelude_namespaces: &["Microsoft.FSharp.Core.FSharpOption"],
+    // FSharp.Core's Option and Result cases are always in scope without an
+    // `open`. Option's compiled surface keeps friendly member names
+    // (`FSharpOption.Some`), so the prelude rule binds them directly.
+    // FSharpValueOption is deliberately absent: its compiled surface ALSO
+    // exposes a `Some` method (backing the source-level `ValueSome`
+    // identifier), so listing it here would make `Some` match two distinct
+    // qnames and the rule's ambiguity check would decline both.
+    implicit_prelude_namespaces: &[
+        "Microsoft.FSharp.Core.FSharpOption",
+        "Microsoft.FSharp.Core.FSharpResult",
+    ],
+    // Result's cases compile to `New<Case>` static factory methods instead of
+    // keeping friendly names (`FSharpResult.NewOk`, not `.Ok`) — the compiler's
+    // general discriminated-union encoding, which Option is hand-special-cased
+    // out of. The prelude rule probes `New<target>` under the namespaces above
+    // when the bare target itself isn't a direct member.
+    compiled_name_prefixes: &["New"],
     id: "fsharp",
     qname_separator: ".",
     self_keywords: &["this"],
@@ -83,38 +94,40 @@ pub const FSHARP_PROFILE: LanguageProfile = LanguageProfile {
     chain_qualification: ChainQualification::None,
     builtin_skip: Some(predicates::is_fsharp_prelude_operator),
     namespace_decline: None,
-    decline_qualified_when_prefix_imported: false,
+    imports: crate::type_checker::profile::language_profile::ImportAxes {
+        decline_qualified_when_prefix_imported: false,
+        import_resolution: None,
+        // `open Foo` (and the `#r "Foo.dll"` assembly-reference form) always sets
+        // `ExtractedRef::module`, so the module-field path carries every import
+        // without a separate target-echo.
+        import_module_path:
+            crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
+        module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
+        module_anchor_terminal: false,
+        relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
+        external_by_import: None,
+        module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
+        wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
+        // `open Namespace` has no named-member form in F# — every `open` brings
+        // every direct member of the namespace into bare scope, so it is always
+        // a wildcard.
+        namespace_imports_are_wildcards: true,
+        ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
+        head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
+        file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
+        alias_module_qname: false,
+        module_prefix_rewrites:
+            crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+        workspace_packages: false,
+        reexport_barrel_stems: &["index"],
+        self_package_root: None,
+        wildcard_workspace_scope: false,
+    },
     module_skip: None,
     ambient_namespace_prefixes: &[],
     wildcard_builtins: &[],
-    import_resolution: None,
-    // `open Foo` (and the `#r "Foo.dll"` assembly-reference form) always sets
-    // `ExtractedRef::module`, so the module-field path carries every import
-    // without a separate target-echo.
-    import_module_path:
-        crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
-    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
-    module_anchor_terminal: false,
-    relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
-    external_by_import: None,
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
-    module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
-    wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
-    // `open Namespace` has no named-member form in F# — every `open` brings
-    // every direct member of the namespace into bare scope, so it is always
-    // a wildcard.
-    namespace_imports_are_wildcards: true,
     delegate_wrappers: &[],
-    ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
-    head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
-    file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
-    alias_module_qname: false,
-    module_prefix_rewrites:
-        crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
-    workspace_packages: false,
-    reexport_barrel_stems: &["index"],
-    self_package_root: None,
-    wildcard_workspace_scope: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,
     associated_type_projection: false,

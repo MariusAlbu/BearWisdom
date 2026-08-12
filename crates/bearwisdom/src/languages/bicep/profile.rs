@@ -43,6 +43,7 @@ pub const BICEP_PROFILE: LanguageProfile = LanguageProfile {
     // or `@description(...)` binds as a direct member of one of these two
     // namespaces via `ImplicitPreludeRule`.
     implicit_prelude_namespaces: &["bicep.builtins", "bicep.decorators"],
+    compiled_name_prefixes: &[],
     id: "bicep",
     qname_separator: ".",
     self_keywords: &[],
@@ -65,11 +66,32 @@ pub const BICEP_PROFILE: LanguageProfile = LanguageProfile {
     chain_qualification: ChainQualification::None,
     builtin_skip: Some(super::predicates::is_azure_resource_type),
     namespace_decline: None,
-    // `sys`/`az` are namespace aliases over the bicep-runtime ambient symbols
-    // (both members land under `bicep.builtins`/`bicep.decorators`), not qname
-    // path segments. Strip the alias so `sys.concat`/`az.resourceId` resolve
-    // against the bare ambient symbol.
-    decline_qualified_when_prefix_imported: false,
+    imports: crate::type_checker::profile::language_profile::ImportAxes {
+        // `sys`/`az` are namespace aliases over the bicep-runtime ambient symbols
+        // (both members land under `bicep.builtins`/`bicep.decorators`), not qname
+        // path segments. Strip the alias so `sys.concat`/`az.resourceId` resolve
+        // against the bare ambient symbol.
+        decline_qualified_when_prefix_imported: false,
+        import_resolution: None,
+        import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
+        module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
+        module_anchor_terminal: false,
+        relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
+        external_by_import: None,
+        module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
+        wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
+        namespace_imports_are_wildcards: false,
+        ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
+        head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
+        file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
+        alias_module_qname: false,
+        module_prefix_rewrites:
+            crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+        workspace_packages: false,
+        reexport_barrel_stems: &["index"],
+        self_package_root: None,
+        wildcard_workspace_scope: false,
+    },
     module_skip: None,
     ambient_namespace_prefixes: &["sys", "az"],
     // The `az` namespace registers `list*` as a regex overload, not a finite
@@ -81,27 +103,8 @@ pub const BICEP_PROFILE: LanguageProfile = LanguageProfile {
         prefix: "list",
         fold_to: "list",
     }],
-    import_resolution: None,
-    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
-    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
-    module_anchor_terminal: false,
-    relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
-    external_by_import: None,
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
-    module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
-    wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
-    namespace_imports_are_wildcards: false,
     delegate_wrappers: &[],
-    ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
-    head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
-    file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
-    alias_module_qname: false,
-    module_prefix_rewrites:
-        crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
-    workspace_packages: false,
-    reexport_barrel_stems: &["index"],
-    self_package_root: None,
-    wildcard_workspace_scope: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,
     associated_type_projection: false,

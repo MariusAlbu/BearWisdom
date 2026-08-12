@@ -15,7 +15,7 @@ fn import_module_path_reads_the_ref_module_field() {
     // package path, or a dot-prefixed relative specifier); the file-level
     // import table is built from that field rather than left empty.
     assert_eq!(
-        PYTHON_PROFILE.import_module_path,
+        PYTHON_PROFILE.imports.import_module_path,
         ImportModulePath::FromModuleField
     );
 }

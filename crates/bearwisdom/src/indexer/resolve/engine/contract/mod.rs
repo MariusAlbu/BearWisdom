@@ -9,12 +9,14 @@
 // =============================================================================
 
 pub mod chain_walker;
+pub mod flow_cache;
 pub mod generic_clause;
 pub mod lookup;
 pub mod symbol_set;
 pub mod types;
 pub mod util;
 
+pub use flow_cache::FlowCacheLookup;
 pub use lookup::SymbolLookup;
 pub use symbol_set::SymbolSet;
 pub use types::{

@@ -1,7 +1,7 @@
 // =============================================================================
 // engine/rules/module_scope — bare same-module reference without an import
 //
-// Gated on `profile.module_scope` (off by default).  Dispatches to one of three
+// Gated on `profile.imports.module_scope` (off by default).  Dispatches to one of three
 // sub-strategies that differ in how the "module boundary" is defined:
 //
 //   SameDir             — the source file's immediate parent directory is the
@@ -32,7 +32,7 @@ impl LookupRule for ModuleScopeRule {
     }
 
     fn apply(&self, ctx: &BinderContext) -> LookupResult {
-        match ctx.profile.module_scope {
+        match ctx.profile.imports.module_scope {
             ModuleScope::Off => LookupResult::Pass,
             ModuleScope::SameDir => same_dir(ctx),
             ModuleScope::SameDirUnique => same_dir_unique(ctx),

@@ -29,6 +29,8 @@ impl ScoredLookup {
     }
 }
 
+impl crate::indexer::resolve::engine::contract::FlowCacheLookup for ScoredLookup {}
+
 impl SymbolLookup for ScoredLookup {
     fn by_name(&self, name: &str) -> SymbolSet<'_> {
         self.inner.by_name(name)

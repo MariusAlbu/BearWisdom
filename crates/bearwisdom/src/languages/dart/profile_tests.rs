@@ -38,7 +38,7 @@ fn dart_wildcard_import_carries_module_path() {
     // `None` leaves every dart import entry's `module_path` empty and the
     // wildcard-import rung filters those out before it ever inspects a
     // candidate.
-    assert_eq!(DART_PROFILE.import_module_path, ImportModulePath::FromModuleField);
+    assert_eq!(DART_PROFILE.imports.import_module_path, ImportModulePath::FromModuleField);
 }
 
 #[test]
@@ -50,5 +50,5 @@ fn dart_wildcard_match_is_package_root() {
     // framework.dart`) by matching the wildcard's package identity against
     // a candidate's external package segment, falling back to the same
     // file-stem check `FileStem` used before it for relative imports.
-    assert_eq!(DART_PROFILE.wildcard_match, WildcardMatch::PackageRoot);
+    assert_eq!(DART_PROFILE.imports.wildcard_match, WildcardMatch::PackageRoot);
 }

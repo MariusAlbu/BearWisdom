@@ -8,14 +8,14 @@
 // trailing segments to find the package root, then the sub-path filters to
 // symbols whose file contains it.
 //
-// A specifier led by `profile.self_package_root` (Rust's `crate`) names the
+// A specifier led by `profile.imports.self_package_root` (Rust's `crate`) names the
 // CURRENT file's own package rather than a sibling by declared name —
 // `self_package_sub_path` resolves it against `file_package_id` directly
 // instead of `workspace_package_id`'s declared-name table, so a name
 // re-exported at the package root binds the same way a direct declaration
 // would (both are members of the same package's symbol set).
 //
-// Gated on `profile.workspace_packages`.  `is_bare_module_specifier` rejects
+// Gated on `profile.imports.workspace_packages`.  `is_bare_module_specifier` rejects
 // relative and drive-rooted specifiers.
 // =============================================================================
 
@@ -34,7 +34,7 @@ impl LookupRule for WorkspacePackageRule {
     }
 
     fn apply(&self, ctx: &BinderContext) -> LookupResult {
-        if !ctx.profile.workspace_packages {
+        if !ctx.profile.imports.workspace_packages {
             return LookupResult::Pass;
         }
         let target = ctx.target();
@@ -116,7 +116,7 @@ impl LookupRule for WorkspacePackageRule {
         // `index` barrels to the declaring symbol, which may live in another
         // workspace package. (The bare specifier has no `resolve_module_from`
         // mapping, so the barrel is recovered from the package's own symbol set.)
-        let stems = ctx.profile.reexport_barrel_stems;
+        let stems = ctx.profile.imports.reexport_barrel_stems;
         for barrel in workspace_pkg_barrels(ctx.lookup, specifier, stems) {
             if let Some(res) =
                 follow_reexports(&barrel, target, edge_kind, ctx.kind, ctx.lookup, 0, stems)

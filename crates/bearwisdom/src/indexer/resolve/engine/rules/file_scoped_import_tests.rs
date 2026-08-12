@@ -32,6 +32,8 @@ impl FileLookup {
     }
 }
 
+impl crate::indexer::resolve::engine::contract::FlowCacheLookup for FileLookup {}
+
 impl SymbolLookup for FileLookup {
     fn by_name(&self, _: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(&self.empty)
@@ -99,9 +101,12 @@ fn make_ctx<'a>(
 // profile: file_scoped_imports ON, every import scanned (wildcard_only: false)
 const ON_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
-    file_scoped_imports: FileScopedImports::On {
-        wildcard_only: false,
-        alias_decode: None,
+    imports: crate::type_checker::profile::language_profile::ImportAxes {
+        file_scoped_imports: FileScopedImports::On {
+            wildcard_only: false,
+            alias_decode: None,
+        },
+        ..DEFAULT_PROFILE.imports
     },
     ..DEFAULT_PROFILE
 };
@@ -109,9 +114,12 @@ const ON_PROFILE: LanguageProfile = LanguageProfile {
 // profile: file_scoped_imports ON, wildcard_only
 const WILDCARD_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
-    file_scoped_imports: FileScopedImports::On {
-        wildcard_only: true,
-        alias_decode: None,
+    imports: crate::type_checker::profile::language_profile::ImportAxes {
+        file_scoped_imports: FileScopedImports::On {
+            wildcard_only: true,
+            alias_decode: None,
+        },
+        ..DEFAULT_PROFILE.imports
     },
     ..DEFAULT_PROFILE
 };
@@ -119,12 +127,15 @@ const WILDCARD_PROFILE: LanguageProfile = LanguageProfile {
 // profile: file_scoped_imports ON with alias_decode
 const ALIAS_DECODE_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
-    file_scoped_imports: FileScopedImports::On {
-        wildcard_only: false,
-        alias_decode: Some(AliasDecode {
-            separator: ".",
-            fallback_kind: Some("class"),
-        }),
+    imports: crate::type_checker::profile::language_profile::ImportAxes {
+        file_scoped_imports: FileScopedImports::On {
+            wildcard_only: false,
+            alias_decode: Some(AliasDecode {
+                separator: ".",
+                fallback_kind: Some("class"),
+            }),
+        },
+        ..DEFAULT_PROFILE.imports
     },
     ..DEFAULT_PROFILE
 };

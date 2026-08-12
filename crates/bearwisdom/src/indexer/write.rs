@@ -773,6 +773,23 @@ fn clear_outgoing_refs(tx: &rusqlite::Transaction<'_>, ids: &[i64]) -> Result<()
     Ok(())
 }
 
+/// Delete a file's `symbols`/`imports`/`routes` rows before an incremental
+/// re-write. `routes` has no FK cascade from `symbols`, and its unique index
+/// excludes `symbol_id` — skipping it leaves a re-insert pointing at the OLD,
+/// now-stale id via `INSERT OR IGNORE`'s dedup.
+fn delete_stale_file_rows(tx: &rusqlite::Transaction<'_>, file_id: i64) -> Result<()> {
+    tx.prepare_cached("DELETE FROM symbols WHERE file_id = ?1")
+        .context("Failed to prepare symbol delete")?
+        .execute([file_id])?;
+    tx.prepare_cached("DELETE FROM imports WHERE file_id = ?1")
+        .context("Failed to prepare import delete")?
+        .execute([file_id])?;
+    tx.prepare_cached("DELETE FROM routes WHERE file_id = ?1")
+        .context("Failed to prepare route delete")?
+        .execute([file_id])?;
+    Ok(())
+}
+
 /// Write the intra-file containment edge (`parent_index → containing_id`).
 /// `id_by_idx[k]` is the row id of `pf.symbols[k]`.
 fn write_containment(
@@ -873,18 +890,10 @@ pub fn write_one_parsed_file(
         )
         .with_context(|| format!("Failed to upsert file {}", pf.path))?;
 
-    // On a full index the symbols / imports tables were just DROP+CREATE'd
-    // in `full.rs`, so these per-file DELETEs are no-ops — but a no-op
-    // DELETE is still a round-trip through rusqlite + SQLite's statement
-    // executor. Across ~1M files this is tens of seconds of wall-clock.
-    // Incremental callers still need the DELETE to clear stale rows.
+    // No-op on a full index (tables were just DROP+CREATE'd) — still a
+    // round-trip, but incremental callers need it. See `delete_stale_file_rows`.
     if !is_full {
-        tx.prepare_cached("DELETE FROM symbols WHERE file_id = ?1")
-            .context("Failed to prepare symbol delete")?
-            .execute([file_id])?;
-        tx.prepare_cached("DELETE FROM imports WHERE file_id = ?1")
-            .context("Failed to prepare import delete")?
-            .execute([file_id])?;
+        delete_stale_file_rows(tx, file_id)?;
     }
 
     insert_symbols_batched(tx, file_id, pf, origin, symbol_id_map, arena)?;
@@ -994,19 +1003,10 @@ fn write_parsed_files_with_origin_impl(
 
         file_id_map.insert(pf.path.clone(), file_id);
 
-        // On a full index the tables were just DROP+CREATE'd in full.rs so
-        // these per-file DELETEs are no-ops. Skipping them saves ~2 SQL
-        // round-trips per file (tens of seconds on 500k+ files).
+        // No-op on a full index (tables were just DROP+CREATE'd); skipping it
+        // saves SQL round-trips per file. See `delete_stale_file_rows`.
         if !is_full {
-            // Delete existing symbols (ON CONFLICT upsert doesn't cascade-delete).
-            tx.prepare_cached("DELETE FROM symbols WHERE file_id = ?1")
-                .context("Failed to prepare symbol delete")?
-                .execute([file_id])?;
-
-            // Delete existing imports (not cascaded by symbols delete).
-            tx.prepare_cached("DELETE FROM imports WHERE file_id = ?1")
-                .context("Failed to prepare import delete")?
-                .execute([file_id])?;
+            delete_stale_file_rows(&tx, file_id)?;
         }
 
         // Sub-extracted symbols carry their own origin language (e.g. TS

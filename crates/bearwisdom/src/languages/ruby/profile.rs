@@ -50,6 +50,7 @@ const RUBY_PRIMITIVES: &[(&str, PrimKind)] = &[
 pub const RUBY_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
     implicit_prelude_namespaces: &[],
+    compiled_name_prefixes: &[],
     id: "ruby",
     qname_separator: "::",
     self_keywords: &["self"],
@@ -72,43 +73,45 @@ pub const RUBY_PROFILE: LanguageProfile = LanguageProfile {
     chain_qualification: ChainQualification::None,
     builtin_skip: None,
     namespace_decline: None,
-    decline_qualified_when_prefix_imported: false,
+    imports: crate::type_checker::profile::language_profile::ImportAxes {
+        decline_qualified_when_prefix_imported: false,
+        import_resolution: None,
+        // `require`/`require_relative` refs always carry `module` (the full
+        // require path) — harvesting them into the file's import table gives
+        // `external_by_import` a package root to scope gem-name binding by,
+        // beyond what `module_anchor` already does for the require ref itself.
+        import_module_path:
+            crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
+        // `require`/`require_relative` anchor: resolve the require path to its
+        // project file and bind the same-named module/class symbol when present,
+        // else the first symbol in the file (anchors the cross-file edge).
+        module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::On(
+            crate::type_checker::profile::language_profile::ModuleAnchorBind::PreferNamedElseFirst,
+        ),
+        module_anchor_terminal: false,
+        relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
+        // Gem symbols (origin='external') bind by name, gated by the file's
+        // imported-gem set — the one strategy that binds to externals.
+        external_by_import: Some(crate::type_checker::profile::language_profile::ExternalByImport),
+        module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
+        wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
+        namespace_imports_are_wildcards: false,
+        ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
+        head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
+        file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
+        alias_module_qname: false,
+        module_prefix_rewrites:
+            crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+        workspace_packages: false,
+        reexport_barrel_stems: &["index"],
+        self_package_root: None,
+        wildcard_workspace_scope: false,
+    },
     module_skip: None,
     ambient_namespace_prefixes: &[],
     wildcard_builtins: &[],
-    import_resolution: None,
-    // `require`/`require_relative` refs always carry `module` (the full
-    // require path) — harvesting them into the file's import table gives
-    // `external_by_import` a package root to scope gem-name binding by,
-    // beyond what `module_anchor` already does for the require ref itself.
-    import_module_path:
-        crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
-    // `require`/`require_relative` anchor: resolve the require path to its
-    // project file and bind the same-named module/class symbol when present,
-    // else the first symbol in the file (anchors the cross-file edge).
-    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::On(
-        crate::type_checker::profile::language_profile::ModuleAnchorBind::PreferNamedElseFirst,
-    ),
-    module_anchor_terminal: false,
-    relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
-    // Gem symbols (origin='external') bind by name, gated by the file's
-    // imported-gem set — the one strategy that binds to externals.
-    external_by_import: Some(crate::type_checker::profile::language_profile::ExternalByImport),
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
-    module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
-    wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
-    namespace_imports_are_wildcards: false,
     delegate_wrappers: &[],
-    ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
-    head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
-    file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
-    alias_module_qname: false,
-    module_prefix_rewrites:
-        crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
-    workspace_packages: false,
-    reexport_barrel_stems: &["index"],
-    self_package_root: None,
-    wildcard_workspace_scope: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,
     associated_type_projection: false,

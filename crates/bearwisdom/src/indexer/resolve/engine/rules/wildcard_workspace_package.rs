@@ -3,7 +3,7 @@
 // workspace package
 //
 // A `*` wildcard import whose module specifier names a workspace package —
-// a sibling by declared name, or this file's own via `profile.self_package_root`
+// a sibling by declared name, or this file's own via `profile.imports.self_package_root`
 // — brings that package's public symbols into bare-name scope. Reached lazily,
 // per failing bare name, rather than eagerly enumerating every glob's full
 // symbol set up front.
@@ -17,7 +17,7 @@
 // that module's directory regardless of how many re-export hops away it's
 // declared.
 //
-// Gated on `profile.wildcard_workspace_scope`. Accepts only when EXACTLY ONE
+// Gated on `profile.imports.wildcard_workspace_scope`. Accepts only when EXACTLY ONE
 // candidate matches across ALL of the file's wildcard imports — ambiguity
 // (two same-named candidates, whether under one glob or split across two)
 // stays unresolved rather than guessing.
@@ -36,7 +36,7 @@ impl LookupRule for WildcardWorkspacePackageRule {
     }
 
     fn apply(&self, ctx: &BinderContext) -> LookupResult {
-        if !ctx.profile.wildcard_workspace_scope {
+        if !ctx.profile.imports.wildcard_workspace_scope {
             return LookupResult::Pass;
         }
         let target = ctx.target();

@@ -45,6 +45,14 @@ static BICEP_PROFILE: LanguageProfile = LanguageProfile {
     ..DEFAULT_PROFILE
 };
 
+static FSHARP_RESULT_PROFILE: LanguageProfile = LanguageProfile {
+    implicit_root_types: &[],
+    implicit_prelude_namespaces: &["Microsoft.FSharp.Core.FSharpResult"],
+    compiled_name_prefixes: &["New"],
+    id: "fsharp",
+    ..DEFAULT_PROFILE
+};
+
 #[test]
 fn java_lang_string_resolves() {
     // `java.lang.String` is in the Java implicit prelude; bare `String` must bind.
@@ -97,4 +105,70 @@ fn ambiguous_two_prelude_members_declines() {
         .with(sym(11, "String", "kotlin.collections.String", "class", "ext:kotlin:b.kt"));
     // kotlin has both `kotlin` and `kotlin.collections` in its prelude.
     assert_eq!(resolve_for(&lookup, "String", &KOTLIN_PROFILE), None);
+}
+
+#[test]
+fn compiled_name_prefix_resolves_when_bare_target_misses() {
+    // F# compiles a union case to a `New<Case>` factory method with no bare
+    // member of the plain case name — `Ok x` must still bind via the probe.
+    let lookup = Lookup::new().with(sym(
+        30,
+        "NewOk",
+        "Microsoft.FSharp.Core.FSharpResult.NewOk",
+        "method",
+        "ext:fsharp:FSharp.Core.dll",
+    ));
+    assert_eq!(resolve_for(&lookup, "Ok", &FSHARP_RESULT_PROFILE), Some(30));
+}
+
+#[test]
+fn bare_target_wins_over_compiled_name_prefix() {
+    // A direct `.Ok` member and its `New`-decorated compiled form both present
+    // — the plain scan finds the direct member first, so the probe never runs.
+    let lookup = Lookup::new()
+        .with(sym(
+            31,
+            "Ok",
+            "Microsoft.FSharp.Core.FSharpResult.Ok",
+            "method",
+            "ext:fsharp:FSharp.Core.dll",
+        ))
+        .with(sym(
+            32,
+            "NewOk",
+            "Microsoft.FSharp.Core.FSharpResult.NewOk",
+            "method",
+            "ext:fsharp:FSharp.Core.dll",
+        ));
+    assert_eq!(resolve_for(&lookup, "Ok", &FSHARP_RESULT_PROFILE), Some(31));
+}
+
+#[test]
+fn ambiguous_compiled_name_prefix_declines() {
+    // Two distinct qnames both matching `New<target>` under different listed
+    // namespaces — decline rather than guess, same rule as the plain-name path.
+    let profile = LanguageProfile {
+        implicit_prelude_namespaces: &["Ns.A", "Ns.B"],
+        compiled_name_prefixes: &["New"],
+        id: "fsharp",
+        ..DEFAULT_PROFILE
+    };
+    let lookup = Lookup::new()
+        .with(sym(33, "NewOk", "Ns.A.NewOk", "method", "ext:fsharp:a.dll"))
+        .with(sym(34, "NewOk", "Ns.B.NewOk", "method", "ext:fsharp:b.dll"));
+    assert_eq!(resolve_for(&lookup, "Ok", &profile), None);
+}
+
+#[test]
+fn compiled_name_prefix_inert_without_profile_data() {
+    // JAVA_PROFILE sets no `compiled_name_prefixes` — a `NewString`-shaped
+    // candidate must never bind a bare `String` lookup.
+    let lookup = Lookup::new().with(sym(
+        35,
+        "NewString",
+        "java.lang.NewString",
+        "class",
+        "ext:java:jdk/src/NewString.java",
+    ));
+    assert_eq!(resolve_for(&lookup, "String", &JAVA_PROFILE), None);
 }

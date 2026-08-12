@@ -40,7 +40,10 @@ fn declines_head_with_underscore() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
             implicit_root_types: &[],
-            head_alias: HeadAliasBind::OnSameFile { require_kind: None },
+            imports: crate::type_checker::profile::language_profile::ImportAxes {
+                head_alias: HeadAliasBind::OnSameFile { require_kind: None },
+                ..DEFAULT_PROFILE.imports
+            },
             ..DEFAULT_PROFILE
         };
     let lookup = Lookup::new();
@@ -53,7 +56,10 @@ fn declines_bare_target() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
             implicit_root_types: &[],
-            head_alias: HeadAliasBind::OnSameFile { require_kind: None },
+            imports: crate::type_checker::profile::language_profile::ImportAxes {
+                head_alias: HeadAliasBind::OnSameFile { require_kind: None },
+                ..DEFAULT_PROFILE.imports
+            },
             ..DEFAULT_PROFILE
         };
     let lookup = Lookup::new();
@@ -66,7 +72,10 @@ fn declines_when_no_in_file_match() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
             implicit_root_types: &[],
-            head_alias: HeadAliasBind::OnSameFile { require_kind: None },
+            imports: crate::type_checker::profile::language_profile::ImportAxes {
+                head_alias: HeadAliasBind::OnSameFile { require_kind: None },
+                ..DEFAULT_PROFILE.imports
+            },
             ..DEFAULT_PROFILE
         };
     // Testkit Lookup::in_file always returns empty, so the loop body is never

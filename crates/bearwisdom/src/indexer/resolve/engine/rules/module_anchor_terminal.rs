@@ -4,8 +4,8 @@
 // STOP GUARD. Mirrors the terminal check in `run_ladder` that follows
 // `resolve_via_module_anchor`:
 //
-//   if pd.module_anchor_terminal
-//       && matches!(pd.module_anchor, ModuleAnchor::On(_))
+//   if pd.imports.module_anchor_terminal
+//       && matches!(pd.imports.module_anchor, ModuleAnchor::On(_))
 //       && ref.module.is_some()
 //       && ref.kind != EdgeKind::Imports
 //   {
@@ -34,8 +34,8 @@ impl LookupRule for ModuleAnchorTerminalRule {
     }
 
     fn apply(&self, ctx: &BinderContext) -> LookupResult {
-        if ctx.profile.module_anchor_terminal
-            && matches!(ctx.profile.module_anchor, ModuleAnchor::On(_))
+        if ctx.profile.imports.module_anchor_terminal
+            && matches!(ctx.profile.imports.module_anchor, ModuleAnchor::On(_))
             && ctx.r().module.is_some()
             && ctx.edge_kind() != EdgeKind::Imports
         {

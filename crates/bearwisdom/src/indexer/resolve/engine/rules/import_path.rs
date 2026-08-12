@@ -27,7 +27,7 @@ impl LookupRule for ImportPathRule {
     }
 
     fn apply(&self, ctx: &BinderContext) -> LookupResult {
-        let Some(ir) = ctx.profile.import_resolution.as_ref() else {
+        let Some(ir) = ctx.profile.imports.import_resolution.as_ref() else {
             return LookupResult::Pass;
         };
         if ctx.edge_kind() != EdgeKind::Imports {

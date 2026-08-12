@@ -100,6 +100,7 @@ const RUST_PRIMITIVES: &[(&str, PrimKind)] = &[
 pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
     implicit_prelude_namespaces: &[],
+    compiled_name_prefixes: &[],
     id: "rust",
     // Rust's source separator is `::`. The symbol-index qname join is the
     // universal `.` (`helpers::qualify` builds `Bar.foo`), so the scope /
@@ -171,69 +172,71 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     // path, and the generic-param / turbofish noise is dropped at extraction.
     builtin_skip: None,
     namespace_decline: None,
-    decline_qualified_when_prefix_imported: false,
+    imports: crate::type_checker::profile::language_profile::ImportAxes {
+        decline_qualified_when_prefix_imported: false,
+        import_resolution: None,
+        // `FromModuleField` reads the `module` field on `EdgeKind::Imports` refs
+        // (the `use crate_name::Foo` import binding), so the file context carries
+        // `{imported_name: "Foo", module_path: Some("crate_name")}`. The
+        // imported_namespace rule then matches a bare `Foo` TypeRef to the
+        // symbol whose file path contains `crate-name/` (after hyphen→underscore
+        // normalization, since Cargo uses hyphens in directory names while Rust
+        // module paths use underscores).
+        import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
+        // A qualified call (`DbPool::new()`) carries the importing module path on
+        // `r.module` in its verbatim `::` form (`crate::db`). `ByNameUnderModuleDir`
+        // maps the path separators to `/`, probes the `{module}{sep}{target}` qname
+        // under both joins, and falls back to the module leaf (`db`) against the
+        // file stems of `by_name(new)` candidates. Non-terminal: a miss falls
+        // through to the scope / import / qname binders.
+        module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::On(
+            crate::type_checker::profile::language_profile::ModuleAnchorBind::ByNameUnderModuleDir,
+        ),
+        module_anchor_terminal: false,
+        // `None`: a Rust ref's `module` is a crate-rooted `::` path with no
+        // relative/absolute split at this layer, so every module runs the
+        // configured `ByNameUnderModuleDir` bind.
+        relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
+        external_by_import: None,
+        module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
+        wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
+        namespace_imports_are_wildcards: false,
+        ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
+        head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
+        file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
+        alias_module_qname: false,
+        module_prefix_rewrites:
+            crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+        // A bench/example/test target imports its own package by its published
+        // crate name (`use tantivy::Index`) exactly like a sibling would — Cargo
+        // has no separate "internal" import syntax for it. The workspace-package
+        // scoped bind (keyed on `ProjectContext::workspace_pkg_by_declared_name`,
+        // which registers the crate's own root package alongside its workspace
+        // members) resolves it the same way an npm sibling-package import does.
+        workspace_packages: true,
+        reexport_barrel_stems: &["lib", "main"],
+        // `crate::` is the crate-root path to the current package itself — a
+        // `use crate::Thing;` (or an inline `crate::db::Pool` path) names this
+        // file's own package, not a sibling by declared name. Resolved against
+        // the ref's own `file_package_id` rather than
+        // `workspace_pkg_by_declared_name`, so a re-exported name (`pub use
+        // thing::Thing;` at the crate root) binds the same way a direct
+        // declaration would — both are members of the same package.
+        self_package_root: Some("crate"),
+        // `use tantivy::collector::*;` brings every name the `collector` module
+        // exposes into bare scope, including ones only reachable through a
+        // `pub use` re-export from a deeper submodule — the physical declaration
+        // site's qualified name carries no crate/module prefix at all, so a
+        // qname-prefix test can never line it up with the glob's module path.
+        // Scoped through the same package-id + file-path-substring search
+        // `workspace_packages` gives an explicit import.
+        wildcard_workspace_scope: true,
+    },
     module_skip: None,
     ambient_namespace_prefixes: &[],
     wildcard_builtins: &[],
-    import_resolution: None,
-    // `FromModuleField` reads the `module` field on `EdgeKind::Imports` refs
-    // (the `use crate_name::Foo` import binding), so the file context carries
-    // `{imported_name: "Foo", module_path: Some("crate_name")}`. The
-    // imported_namespace rule then matches a bare `Foo` TypeRef to the
-    // symbol whose file path contains `crate-name/` (after hyphen→underscore
-    // normalization, since Cargo uses hyphens in directory names while Rust
-    // module paths use underscores).
-    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
-    // A qualified call (`DbPool::new()`) carries the importing module path on
-    // `r.module` in its verbatim `::` form (`crate::db`). `ByNameUnderModuleDir`
-    // maps the path separators to `/`, probes the `{module}{sep}{target}` qname
-    // under both joins, and falls back to the module leaf (`db`) against the
-    // file stems of `by_name(new)` candidates. Non-terminal: a miss falls
-    // through to the scope / import / qname binders.
-    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::On(
-        crate::type_checker::profile::language_profile::ModuleAnchorBind::ByNameUnderModuleDir,
-    ),
-    module_anchor_terminal: false,
-    // `None`: a Rust ref's `module` is a crate-rooted `::` path with no
-    // relative/absolute split at this layer, so every module runs the
-    // configured `ByNameUnderModuleDir` bind.
-    relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
-    external_by_import: None,
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
-    module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
-    wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
-    namespace_imports_are_wildcards: false,
     delegate_wrappers: &[],
-    ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
-    head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
-    file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
-    alias_module_qname: false,
-    module_prefix_rewrites:
-        crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
-    // A bench/example/test target imports its own package by its published
-    // crate name (`use tantivy::Index`) exactly like a sibling would — Cargo
-    // has no separate "internal" import syntax for it. The workspace-package
-    // scoped bind (keyed on `ProjectContext::workspace_pkg_by_declared_name`,
-    // which registers the crate's own root package alongside its workspace
-    // members) resolves it the same way an npm sibling-package import does.
-    workspace_packages: true,
-    reexport_barrel_stems: &["lib", "main"],
-    // `crate::` is the crate-root path to the current package itself — a
-    // `use crate::Thing;` (or an inline `crate::db::Pool` path) names this
-    // file's own package, not a sibling by declared name. Resolved against
-    // the ref's own `file_package_id` rather than
-    // `workspace_pkg_by_declared_name`, so a re-exported name (`pub use
-    // thing::Thing;` at the crate root) binds the same way a direct
-    // declaration would — both are members of the same package.
-    self_package_root: Some("crate"),
-    // `use tantivy::collector::*;` brings every name the `collector` module
-    // exposes into bare scope, including ones only reachable through a
-    // `pub use` re-export from a deeper submodule — the physical declaration
-    // site's qualified name carries no crate/module prefix at all, so a
-    // qname-prefix test can never line it up with the glob's module path.
-    // Scoped through the same package-id + file-path-substring search
-    // `workspace_packages` gives an explicit import.
-    wildcard_workspace_scope: true,
     overload_pick_all: false,
     argument_dependent_lookup: false,
     // `Self::Output` / `<C as Trait>::Item` return strings project through the

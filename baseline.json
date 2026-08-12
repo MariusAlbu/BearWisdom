@@ -1739,9 +1739,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/dart-appflowy",
       "perf": {
-        "end_ws_mb": 149,
+        "end_ws_mb": 158,
         "files_per_sec": 5,
-        "index_duration_ms": 747248
+        "index_duration_ms": 796186
       },
       "project": "dart-appflowy",
       "rate_by_language": {
@@ -2784,7 +2784,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 54
+        "min_resolution_rate": 79
       },
       "code_chunks": 66883,
       "drained_refs": 3030,
@@ -2793,8 +2793,8 @@
         "http_call": 207
       },
       "flow_edges": 207,
-      "internal_edges": 73588,
-      "internal_unresolved": 60511,
+      "internal_edges": 106653,
+      "internal_unresolved": 27831,
       "languages": {
         "c": 1,
         "css": 6,
@@ -2816,28 +2816,28 @@
       },
       "path": "F:/Work/Projects/TestProjects/elixir-plausible",
       "perf": {
-        "end_ws_mb": 164,
-        "files_per_sec": 25,
-        "index_duration_ms": 68629
+        "end_ws_mb": 175,
+        "files_per_sec": 2,
+        "index_duration_ms": 741484
       },
       "project": "elixir-plausible",
       "rate_by_language": {
         "c": 0.0,
         "dockerfile": 0.0,
         "eex": 14.41,
-        "elixir": 52.43,
+        "elixir": 80.88,
         "hcl": 100.0,
-        "heex": 14.44,
+        "heex": 14.87,
         "html": 40.0,
         "javascript": 64.9,
         "markdown": 100.0,
         "shell": 0.0,
         "sql": 58.29,
-        "typescript": 80.19
+        "typescript": 80.13
       },
-      "resolution_rate": 54.88,
+      "resolution_rate": 79.31,
       "routes": 207,
-      "symbols": 17118,
+      "symbols": 23829,
       "unresolved_by_lang_kind": {
         "c.calls": 6,
         "c.type_ref": 64,
@@ -2845,10 +2845,10 @@
         "dockerfile.inherits": 1,
         "eex.calls": 90,
         "eex.type_ref": 11,
-        "elixir.calls": 44276,
-        "elixir.imports": 104,
-        "elixir.type_ref": 10394,
-        "heex.calls": 1099,
+        "elixir.calls": 12254,
+        "elixir.imports": 122,
+        "elixir.type_ref": 9718,
+        "heex.calls": 1092,
         "heex.type_ref": 299,
         "html.calls": 1,
         "html.imports": 17,
@@ -2857,10 +2857,10 @@
         "javascript.type_ref": 715,
         "shell.calls": 1,
         "sql.type_ref": 83,
-        "typescript.calls": 1779,
+        "typescript.calls": 1785,
         "typescript.imports": 1,
         "typescript.instantiates": 2,
-        "typescript.type_ref": 632
+        "typescript.type_ref": 633
       },
       "vendored_files_reclassified": 5
     },
@@ -3393,15 +3393,15 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 49
+        "min_resolution_rate": 51
       },
       "code_chunks": 254110,
-      "drained_refs": 6260,
+      "drained_refs": 6262,
       "files": 1281,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 111087,
-      "internal_unresolved": 111532,
+      "internal_edges": 170710,
+      "internal_unresolved": 161097,
       "languages": {
         "dart": 8,
         "erlang": 38,
@@ -3420,32 +3420,34 @@
       },
       "path": "F:/Work/Projects/TestProjects/fsharp-fable",
       "perf": {
-        "end_ws_mb": 5978,
-        "files_per_sec": 6,
-        "index_duration_ms": 216776
+        "end_ws_mb": 6025,
+        "files_per_sec": 8,
+        "index_duration_ms": 167507
       },
       "project": "fsharp-fable",
       "rate_by_language": {
-        "dart": 17.62,
+        "dart": 13.08,
         "erlang": 62.09,
-        "fsharp": 46.43,
+        "fsharp": 49.6,
         "javascript": 58.06,
         "markdown": 83.33,
-        "php": 66.16,
-        "python": 54.5,
-        "rust": 64.91,
+        "php": 64.81,
+        "python": 54.16,
+        "rust": 64.76,
         "shell": 0.0,
-        "typescript": 93.33
+        "typescript": 93.56
       },
-      "resolution_rate": 49.9,
+      "resolution_rate": 51.45,
       "routes": 0,
       "symbols": 103315,
       "unresolved_by_lang_kind": {
-        "dart.calls": 100,
+        "dart.calls": 98,
+        "dart.implements": 10,
         "dart.imports": 37,
-        "dart.type_ref": 2191,
+        "dart.inherits": 1,
+        "dart.type_ref": 2299,
         "erlang.calls": 1068,
-        "fsharp.calls": 94182,
+        "fsharp.calls": 143573,
         "fsharp.implements": 149,
         "fsharp.imports": 979,
         "fsharp.inherits": 35,
@@ -3455,20 +3457,20 @@
         "markdown.calls": 2,
         "php.calls": 179,
         "php.implements": 6,
-        "php.instantiates": 15,
+        "php.instantiates": 23,
         "php.type_ref": 1,
         "python.calls": 1211,
         "python.imports": 97,
-        "python.type_ref": 3783,
-        "rust.calls": 2802,
+        "python.type_ref": 3821,
+        "rust.calls": 2801,
         "rust.implements": 7,
         "rust.imports": 102,
-        "rust.type_ref": 3969,
+        "rust.type_ref": 3998,
         "shell.calls": 1,
-        "typescript.calls": 237,
+        "typescript.calls": 222,
         "typescript.imports": 4,
         "typescript.instantiates": 14,
-        "typescript.type_ref": 231
+        "typescript.type_ref": 229
       }
     },
     {
@@ -4164,9 +4166,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/go-fiber",
       "perf": {
-        "end_ws_mb": 172,
-        "files_per_sec": 11,
-        "index_duration_ms": 30260
+        "end_ws_mb": 5734,
+        "files_per_sec": 16,
+        "index_duration_ms": 20642
       },
       "project": "go-fiber",
       "rate_by_language": {
@@ -8020,7 +8022,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 72
+        "min_resolution_rate": 77
       },
       "code_chunks": 478468,
       "drained_refs": 39215,
@@ -8028,8 +8030,8 @@
       "flow_edge_types": {},
       "flow_edges": 0,
       "generated_files_reclassified": 2,
-      "internal_edges": 260008,
-      "internal_unresolved": 97212,
+      "internal_edges": 275579,
+      "internal_unresolved": 81636,
       "languages": {
         "c": 109,
         "cmake": 20,
@@ -8057,25 +8059,25 @@
       },
       "path": "F:/Work/Projects/TestProjects/pascal-castle-fresh",
       "perf": {
-        "end_ws_mb": 5042,
-        "files_per_sec": 3,
-        "index_duration_ms": 1302426
+        "end_ws_mb": 5228,
+        "files_per_sec": 4,
+        "index_duration_ms": 879997
       },
       "project": "pascal-castle-fresh",
       "rate_by_language": {
         "c": 77.65,
         "cmake": 80.47,
-        "cpp": 56.98,
+        "cpp": 56.99,
         "html": 0.0,
         "java": 60.99,
         "markdown": 42.86,
         "matlab": 54.19,
-        "pascal": 76.48,
+        "pascal": 81.99,
         "php": 0.0,
         "scss": 0.0,
         "shell": 36.36
       },
-      "resolution_rate": 72.79,
+      "resolution_rate": 77.15,
       "routes": 0,
       "symbols": 271329,
       "unresolved_by_lang_kind": {
@@ -8085,7 +8087,7 @@
         "cmake.calls": 1,
         "cmake.imports": 30,
         "cmake.type_ref": 77,
-        "cpp.calls": 14649,
+        "cpp.calls": 14645,
         "cpp.imports": 788,
         "cpp.inherits": 14,
         "cpp.instantiates": 20,
@@ -8099,9 +8101,9 @@
         "java.type_ref": 246,
         "markdown.calls": 4,
         "matlab.calls": 82,
-        "pascal.calls": 63349,
+        "pascal.calls": 47819,
         "pascal.imports": 2460,
-        "pascal.inherits": 623,
+        "pascal.inherits": 581,
         "php.calls": 4,
         "php.imports": 1,
         "scss.calls": 1,

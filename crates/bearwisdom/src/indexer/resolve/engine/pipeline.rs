@@ -15,7 +15,6 @@ use anyhow::{Context, Result};
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-
 use super::file_context::{self, build_file_context, build_plugin_lookup, build_profiles};
 use super::file_lookup::FileLookup;
 use super::flush::{Edge, RefLog, Unresolved, flush_to_db};
@@ -24,14 +23,13 @@ use crate::db::Database;
 use crate::ecosystem::symbol_index::SymbolLocationIndex;
 use crate::indexer::plugin_state::PluginStateBag;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::contract::{RefContext, SymbolLookup};
+use crate::indexer::resolve::engine::contract::{FlowCacheLookup, RefContext, SymbolLookup};
 use crate::indexer::resolve::engine::contract::chain_walker::parse_type_head_and_args;
 use crate::indexer::resolve::engine::cause::CauseKind;
 use crate::indexer::resolve::engine::{
     semantic_model::{SemanticModel, SolveOutcome},
     compilation::Compilation,
 };
-use crate::indexer::resolve::engine::externals_demand::materialize_externals;
 use crate::indexer::resolve::engine::trace;
 use crate::indexer::resolve::ResolutionStats;
 use crate::languages::LanguagePlugin;
@@ -100,44 +98,24 @@ fn unwrap_async_yield_str<'a>(ty: &'a str, async_wrappers: &[&str]) -> Option<&'
 // Public entry point
 // ---------------------------------------------------------------------------
 
-/// Single-pass resolution for the rule-based engine.
-///
-/// Builds a `Compilation` from `parsed`, resolves every ref in every internal
-/// file once through `SemanticModel`, then bulk-writes the resulting edges and
-/// unresolved_refs to the DB (replacing whatever was there before).
-///
-/// `project_ctx` supplies the generic project data the engine resolves against
-/// (workspace-package names); the `Compilation` snapshots only those generic
-/// fields, never language- or ecosystem-specific state.
-pub fn resolve_single_pass(
+// Tree construction lives in `tree_build`; re-exported so callers keep the
+// established `engine::pipeline::*` path.
+pub use super::tree_build::{materialize_and_build_tree, rebuild_tree};
+
+/// Resolve every internal file in `parsed` against an already-built `tree`
+/// and bulk-write the resulting edges + unresolved_refs to the DB (replacing
+/// whatever was there before). Tail half of the single-pass entry point,
+/// split so a caller can refresh plugin state and rebuild `tree` in between.
+pub fn resolve_from_tree(
     db: &mut Database,
+    mut tree: Compilation,
     parsed: &[ParsedFile],
     symbol_id_map: &HashMap<(String, String), i64>,
     project_ctx: Option<&ProjectContext>,
-    arena: Arc<TypeArena>,
-    loc: Arc<SymbolLocationIndex>,
 ) -> Result<ResolutionStats> {
-    // Classify ambient globals in the eager batch (internal files + the
-    // eagerly-walked externals, including the synthetic TS lib module) so the
-    // ambient-scope rung covers lib.*.d.ts / `@types` globals. Classification is
-    // ecosystem knowledge; the engine only consults the resulting qname set.
-    let ambient_qnames = crate::ecosystem::ambient::ambient_global_qnames(parsed);
-    let mut tree = Compilation::build_with_context(
-        parsed,
-        symbol_id_map,
-        Arc::clone(&arena),
-        project_ctx,
-        &ambient_qnames,
-    );
-
     let profiles = build_profiles();
     let plugins = build_plugin_lookup();
     let plugin_state = project_ctx.map(|c| &c.plugin_state);
-
-    // Grow the tree with the externals the project reaches. After this the tree
-    // holds internal + external symbols and the resolve loop treats them alike.
-    materialize_externals(db, &mut tree, parsed, &loc, &arena, &profiles)
-        .context("Failed to materialize external symbols")?;
 
     // Resolve `ReturnType<typeof fn>` declared return types now that the wrapped
     // (possibly external) functions are materialized, so a wrapper's return type
@@ -199,6 +177,28 @@ pub fn resolve_single_pass(
         .context("Failed to persist symbol type info")?;
 
     Ok(stats)
+}
+
+/// Single-pass resolution: `materialize_and_build_tree` then
+/// `resolve_from_tree`, no plugin-state refresh point in between. Callers
+/// that refresh plugin cross-file state against a demand-pulled external
+/// batch (see `indexer::plugin_state_phase`) call the two halves directly
+/// instead — `full_index` does this.
+///
+/// `project_ctx` supplies the generic project data the engine resolves against
+/// (workspace-package names); the `Compilation` snapshots only those generic
+/// fields, never language- or ecosystem-specific state.
+pub fn resolve_single_pass(
+    db: &mut Database,
+    parsed: &[ParsedFile],
+    symbol_id_map: &HashMap<(String, String), i64>,
+    project_ctx: Option<&ProjectContext>,
+    arena: Arc<TypeArena>,
+    loc: Arc<SymbolLocationIndex>,
+) -> Result<ResolutionStats> {
+    let (tree, _ext_parsed, _ext_id_map) =
+        materialize_and_build_tree(db, parsed, symbol_id_map, project_ctx, arena, loc)?;
+    resolve_from_tree(db, tree, parsed, symbol_id_map, project_ctx)
 }
 
 /// Incremental resolution for the rule-based engine — the complement of

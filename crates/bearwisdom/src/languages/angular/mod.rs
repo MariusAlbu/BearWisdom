@@ -18,19 +18,6 @@ pub mod extract;
 pub(crate) mod profile;
 pub use profile::ANGULAR_PROFILE;
 
-/// Maps an Angular template file to its paired TypeScript component file.
-/// `.component.html` → `.component.ts`, etc.
-pub(crate) fn paired_ts_for_template(file_path: &str) -> Option<String> {
-    const SUFFIXES: &[&str] = &[".component.html", ".container.html", ".dialog.html"];
-    for suffix in SUFFIXES {
-        if let Some(stem) = file_path.strip_suffix(suffix) {
-            let ts_suffix = suffix.trim_end_matches(".html").to_string() + ".ts";
-            return Some(format!("{stem}{ts_suffix}"));
-        }
-    }
-    None
-}
-
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
@@ -87,10 +74,6 @@ impl LanguagePlugin for AngularPlugin {
 
     fn keywords(&self) -> &'static [&'static str] {
         crate::languages::typescript::keywords::KEYWORDS
-    }
-
-    fn companion_file_for_imports(&self, file_path: &str) -> Option<String> {
-        paired_ts_for_template(file_path)
     }
 
     fn profile(

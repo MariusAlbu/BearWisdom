@@ -32,6 +32,8 @@ impl FileLookup {
     }
 }
 
+impl crate::indexer::resolve::engine::contract::FlowCacheLookup for FileLookup {}
+
 impl SymbolLookup for FileLookup {
     fn by_name(&self, name: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(self.by_name.get(name).map(|v| v.as_slice()).unwrap_or(&[]))

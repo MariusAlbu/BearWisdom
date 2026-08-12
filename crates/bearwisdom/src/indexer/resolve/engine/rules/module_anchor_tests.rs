@@ -62,8 +62,11 @@ fn by_name_under_module_dir_qname_probe() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
             implicit_root_types: &[],
-            module_anchor: ModuleAnchor::On(ModuleAnchorBind::ByNameUnderModuleDir),
-            module_prefix_rewrites: ModulePrefixRewrites::Off,
+            imports: crate::type_checker::profile::language_profile::ImportAxes {
+                module_anchor: ModuleAnchor::On(ModuleAnchorBind::ByNameUnderModuleDir),
+                module_prefix_rewrites: ModulePrefixRewrites::Off,
+                ..DEFAULT_PROFILE.imports
+            },
             ..DEFAULT_PROFILE
         };
     let lookup = Lookup::new().with(sym(10, "User", "models.User", "class", "src/models/user.py"));
@@ -76,8 +79,11 @@ fn by_name_under_module_dir_path_containment() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
             implicit_root_types: &[],
-            module_anchor: ModuleAnchor::On(ModuleAnchorBind::ByNameUnderModuleDir),
-            module_prefix_rewrites: ModulePrefixRewrites::Off,
+            imports: crate::type_checker::profile::language_profile::ImportAxes {
+                module_anchor: ModuleAnchor::On(ModuleAnchorBind::ByNameUnderModuleDir),
+                module_prefix_rewrites: ModulePrefixRewrites::Off,
+                ..DEFAULT_PROFILE.imports
+            },
             ..DEFAULT_PROFILE
         };
     // The qname is `TextChoices` (no `models.` prefix) but the file contains `models/`.
@@ -95,8 +101,11 @@ fn path_containment_prefers_top_level_over_member() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
             implicit_root_types: &[],
-            module_anchor: ModuleAnchor::On(ModuleAnchorBind::ByNameUnderModuleDir),
-            module_prefix_rewrites: ModulePrefixRewrites::Off,
+            imports: crate::type_checker::profile::language_profile::ImportAxes {
+                module_anchor: ModuleAnchor::On(ModuleAnchorBind::ByNameUnderModuleDir),
+                module_prefix_rewrites: ModulePrefixRewrites::Off,
+                ..DEFAULT_PROFILE.imports
+            },
             ..DEFAULT_PROFILE
         };
     // The member registers first under the name; the top-level fn must win.
@@ -114,8 +123,11 @@ fn path_containment_falls_back_to_member_when_no_top_level() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
             implicit_root_types: &[],
-            module_anchor: ModuleAnchor::On(ModuleAnchorBind::ByNameUnderModuleDir),
-            module_prefix_rewrites: ModulePrefixRewrites::Off,
+            imports: crate::type_checker::profile::language_profile::ImportAxes {
+                module_anchor: ModuleAnchor::On(ModuleAnchorBind::ByNameUnderModuleDir),
+                module_prefix_rewrites: ModulePrefixRewrites::Off,
+                ..DEFAULT_PROFILE.imports
+            },
             ..DEFAULT_PROFILE
         };
     let lookup =
@@ -129,7 +141,10 @@ fn member_of_module_type_resolves() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
             implicit_root_types: &[],
-            module_anchor: ModuleAnchor::On(ModuleAnchorBind::MemberOfModuleType),
+            imports: crate::type_checker::profile::language_profile::ImportAxes {
+                module_anchor: ModuleAnchor::On(ModuleAnchorBind::MemberOfModuleType),
+                ..DEFAULT_PROFILE.imports
+            },
             ..DEFAULT_PROFILE
         };
     let member = sym(30, "Latitude", "Point.Latitude", "field", "src/geo.f90");
@@ -143,8 +158,11 @@ fn passes_when_no_module_on_ref() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
             implicit_root_types: &[],
-            module_anchor: ModuleAnchor::On(ModuleAnchorBind::ByNameUnderModuleDir),
-            module_prefix_rewrites: ModulePrefixRewrites::Off,
+            imports: crate::type_checker::profile::language_profile::ImportAxes {
+                module_anchor: ModuleAnchor::On(ModuleAnchorBind::ByNameUnderModuleDir),
+                module_prefix_rewrites: ModulePrefixRewrites::Off,
+                ..DEFAULT_PROFILE.imports
+            },
             ..DEFAULT_PROFILE
         };
     let lookup = Lookup::new().with(sym(40, "User", "models.User", "class", "src/models.py"));

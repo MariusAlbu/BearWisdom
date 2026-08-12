@@ -65,6 +65,7 @@ const PY_PRIMITIVES: &[(&str, PrimKind)] = &[
 pub const PYTHON_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
     implicit_prelude_namespaces: &[],
+    compiled_name_prefixes: &[],
     id: "python",
     qname_separator: ".",
     self_keywords: &["self", "cls"],
@@ -108,37 +109,39 @@ pub const PYTHON_PROFILE: LanguageProfile = LanguageProfile {
     // builtin's name is never at risk.
     builtin_skip: Some(super::predicates::is_python_builtin),
     namespace_decline: None,
-    decline_qualified_when_prefix_imported: false,
+    imports: crate::type_checker::profile::language_profile::ImportAxes {
+        decline_qualified_when_prefix_imported: false,
+        import_resolution: None,
+        import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
+        // A module-carrying ref binds by anchor: a relative `.foo`/`..bar` module
+        // resolves via `in_module_from` and binds the bare name there; an absolute
+        // `models`-style module maps to a directory and accepts any kind-compatible
+        // file under it (`models.TextChoices` at `.../models/enums.py`).
+        module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::On(
+            crate::type_checker::profile::language_profile::ModuleAnchorBind::NameExactKind,
+        ),
+        module_anchor_terminal: false,
+        relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::DotPrefix,
+        external_by_import: None,
+        module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
+        wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
+        namespace_imports_are_wildcards: false,
+        ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
+        head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
+        file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
+        alias_module_qname: false,
+        module_prefix_rewrites:
+            crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+        workspace_packages: false,
+        reexport_barrel_stems: &["index"],
+        self_package_root: None,
+        wildcard_workspace_scope: false,
+    },
     module_skip: None,
     ambient_namespace_prefixes: &[],
     wildcard_builtins: &[],
-    import_resolution: None,
-    import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
-    // A module-carrying ref binds by anchor: a relative `.foo`/`..bar` module
-    // resolves via `in_module_from` and binds the bare name there; an absolute
-    // `models`-style module maps to a directory and accepts any kind-compatible
-    // file under it (`models.TextChoices` at `.../models/enums.py`).
-    module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::On(
-        crate::type_checker::profile::language_profile::ModuleAnchorBind::NameExactKind,
-    ),
-    module_anchor_terminal: false,
-    relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::DotPrefix,
-    external_by_import: None,
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
-    module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
-    wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
-    namespace_imports_are_wildcards: false,
     delegate_wrappers: &[],
-    ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
-    head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
-    file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
-    alias_module_qname: false,
-    module_prefix_rewrites:
-        crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
-    workspace_packages: false,
-    reexport_barrel_stems: &["index"],
-    self_package_root: None,
-    wildcard_workspace_scope: false,
     overload_pick_all: false,
     argument_dependent_lookup: false,
     associated_type_projection: false,

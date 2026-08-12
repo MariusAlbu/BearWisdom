@@ -44,7 +44,10 @@ fn same_dir_resolves_sibling() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
             implicit_root_types: &[],
-            module_scope: ModuleScope::SameDir,
+            imports: crate::type_checker::profile::language_profile::ImportAxes {
+                module_scope: ModuleScope::SameDir,
+                ..DEFAULT_PROFILE.imports
+            },
             ..DEFAULT_PROFILE
         };
     let lookup = Lookup::new().with(sym(10, "Vec2", "Vec2", "struct", "pkg/math/vec.odin"));
@@ -58,7 +61,10 @@ fn same_dir_declines_different_dir() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
             implicit_root_types: &[],
-            module_scope: ModuleScope::SameDir,
+            imports: crate::type_checker::profile::language_profile::ImportAxes {
+                module_scope: ModuleScope::SameDir,
+                ..DEFAULT_PROFILE.imports
+            },
             ..DEFAULT_PROFILE
         };
     let lookup = Lookup::new().with(sym(20, "Vec2", "Vec2", "struct", "pkg/geo/vec.odin"));
@@ -72,7 +78,10 @@ fn same_dir_unique_resolves_single_candidate() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
             implicit_root_types: &[],
-            module_scope: ModuleScope::SameDirUnique,
+            imports: crate::type_checker::profile::language_profile::ImportAxes {
+                module_scope: ModuleScope::SameDirUnique,
+                ..DEFAULT_PROFILE.imports
+            },
             ..DEFAULT_PROFILE
         };
     let lookup = Lookup::new().with(sym(30, "init", "init", "function", "src/app/a.pas"));
@@ -85,7 +94,10 @@ fn same_dir_unique_declines_ambiguous() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
             implicit_root_types: &[],
-            module_scope: ModuleScope::SameDirUnique,
+            imports: crate::type_checker::profile::language_profile::ImportAxes {
+                module_scope: ModuleScope::SameDirUnique,
+                ..DEFAULT_PROFILE.imports
+            },
             ..DEFAULT_PROFILE
         };
     let lookup = Lookup::new()
@@ -100,7 +112,10 @@ fn sources_target_subtree_resolves() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
             implicit_root_types: &[],
-            module_scope: ModuleScope::SourcesTargetSubtree,
+            imports: crate::type_checker::profile::language_profile::ImportAxes {
+                module_scope: ModuleScope::SourcesTargetSubtree,
+                ..DEFAULT_PROFILE.imports
+            },
             ..DEFAULT_PROFILE
         };
     let lookup = Lookup::new().with(sym(

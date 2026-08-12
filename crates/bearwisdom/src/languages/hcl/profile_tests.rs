@@ -23,7 +23,7 @@ fn hcl_profile_carries_resolution_data() {
     assert!(!skip("aws_instance.web"));
     // Provider-alias heads bind to an in-file `provider` class.
     assert_eq!(
-        HCL_PROFILE.head_alias,
+        HCL_PROFILE.imports.head_alias,
         HeadAliasBind::OnSameFile {
             require_kind: Some("class"),
         }

@@ -57,6 +57,8 @@ impl ComponentLookup {
     }
 }
 
+impl crate::indexer::resolve::engine::contract::FlowCacheLookup for ComponentLookup {}
+
 impl SymbolLookup for ComponentLookup {
     fn by_name(&self, name: &str) -> SymbolSet<'_> {
         self.inner.by_name(name)

@@ -1077,6 +1077,114 @@ fn workspace_package_id_resolves_declared_name_and_deep_import() {
     assert!(!tree.is_workspace_declared_name("@org/utils/sub"));
 }
 
+// ---------------------------------------------------------------------------
+// resolve_module_via_language_resolver — the module_resolution wiring
+// ---------------------------------------------------------------------------
+
+/// Dart's bare-relative import (`import 'foo.dart'`) is neither an
+/// `ext:`-convention package entry nor `is_relative_specifier`-true (no leading
+/// `.`/`/`) — `resolve_module_from` genuinely misses it, and only the language
+/// resolver fallback resolves it against the indexed file set.
+#[test]
+fn dart_bare_relative_specifier_resolves_via_language_resolver() {
+    let arena = Arc::new(TypeArena::new());
+    let foo_sym = make_symbol("Foo", "Foo", SymbolKind::Class, None, None, None);
+    let pf_foo = ParsedFile {
+        language: "dart".to_string(),
+        ..make_parsed_file("lib/foo.dart", vec![foo_sym], vec![])
+    };
+    let main_sym = make_symbol("Main", "Main", SymbolKind::Class, None, None, None);
+    let pf_main = ParsedFile {
+        language: "dart".to_string(),
+        ..make_parsed_file("lib/main.dart", vec![main_sym], vec![])
+    };
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(("lib/foo.dart".to_string(), "Foo".to_string()), 1);
+    id_map.insert(("lib/main.dart".to_string(), "Main".to_string()), 2);
+
+    let tree = Compilation::build(&[pf_foo, pf_main], &id_map, arena);
+
+    assert_eq!(tree.resolve_module_from("lib/main.dart", "foo.dart"), None);
+    assert_eq!(
+        tree.resolve_module_via_language_resolver("dart", "lib/main.dart", "foo.dart"),
+        Some("lib/foo.dart".to_string())
+    );
+}
+
+/// A same-project `package:<self>/...` URI resolves through the OWNING file's
+/// own pubspec-declared package name (`package_id_for_file` → the inverted
+/// `workspace_pkg_by_declared_name`), not a single project-wide guess — proving
+/// the per-file self-package plumbing, not just a hardcoded value.
+#[test]
+fn dart_package_self_specifier_resolves_via_language_resolver() {
+    let arena = Arc::new(TypeArena::new());
+    let user_sym = make_symbol("User", "User", SymbolKind::Class, None, None, None);
+    let mut pf_user = ParsedFile {
+        language: "dart".to_string(),
+        ..make_parsed_file("lib/src/models/user.dart", vec![user_sym], vec![])
+    };
+    pf_user.package_id = Some(1);
+    let main_sym = make_symbol("Main", "Main", SymbolKind::Class, None, None, None);
+    let mut pf_main = ParsedFile {
+        language: "dart".to_string(),
+        ..make_parsed_file("lib/main.dart", vec![main_sym], vec![])
+    };
+    pf_main.package_id = Some(1);
+
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(
+        ("lib/src/models/user.dart".to_string(), "User".to_string()),
+        1,
+    );
+    id_map.insert(("lib/main.dart".to_string(), "Main".to_string()), 2);
+
+    let ctx = ProjectContext {
+        workspace_pkg_by_declared_name: [("app".to_string(), 1)].into_iter().collect(),
+        ..Default::default()
+    };
+    let tree = Compilation::build_with_context(
+        &[pf_user, pf_main],
+        &id_map,
+        arena,
+        Some(&ctx),
+        &std::collections::HashSet::new(),
+    );
+
+    assert_eq!(
+        tree.resolve_module_from("lib/main.dart", "package:app/src/models/user.dart"),
+        None
+    );
+    assert_eq!(
+        tree.resolve_module_via_language_resolver(
+            "dart",
+            "lib/main.dart",
+            "package:app/src/models/user.dart"
+        ),
+        Some("lib/src/models/user.dart".to_string())
+    );
+}
+
+/// TS regression: a genuine external npm specifier the module map doesn't carry
+/// (no `ext:` entry indexed) still declines through the language-resolver
+/// fallback — `NodeModuleResolver` treats a bare, non-`.`-prefixed specifier as
+/// external and returns `None`, same as `resolve_module_from` already did.
+#[test]
+fn ts_bare_external_specifier_still_declines_via_language_resolver() {
+    let arena = Arc::new(TypeArena::new());
+    let symbols = vec![make_symbol("App", "App", SymbolKind::Class, None, None, None)];
+    let pf = make_parsed_file("src/app.ts", symbols, vec![]);
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(("src/app.ts".to_string(), "App".to_string()), 1);
+
+    let tree = Compilation::build(&[pf], &id_map, arena);
+
+    assert_eq!(tree.resolve_module_from("src/app.ts", "lodash"), None);
+    assert_eq!(
+        tree.resolve_module_via_language_resolver("typescript", "src/app.ts", "lodash"),
+        None
+    );
+}
+
 #[test]
 fn symbols_in_package_groups_symbols_by_package_id() {
     let arena = Arc::new(TypeArena::new());

@@ -21,12 +21,18 @@ use crate::indexer::resolve::engine::compilation::Compilation;
 use crate::indexer::resolve::engine::demand_veto::{DemandVeto, FileLanguages};
 use crate::indexer::resolve::engine::relative_imports;
 use crate::indexer::resolve::engine::type_mention_demand;
+use crate::indexer::write::SymbolIdMap;
 use crate::type_checker::core::types::TypeArena;
 use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::{EdgeKind, ParsedFile};
 use crate::walker::WalkedFile;
 use rustc_hash::FxHashMap;
 
+/// Grow `tree` with the externals the project's refs demand and return the
+/// parsed external batch plus its DB id map, so a caller whose plugins carry
+/// cross-file state derived from `parsed` (Elixir's `use`-injection map) can
+/// refresh that state against files this pull surfaced — they never appear
+/// in the eager `parsed` slice the caller built `tree` from.
 pub(super) fn materialize_externals(
     db: &mut Database,
     tree: &mut Compilation,
@@ -34,9 +40,9 @@ pub(super) fn materialize_externals(
     loc: &SymbolLocationIndex,
     arena: &Arc<TypeArena>,
     profiles: &FxHashMap<&'static str, &'static LanguageProfile>,
-) -> Result<()> {
+) -> Result<(Vec<ParsedFile>, SymbolIdMap)> {
     if loc.is_empty() {
-        return Ok(());
+        return Ok((Vec::new(), SymbolIdMap::default()));
     }
 
     // Seed: the external files defining a name an INTERNAL ref reaches.
@@ -61,7 +67,7 @@ pub(super) fn materialize_externals(
         );
     }
     if frontier.is_empty() {
-        return Ok(());
+        return Ok((Vec::new(), SymbolIdMap::default()));
     }
 
     // Transitively pull the external type-dependency closure. A materialized
@@ -144,7 +150,7 @@ pub(super) fn materialize_externals(
         depth += 1;
     }
     if ext_parsed.is_empty() {
-        return Ok(());
+        return Ok((Vec::new(), SymbolIdMap::default()));
     }
 
     // Sorted by virtual path before write/ingest: the closure above discovers
@@ -199,7 +205,7 @@ pub(super) fn materialize_externals(
     if !aliases.is_empty() {
         tree.apply_external_reexport_aliases(&aliases);
     }
-    Ok(())
+    Ok((ext_parsed, ext_id_map))
 }
 
 /// Collect the external files that define a name reached by `refs`, into `out`
@@ -320,9 +326,15 @@ fn parse_external_file(
     let hash = crate::indexer::external_parse_cache::content_hash(&bytes);
     let size = bytes.len() as u64;
 
-    if let Some(cached) =
+    if let Some(mut cached) =
         crate::indexer::external_parse_cache::get(file, &hash, &virtual_path, size, arena)
     {
+        // The cached payload is symbols/refs only (`content` is not part of
+        // the content-addressed cache row) — a plugin's cross-file state pass
+        // that CST-walks a file's source (Elixir's `use`/`__using__` harvest)
+        // would see nothing for a warm-cache hit otherwise. `bytes` is already
+        // on hand from the hash read above, so attach it at no extra I/O cost.
+        cached.content = Some(String::from_utf8_lossy(&bytes).into_owned());
         return Some(cached);
     }
 

@@ -45,8 +45,8 @@ fn open_declarations_are_wildcard_imports() {
     // namespace into bare scope, so the profile must treat plain imports as
     // wildcards and source their module path from the ref's `module` field
     // (which `extract_open` / `extract_hash_r_directives` always set).
-    assert!(FSHARP_PROFILE.namespace_imports_are_wildcards);
-    assert_eq!(FSHARP_PROFILE.import_module_path, ImportModulePath::FromModuleField);
+    assert!(FSHARP_PROFILE.imports.namespace_imports_are_wildcards);
+    assert_eq!(FSHARP_PROFILE.imports.import_module_path, ImportModulePath::FromModuleField);
 }
 
 #[test]
@@ -54,4 +54,22 @@ fn builtin_skip_is_wired_to_the_prelude_operator_predicate() {
     let skip = FSHARP_PROFILE.builtin_skip.expect("F# drains prelude operators");
     assert!(skip("sprintf"));
     assert!(!skip("Some"));
+}
+
+#[test]
+fn prelude_carries_option_and_result_but_not_value_option() {
+    assert!(FSHARP_PROFILE
+        .implicit_prelude_namespaces
+        .contains(&"Microsoft.FSharp.Core.FSharpOption"));
+    assert!(FSHARP_PROFILE
+        .implicit_prelude_namespaces
+        .contains(&"Microsoft.FSharp.Core.FSharpResult"));
+    assert!(!FSHARP_PROFILE
+        .implicit_prelude_namespaces
+        .contains(&"Microsoft.FSharp.Core.FSharpValueOption"));
+}
+
+#[test]
+fn compiled_name_prefix_is_new_for_union_case_factories() {
+    assert_eq!(FSHARP_PROFILE.compiled_name_prefixes, &["New"]);
 }

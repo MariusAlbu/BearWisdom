@@ -44,7 +44,7 @@ impl LookupRule for WildcardImportRule {
             return LookupResult::Pass;
         }
         let edge_kind = ctx.edge_kind();
-        let mode = ctx.profile.wildcard_match;
+        let mode = ctx.profile.imports.wildcard_match;
         let norm = ctx.profile.name_normalization;
 
         let mut wildcards: Vec<&str> = ctx
@@ -61,7 +61,7 @@ impl LookupRule for WildcardImportRule {
         // them at all. Gated with the namespace-wildcard opt-in: a language
         // whose plain imports aren't wildcards has no implicit-namespace
         // semantics either.
-        if ctx.profile.namespace_imports_are_wildcards {
+        if ctx.profile.imports.namespace_imports_are_wildcards {
             wildcards.extend(
                 ctx.lookup
                     .implicit_wildcard_namespaces(ctx.ref_ctx.file_package_id)

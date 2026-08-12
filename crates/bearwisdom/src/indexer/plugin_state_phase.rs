@@ -65,19 +65,25 @@ pub fn populate_pre_externals(
 /// SeleniumLibrary` to the site-packages package + its DynamicCore keyword
 /// methods now that those files are in `parsed`.
 ///
-/// `robot_external_sources` is stashed in the bag first so the rebuild can
-/// read the `ext:` library files' on-disk source for the keyword-method
-/// scan — the hook reads it back from the same bag it writes into. The bag
-/// is then taken out so a hook can hold `&mut bag` while `project_ctx` is
-/// still borrowed immutably for the same call.
+/// `robot_external_sources` is stashed in the bag first (when present) so the
+/// rebuild can read the `ext:` library files' on-disk source for the
+/// keyword-method scan — the hook reads it back from the same bag it writes
+/// into. `None` skips that slot untouched: a caller re-running this phase
+/// after a later materialization pass (e.g. a demand-pulled batch a plugin's
+/// cross-file state needs to see — `full_index`'s post-resolve refresh) has
+/// no fresh Robot sources to report and must not clobber the ones the first
+/// call already stored. The bag is then taken out so a hook can hold `&mut
+/// bag` while `project_ctx` is still borrowed immutably for the same call.
 pub fn populate_post_externals(
     registry: &LanguageRegistry,
     project_ctx: &mut ProjectContext,
     parsed: &[ParsedFile],
     project_root: &Path,
-    robot_external_sources: RobotExternalSources,
+    robot_external_sources: Option<RobotExternalSources>,
 ) {
-    project_ctx.plugin_state.set::<RobotExternalSources>(robot_external_sources);
+    if let Some(sources) = robot_external_sources {
+        project_ctx.plugin_state.set::<RobotExternalSources>(sources);
+    }
     let mut bag = std::mem::take(&mut project_ctx.plugin_state);
     for plugin in registry.all() {
         if !project_ctx.language_presence.contains(plugin.id()) {
@@ -95,6 +101,12 @@ pub fn populate_post_externals(
 /// `LanguagePlugin::synthesize_project_symbols` implementations drop any
 /// synthesized symbol whose `qualified_name` collides with a real one
 /// before returning it).
+///
+/// Returns `true` when at least one symbol was synthesized — a caller
+/// holding an already-built `Compilation` (the tree was built before this
+/// phase could run, e.g. `full_index`'s post-materialization refresh) needs
+/// this to know whether the tree must be rebuilt to include the new members;
+/// `false` means the existing tree is still accurate.
 pub fn synthesize_and_persist(
     registry: &LanguageRegistry,
     project_ctx: &ProjectContext,
@@ -102,7 +114,7 @@ pub fn synthesize_and_persist(
     db: &mut Database,
     symbol_id_map: &mut SymbolIdMap,
     workspace_arena: &TypeArena,
-) -> Result<()> {
+) -> Result<bool> {
     let mut synthesized_by_path: HashMap<String, Vec<ExtractedSymbol>> = HashMap::new();
     for plugin in registry.all() {
         if !project_ctx.language_presence.contains(plugin.id()) {
@@ -113,7 +125,7 @@ pub fn synthesize_and_persist(
         }
     }
     if synthesized_by_path.is_empty() {
-        return Ok(());
+        return Ok(false);
     }
 
     let path_to_idx: HashMap<String, usize> = parsed
@@ -145,5 +157,9 @@ pub fn synthesize_and_persist(
     if synthesized_count > 0 {
         info!("Synthesized {synthesized_count} project-wide member symbols");
     }
-    Ok(())
+    Ok(synthesized_count > 0)
 }
+
+#[cfg(test)]
+#[path = "plugin_state_phase_tests.rs"]
+mod tests;
