@@ -8,7 +8,9 @@ mod helpers;
 pub(crate) mod keywords;
 pub(crate) mod phoenix_routes;
 mod type_refs;
+mod using_harvest;
 pub(crate) mod using_injection;
+mod using_synthesis;
 pub(crate) mod predicates;
 pub(crate) mod profile;
 pub use profile::ELIXIR_PROFILE;
@@ -123,19 +125,20 @@ impl LanguagePlugin for ElixirPlugin {
         state.set(using_injection::build_using_injection_map(parsed));
     }
 
-    /// One-hop `use M` redirect: for each wildcard-eligible `Imports` ref
-    /// whose module M defines `__using__`/`using do` (per
-    /// `ElixirProjectState`), turn M's own `import`/`alias` injection
-    /// directives into synthetic imports for the `use`ing file.
+    /// Transitive `use M` redirect: for each wildcard-eligible `Imports` ref
+    /// whose module M has an injection set (per `ElixirProjectState`), turn
+    /// M's fully-resolved `import`/`alias` injection directives — M's own,
+    /// plus every nested `use N` hop M's chain reaches — into synthetic
+    /// imports for the `use`ing file.
     ///
     /// `alias`/`require` directives never invoke `__using__`, so they're
     /// excluded via `is_import_binding`. A plain `import M` is structurally
     /// identical to `use M` at the ref level — Elixir's extractor emits the
-    /// same shape for both — but `injections_for` only returns entries for
-    /// modules that actually define the macro, and real code only ever
-    /// `use`s such a module rather than `import`ing it, so that lookup
-    /// doubles as the `use`-site filter without a separate directive-kind
-    /// field on `ExtractedRef`.
+    /// same shape for both — but `injections_for`/`flattened_injections_for`
+    /// only return entries for modules that actually inject something, and
+    /// real code only ever `use`s such a module rather than `import`ing it,
+    /// so that lookup doubles as the `use`-site filter without a separate
+    /// directive-kind field on `ExtractedRef`.
     fn extra_wildcard_imports(&self, state: &PluginStateBag, file: &ParsedFile) -> Vec<ImportEntry> {
         let Some(project_state) = state.get::<using_injection::ElixirProjectState>() else {
             return Vec::new();
@@ -148,10 +151,7 @@ impl LanguagePlugin for ElixirPlugin {
             let Some(used_module) = r.module.as_deref() else {
                 continue;
             };
-            let Some(injections) = project_state.injections_for(used_module) else {
-                continue;
-            };
-            for inj in injections {
+            for inj in project_state.flattened_injections_for(used_module) {
                 match inj {
                     using_injection::ElixirInjection::Import { module } => {
                         let name = module.rsplit('.').next().unwrap_or(module).to_string();
@@ -177,13 +177,30 @@ impl LanguagePlugin for ElixirPlugin {
                             is_wildcard: false,
                         });
                     }
-                    // A nested `use N` inside M's own quote block is a
-                    // second hop — left for a future transitive expansion.
+                    // A function defined literally inside a `__using__` quote
+                    // block has no backing symbol anywhere in source, so
+                    // there is nothing for a wildcard import to redirect to
+                    // until the consuming module's own members are
+                    // synthesized.
+                    using_injection::ElixirInjection::Def { .. } => {}
+                    // `flattened_injections_for` resolves every `Use` hop
+                    // before returning, so this variant never appears here.
                     using_injection::ElixirInjection::Use { .. } => {}
                 }
             }
         }
         out
+    }
+
+    fn synthesize_project_symbols(
+        &self,
+        state: &PluginStateBag,
+        parsed: &[ParsedFile],
+    ) -> Vec<(String, Vec<crate::types::ExtractedSymbol>)> {
+        let Some(project_state) = state.get::<using_injection::ElixirProjectState>() else {
+            return Vec::new();
+        };
+        using_synthesis::synthesize_def_members(project_state, parsed)
     }
 }
 

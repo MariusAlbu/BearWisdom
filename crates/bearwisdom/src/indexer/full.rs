@@ -15,6 +15,7 @@ use crate::db::Database;
 use crate::indexer::changeset;
 use crate::indexer::mem_probe;
 use crate::indexer::phase_timer;
+use crate::indexer::plugin_state_phase;
 use crate::indexer::ref_cache::RefCache;
 use crate::indexer::resolve;
 use crate::indexer::write;
@@ -693,21 +694,9 @@ fn full_index_inner(
             crate::ecosystem::default_registry(),
         );
 
-    // --- Step 4b: Plugin-owned cross-file state ---
-    // Each active plugin scans the parsed file slice and stores its
-    // cross-file state in the bag. Populate into a separate bag first to
-    // satisfy the borrow checker (can't borrow `project_ctx` mutably and
-    // immutably at the same time), then assign the completed bag.
-    {
-        let mut plugin_state = crate::indexer::plugin_state::PluginStateBag::new();
-        for plugin in registry.all() {
-            if !project_ctx.language_presence.contains(plugin.id()) {
-                continue;
-            }
-            plugin.populate_project_state(&mut plugin_state, &parsed, project_root, &project_ctx);
-        }
-        project_ctx.plugin_state = plugin_state;
-    }
+    // --- Step 4b: Plugin-owned cross-file state (pre-externals) ---
+    // See `indexer::plugin_state_phase` for the full phase sequence.
+    plugin_state_phase::populate_pre_externals(registry, &mut project_ctx, &parsed, project_root);
     mem_probe::probe("04_project_ctx_built");
 
     // --- Step 4c: Write per-package dependency graph (M3) ---
@@ -926,41 +915,31 @@ fn full_index_inner(
     mem_probe::probe("08_externals_written");
 
     // --- Step 4d.2: Plugin-owned state rebuild over the full slice ---
-    // `populate_project_state` ran on project files only (before externals).
-    // Plugins whose binding maps must see externally-walked symbols override
-    // `populate_project_state_post_externals` to rebuild against the merged
-    // slice; the rest keep their pre-externals entry untouched. Robot is the
-    // first user: it re-resolves `Library  SeleniumLibrary` to the
-    // site-packages package + its DynamicCore keyword methods now that those
-    // files are in `parsed`.
-    {
-        // Stash robot's externals abs-path map in the bag so the rebuild can
-        // read the `ext:` library files' on-disk source for the keyword-method
-        // scan — the hook reads it back from the same bag it writes into.
-        project_ctx
-            .plugin_state
-            .set::<crate::languages::robot::RobotExternalSources>(robot_external_sources);
-        // Take the bag out so a hook can hold `&mut bag` while `project_ctx`
-        // is still borrowed immutably for the same call.
-        let mut bag = std::mem::take(&mut project_ctx.plugin_state);
-        for plugin in registry.all() {
-            if !project_ctx.language_presence.contains(plugin.id()) {
-                continue;
-            }
-            plugin.populate_project_state_post_externals(
-                &mut bag,
-                &parsed,
-                project_root,
-                &project_ctx,
-            );
-        }
-        project_ctx.plugin_state = bag;
-    }
+    // See `indexer::plugin_state_phase` for why this rebuild exists.
+    plugin_state_phase::populate_post_externals(
+        registry,
+        &mut project_ctx,
+        &parsed,
+        project_root,
+        robot_external_sources,
+    );
 
     // `_` binds so compiler doesn't flag unused — these feed the Stage 2
     // loop below.
     let _ = &demand_driven_roots;
     let _ = &demand_driven_ecosystems;
+
+    // --- Step 4d.3: Project-wide member synthesis ---
+    // See `indexer::plugin_state_phase` for the mechanism and why it runs here.
+    plugin_state_phase::synthesize_and_persist(
+        registry,
+        &project_ctx,
+        &mut parsed,
+        db,
+        &mut symbol_id_map,
+        workspace_arena.as_ref(),
+    )?;
+    mem_probe::probe("08c_project_symbols_synthesized");
 
     // --- Step 4e: Cross-file containment + mergeable collapse ---
     //

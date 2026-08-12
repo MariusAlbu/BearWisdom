@@ -107,9 +107,12 @@ fn hide_restricted_import_is_approximated_as_wildcard() {
 }
 
 #[test]
-fn export_directive_is_never_wildcard() {
-    // `export` never opens the declaring file's own scope, regardless of
-    // its combinators.
+fn plain_export_emits_wildcard_reexport() {
+    // A plain `export '...';` — no `show`/`hide` — re-exports every
+    // declaration under the wildcard sentinel, tagged `is_reexport` so the
+    // gate in `build_file_context` never treats it as opening the
+    // DECLARING file's own scope. `module` keeps the raw URI (unreduced) —
+    // the re-export ladder resolves it as a real specifier.
     let src = "export 'package:flutter/material.dart';\n";
     let r = extract::extract(src);
     let imp = r
@@ -117,5 +120,60 @@ fn export_directive_is_never_wildcard() {
         .iter()
         .find(|r| r.kind == EdgeKind::Imports)
         .expect("import ref");
-    assert_ne!(imp.target_name, "*");
+    assert_eq!(imp.target_name, "*");
+    assert!(imp.is_reexport);
+    assert_eq!(imp.module.as_deref(), Some("package:flutter/material.dart"));
+}
+
+#[test]
+fn relative_export_keeps_raw_specifier() {
+    // A relative export's `module` is the literal specifier text, not a
+    // package identity or file stem — the reexport ladder joins it against
+    // the exporting file's own directory.
+    let src = "export './sign_in_bloc.dart';\n";
+    let r = extract::extract(src);
+    let imp = r
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Imports)
+        .expect("import ref");
+    assert_eq!(imp.target_name, "*");
+    assert!(imp.is_reexport);
+    assert_eq!(imp.module.as_deref(), Some("./sign_in_bloc.dart"));
+}
+
+#[test]
+fn show_restricted_export_emits_named_reexports() {
+    // `show X, Y` limits a re-export to those names — one is_reexport ref
+    // per shown name, target_name = the shown identifier, mirroring how a
+    // named `export { X } from '...'` reexport ref is shaped.
+    let src = "export 'models.dart' show User, Post;\n";
+    let r = extract::extract(src);
+    let names: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Imports && r.is_reexport)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert_eq!(names, vec!["User", "Post"]);
+    assert!(r
+        .refs
+        .iter()
+        .all(|r| !r.is_reexport || r.module.as_deref() == Some("models.dart")));
+}
+
+#[test]
+fn hide_restricted_export_is_approximated_as_wildcard_reexport() {
+    // `hide X` still re-exports every OTHER declaration; approximated as a
+    // full wildcard re-export rather than tracking the excluded set — same
+    // approximation the import path uses for `hide`.
+    let src = "export 'package:flutter/material.dart' hide Widget;\n";
+    let r = extract::extract(src);
+    let imp = r
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Imports)
+        .expect("import ref");
+    assert_eq!(imp.target_name, "*");
+    assert!(imp.is_reexport);
 }

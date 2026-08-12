@@ -64,6 +64,12 @@ pub struct SymbolLocationIndex {
     /// carries the declaration's file + declared name so the lookup layer can
     /// register `{module}.{name}` as a qname ALIAS of that single declaration.
     reexport_aliases: HashMap<(String, String), (PathBuf, String)>,
+    /// `file → language` for paths a single-language ecosystem stamped via
+    /// `tag_language`. Consulted by the demand pull ahead of extension-based
+    /// dispatch, so a file whose extension is claimed by more than one
+    /// language plugin (FPC `.pp` units vs Puppet `.pp` manifests) still
+    /// parses with the extractor its OWNING ecosystem's tree actually holds.
+    path_language: HashMap<PathBuf, &'static str>,
 }
 
 impl SymbolLocationIndex {
@@ -187,6 +193,31 @@ impl SymbolLocationIndex {
         for (key, target) in other.reexport_aliases {
             self.reexport_aliases.entry(key).or_insert(target);
         }
+        for (file, language) in other.path_language {
+            self.path_language.entry(file).or_insert(language);
+        }
+    }
+
+    /// Stamp every file currently registered in this index with `language`.
+    /// Called once by the ecosystem that built this index when its
+    /// `languages()` names exactly one language — every path it just
+    /// registered was produced by that ecosystem's own dep roots, so the
+    /// language is known independent of the file's extension.
+    pub fn tag_language(&mut self, language: &'static str) {
+        let mut files: Vec<PathBuf> = self.entries.values().cloned().collect();
+        files.extend(self.by_name.values().flatten().map(|(_, f)| f.clone()));
+        files.extend(self.module_entries.values().cloned());
+        files.extend(self.reexport_aliases.values().map(|(f, _)| f.clone()));
+        for file in files {
+            self.path_language.entry(file).or_insert(language);
+        }
+    }
+
+    /// The language hint recorded for `file` via `tag_language`, or `None`
+    /// when no single-language ecosystem claimed it — the caller falls back
+    /// to extension-based dispatch in that case.
+    pub fn language_hint(&self, file: &Path) -> Option<&'static str> {
+        self.path_language.get(file).copied()
     }
 
     /// Number of recorded (module, name) pairs — diagnostic only.

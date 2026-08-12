@@ -1,6 +1,7 @@
 pub mod canonical_form;
 pub mod changeset;
 pub mod demand;
+pub(crate) mod demand_symbol_index;
 pub mod embedded_regions;
 pub mod external_parse_cache;
 pub(crate) mod external_parse_payload;
@@ -23,6 +24,7 @@ pub mod module_resolution;
 pub mod parse_file;
 pub mod phase_timer;
 pub mod plugin_state;
+pub mod plugin_state_phase;
 pub mod post_index;
 pub mod query_builtins;
 pub mod resolve_diff;

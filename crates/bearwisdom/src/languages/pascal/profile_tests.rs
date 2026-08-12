@@ -53,7 +53,8 @@ fn pascal_builtin_skip_drains_casts_declines_project_declared_names() {
     assert!(skip("Integer"));
     assert!(skip("single")); // case-insensitive: Pascal identifiers fold case
     assert!(!skip("FreeAndNil"));
-    assert!(!skip("Inc"));
+    assert!(skip("Inc")); // zero real RTL declarations; compiler intrinsic
+    assert!(!skip("Length")); // TPointF.Length in objpas/types.pp
     assert!(!skip("TObject"));
 }
 

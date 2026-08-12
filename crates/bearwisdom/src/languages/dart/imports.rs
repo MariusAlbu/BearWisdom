@@ -32,21 +32,35 @@ fn has_alias_clause(node: &Node) -> bool {
 /// wildcard. A `hide` combinator (or no combinator at all) still brings in
 /// every OTHER declaration, approximated here as a full wildcard.
 fn combinators_allow_wildcard(node: &Node, src: &str) -> bool {
+    show_combinator_names(node, src).is_none()
+}
+
+/// The names listed in `node`'s `show` combinator(s) (`export '...' show A,
+/// B;`), or `None` when there is no `show` combinator — a plain or
+/// `hide`-restricted directive brings in every OTHER declaration instead of
+/// a fixed list.
+fn show_combinator_names(node: &Node, src: &str) -> Option<Vec<String>> {
+    let mut names: Vec<String> = Vec::new();
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() != "combinator" {
             continue;
         }
         let mut inner = child.walk();
-        let is_show = child
-            .children(&mut inner)
-            .next()
-            .is_some_and(|first| node_text(first, src) == "show");
-        if is_show {
-            return false;
+        let mut grandchildren = child.children(&mut inner);
+        let Some(first) = grandchildren.next() else {
+            continue;
+        };
+        if node_text(first, src) != "show" {
+            continue;
+        }
+        for c in grandchildren {
+            if c.kind() == "identifier" {
+                names.push(node_text(c, src));
+            }
         }
     }
-    true
+    (!names.is_empty()).then_some(names)
 }
 
 fn extract_import_spec_recursive(
@@ -61,13 +75,18 @@ fn extract_import_spec_recursive(
         || k == "import_or_export"
         || k == "library_export"
     {
+        let is_export = k == "library_export";
+        // An `export` directive never opens the declaring file's own scope —
+        // route it through the re-export ladder instead of the
+        // wildcard-import one. A `show` combinator restricts the re-export
+        // to those names; a plain or `hide`-restricted export re-exports
+        // every OTHER declaration, approximated as a full wildcard
+        // re-export (same hide approximation the import path uses).
+        let export_show_names = is_export.then(|| show_combinator_names(node, src)).flatten();
         // A plain `import '...';` — no `as` prefix, no `show` combinator —
-        // brings every declaration into unqualified scope. `export`
-        // directives never open the declaring file's own scope, so they are
-        // never wildcard-worthy regardless of their combinators.
-        let wildcard_worthy = k == "import_specification"
-            && !has_alias_clause(node)
-            && combinators_allow_wildcard(node, src);
+        // brings every declaration into unqualified scope.
+        let wildcard_worthy =
+            !is_export && !has_alias_clause(node) && combinators_allow_wildcard(node, src);
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             let ck = child.kind();
@@ -79,6 +98,10 @@ fn extract_import_spec_recursive(
                     node_text(child, src)
                 };
                 let module = raw.trim_matches('"').trim_matches('\'').to_string();
+                if is_export {
+                    push_export_refs(&export_show_names, &module, current_symbol_count, child, refs);
+                    continue;
+                }
                 let stem = module
                     .rsplit('/')
                     .next()
@@ -126,6 +149,44 @@ fn extract_import_spec_recursive(
                 extract_import_spec_recursive(&child, src, current_symbol_count, refs);
             }
         }
+    }
+}
+
+/// Emit re-export refs for a `library_export`'s URI child: one per shown
+/// name when `show_names` is `Some`, otherwise a single wildcard re-export
+/// (`target_name: "*"`). `module` is kept as the raw, unreduced URI text —
+/// the re-export ladder (`follow_reexports`, the Dart module resolver)
+/// resolves relative and `package:<self>/` specifiers itself and expects the
+/// literal specifier, not the wildcard-import ladder's reduced package
+/// identity.
+fn push_export_refs(
+    show_names: &Option<Vec<String>>,
+    module: &str,
+    current_symbol_count: usize,
+    uri_node: Node,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let line = uri_node.start_position().row as u32;
+    let byte_offset = uri_node.start_byte() as u32;
+    let names: Vec<String> = match show_names {
+        Some(names) => names.clone(),
+        None => vec!["*".to_string()],
+    };
+    for target_name in names {
+        refs.push(ExtractedRef {
+            is_import_binding: false,
+            is_reexport: true,
+            source_symbol_index: current_symbol_count,
+            target_name,
+            kind: EdgeKind::Imports,
+            line,
+            col: 0,
+            module: Some(module.to_string()),
+            chain: None,
+            byte_offset,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
     }
 }
 

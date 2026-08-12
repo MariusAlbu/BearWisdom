@@ -18,18 +18,35 @@ use crate::types::EdgeKind;
 /// not a missing project function" is therefore resolve-time work, which is
 /// exactly what `builtin_skip` does.
 ///
-/// Deliberately excludes any name with at least one internal declaration in
-/// the Pascal reference corpus (case-insensitively): `FreeAndNil`, `Inc`,
-/// `High`, `Low`, `Length`, `SetLength`, `Assert`, `Char`, `Byte`, `LongInt`,
-/// `LongWord`, `WriteLn`, `ReadLn`, `Exit`, `Continue`, `Concat`, `Sqrt`,
-/// `Double`, `Extended`, `Boolean`, `ShortString`, `SmallInt`, `HRESULT`,
-/// `PLongInt`, `PSmallInt`, `PInt64`, `Word`, and the full family of
+/// Derivation contract for the compiler-magic procedure/function names below:
+/// each candidate is a `Function`/`Procedure` declared in FPC's
+/// `rtl/inc/system.fpd` — the fpdoc phony-declaration stub documenting
+/// routines the compiler substitutes inline and never declares in real
+/// source. A candidate is drained only when it also has zero real
+/// `function`/`procedure` declarations anywhere in the RTL directories the
+/// `freepascal_runtime` ecosystem walker indexes (`inc/`, `objpas/`,
+/// `packages/*`, and the host RTL target tree — see
+/// `ecosystem::freepascal_runtime::discover_freepascal_roots`). Two source
+/// shapes do not count as a real declaration: `.fpd` files themselves
+/// (fpdoc stubs, never compiled) and RTL files disabled from the build
+/// (`inc/lstrings.pp` is commented out at `inc/makefile.inc:22` and its
+/// `Length`/`SetLength`/`Copy`/`Str`/`Val` overloads never compile under any
+/// target).
+///
+/// Names kept off the drain list because a real declaration exists
+/// elsewhere in that scan: `FreeAndNil`, `Length` (`TPointF.Length` in
+/// `objpas/types.pp`), `SetLength` (`TStringBuilder.SetLength`), `Char`,
+/// `Byte`, `Word`, `Boolean`, `Double`, `Extended`, `ShortString`,
+/// `SmallInt`, `HRESULT`, `PLongInt`, `PSmallInt`, `PInt64`, `Sqrt`, and the
 /// `Read`/`Write`/`Copy`/`Delete`/`Insert`/`Move`/`Pos`/`Round`/`New`-shaped
-/// names that Pascal projects routinely reuse as class method or property
-/// names (`TStream.Read`, `TStream.Write`, `TList.Delete`, ...). The ladder
-/// runs `builtin_skip` before any project-symbol lookup rung, so draining a
-/// name with even one real declaration would silently blind the resolver to
-/// that declaration everywhere in the corpus.
+/// family Pascal projects routinely reuse as class method or property names
+/// (`TStream.Read`, `TStream.Write`, `TFPList.Delete`, ...). The ladder runs
+/// `builtin_skip` before any project-symbol lookup rung, so keeping a name
+/// with even one real declaration off this list is what lets that
+/// declaration — RTL-hosted or project-local — bind through the ladder's
+/// normal lookup rungs instead of being pre-emptively drained; the
+/// drain-audit gate (`bw quality-check`) re-checks the drained set against
+/// the index and flags any name that later gains one.
 ///
 /// `TObject` is likewise excluded: it is not a compiler-magic identifier but
 /// a real `System`-unit class, and the FPC RTL's `system.pp` is walked as an
@@ -41,8 +58,8 @@ pub(super) fn is_pascal_builtin_cast_or_intrinsic(name: &str) -> bool {
 }
 
 const PASCAL_BUILTIN_SKIP: &[&str] = &[
-    // ── Compiler magic — control flow / memory / string, none shadowed by a
-    //    project declaration anywhere in the Pascal reference corpus ────────
+    // ── Compiler magic — control flow / memory / string, zero real
+    //    declarations anywhere in the RTL tree the ecosystem walker indexes ─
     "Dec",
     "SizeOf",
     "TypeOf",
@@ -63,6 +80,29 @@ const PASCAL_BUILTIN_SKIP: &[&str] = &[
     "Randomize",
     "Assigned",
     "Odd",
+    // ── system.fpd-derived intrinsics, verified zero RTL declarations (see
+    //    the derivation contract above) ──────────────────────────────────────
+    "Addr",
+    "Assert",
+    "Concat",
+    "Continue",
+    "Exit",
+    "High",
+    "Inc",
+    "Include",
+    "Exclude",
+    "Low",
+    "Ofs",
+    "ReadLn",
+    "WriteLn",
+    "Seg",
+    "Str",
+    "Val",
+    "UnPack",
+    "Default",
+    "TypeInfo",
+    "GetTypeKind",
+    "Fail",
     // ── Compiler primitive integer types ────────────────────────────────────
     "ShortInt",
     "Integer",

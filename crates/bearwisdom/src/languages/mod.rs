@@ -20,6 +20,7 @@
 
 pub mod common;
 pub mod demand_filter;
+mod plugin_defaults;
 pub mod registry;
 pub mod string_dsl;
 
@@ -29,17 +30,8 @@ use crate::types::{EmbeddedRegion, ExtractedRef, ExtractedSymbol, ExtractionResu
 // Re-export the shared utility from common so existing callers using
 // `crate::languages::emit_chain_type_ref` continue to work without changes.
 pub use common::emit_chain_type_ref;
+pub use plugin_defaults::Synthesized;
 pub use registry::LanguageRegistry;
-
-/// Output of [`LanguagePlugin::synthesize_symbols`]: generated symbols and
-/// their own refs. `refs[*].source_symbol_index` is RELATIVE to `symbols`
-/// (`0` = the first synthesized symbol); the caller rebases it onto the file's
-/// symbol table when splicing, the same way embedded regions are spliced.
-#[derive(Default)]
-pub struct Synthesized {
-    pub symbols: Vec<ExtractedSymbol>,
-    pub refs: Vec<ExtractedRef>,
-}
 
 /// A language plugin provides grammar, scope config, and extraction for one or
 /// more language IDs (e.g., TypeScript handles both "typescript" and "tsx").
@@ -67,28 +59,7 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// Returning `None` is equivalent to "this extension is not mine" — the
     /// registry falls back to the next plugin claiming the same extension.
     fn language_id_for_extension(&self, ext: &str) -> Option<&str> {
-        if self
-            .extensions()
-            .iter()
-            .any(|e| e.eq_ignore_ascii_case(ext))
-        {
-            // Default to the first declared `language_ids` entry — that's
-            // what the registry's `by_lang_id` is keyed on. Falling back to
-            // `self.id()` (as the previous default did) silently routed
-            // every file to the generic fallback whenever a plugin's
-            // directory name diverged from its language tag (PRs 104, 109
-            // chased these in rust_lang / bash / c_lang). Plugins with
-            // multiple language ids — TypeScript splits .ts vs .tsx, C
-            // splits .c vs .cpp — must override this method to pick per
-            // extension; the default is for single-id plugins where any
-            // member of the list is correct.
-            self.language_ids()
-                .first()
-                .copied()
-                .or_else(|| Some(self.id()))
-        } else {
-            None
-        }
+        plugin_defaults::language_id_for_extension(self, ext)
     }
 
     /// Get the tree-sitter grammar for a specific language ID.
@@ -123,13 +94,7 @@ pub trait LanguagePlugin: Send + Sync + 'static {
         lang_id: &str,
         demand: Option<&std::collections::HashSet<String>>,
     ) -> ExtractionResult {
-        let result = self.extract(source, file_path, lang_id);
-        match demand {
-            Some(d) if !d.is_empty() => {
-                demand_filter::filter_extraction_to_demand(result, d)
-            }
-            _ => result,
-        }
+        plugin_defaults::extract_with_demand(self, source, file_path, lang_id, demand)
     }
 
     /// Extract with access to the workspace `TypeArena`. Default impl
@@ -146,9 +111,7 @@ pub trait LanguagePlugin: Send + Sync + 'static {
         demand: Option<&std::collections::HashSet<String>>,
         arena: &crate::type_checker::core::types::TypeArena,
     ) -> ExtractionResult {
-        let mut result = self.extract_with_demand(source, file_path, lang_id, demand);
-        crate::languages::common::populate_return_type_ids(&mut result, arena, lang_id);
-        result
+        plugin_defaults::extract_with_arena_and_demand(self, source, file_path, lang_id, demand, arena)
     }
 
     /// Return sub-language text regions contained in this file (e.g. the
@@ -391,6 +354,35 @@ pub trait LanguagePlugin: Send + Sync + 'static {
         _state: &crate::indexer::plugin_state::PluginStateBag,
         _file: &crate::types::ParsedFile,
     ) -> Vec<crate::indexer::resolve::engine::contract::ImportEntry> {
+        Vec::new()
+    }
+
+    /// Synthesize member symbols a macro-injection construct creates but
+    /// which never appear as literal text in the consuming module's own
+    /// source — Elixir's `use ExMachina` giving a factory module real
+    /// `build/2` etc., with no `def build` anywhere in that module's file.
+    ///
+    /// Called once per project, after `populate_project_state_post_externals`
+    /// (so cross-file plugin state — e.g. Elixir's flattened `use`-injection
+    /// map — is final) and before the resolve pass builds its `Compilation`,
+    /// over the full merged `parsed` slice (project + externals). Returned
+    /// pairs are `(file_path, new_symbols)`; the caller appends `new_symbols`
+    /// to that file's `ParsedFile::symbols` and re-persists just that file,
+    /// dropping any synthesized symbol whose `qualified_name` collides with
+    /// one the file already declares — a hand-written definition always wins.
+    ///
+    /// A synthesized symbol MUST carry a correct dotted `qualified_name`
+    /// (parent qname + "." + member name) and leave `parent_index: None` —
+    /// containment is reconstructed from the qname, the same convention
+    /// `synthesize_symbols` uses for its own per-file splice.
+    ///
+    /// Default: no-op. Most plugins have no macro-injected members to
+    /// synthesize.
+    fn synthesize_project_symbols(
+        &self,
+        _state: &crate::indexer::plugin_state::PluginStateBag,
+        _parsed: &[crate::types::ParsedFile],
+    ) -> Vec<(String, Vec<ExtractedSymbol>)> {
         Vec::new()
     }
 }

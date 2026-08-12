@@ -1,12 +1,16 @@
 // =============================================================================
 // ecosystem/go_stdlib.rs — Go stdlib (stdlib ecosystem)
 //
-// Probes `go env GOROOT`, locates `$GOROOT/src/`, and walks it as one
-// external dep root. Each top-level directory there is a Go stdlib
-// package (fmt, strings, io, net/http, ...); their symbols come through
-// the regular Go extractor (package declarations → qname prefix), so
-// `fmt.Printf` in user code lines up with the qname extracted from
-// `$GOROOT/src/fmt/print.go`.
+// Probes `go env GOROOT`, locates `$GOROOT/src/`, and registers one
+// `ExternalDepRoot` per directory that declares a Go package (fmt, strings,
+// net/http, ...). Go import paths are siblings, not nested — `net` and
+// `net/http` are independent packages that happen to share a filesystem
+// prefix — so each package directory gets its own root keyed by its exact
+// import path, matching how refs carry `module: Some("net/http")` and how
+// `SymbolLocationIndex::locate(module, name)` does an exact-string match.
+// Their symbols come through the regular Go extractor (package declarations
+// → qname prefix), so `fmt.Printf` in user code lines up with the qname
+// extracted from `$GOROOT/src/fmt/print.go`.
 //
 // Activation is `LanguagePresent("go")` — no manifest required.
 // Degrades to empty discovery if the Go toolchain isn't on PATH or
@@ -65,7 +69,9 @@ impl Ecosystem for GoStdlibEcosystem {
         dep_roots: &[crate::ecosystem::externals::ExternalDepRoot],
     ) -> crate::ecosystem::symbol_index::SymbolLocationIndex {
         // Reuse the go_mod builder — stdlib Go files follow the same
-        // package-declaration layout.
+        // package-declaration layout, and each root here is already scoped
+        // to exactly one package directory (see `discover_go_stdlib_roots`),
+        // so the module_path it keys every file under is correct.
         super::go_mod::build_go_symbol_index(dep_roots)
     }
 }
@@ -92,15 +98,80 @@ fn discover_go_stdlib_roots() -> Vec<ExternalDepRoot> {
         debug!("go-stdlib: {} missing", src_dir.display());
         return Vec::new();
     }
-    debug!("go-stdlib registered at {}", src_dir.display());
-    vec![ExternalDepRoot {
-        module_path: "go-stdlib".to_string(),
-        version: String::new(),
-        root: src_dir,
-        ecosystem: LEGACY_ECOSYSTEM_TAG,
-        package_id: None,
-        requested_imports: Vec::new(),
-    }]
+    let mut roots = Vec::new();
+    collect_package_roots(&src_dir, &src_dir, &mut roots, 0);
+    debug!(
+        "go-stdlib registered {} package roots under {}",
+        roots.len(),
+        src_dir.display()
+    );
+    roots
+}
+
+/// Recursively find every directory under `src_root` that defines a Go
+/// package — contains at least one non-test `.go` file — and register one
+/// `ExternalDepRoot` per directory, keyed by its import path relative to
+/// `src_root` (`net/http`, not `net`). `requested_imports` is set to the
+/// package's own import path: this narrows the shared
+/// `resolve_go_requested_packages` (go_mod) to exactly this directory
+/// instead of its unbounded recursive fallback, which has no concept of
+/// sibling package boundaries and would fold a nested package's symbols
+/// into its parent's module key.
+fn collect_package_roots(
+    dir: &Path,
+    src_root: &Path,
+    roots: &mut Vec<ExternalDepRoot>,
+    depth: u32,
+) {
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut subdirs = Vec::new();
+    let mut has_go_file = false;
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        let path = entry.path();
+        if ft.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                // Skip the Go compiler and its internal tooling — millions of
+                // symbols that user code never imports.
+                if matches!(name, "cmd" | "testdata" | "internal" | "vendor") {
+                    continue;
+                }
+                if name.starts_with('.') || name.starts_with('_') {
+                    continue;
+                }
+            }
+            subdirs.push(path);
+        } else if ft.is_file() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.ends_with(".go") && !name.ends_with("_test.go") {
+                    has_go_file = true;
+                }
+            }
+        }
+    }
+    if has_go_file {
+        if let Ok(rel) = dir.strip_prefix(src_root) {
+            let module_path = rel.to_string_lossy().replace('\\', "/");
+            if !module_path.is_empty() {
+                roots.push(ExternalDepRoot {
+                    module_path: module_path.clone(),
+                    version: String::new(),
+                    root: dir.to_path_buf(),
+                    ecosystem: LEGACY_ECOSYSTEM_TAG,
+                    package_id: None,
+                    requested_imports: vec![module_path],
+                });
+            }
+        }
+    }
+    for sub in subdirs {
+        collect_package_roots(&sub, src_root, roots, depth + 1);
+    }
 }
 
 fn goroot() -> Option<PathBuf> {
@@ -133,59 +204,38 @@ fn goroot() -> Option<PathBuf> {
     }
 }
 
+/// Enumerate the `.go` files directly in one stdlib package's directory.
+/// Non-recursive: `discover_go_stdlib_roots` already registers one root per
+/// package directory, so descending into subdirectories here would
+/// attribute a sibling package's files to this package's module_path.
 fn walk_go_tree(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     let mut out = Vec::new();
-    walk_dir(&dep.root, &dep.root, dep, &mut out, 0);
-    out
-}
-
-fn walk_dir(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>, depth: u32) {
-    if depth >= MAX_WALK_DEPTH {
-        return;
-    }
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
+    let Ok(entries) = std::fs::read_dir(&dep.root) else {
+        return out;
     };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
-        let path = entry.path();
-        if ft.is_dir() {
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                // Skip the Go compiler and its internal tooling — millions of
-                // symbols that user code never imports.
-                if matches!(name, "cmd" | "testdata" | "internal" | "vendor") {
-                    continue;
-                }
-                if name.starts_with('.') || name.starts_with('_') {
-                    continue;
-                }
-            }
-            walk_dir(&path, root, dep, out, depth + 1);
-        } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-                continue;
-            };
-            if !name.ends_with(".go") {
-                continue;
-            }
-            if name.ends_with("_test.go") {
-                continue;
-            }
-            if !super::go_platform::file_matches_host(name) {
-                continue;
-            }
-            let rel_sub = match path.strip_prefix(root) {
-                Ok(p) => p.to_string_lossy().replace('\\', "/"),
-                Err(_) => continue,
-            };
-            let virtual_path = format!("ext:go-stdlib/{}", rel_sub);
-            out.push(WalkedFile {
-                relative_path: virtual_path,
-                absolute_path: path,
-                language: "go",
-            });
+        if !ft.is_file() {
+            continue;
         }
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !name.ends_with(".go") || name.ends_with("_test.go") {
+            continue;
+        }
+        if !super::go_platform::file_matches_host(name) {
+            continue;
+        }
+        let virtual_path = format!("ext:go-stdlib/{}/{}", dep.module_path, name);
+        out.push(WalkedFile {
+            relative_path: virtual_path,
+            absolute_path: path,
+            language: "go",
+        });
     }
+    out
 }
 
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
@@ -195,22 +245,5 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ecosystem_identity() {
-        let e = GoStdlibEcosystem;
-        assert_eq!(e.id(), ID);
-        assert_eq!(Ecosystem::kind(&e), EcosystemKind::Stdlib);
-        assert_eq!(Ecosystem::languages(&e), &["go"]);
-    }
-
-    #[test]
-    fn legacy_locator_tag() {
-        assert_eq!(
-            ExternalSourceLocator::ecosystem(&GoStdlibEcosystem),
-            "go-stdlib"
-        );
-    }
-}
+#[path = "go_stdlib_tests.rs"]
+mod tests;

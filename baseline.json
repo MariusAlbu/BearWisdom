@@ -1712,8 +1712,8 @@
       "flow_edge_types": {},
       "flow_edges": 0,
       "generated_files_reclassified": 2,
-      "internal_edges": 140218,
-      "internal_unresolved": 78978,
+      "internal_edges": 140211,
+      "internal_unresolved": 78987,
       "languages": {
         "c": 22,
         "cmake": 22,
@@ -1739,16 +1739,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/dart-appflowy",
       "perf": {
-        "end_ws_mb": 148,
-        "files_per_sec": 7,
-        "index_duration_ms": 607522
+        "end_ws_mb": 149,
+        "files_per_sec": 5,
+        "index_duration_ms": 747248
       },
       "project": "dart-appflowy",
       "rate_by_language": {
         "c": 62.26,
         "cmake": 75.84,
         "cpp": 25.84,
-        "dart": 56.99,
+        "dart": 56.98,
         "dockerfile": 0.0,
         "html": 0.0,
         "java": 39.81,
@@ -1773,7 +1773,7 @@
         "cpp.type_ref": 847,
         "dart.calls": 7995,
         "dart.implements": 52,
-        "dart.imports": 16595,
+        "dart.imports": 16603,
         "dart.inherits": 387,
         "dart.instantiates": 1071,
         "dart.type_ref": 24487,
@@ -1792,7 +1792,7 @@
         "kotlin.imports": 7,
         "kotlin.inherits": 7,
         "kotlin.type_ref": 31,
-        "rust.calls": 14391,
+        "rust.calls": 14392,
         "rust.implements": 26,
         "rust.imports": 2596,
         "rust.inherits": 5,
@@ -2816,9 +2816,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/elixir-plausible",
       "perf": {
-        "end_ws_mb": 169,
-        "files_per_sec": 32,
-        "index_duration_ms": 54557
+        "end_ws_mb": 164,
+        "files_per_sec": 25,
+        "index_duration_ms": 68629
       },
       "project": "elixir-plausible",
       "rate_by_language": {
@@ -4145,7 +4145,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 52
+        "min_resolution_rate": 56
       },
       "code_chunks": 43905,
       "drained_refs": 77,
@@ -4154,8 +4154,8 @@
         "http_call": 1026
       },
       "flow_edges": 1026,
-      "internal_edges": 44494,
-      "internal_unresolved": 40338,
+      "internal_edges": 47557,
+      "internal_unresolved": 37194,
       "languages": {
         "c": 1,
         "go": 243,
@@ -4164,35 +4164,35 @@
       },
       "path": "F:/Work/Projects/TestProjects/go-fiber",
       "perf": {
-        "end_ws_mb": 18940,
-        "files_per_sec": 5,
-        "index_duration_ms": 60544
+        "end_ws_mb": 172,
+        "files_per_sec": 11,
+        "index_duration_ms": 30260
       },
       "project": "go-fiber",
       "rate_by_language": {
         "c": 0.0,
-        "go": 52.4,
+        "go": 56.08,
         "html": 15.79,
         "markdown": 100.0
       },
-      "resolution_rate": 52.45,
+      "resolution_rate": 56.11,
       "routes": 1026,
       "symbols": 28320,
       "unresolved_by_lang_kind": {
         "c.calls": 9,
         "c.type_ref": 24,
-        "go.calls": 21958,
+        "go.calls": 19056,
         "go.imports": 766,
         "go.inherits": 2,
         "go.instantiates": 685,
-        "go.reads": 8487,
-        "go.type_ref": 8391,
+        "go.reads": 8247,
+        "go.type_ref": 8389,
         "html.calls": 16
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 50
+        "min_resolution_rate": 51
       },
       "code_chunks": 56982,
       "drained_refs": 153,
@@ -4202,8 +4202,8 @@
       },
       "flow_edges": 97,
       "generated_files_reclassified": 105,
-      "internal_edges": 32167,
-      "internal_unresolved": 31733,
+      "internal_edges": 33029,
+      "internal_unresolved": 30873,
       "languages": {
         "c": 1,
         "go": 441,
@@ -4218,13 +4218,13 @@
       },
       "path": "F:/Work/Projects/TestProjects/go-pocketbase",
       "perf": {
-        "end_ws_mb": 19573,
-        "files_per_sec": 7,
-        "index_duration_ms": 94036
+        "end_ws_mb": 176,
+        "files_per_sec": 16,
+        "index_duration_ms": 44804
       },
       "project": "go-pocketbase",
       "rate_by_language": {
-        "go": 52.43,
+        "go": 53.93,
         "html": 0.0,
         "javascript": 37.81,
         "markdown": 40.0,
@@ -4232,15 +4232,15 @@
         "sql": 57.14,
         "svelte": 15.65
       },
-      "resolution_rate": 50.34,
+      "resolution_rate": 51.69,
       "routes": 97,
       "symbols": 26428,
       "unresolved_by_lang_kind": {
-        "go.calls": 12857,
-        "go.imports": 1505,
-        "go.instantiates": 370,
-        "go.reads": 9107,
-        "go.type_ref": 3401,
+        "go.calls": 11959,
+        "go.imports": 1510,
+        "go.instantiates": 229,
+        "go.reads": 9282,
+        "go.type_ref": 3400,
         "html.calls": 78,
         "html.imports": 2,
         "javascript.calls": 1143,
@@ -8020,16 +8020,16 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 69
+        "min_resolution_rate": 72
       },
       "code_chunks": 478468,
-      "drained_refs": 31961,
+      "drained_refs": 39215,
       "files": 3857,
       "flow_edge_types": {},
       "flow_edges": 0,
       "generated_files_reclassified": 2,
-      "internal_edges": 252918,
-      "internal_unresolved": 111556,
+      "internal_edges": 260008,
+      "internal_unresolved": 97212,
       "languages": {
         "c": 109,
         "cmake": 20,
@@ -8057,39 +8057,39 @@
       },
       "path": "F:/Work/Projects/TestProjects/pascal-castle-fresh",
       "perf": {
-        "end_ws_mb": 5242,
-        "files_per_sec": 4,
-        "index_duration_ms": 1019485
+        "end_ws_mb": 5042,
+        "files_per_sec": 3,
+        "index_duration_ms": 1302426
       },
       "project": "pascal-castle-fresh",
       "rate_by_language": {
-        "c": 77.58,
+        "c": 77.65,
         "cmake": 80.47,
-        "cpp": 56.64,
+        "cpp": 56.98,
         "html": 0.0,
         "java": 60.99,
         "markdown": 42.86,
         "matlab": 54.19,
-        "pascal": 72.19,
+        "pascal": 76.48,
         "php": 0.0,
         "scss": 0.0,
         "shell": 36.36
       },
-      "resolution_rate": 69.39,
+      "resolution_rate": 72.79,
       "routes": 0,
       "symbols": 271329,
       "unresolved_by_lang_kind": {
-        "c.calls": 236,
+        "c.calls": 232,
         "c.imports": 3,
         "c.type_ref": 1051,
         "cmake.calls": 1,
         "cmake.imports": 30,
         "cmake.type_ref": 77,
-        "cpp.calls": 14722,
+        "cpp.calls": 14649,
         "cpp.imports": 788,
         "cpp.inherits": 14,
         "cpp.instantiates": 20,
-        "cpp.type_ref": 12816,
+        "cpp.type_ref": 12667,
         "html.calls": 14,
         "html.imports": 5,
         "java.calls": 731,
@@ -8099,9 +8099,9 @@
         "java.type_ref": 246,
         "markdown.calls": 4,
         "matlab.calls": 82,
-        "pascal.calls": 77454,
+        "pascal.calls": 63349,
         "pascal.imports": 2460,
-        "pascal.inherits": 636,
+        "pascal.inherits": 623,
         "php.calls": 4,
         "php.imports": 1,
         "scss.calls": 1,
@@ -10647,8 +10647,8 @@
         "service_dependency": 1
       },
       "flow_edges": 291,
-      "internal_edges": 52414,
-      "internal_unresolved": 55359,
+      "internal_edges": 52413,
+      "internal_unresolved": 55360,
       "languages": {
         "c": 1,
         "dockerfile": 1,
@@ -10669,9 +10669,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/ruby-chatwoot",
       "perf": {
-        "end_ws_mb": 20736,
-        "files_per_sec": 51,
-        "index_duration_ms": 140337
+        "end_ws_mb": 6124,
+        "files_per_sec": 58,
+        "index_duration_ms": 123397
       },
       "project": "ruby-chatwoot",
       "rate_by_language": {
@@ -10680,7 +10680,7 @@
         "erb": 16.64,
         "javascript": 63.91,
         "markdown": 100.0,
-        "ruby": 21.76,
+        "ruby": 21.75,
         "scss": 3.9,
         "shell": 0.0,
         "typescript": 71.15,
@@ -10701,7 +10701,7 @@
         "javascript.imports": 6470,
         "javascript.inherits": 4,
         "javascript.type_ref": 3717,
-        "ruby.calls": 19113,
+        "ruby.calls": 19114,
         "ruby.implements": 198,
         "ruby.imports": 62,
         "ruby.inherits": 452,
@@ -10854,9 +10854,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/ruby-rspec-core",
       "perf": {
-        "end_ws_mb": 20739,
-        "files_per_sec": 60,
-        "index_duration_ms": 4398
+        "end_ws_mb": 6126,
+        "files_per_sec": 66,
+        "index_duration_ms": 3969
       },
       "project": "ruby-rspec-core",
       "rate_by_language": {

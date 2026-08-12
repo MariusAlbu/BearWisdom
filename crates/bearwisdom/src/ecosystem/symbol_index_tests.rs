@@ -71,6 +71,42 @@ fn find_by_name_empty_when_no_match() {
 }
 
 #[test]
+fn tag_language_stamps_every_registered_path() {
+    let mut idx = SymbolLocationIndex::new();
+    idx.insert("fpc-rtl-objpas", "SysUtils", "/fpc/rtl/objpas/sysutils.pp");
+    idx.insert_module_entry("fpc-rtl-objpas", "/fpc/rtl/objpas/sysutils.pp");
+    idx.tag_language("pascal");
+    assert_eq!(
+        idx.language_hint(Path::new("/fpc/rtl/objpas/sysutils.pp")),
+        Some("pascal")
+    );
+}
+
+#[test]
+fn language_hint_none_when_untagged() {
+    let mut idx = SymbolLocationIndex::new();
+    idx.insert("site", "site", "/etc/puppet/modules/site/manifests/init.pp");
+    assert_eq!(
+        idx.language_hint(Path::new("/etc/puppet/modules/site/manifests/init.pp")),
+        None,
+        "a file no ecosystem tagged must fall back to extension dispatch, not inherit a hint"
+    );
+}
+
+#[test]
+fn extend_merges_language_hints() {
+    let mut child = SymbolLocationIndex::new();
+    child.insert("fpc-rtl-inc", "GetMem", "/fpc/rtl/inc/heap.inc");
+    child.tag_language("pascal");
+    let mut master = SymbolLocationIndex::new();
+    master.extend(child);
+    assert_eq!(
+        master.language_hint(Path::new("/fpc/rtl/inc/heap.inc")),
+        Some("pascal")
+    );
+}
+
+#[test]
 fn extend_accumulates_every_same_key_name_entry() {
     // Two static classes in ONE package offer the same method name. The
     // (module, name) entries map keeps one; the reverse name index must keep

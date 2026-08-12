@@ -121,11 +121,18 @@ fn probe_rubylibdir() -> Option<PathBuf> {
 
 fn walk_ruby_tree(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     let mut out = Vec::new();
-    walk_dir(&dep.root, &mut out, 0);
+    walk_dir(&dep.root, &dep.root, &mut out, 0);
     out
 }
 
-fn walk_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
+/// `root` is the stdlib dep root passed down unchanged through the
+/// recursion — `dir` walks deeper on each call but every emitted path is
+/// relativized against the ORIGINAL root, matching
+/// `ext_virtual_path::virtual_path_for_pulled`'s demand-pull shape (the
+/// modern pipeline's actual entry point for this ecosystem —
+/// `uses_demand_driven_parse` skips this walk). The `-stdlib` ecosystem
+/// segment is what `is_ambient_global_lib_path` classifies as ambient scope.
+fn walk_dir(dir: &Path, root: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
     if depth >= 12 {
         return;
     }
@@ -144,7 +151,7 @@ fn walk_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
                     continue;
                 }
             }
-            walk_dir(&path, out, depth + 1);
+            walk_dir(&path, root, out, depth + 1);
         } else if ft.is_file() {
             let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
                 continue;
@@ -152,9 +159,12 @@ fn walk_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
             if !name.ends_with(".rb") {
                 continue;
             }
-            let display = path.to_string_lossy().replace('\\', "/");
+            let Ok(rel) = path.strip_prefix(root) else {
+                continue;
+            };
+            let rel = rel.to_string_lossy().replace('\\', "/");
             out.push(WalkedFile {
-                relative_path: format!("ext:ruby:{}", display),
+                relative_path: format!("ext:ruby-stdlib:{rel}"),
                 absolute_path: path,
                 language: "ruby",
             });
@@ -169,3 +179,7 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
         .get_or_init(|| Arc::new(RubyStdlibEcosystem))
         .clone()
 }
+
+#[cfg(test)]
+#[path = "ruby_stdlib_tests.rs"]
+mod tests;

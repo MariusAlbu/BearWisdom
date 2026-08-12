@@ -87,7 +87,7 @@ pub(super) fn materialize_externals(
         // a member-declaring sibling module the package's export map never named.
         let batch: Vec<(PathBuf, ParsedFile)> = to_parse
             .iter()
-            .filter_map(|f| parse_external_file(f, arena).map(|pf| (f.clone(), pf)))
+            .filter_map(|f| parse_external_file(f, arena, loc).map(|pf| (f.clone(), pf)))
             .collect();
         let mut next: Vec<PathBuf> = Vec::new();
         for (abs, pf) in &batch {
@@ -292,7 +292,11 @@ fn collect_external_files(
 /// parse cache. Binary-format virtual paths (JAR / DLL) are skipped for now.
 /// Mirrors the source path of the old materialize-on-miss driver, but the
 /// resulting file is ingested into the new tree rather than the old store.
-fn parse_external_file(file: &Path, arena: &Arc<TypeArena>) -> Option<ParsedFile> {
+fn parse_external_file(
+    file: &Path,
+    arena: &Arc<TypeArena>,
+    loc: &SymbolLocationIndex,
+) -> Option<ParsedFile> {
     let path_str = file.to_string_lossy();
     // A virtual demand-index entry (no file on disk) materializes through the
     // ecosystem that minted its scheme.
@@ -303,7 +307,14 @@ fn parse_external_file(file: &Path, arena: &Arc<TypeArena>) -> Option<ParsedFile
         return None;
     }
 
-    let language = language_from_file_ext(file)?;
+    // A single-language ecosystem's `SymbolLocationIndex::tag_language` hint
+    // takes priority over the extension table — a file whose extension is
+    // claimed by more than one language plugin (FPC `.pp` units vs Puppet
+    // `.pp` manifests) still parses with the extractor its owning dep root
+    // actually holds. Untagged files (no ecosystem claimed a hint, or the
+    // owning ecosystem spans several languages) fall through to extension
+    // dispatch as before.
+    let language = loc.language_hint(file).or_else(|| language_from_file_ext(file))?;
     let virtual_path = virtual_path_for_indexed_file(file, language);
     let bytes = std::fs::read(file).ok()?;
     let hash = crate::indexer::external_parse_cache::content_hash(&bytes);
@@ -334,7 +345,8 @@ fn parse_external_file(file: &Path, arena: &Arc<TypeArena>) -> Option<ParsedFile
     Some(pf)
 }
 
-/// Language id for a pulled file via the registry's extension table.
+/// Language id for a pulled file via the registry's extension table. The
+/// fallback dispatch when no ecosystem `tag_language` hint claimed the file.
 fn language_from_file_ext(path: &Path) -> Option<&'static str> {
     let name = path.file_name().and_then(|n| n.to_str())?;
     crate::languages::default_registry().language_by_extension(name)

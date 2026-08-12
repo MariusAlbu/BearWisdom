@@ -111,3 +111,47 @@ fn external_same_name_symbol_does_not_veto_ref_pull() {
         "an external same-name squatter must not suppress the pull"
     );
 }
+
+/// A `.pp` file pulled from a Pascal-hinted dep root must parse as Pascal
+/// even though the registry's extension table maps `.pp` to Puppet
+/// (`puppet`'s plugin registers first — see `languages/registry_init.rs`).
+/// The hint set by `SymbolLocationIndex::tag_language` must win.
+#[test]
+fn parse_external_file_uses_language_hint_over_extension() {
+    let dir = std::env::temp_dir().join(format!("bw_pp_hint_test_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("sysutils.pp");
+    std::fs::write(&file, "unit SysUtils;\ninterface\nimplementation\nend.\n").unwrap();
+
+    let mut loc = SymbolLocationIndex::new();
+    loc.insert("fpc-rtl-objpas", "SysUtils", file.clone());
+    loc.tag_language("pascal");
+
+    let arena = Arc::new(TypeArena::new());
+    let pf = super::parse_external_file(&file, &arena, &loc)
+        .expect("a Pascal-hinted .pp file must parse");
+    assert_eq!(pf.language, "pascal", "the hint must override the puppet extension mapping");
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// A `.pp` file with no recorded hint (no ecosystem tagged it) falls back to
+/// the registry's extension table, unchanged from before this fix.
+#[test]
+fn parse_external_file_falls_back_to_extension_without_hint() {
+    let dir = std::env::temp_dir().join(format!("bw_pp_no_hint_test_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("site.pp");
+    std::fs::write(&file, "class site {}\n").unwrap();
+
+    let loc = SymbolLocationIndex::new();
+    let arena = Arc::new(TypeArena::new());
+    let pf = super::parse_external_file(&file, &arena, &loc)
+        .expect("an unhinted .pp file must still parse via the extension fallback");
+    assert_eq!(
+        pf.language, "puppet",
+        "no hint recorded — the puppet plugin owns .pp in the extension table"
+    );
+
+    std::fs::remove_dir_all(&dir).ok();
+}

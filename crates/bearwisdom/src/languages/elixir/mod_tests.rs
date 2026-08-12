@@ -116,10 +116,11 @@ fn use_of_using_module_yields_aliased_import_for_its_injected_alias() {
     assert!(!entries[0].is_wildcard);
 }
 
-/// A nested `use N` inside M's own quote block is a second hop — left for a
-/// future transitive expansion, so it must not produce an entry yet.
+/// A nested `use N` inside M's own quote block whose target has no recorded
+/// injections of its own (never defines `__using__`, or an empty quote)
+/// terminates the hop with nothing — it must not panic or fabricate an entry.
 #[test]
-fn nested_use_injection_produces_no_entry() {
+fn nested_use_injection_with_no_downstream_data_produces_no_entry() {
     let mut injections = HashMap::new();
     injections.insert(
         "Plausible.DataCase".to_string(),
@@ -131,6 +132,35 @@ fn nested_use_injection_produces_no_entry() {
     let file = file_with_refs(vec![use_ref("DataCase", "Plausible.DataCase")]);
 
     assert!(ElixirPlugin.extra_wildcard_imports(&state, &file).is_empty());
+}
+
+/// A nested `use N` inside M's own quote block, where N itself has a
+/// recorded injection set, is followed transitively — `use M` sees N's
+/// injected `import` too, not just M's own.
+#[test]
+fn nested_use_injection_is_expanded_transitively() {
+    let mut injections = HashMap::new();
+    injections.insert(
+        "Plausible.DataCase".to_string(),
+        vec![ElixirInjection::Use {
+            module: "Plausible.TestUtils".to_string(),
+        }],
+    );
+    injections.insert(
+        "Plausible.TestUtils".to_string(),
+        vec![ElixirInjection::Import {
+            module: "Plausible.Factory".to_string(),
+        }],
+    );
+    let state = state_with_injections(injections);
+    let file = file_with_refs(vec![use_ref("DataCase", "Plausible.DataCase")]);
+
+    let entries = ElixirPlugin.extra_wildcard_imports(&state, &file);
+
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].imported_name, "Factory");
+    assert_eq!(entries[0].module_path.as_deref(), Some("Plausible.Factory"));
+    assert!(entries[0].is_wildcard);
 }
 
 /// `alias Plausible.DataCase` (a binding directive, `is_import_binding =
@@ -170,4 +200,79 @@ fn missing_project_state_yields_nothing() {
     let file = file_with_refs(vec![use_ref("DataCase", "Plausible.DataCase")]);
 
     assert!(ElixirPlugin.extra_wildcard_imports(&state, &file).is_empty());
+}
+
+fn module_symbol(qualified_name: &str) -> crate::types::ExtractedSymbol {
+    crate::types::ExtractedSymbol {
+        name: qualified_name.rsplit('.').next().unwrap_or(qualified_name).to_string(),
+        qualified_name: qualified_name.to_string(),
+        kind: crate::types::SymbolKind::Module,
+        visibility: Some(crate::types::Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        byte_offset: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    }
+}
+
+fn file_with_symbols(path: &str, symbols: Vec<crate::types::ExtractedSymbol>) -> ParsedFile {
+    ParsedFile {
+        path: path.to_string(),
+        symbols,
+        ..file_with_refs(Vec::new())
+    }
+}
+
+/// `synthesize_project_symbols` delegates to the harvested `Def` facts:
+/// `Plausible.Factory`'s `use ExMachina.Ecto`-shaped chain is stored in the
+/// bag as a direct `Def` entry here (the harvest itself is covered in
+/// `using_synthesis_tests.rs`) — this test only proves the plugin wiring
+/// reads the bag and returns what the synthesis module computes.
+#[test]
+fn synthesize_project_symbols_returns_harvested_def_as_new_member() {
+    let mut injections = HashMap::new();
+    injections.insert(
+        "Plausible.Factory".to_string(),
+        vec![ElixirInjection::Def {
+            name: "build".to_string(),
+            is_macro: false,
+        }],
+    );
+    let state = state_with_injections(injections);
+    let file = file_with_symbols(
+        "test/support/factory.ex",
+        vec![module_symbol("Plausible.Factory")],
+    );
+
+    let out = ElixirPlugin.synthesize_project_symbols(&state, &[file]);
+
+    assert_eq!(out.len(), 1);
+    let (path, syms) = &out[0];
+    assert_eq!(path, "test/support/factory.ex");
+    assert_eq!(syms.len(), 1);
+    assert_eq!(syms[0].qualified_name, "Plausible.Factory.build");
+}
+
+/// No `ElixirProjectState` in the bag — decline cleanly, same contract as
+/// `extra_wildcard_imports`.
+#[test]
+fn synthesize_project_symbols_missing_project_state_yields_nothing() {
+    let state = PluginStateBag::new();
+    let file = file_with_symbols(
+        "test/support/factory.ex",
+        vec![module_symbol("Plausible.Factory")],
+    );
+
+    assert!(ElixirPlugin
+        .synthesize_project_symbols(&state, &[file])
+        .is_empty());
 }

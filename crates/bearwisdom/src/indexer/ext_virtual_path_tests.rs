@@ -42,6 +42,33 @@ fn rust_pulled_file_non_registry_path_falls_through() {
 }
 
 #[test]
+fn go_pulled_goroot_stdlib_file_matches_eager_walker_shape() {
+    let abs = Path::new(r"C:\Program Files\Go\src\net\http\server.go");
+    assert_eq!(
+        virtual_path_for_pulled(abs, "go").as_deref(),
+        Some("ext:go-stdlib/net/http/server.go"),
+    );
+}
+
+#[test]
+fn go_pulled_module_cache_still_wins_over_src_marker() {
+    // A module-cache path containing `/src/` inside the module tree must keep
+    // the `ext:go/` module-cache identity, not the stdlib shape.
+    let abs = Path::new("/home/u/go/pkg/mod/github.com/gofiber/fiber@v2.52.0/src/helpers.go");
+    assert_eq!(
+        virtual_path_for_pulled(abs, "go").as_deref(),
+        Some("ext:go/github.com/gofiber/fiber@v2.52.0/src/helpers.go"),
+    );
+}
+
+#[test]
+fn go_pulled_non_layout_path_falls_through() {
+    // Neither `/pkg/mod/` nor `/src/` present — caller falls back to `ext:idx:`.
+    let abs = Path::new("/some/where/else/foo.go");
+    assert_eq!(virtual_path_for_pulled(abs, "go"), None);
+}
+
+#[test]
 fn ruby_pulled_file_matches_eager_walker_shape() {
     // A demand-pulled RubyGems file must reconstruct the eager walker's
     // `ext:ruby:<gem>/<rel>` virtual path (version stripped), so the
@@ -209,4 +236,155 @@ fn ruby_pulled_file_non_gems_path_falls_through() {
     // `ext:idx:`.
     let abs = Path::new("/some/where/else/foo.rb");
     assert_eq!(virtual_path_for_pulled(abs, "ruby"), None);
+}
+
+#[test]
+fn ruby_pulled_stdlib_file_gets_stdlib_ecosystem_segment() {
+    // `RbConfig::CONFIG['rubylibdir']` layout — no `/gems/` segment. The
+    // `ruby-stdlib` segment is what `is_ambient_global_lib_path` classifies
+    // as ambient scope, letting a bare `JSON` (no `module` tag survives past
+    // the `require` ref itself) bind through the ambient_scope rung.
+    let abs = Path::new("/usr/lib/ruby/3.3.0/json.rb");
+    assert_eq!(
+        virtual_path_for_pulled(abs, "ruby").as_deref(),
+        Some("ext:ruby-stdlib:json.rb"),
+    );
+}
+
+#[test]
+fn ruby_pulled_stdlib_file_with_subdir() {
+    let abs = Path::new("/usr/lib/ruby/3.3.0/net/http.rb");
+    assert_eq!(
+        virtual_path_for_pulled(abs, "ruby").as_deref(),
+        Some("ext:ruby-stdlib:net/http.rb"),
+    );
+}
+
+#[test]
+fn ruby_pulled_stdlib_file_windows_separators() {
+    let abs = Path::new(r"C:\Ruby33-x64\lib\ruby\3.3.0\digest.rb");
+    assert_eq!(
+        virtual_path_for_pulled(abs, "ruby").as_deref(),
+        Some("ext:ruby-stdlib:digest.rb"),
+    );
+}
+
+#[test]
+fn ruby_pulled_gems_path_wins_over_stdlib_marker() {
+    // A gem path never contains `/lib/ruby/`, but this guards the ordering
+    // intent: `/gems/` is checked first so a real gem is never misclassified
+    // as stdlib.
+    let abs = Path::new(
+        "/home/u/.local/share/gem/ruby/3.3.0/gems/actionpack-8.1.3/lib/abstract_controller.rb",
+    );
+    assert_eq!(
+        virtual_path_for_pulled(abs, "ruby").as_deref(),
+        Some("ext:ruby:actionpack/lib/abstract_controller.rb"),
+    );
+}
+
+#[test]
+fn pascal_pulled_system_pp_gets_stdlib_ecosystem_segment() {
+    // `system.pp` is System's own unit body — implicit in every Pascal file,
+    // no `uses System;` ever appears, so it must resolve through the
+    // ambient_scope rung.
+    let abs = Path::new(
+        r"C:\Users\u\scoop\apps\lazarus\current\fpc\3.2.2\source\rtl\win64\system.pp",
+    );
+    assert_eq!(
+        virtual_path_for_pulled(abs, "pascal").as_deref(),
+        Some("ext:fpc-stdlib:system/system.pp"),
+    );
+}
+
+#[test]
+fn pascal_pulled_rtl_inc_system_fragment_gets_stdlib_segment() {
+    // `objpash.inc` declares `TObject` and is spliced into every platform's
+    // `system.pp` via `systemh.inc` — confirmed by tracing the FPC 3.2.2
+    // `{$I}` graph.
+    let abs = Path::new("/home/u/lazarus/fpc/3.2.2/source/rtl/inc/objpash.inc");
+    assert_eq!(
+        virtual_path_for_pulled(abs, "pascal").as_deref(),
+        Some("ext:fpc-stdlib:system/objpash.inc"),
+    );
+}
+
+#[test]
+fn pascal_pulled_rtl_inc_dos_fragment_stays_non_ambient() {
+    // `dos.inc`/`dosh.inc` splice into the `Dos` unit's own `dos.pp` files
+    // (per-platform), never into `system.pp` — `Dos` still requires an
+    // explicit `uses Dos;`, so tagging it ambient would let `GetDate`/
+    // `DiskFree` bind without one.
+    let abs = Path::new("/home/u/lazarus/fpc/3.2.2/source/rtl/inc/dos.inc");
+    assert_eq!(
+        virtual_path_for_pulled(abs, "pascal").as_deref(),
+        Some("ext:fpc:fpc-rtl-inc/dos.inc"),
+    );
+}
+
+#[test]
+fn pascal_pulled_rtl_inc_standalone_unit_stays_non_ambient() {
+    // `strings.pp` declares `unit Strings;` — a real standalone unit
+    // requiring `uses Strings;`, not a fragment spliced into System.
+    let abs = Path::new("/home/u/lazarus/fpc/3.2.2/source/rtl/inc/strings.pp");
+    assert_eq!(
+        virtual_path_for_pulled(abs, "pascal").as_deref(),
+        Some("ext:fpc:fpc-rtl-inc/strings.pp"),
+    );
+}
+
+#[test]
+fn pascal_pulled_objpas_unit_stays_non_ambient() {
+    // `SysUtils`/`Classes` live under `rtl/objpas/` — a project must still
+    // write `uses SysUtils;`; the `WildcardMatch::FileStem` rung already
+    // opens them on that clause, so they must not be ambient.
+    let abs = Path::new("/home/u/lazarus/fpc/3.2.2/source/rtl/objpas/sysutils/sysutils.pp");
+    assert_eq!(
+        virtual_path_for_pulled(abs, "pascal").as_deref(),
+        Some("ext:fpc:fpc-rtl-objpas/sysutils/sysutils.pp"),
+    );
+}
+
+#[test]
+fn pascal_pulled_lcl_file_stays_non_ambient() {
+    let abs = Path::new(r"C:\lazarus\lcl\forms.pp");
+    assert_eq!(
+        virtual_path_for_pulled(abs, "pascal").as_deref(),
+        Some("ext:fpc:lcl/forms.pp"),
+    );
+}
+
+#[test]
+fn pascal_pulled_lazarus_component_stays_non_ambient() {
+    let abs = Path::new("/home/u/lazarus/components/codetools/codetoolsstrconsts.pas");
+    assert_eq!(
+        virtual_path_for_pulled(abs, "pascal").as_deref(),
+        Some("ext:fpc:lazarus-components/codetools/codetoolsstrconsts.pas"),
+    );
+}
+
+#[test]
+fn pascal_pulled_fpc_package_stays_non_ambient() {
+    let abs = Path::new("/home/u/lazarus/fpc/3.2.2/source/packages/fcl-json/src/fpjson.pp");
+    assert_eq!(
+        virtual_path_for_pulled(abs, "pascal").as_deref(),
+        Some("ext:fpc:fpc-pkg-fcl-json/fpjson.pp"),
+    );
+}
+
+#[test]
+fn pascal_pulled_shared_rtl_dir_unit_stays_non_ambient() {
+    // `Dos` on the shared `win` target dir — a real standalone unit, not a
+    // System splice.
+    let abs = Path::new("/home/u/lazarus/fpc/3.2.2/source/rtl/win/dos.pp");
+    assert_eq!(
+        virtual_path_for_pulled(abs, "pascal").as_deref(),
+        Some("ext:fpc:fpc-rtl-win/dos.pp"),
+    );
+}
+
+#[test]
+fn pascal_pulled_non_layout_path_falls_through() {
+    let abs = Path::new("/some/where/else/foo.pas");
+    assert_eq!(virtual_path_for_pulled(abs, "pascal"), None);
 }

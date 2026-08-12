@@ -35,6 +35,7 @@ use crate::types::{EdgeKind, PackageInfo, ParsedFile};
 use crate::walker::WalkedFile;
 
 use super::demand::DemandSet;
+use super::demand_symbol_index::build_demand_symbol_index;
 use super::ext_virtual_path::virtual_path_for_pulled;
 use super::project_context::ProjectContext;
 
@@ -325,36 +326,7 @@ pub(crate) fn parse_external_sources(
 
     drop(_t_walk);
 
-    // Build the symbol index for every demand-driven ecosystem. One call
-    // per ecosystem with the full set of that ecosystem's dep roots, merged
-    // into a process-wide master index. Ecosystem tags are sorted before
-    // iterating: `demand_driven_by_eco` is a HashMap, whose iteration order
-    // is randomized per process, and `symbol_index.extend` is first-writer-
-    // wins on the `(module, name)` axis — an unsorted iteration would let a
-    // cross-ecosystem key collision resolve to a different winner each run.
-    let mut symbol_index = SymbolLocationIndex::new();
-    let _t_symidx = Some(crate::indexer::phase_timer::scope("externals.build_symbol_index"));
-    let mut eco_tags: Vec<&'static str> = demand_driven_by_eco.keys().copied().collect();
-    eco_tags.sort_unstable();
-    for tag in &eco_tags {
-        let roots = &demand_driven_by_eco[tag];
-        if let Some(eco) = demand_driven_ecosystems.get(tag) {
-            let idx = {
-                let _t = crate::indexer::phase_timer::scope("externals.build_symbol_index.per_eco");
-                eco.build_symbol_index(roots)
-            };
-            if !idx.is_empty() {
-                info!(
-                    "Built demand-driven symbol index for {}: {} entries across {} roots",
-                    tag,
-                    idx.len(),
-                    roots.len()
-                );
-            }
-            symbol_index.extend(idx);
-        }
-    }
-    drop(_t_symidx);
+    let symbol_index = build_demand_symbol_index(&demand_driven_by_eco, &demand_driven_ecosystems);
 
     if walked.is_empty() && symbol_index.is_empty() && metadata_parsed.is_empty() {
         return ExternalParsingResult {

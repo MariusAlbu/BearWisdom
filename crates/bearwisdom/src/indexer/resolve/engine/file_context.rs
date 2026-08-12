@@ -74,12 +74,18 @@ pub(crate) fn build_file_context(
 ) -> FileContext {
     // A plain namespace import (`using System;`) is a wildcard of its module
     // path when the profile says so; a literal `*` target always is. Binding
-    // imports (named `import { X }` forms) are never namespace wildcards.
+    // imports (named `import { X }` forms) are never namespace wildcards. A
+    // re-export ref (`export * from './x'`) also carries a literal `*`
+    // target, but it describes what the file exposes to OTHER files, not
+    // what it imports into its own scope — it must never become a wildcard
+    // entry here, or the exporting file's own bare-name lookups would
+    // wrongly search the re-exported module.
     let entry_is_wildcard = |r: &crate::types::ExtractedRef| {
-        r.target_name == "*"
-            || (profile.namespace_imports_are_wildcards
-                && r.kind == EdgeKind::Imports
-                && !r.is_import_binding)
+        !r.is_reexport
+            && (r.target_name == "*"
+                || (profile.namespace_imports_are_wildcards
+                    && r.kind == EdgeKind::Imports
+                    && !r.is_import_binding))
     };
     let mut imports: Vec<ImportEntry> = match profile.import_module_path {
         // Build entries from import-describing refs only: an explicit import
@@ -145,3 +151,7 @@ pub(crate) fn build_file_context(
         file_namespace: None,
     }
 }
+
+#[cfg(test)]
+#[path = "file_context_tests.rs"]
+mod tests;

@@ -19,6 +19,34 @@ fn drains_compiler_magic_procedures_with_no_project_declaration() {
 }
 
 #[test]
+fn drains_system_fpd_intrinsics_with_zero_rtl_declarations() {
+    // Every name below is a Function/Procedure listed in FPC's
+    // rtl/inc/system.fpd fpdoc stub and has zero real declarations in the
+    // RTL directories the freepascal_runtime ecosystem walker indexes.
+    assert!(is_pascal_builtin_cast_or_intrinsic("Inc"));
+    assert!(is_pascal_builtin_cast_or_intrinsic("High"));
+    assert!(is_pascal_builtin_cast_or_intrinsic("Low"));
+    assert!(is_pascal_builtin_cast_or_intrinsic("Addr"));
+    assert!(is_pascal_builtin_cast_or_intrinsic("Assert"));
+    assert!(is_pascal_builtin_cast_or_intrinsic("Concat"));
+    assert!(is_pascal_builtin_cast_or_intrinsic("Continue"));
+    assert!(is_pascal_builtin_cast_or_intrinsic("Exit"));
+    assert!(is_pascal_builtin_cast_or_intrinsic("Include"));
+    assert!(is_pascal_builtin_cast_or_intrinsic("Exclude"));
+    assert!(is_pascal_builtin_cast_or_intrinsic("Ofs"));
+    assert!(is_pascal_builtin_cast_or_intrinsic("Seg"));
+    assert!(is_pascal_builtin_cast_or_intrinsic("ReadLn"));
+    assert!(is_pascal_builtin_cast_or_intrinsic("WriteLn"));
+    assert!(is_pascal_builtin_cast_or_intrinsic("Str"));
+    assert!(is_pascal_builtin_cast_or_intrinsic("Val"));
+    assert!(is_pascal_builtin_cast_or_intrinsic("UnPack"));
+    assert!(is_pascal_builtin_cast_or_intrinsic("Default"));
+    assert!(is_pascal_builtin_cast_or_intrinsic("TypeInfo"));
+    assert!(is_pascal_builtin_cast_or_intrinsic("GetTypeKind"));
+    assert!(is_pascal_builtin_cast_or_intrinsic("Fail"));
+}
+
+#[test]
 fn drain_is_case_insensitive() {
     // Pascal identifiers fold case; the ladder passes the ref's raw source
     // text (unnormalized) into this predicate, so it must fold internally.
@@ -26,30 +54,31 @@ fn drain_is_case_insensitive() {
     assert!(is_pascal_builtin_cast_or_intrinsic("INTEGER"));
     assert!(is_pascal_builtin_cast_or_intrinsic("single"));
     assert!(is_pascal_builtin_cast_or_intrinsic("pOiNtEr"));
+    assert!(is_pascal_builtin_cast_or_intrinsic("inc"));
+    assert!(is_pascal_builtin_cast_or_intrinsic("INC"));
+    assert!(is_pascal_builtin_cast_or_intrinsic("hIgH"));
 }
 
 #[test]
-fn declines_names_with_a_project_declaration() {
-    // Every name below has at least one internal declaration in the Pascal
-    // reference corpus (case-insensitively) and must resolve through the
-    // ladder's normal lookup rungs instead of being drained.
+fn declines_names_with_a_real_declaration_so_that_declaration_can_bind() {
+    // BuiltinSkipRule runs before any project-symbol lookup rung
+    // (engine/rules/mod.rs: rung #2, right after ModuleSkipRule) and is a
+    // pure name match — it cannot tell an RTL declaration from a
+    // project-local one. Keeping a name off the drain list is therefore the
+    // only thing that lets ANY declaration under that name — RTL-hosted
+    // (TPointF.Length) or project-local (a user's own `function Length`) —
+    // reach the ladder's normal lookup rungs instead of being drained
+    // before it is ever looked up.
     assert!(!is_pascal_builtin_cast_or_intrinsic("FreeAndNil"));
-    assert!(!is_pascal_builtin_cast_or_intrinsic("Inc"));
-    assert!(!is_pascal_builtin_cast_or_intrinsic("High"));
-    assert!(!is_pascal_builtin_cast_or_intrinsic("Low"));
-    assert!(!is_pascal_builtin_cast_or_intrinsic("Length"));
-    assert!(!is_pascal_builtin_cast_or_intrinsic("SetLength"));
-    assert!(!is_pascal_builtin_cast_or_intrinsic("Assert"));
+    assert!(!is_pascal_builtin_cast_or_intrinsic("Length")); // TPointF.Length, objpas/types.pp
+    assert!(!is_pascal_builtin_cast_or_intrinsic("SetLength")); // TStringBuilder.SetLength
+    assert!(!is_pascal_builtin_cast_or_intrinsic("Abs")); // systemh.inc, [internproc]
+    assert!(!is_pascal_builtin_cast_or_intrinsic("GetMem")); // systemh.inc, [internproc]
     assert!(!is_pascal_builtin_cast_or_intrinsic("Char"));
     assert!(!is_pascal_builtin_cast_or_intrinsic("Byte"));
     assert!(!is_pascal_builtin_cast_or_intrinsic("Word"));
     assert!(!is_pascal_builtin_cast_or_intrinsic("Boolean"));
     assert!(!is_pascal_builtin_cast_or_intrinsic("boolean"));
-    assert!(!is_pascal_builtin_cast_or_intrinsic("WriteLn"));
-    assert!(!is_pascal_builtin_cast_or_intrinsic("ReadLn"));
-    assert!(!is_pascal_builtin_cast_or_intrinsic("Exit"));
-    assert!(!is_pascal_builtin_cast_or_intrinsic("Continue"));
-    assert!(!is_pascal_builtin_cast_or_intrinsic("Concat"));
     assert!(!is_pascal_builtin_cast_or_intrinsic("Sqrt"));
     assert!(!is_pascal_builtin_cast_or_intrinsic("Double"));
     assert!(!is_pascal_builtin_cast_or_intrinsic("Extended"));
