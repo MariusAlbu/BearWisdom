@@ -71,6 +71,10 @@ impl Ecosystem for DotnetStdlibEcosystem {
         true
     }
 
+    fn reset_demand_caches(&self) {
+        super::nuget::flush_assembly_cache();
+    }
+
     /// Offer `(module, TypeName) → ext:dotnet-type virtual path` for every
     /// public type in the framework's DLLs, in the exact encoding NuGet mints,
     /// so a demanded type materializes through the same per-type crack.

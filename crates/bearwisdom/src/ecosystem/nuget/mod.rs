@@ -27,9 +27,11 @@ use super::{
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
 
+mod assembly_cache;
 mod cs_header;
 mod dll_locator;
 mod dll_metadata;
+mod dotscope_worker;
 mod manifest;
 mod signature_format;
 mod source_discovery;
@@ -45,7 +47,8 @@ pub use manifest::{
     NuGetCoord, NuGetManifest,
 };
 
-pub(crate) use dll_metadata::crack_one_dll_type;
+pub(crate) use dotscope_worker::crack_one_dll_type;
+pub(crate) use dotscope_worker::flush_assembly_cache;
 use dll_locator::locate_dlls_for_project;
 pub(crate) use dll_metadata::list_dll_type_names;
 use symbol_index::{build_nuget_source_symbol_index, resolve_nuget_source_symbols};
@@ -59,6 +62,10 @@ const LEGACY_ECOSYSTEM_TAG: &str = "dotnet";
 pub struct NugetEcosystem;
 
 impl Ecosystem for NugetEcosystem {
+    fn reset_demand_caches(&self) {
+        dotscope_worker::flush_assembly_cache();
+    }
+
     fn id(&self) -> EcosystemId {
         ID
     }

@@ -13,8 +13,21 @@ use tracing::info;
 use crate::ecosystem::externals::ExternalDepRoot;
 use crate::ecosystem::{Ecosystem, SymbolLocationIndex};
 
+/// Drop every registered ecosystem's process-lifetime demand caches, so a
+/// prior run's demand set neither pins memory into this run nor influences
+/// its parse results. Incremental indexing never re-enters the externals
+/// stage, so watch-mode events keep caches warm.
+fn reset_all_demand_caches() {
+    for eco in crate::ecosystem::default_registry().all() {
+        eco.reset_demand_caches();
+    }
+}
+
 /// Build the master demand-driven symbol index from every ecosystem that
-/// opted into demand-driven parsing. Ecosystem tags are sorted before
+/// opted into demand-driven parsing. This call marks the index-run boundary:
+/// it first drops every registered ecosystem's process-lifetime demand
+/// caches via `reset_all_demand_caches`, so each run resolves from a cold
+/// state. Ecosystem tags are sorted before
 /// iterating: `demand_driven_by_eco` is a HashMap, whose iteration order is
 /// randomized per process, and `SymbolLocationIndex::extend` is first-writer-
 /// wins on the `(module, name)` axis — an unsorted iteration would let a
@@ -23,6 +36,7 @@ pub(crate) fn build_demand_symbol_index(
     demand_driven_by_eco: &HashMap<&'static str, Vec<ExternalDepRoot>>,
     demand_driven_ecosystems: &HashMap<&'static str, Arc<dyn Ecosystem>>,
 ) -> SymbolLocationIndex {
+    reset_all_demand_caches();
     let mut symbol_index = SymbolLocationIndex::new();
     let _t_symidx = Some(crate::indexer::phase_timer::scope("externals.build_symbol_index"));
     let mut eco_tags: Vec<&'static str> = demand_driven_by_eco.keys().copied().collect();

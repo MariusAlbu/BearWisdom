@@ -3,16 +3,12 @@
 //
 // Synthesizes `ParsedFile`s of public types + methods from the DLLs
 // `dll_locator` discovers: the eager whole-DLL pass (per-coord work on rayon),
-// the cheap type-name enumeration the demand index offers, and the
-// materialize-on-miss crack of one demanded type on a dedicated dotscope
-// thread.
+// the cheap type-name enumeration the demand index offers, and the extraction
+// of one demanded type from an assembly `dotscope_worker` parsed.
 // =============================================================================
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
 
-use once_cell::sync::Lazy;
 use rayon::prelude::*;
 use tracing::debug;
 
@@ -28,71 +24,6 @@ use super::signature_format::{
 };
 use super::source_discovery::{discover_nuget_source_files, parse_cs_source_file};
 use super::type_qname::{assembly_type_defs, qualified_type_name};
-
-/// A request to crack one type out of a DLL, sent to the dedicated dotscope
-/// thread. `reply` carries the resulting `ParsedFile` (or `None`) back.
-struct CrackRequest {
-    dll_path: PathBuf,
-    qualified_type: String,
-    lang_id: String,
-    virtual_path: String,
-    reply: std::sync::mpsc::Sender<Option<crate::types::ParsedFile>>,
-}
-
-/// All `dotscope` work runs on ONE dedicated OS thread, never on the resolve
-/// pool's rayon workers.
-///
-/// Two reasons this is mandatory: (1) `dotscope` is not safe to use from
-/// multiple threads at once (parallel parse OR read deadlocks); (2) `dotscope`
-/// itself uses rayon — calling it from a resolve-pool worker nests its parallel
-/// work on the resolve pool, which deadlocks when the other workers are blocked
-/// waiting on this DLL. Running on a plain (non-rayon) thread routes dotscope's
-/// internal rayon to the idle global pool instead, and the single thread
-/// serializes access. The per-DLL `CilObject` cache lives on this thread, so it
-/// needs no lock and each DLL is parsed at most once.
-static DOTSCOPE_TX: Lazy<Mutex<std::sync::mpsc::Sender<CrackRequest>>> = Lazy::new(|| {
-    let (tx, rx) = std::sync::mpsc::channel::<CrackRequest>();
-    std::thread::Builder::new()
-        .name("bw-dotscope".into())
-        .spawn(move || {
-            let mut cache: HashMap<PathBuf, Option<Arc<dotscope::prelude::CilObject>>> =
-                HashMap::new();
-            while let Ok(req) = rx.recv() {
-                let assembly = match cache.get(&req.dll_path) {
-                    Some(entry) => entry.clone(),
-                    None => {
-                        let loaded = load_assembly(&req.dll_path).map(Arc::new);
-                        cache.insert(req.dll_path.clone(), loaded.clone());
-                        loaded
-                    }
-                };
-                let result = assembly.and_then(|asm| {
-                    extract_type_from_assembly(
-                        &asm,
-                        &req.qualified_type,
-                        &req.lang_id,
-                        &req.virtual_path,
-                        &req.dll_path,
-                    )
-                });
-                let _ = req.reply.send(result);
-            }
-        })
-        .expect("failed to spawn dotscope worker thread");
-    Mutex::new(tx)
-});
-
-/// Parse one DLL into a `CilObject`. Only ever called on the dotscope thread.
-fn load_assembly(dll_path: &Path) -> Option<dotscope::prelude::CilObject> {
-    use dotscope::metadata::cilassemblyview::CilAssemblyView;
-    use dotscope::metadata::validation::ValidationConfig;
-    use dotscope::prelude::CilObject;
-
-    let mut config = ValidationConfig::disabled();
-    config.lenient = true;
-    let view = CilAssemblyView::from_path_with_validation(dll_path, config.clone()).ok()?;
-    CilObject::from_view_with_validation(view, config).ok()
-}
 
 /// Public entry point used by back-compat re-exports in `externals.rs`.
 /// Returns DLL metadata ParsedFiles only — source ParsedFiles are merged by
@@ -176,35 +107,6 @@ pub(crate) fn list_dll_type_names(
     out
 }
 
-/// Crack a single .NET type from a DLL on demand. `virtual_path` must be in
-/// the `ext:dotnet-type:<dll_path>!!<assembly_name>!!<qualified_type>` form
-/// produced by `list_dll_type_names`. Returns `None` on any decoding or I/O
-/// error so the caller can skip gracefully.
-pub(crate) fn crack_one_dll_type(
-    virtual_path: &str,
-    lang_id: &str,
-) -> Option<crate::types::ParsedFile> {
-    // Decode "ext:dotnet-type:<dll_path>!!<assembly_name>!!<qualified_type>"
-    let payload = virtual_path.strip_prefix("ext:dotnet-type:")?;
-    let mut parts = payload.splitn(3, "!!");
-    let dll_str = parts.next()?;
-    let _assembly_name = parts.next()?;
-    let qualified_type = parts.next()?;
-
-    // Hand the crack to the dedicated dotscope thread and block for the reply —
-    // dotscope must never run on a resolve-pool worker (see `DOTSCOPE_TX`).
-    let (reply, reply_rx) = std::sync::mpsc::channel();
-    let req = CrackRequest {
-        dll_path: PathBuf::from(dll_str),
-        qualified_type: qualified_type.to_string(),
-        lang_id: lang_id.to_string(),
-        virtual_path: virtual_path.to_string(),
-        reply,
-    };
-    DOTSCOPE_TX.lock().ok()?.send(req).ok()?;
-    reply_rx.recv().ok()?
-}
-
 /// `Inherits`/`Implements` refs for a cracked type's base class and interface
 /// list. The refs make the inheritance map climbable for DLL types — a member
 /// declared on a base interface resolves on the derived receiver — and let
@@ -248,8 +150,8 @@ fn emit_supertype_refs(
 }
 
 /// Extract one type (and its public methods) from an already-parsed assembly.
-/// Runs ONLY on the dotscope thread (see `DOTSCOPE_TX`).
-fn extract_type_from_assembly(
+/// Runs ONLY on the dotscope thread (see `dotscope_worker`).
+pub(super) fn extract_type_from_assembly(
     assembly: &dotscope::prelude::CilObject,
     qualified_type: &str,
     lang_id: &str,
