@@ -260,8 +260,7 @@ impl Compilation {
             .iter()
             .map(|(k, v)| (k.clone(), *v))
             .collect();
-        self.module_specifier.go_module_path =
-            ctx.manifests.get(&ManifestKind::GoMod).and_then(|m| m.module_path.clone());
+        self.module_specifier.snapshot_manifests(ctx);
         // One entry per isolated package (so an alias-less package declines rather
         // than borrowing the global set) plus the workspace-wide fallback. The
         // `AliasedImportRule` consults these via `resolve_path_alias`.
@@ -2395,7 +2394,8 @@ impl SymbolLookup for Compilation {
         module_specifier::resolve_via_module_resolver(
             language, source_file, spec, self.package_id_for_file(source_file),
             &self.workspace_pkg_by_declared_name,
-            self.module_specifier.go_module_path.as_deref(), &self.module_specifier.file_paths,
+            self.module_specifier.go_module_path.as_deref(),
+            &self.module_specifier.workspace_packages, &self.module_specifier.file_paths,
         )
     }
 

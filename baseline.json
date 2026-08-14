@@ -5546,8 +5546,8 @@
       "flow_edge_types": {},
       "flow_edges": 0,
       "generated_files_reclassified": 5,
-      "internal_edges": 158630,
-      "internal_unresolved": 111531,
+      "internal_edges": 158766,
+      "internal_unresolved": 111395,
       "languages": {
         "css": 177,
         "dockerfile": 3,
@@ -5564,9 +5564,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/javascript-ghost",
       "perf": {
-        "end_ws_mb": 121,
-        "files_per_sec": 52,
-        "index_duration_ms": 122703
+        "end_ws_mb": 123,
+        "files_per_sec": 44,
+        "index_duration_ms": 143649
       },
       "project": "javascript-ghost",
       "rate_by_language": {
@@ -5577,9 +5577,9 @@
         "markdown": 21.21,
         "mdx": 66.29,
         "shell": 52.38,
-        "typescript": 81.32
+        "typescript": 81.44
       },
-      "resolution_rate": 58.72,
+      "resolution_rate": 58.77,
       "routes": 0,
       "symbols": 99737,
       "unresolved_by_lang_kind": {
@@ -5589,7 +5589,7 @@
         "handlebars.calls": 8,
         "handlebars.imports": 4,
         "html.imports": 19,
-        "javascript.calls": 72894,
+        "javascript.calls": 72893,
         "javascript.imports": 9262,
         "javascript.inherits": 204,
         "javascript.type_ref": 8822,
@@ -5599,11 +5599,11 @@
         "mdx.type_ref": 24,
         "shell.calls": 7,
         "shell.imports": 3,
-        "typescript.calls": 12591,
+        "typescript.calls": 12458,
         "typescript.imports": 185,
         "typescript.inherits": 67,
         "typescript.instantiates": 377,
-        "typescript.type_ref": 6998
+        "typescript.type_ref": 6996
       }
     },
     {
@@ -10020,8 +10020,8 @@
         "service_dependency": 4
       },
       "flow_edges": 4,
-      "internal_edges": 162889,
-      "internal_unresolved": 142625,
+      "internal_edges": 162575,
+      "internal_unresolved": 142939,
       "languages": {
         "c": 2,
         "css": 5,
@@ -10044,9 +10044,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/python-superset",
       "perf": {
-        "end_ws_mb": 260,
-        "files_per_sec": 16,
-        "index_duration_ms": 277446
+        "end_ws_mb": 144,
+        "files_per_sec": 26,
+        "index_duration_ms": 166517
       },
       "project": "python-superset",
       "rate_by_language": {
@@ -10061,9 +10061,9 @@
         "mdx": 25.84,
         "python": 49.07,
         "shell": 72.13,
-        "typescript": 56.54
+        "typescript": 56.35
       },
-      "resolution_rate": 53.32,
+      "resolution_rate": 53.21,
       "routes": 0,
       "symbols": 143806,
       "unresolved_by_lang_kind": {
@@ -10084,15 +10084,15 @@
         "markdown.type_ref": 32,
         "mdx.calls": 38,
         "mdx.type_ref": 28,
-        "python.calls": 41913,
-        "python.imports": 4451,
+        "python.calls": 41912,
+        "python.imports": 4445,
         "python.type_ref": 19507,
         "shell.calls": 17,
-        "typescript.calls": 56175,
+        "typescript.calls": 56464,
         "typescript.imports": 104,
         "typescript.inherits": 73,
         "typescript.instantiates": 52,
-        "typescript.type_ref": 18817
+        "typescript.type_ref": 18849
       },
       "vendored_files_reclassified": 1997
     },
@@ -13211,8 +13211,8 @@
       },
       "flow_edges": 288,
       "generated_files_reclassified": 8,
-      "internal_edges": 377862,
-      "internal_unresolved": 96153,
+      "internal_edges": 377941,
+      "internal_unresolved": 96074,
       "languages": {
         "css": 318,
         "graphql": 3,
@@ -13232,33 +13232,33 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-nextjs",
       "perf": {
-        "end_ws_mb": 240,
-        "files_per_sec": 14,
-        "index_duration_ms": 1102061
+        "end_ws_mb": 175,
+        "files_per_sec": 18,
+        "index_duration_ms": 814568
       },
       "project": "ts-nextjs",
       "rate_by_language": {
         "graphql": 100.0,
         "html": 21.88,
-        "javascript": 69.8,
+        "javascript": 69.9,
         "markdown": 81.65,
         "mdx": 45.97,
         "python": 55.17,
         "rust": 81.55,
         "scss": 4.17,
         "shell": 47.83,
-        "typescript": 80.01
+        "typescript": 80.02
       },
-      "resolution_rate": 79.72,
+      "resolution_rate": 79.73,
       "routes": 430,
       "symbols": 132899,
       "unresolved_by_lang_kind": {
         "html.calls": 62,
         "html.type_ref": 13,
-        "javascript.calls": 4485,
+        "javascript.calls": 4441,
         "javascript.imports": 3985,
         "javascript.inherits": 5,
-        "javascript.type_ref": 5703,
+        "javascript.type_ref": 5701,
         "markdown.calls": 68,
         "markdown.type_ref": 137,
         "mdx.calls": 355,
@@ -13274,7 +13274,7 @@
         "scss.calls": 13,
         "scss.imports": 10,
         "shell.calls": 12,
-        "typescript.calls": 28646,
+        "typescript.calls": 28613,
         "typescript.imports": 16,
         "typescript.inherits": 2,
         "typescript.instantiates": 10,

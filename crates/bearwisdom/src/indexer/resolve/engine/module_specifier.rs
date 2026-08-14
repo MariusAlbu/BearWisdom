@@ -11,12 +11,38 @@ use rustc_hash::FxHashMap;
 use crate::types::ParsedFile;
 
 /// `Compilation`'s state for the `ModuleResolver` fallback: the internal
-/// file-path candidate set (grown once per `ingest` batch) and the
-/// workspace's `go.mod` module path (set once from `ProjectContext`).
+/// file-path candidate set (grown once per `ingest` batch), the workspace's
+/// `go.mod` module path, and the declared workspace packages (name → root
+/// directory), all set once from `ProjectContext`.
 #[derive(Default)]
 pub(crate) struct Context {
     pub(crate) file_paths: Vec<String>,
     pub(crate) go_module_path: Option<String>,
+    pub(crate) workspace_packages: Vec<(String, String)>,
+}
+
+impl Context {
+    /// Reset the manifest-derived resolver signals from a fresh
+    /// `ProjectContext`: the go.mod module path and the declared workspace
+    /// packages as (name → root directory) pairs, roots normalized without a
+    /// trailing slash.
+    pub(crate) fn snapshot_manifests(
+        &mut self,
+        ctx: &crate::indexer::project_context::ProjectContext,
+    ) {
+        self.go_module_path = ctx
+            .manifests
+            .get(&crate::ecosystem::manifest::ManifestKind::GoMod)
+            .and_then(|m| m.module_path.clone());
+        self.workspace_packages = ctx
+            .workspace_pkg_by_declared_name
+            .iter()
+            .filter_map(|(name, id)| {
+                let root = ctx.workspace_pkg_paths.get(id)?;
+                Some((name.clone(), root.trim_end_matches('/').to_string()))
+            })
+            .collect();
+    }
 }
 
 /// The internal (non-`ext:`) file paths from a parsed batch — the candidate
@@ -42,6 +68,7 @@ pub(crate) fn resolve_via_module_resolver(
     package_id: Option<i64>,
     workspace_pkg_by_declared_name: &FxHashMap<String, i64>,
     go_module_path: Option<&str>,
+    workspace_packages: &[(String, String)],
     file_paths: &[String],
 ) -> Option<String> {
     let dart_self_package = package_id.and_then(|pid| {
@@ -50,9 +77,10 @@ pub(crate) fn resolve_via_module_resolver(
             .find(|(_, &id)| id == pid)
             .map(|(name, _)| name.as_str())
     });
-    let resolvers = crate::indexer::module_resolution::all_resolvers_with_manifest_data(
+    let resolvers = crate::indexer::module_resolution::all_resolvers_with_workspace(
         go_module_path,
         dart_self_package,
+        workspace_packages.to_vec(),
     );
     let paths: Vec<&str> = file_paths.iter().map(String::as_str).collect();
     crate::indexer::module_resolution::resolve_module_to_file(

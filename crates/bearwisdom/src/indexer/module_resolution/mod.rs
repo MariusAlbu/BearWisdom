@@ -19,6 +19,7 @@ pub mod python_mod;
 pub mod ruby_mod;
 pub mod rust_mod;
 pub mod starlark_mod;
+pub mod workspace;
 
 // ---------------------------------------------------------------------------
 // FilePathIndex — O(1) suffix lookup replacing O(N) linear scans
@@ -197,7 +198,21 @@ pub fn all_resolvers_with_manifest_data(
     go_module_path: Option<&str>,
     dart_self_package: Option<&str>,
 ) -> Vec<Box<dyn ModuleResolver>> {
+    all_resolvers_with_workspace(go_module_path, dart_self_package, Vec::new())
+}
+
+/// All resolvers, including the universal workspace-package resolver seeded
+/// with `workspace_packages` (declared name → package root directory). The
+/// workspace resolver runs first: a specifier whose head a manifest declares
+/// maps by that declaration for every language, before per-language
+/// heuristics.
+pub fn all_resolvers_with_workspace(
+    go_module_path: Option<&str>,
+    dart_self_package: Option<&str>,
+    workspace_packages: Vec<(String, String)>,
+) -> Vec<Box<dyn ModuleResolver>> {
     vec![
+        Box::new(workspace::WorkspacePackageResolver::new(workspace_packages)),
         Box::new(node::NodeModuleResolver),
         Box::new(rust_mod::RustModuleResolver),
         Box::new(python_mod::PythonModuleResolver),
@@ -232,8 +247,8 @@ pub fn resolve_module_to_file(
 ) -> Option<String> {
     resolvers
         .iter()
-        .find(|r| r.language_ids().contains(&language))
-        .and_then(|r| r.resolve_to_file(specifier, importing_file, file_paths))
+        .filter(|r| r.language_ids().is_empty() || r.language_ids().contains(&language))
+        .find_map(|r| r.resolve_to_file(specifier, importing_file, file_paths))
 }
 
 /// Indexed variant of `resolve_module_to_file`. Uses `FilePathIndex` for O(1)
@@ -247,6 +262,6 @@ pub fn resolve_module_to_file_indexed(
 ) -> Option<String> {
     resolvers
         .iter()
-        .find(|r| r.language_ids().contains(&language))
-        .and_then(|r| r.resolve_to_file_indexed(specifier, importing_file, index))
+        .filter(|r| r.language_ids().is_empty() || r.language_ids().contains(&language))
+        .find_map(|r| r.resolve_to_file_indexed(specifier, importing_file, index))
 }

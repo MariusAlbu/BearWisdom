@@ -162,16 +162,7 @@ fn type_candidate(
 /// A single-colon URI-style scheme prefix (`node:fs`, `sass:math`). A double
 /// colon is a qualified-path separator, never a scheme.
 fn has_scheme_prefix(spec: &str) -> bool {
-    let Some(ix) = spec.find(':') else {
-        return false;
-    };
-    if ix == 0 || spec.as_bytes().get(ix + 1) == Some(&b':') {
-        return false;
-    }
-    spec[..ix]
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '.' | '-'))
-        && spec[..ix].starts_with(|c: char| c.is_ascii_alphabetic())
+    super::module_scheme::strip_scheme_prefix(spec).is_some()
 }
 
 /// The external index attests to the specifier or one of its leading path

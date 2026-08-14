@@ -234,6 +234,15 @@ fn module_prefix_candidates(module: &str, rewrites: ModulePrefixRewrites) -> Vec
     if !is_bare_module_specifier(module) {
         return out;
     }
+    // A scheme-prefixed specifier (`node:assert/strict`) means the module
+    // behind the scheme — probe the descheme'd form and its own rewrites
+    // alongside the literal.
+    if let Some(stripped) =
+        crate::indexer::resolve::engine::module_scheme::strip_scheme_prefix(module)
+    {
+        out.extend(module_prefix_candidates(stripped, rewrites));
+        return out;
+    }
     if definitely_typed && !module.starts_with("@types/") {
         // `@scope/pkg` → `@types/scope__pkg`; `pkg` → `@types/pkg`.
         if let Some(rest) = module.strip_prefix('@') {

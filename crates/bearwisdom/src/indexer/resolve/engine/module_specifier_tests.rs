@@ -48,6 +48,7 @@ fn resolve_via_module_resolver_bare_relative_dart() {
             None,
             &names,
             None,
+            &[],
             &file_paths,
         ),
         Some("lib/foo.dart".to_string())
@@ -69,6 +70,7 @@ fn resolve_via_module_resolver_package_self_uses_owning_package_name() {
             Some(1),
             &names,
             None,
+            &[],
             &file_paths,
         ),
         Some("lib/src/models/user.dart".to_string())
@@ -87,6 +89,7 @@ fn resolve_via_module_resolver_declines_when_package_id_unmatched() {
             Some(2), // wrong package id — not "app"'s owner
             &names,
             None,
+            &[],
             &file_paths,
         ),
         None

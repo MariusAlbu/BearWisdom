@@ -53,6 +53,7 @@ pub mod relative_imports;
 pub mod segment_args;
 pub mod substitution;
 pub mod type_mention_demand;
+mod module_scheme;
 mod root_import_discipline;
 mod unbound_cause;
 pub mod semantic_model;
