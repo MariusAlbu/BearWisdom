@@ -10011,7 +10011,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 53
+        "min_resolution_rate": 57
       },
       "code_chunks": 293720,
       "drained_refs": 15060,
@@ -10020,8 +10020,8 @@
         "service_dependency": 4
       },
       "flow_edges": 4,
-      "internal_edges": 162575,
-      "internal_unresolved": 142939,
+      "internal_edges": 175053,
+      "internal_unresolved": 130528,
       "languages": {
         "c": 2,
         "css": 5,
@@ -10044,9 +10044,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/python-superset",
       "perf": {
-        "end_ws_mb": 144,
-        "files_per_sec": 26,
-        "index_duration_ms": 166517
+        "end_ws_mb": 130,
+        "files_per_sec": 18,
+        "index_duration_ms": 243132
       },
       "project": "python-superset",
       "rate_by_language": {
@@ -10058,12 +10058,12 @@
         "jinja": 72.73,
         "mako": 0.0,
         "markdown": 48.89,
-        "mdx": 25.84,
-        "python": 49.07,
+        "mdx": 34.74,
+        "python": 58.68,
         "shell": 72.13,
-        "typescript": 56.35
+        "typescript": 56.36
       },
-      "resolution_rate": 53.21,
+      "resolution_rate": 57.29,
       "routes": 0,
       "symbols": 143806,
       "unresolved_by_lang_kind": {
@@ -10082,17 +10082,17 @@
         "mako.calls": 2,
         "markdown.calls": 37,
         "markdown.type_ref": 32,
-        "mdx.calls": 38,
+        "mdx.calls": 34,
         "mdx.type_ref": 28,
-        "python.calls": 41912,
-        "python.imports": 4445,
-        "python.type_ref": 19507,
+        "python.calls": 36769,
+        "python.imports": 1590,
+        "python.type_ref": 15111,
         "shell.calls": 17,
-        "typescript.calls": 56464,
+        "typescript.calls": 56452,
         "typescript.imports": 104,
         "typescript.inherits": 73,
         "typescript.instantiates": 52,
-        "typescript.type_ref": 18849
+        "typescript.type_ref": 18848
       },
       "vendored_files_reclassified": 1997
     },
