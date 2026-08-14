@@ -28,22 +28,15 @@
 // rebar3 umbrella members live under the `apps/` and `lib/` app dirs, which are
 // excluded structurally.
 //
-// Go vendoring and Composer (PHP) extend the same shape with their own
-// in-subtree declaration. A root-level `vendor/` is already dropped by the file
-// walker (`ROOT_ONLY_EXCLUDE_NAMES`), so the residual surface is a NESTED
-// `vendor/` — a monorepo package's `services/api/vendor/...`, which the walker
-// does index. Such a tree self-declares as external via a manifest INSIDE it:
-//   * go-vendor: `vendor/modules.txt` (Go's vendor inventory) at the subtree
-//     root, optionally with vendored modules carrying their own `go.mod`.
-//   * composer-vendor: `vendor/composer/installed.json` (Composer's install
-//     ledger) at the subtree root.
-// The HOST's own module is protected: the project's own `go.mod` /
-// `composer.json` is never under a `vendor/` segment, so it is never matched.
+// Go vendoring and Composer (PHP) extend the same shape via an install ledger
+// INSIDE a nested `vendor/` tree — see the `ledger` child module.
 // =============================================================================
 
 use std::path::Path;
 
 use crate::types::PackageInfo;
+
+mod ledger;
 
 #[cfg(test)]
 #[path = "vendored_self_declared_tests.rs"]
@@ -79,7 +72,7 @@ pub fn self_declared_vendor_prefixes(
     packages: &[PackageInfo],
     workspace_kind: Option<&str>,
 ) -> Vec<String> {
-    let mut out = if host_owns_npm(packages, workspace_kind) {
+    let mut out = if host_owns_npm(project_root, packages, workspace_kind) {
         Vec::new()
     } else {
         let mut out = npm_vendored_prefixes(packages);
@@ -87,16 +80,31 @@ pub fn self_declared_vendor_prefixes(
         out
     };
     out.extend(rebar_vendored_prefixes(project_root, &out));
-    out.extend(go_vendor_prefixes(project_root, &out));
-    out.extend(composer_vendor_prefixes(project_root, &out));
+    out.extend(ledger::go_vendor_prefixes(project_root, &out));
+    out.extend(ledger::composer_vendor_prefixes(project_root, &out));
     out
 }
 
-/// True when the host project declares the npm ecosystem itself: either a
-/// root-level `package.json` (the project IS a JS app) or an npm-family
-/// workspace (its members own the ecosystem). Either makes vendored/first-party
-/// partitioning ambiguous, so the gate declines.
-fn host_owns_npm(packages: &[PackageInfo], workspace_kind: Option<&str>) -> bool {
+/// True when the host project declares the npm ecosystem itself: a root-level
+/// `package.json` on disk, a recorded root npm package row, or an npm-family
+/// workspace. Any one makes vendored/first-party partitioning ambiguous, so
+/// the gate declines.
+///
+/// The on-disk probe is the structural signal — it reads the host's own
+/// manifest declaration, the exact fact this gate is defined over. The two
+/// derived signals can each be absent on a polyglot monorepo: `workspace_kind`
+/// is single-valued and another ecosystem's root manifest can win detection,
+/// and the root npm row can be excluded from `packages` as a workspace
+/// controller (see `stage_discover`). Neither absence means the host owns no
+/// npm.
+fn host_owns_npm(
+    project_root: &Path,
+    packages: &[PackageInfo],
+    workspace_kind: Option<&str>,
+) -> bool {
+    if project_root.join("package.json").is_file() {
+        return true;
+    }
     if workspace_kind.is_some_and(|k| NPM_WORKSPACE_KINDS.contains(&k)) {
         return true;
     }
@@ -296,103 +304,6 @@ fn declares_erlang_app(dir: &Path) -> bool {
             .to_string_lossy()
             .ends_with(".app.src")
     })
-}
-
-/// Go-vendored subtree prefixes for the project at `project_root`. A `vendor/`
-/// directory carrying Go's `vendor/modules.txt` inventory at its root is a Go
-/// vendored-dependency tree; the whole `vendor/` subtree is third-party. The
-/// project's own module (its root `go.mod`) is never under a `vendor/` segment,
-/// so it is never matched. A root-level `vendor/` is already dropped by the file
-/// walker — this catches the nested-monorepo-package case it does not. `already`
-/// (prior prefixes) are skipped to avoid duplicate entries.
-fn go_vendor_prefixes(project_root: &Path, already: &[String]) -> Vec<String> {
-    vendor_ledger_prefixes(project_root, already, go_vendor_ledger)
-}
-
-/// Composer-vendored subtree prefixes for the project at `project_root`. A
-/// `vendor/` directory carrying Composer's `vendor/composer/installed.json`
-/// ledger is a Composer vendored-dependency tree; the whole `vendor/` subtree is
-/// third-party. The project's own package (its root `composer.json`) is never
-/// under a `vendor/` segment, so it is never matched. A root-level `vendor/` is
-/// already dropped by the file walker — this catches the nested case it does
-/// not. `already` (prior prefixes) are skipped to avoid duplicate entries.
-fn composer_vendor_prefixes(project_root: &Path, already: &[String]) -> Vec<String> {
-    vendor_ledger_prefixes(project_root, already, composer_vendor_ledger)
-}
-
-/// True when `dir` is a Go vendored-dependency tree: it carries the
-/// `modules.txt` inventory `go mod vendor` writes at the `vendor/` root.
-fn go_vendor_ledger(dir: &Path) -> bool {
-    dir.join("modules.txt").is_file()
-}
-
-/// True when `dir` is a Composer vendored-dependency tree: it carries the
-/// `composer/installed.json` ledger Composer writes at the `vendor/` root.
-fn composer_vendor_ledger(dir: &Path) -> bool {
-    dir.join("composer").join("installed.json").is_file()
-}
-
-/// Generic vendored-dependency subtree finder. Walks `project_root` for any
-/// directory literally named `vendor` whose contents self-declare it via
-/// `ledger` (the ecosystem's install inventory written at the `vendor/` root).
-/// The matched `vendor` subtree is registered as a single prefix and not
-/// descended into. Bounded depth-8 walk; dotted dirs and `node_modules` are
-/// pruned. `already` are skipped to avoid duplicate entries.
-fn vendor_ledger_prefixes(
-    project_root: &Path,
-    already: &[String],
-    ledger: fn(&Path) -> bool,
-) -> Vec<String> {
-    const MAX_DEPTH: u32 = 8;
-    let mut out = Vec::new();
-    walk_for_vendor_ledger(project_root, project_root, 0, MAX_DEPTH, already, ledger, &mut out);
-    out
-}
-
-/// Recursive helper for `vendor_ledger_prefixes`. Registers a `vendor`
-/// directory whose contents satisfy `ledger`, then prunes it from the descent
-/// (the prefix already covers everything below). Prunes dotted dirs and
-/// `node_modules`.
-#[allow(clippy::too_many_arguments)]
-fn walk_for_vendor_ledger(
-    project_root: &Path,
-    dir: &Path,
-    depth: u32,
-    max_depth: u32,
-    already: &[String],
-    ledger: fn(&Path) -> bool,
-    out: &mut Vec<String>,
-) {
-    if depth > max_depth {
-        return;
-    }
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let Ok(ft) = entry.file_type() else { continue };
-        if !ft.is_dir() {
-            continue;
-        }
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if name.starts_with('.') || name == "node_modules" {
-            continue;
-        }
-        let path = entry.path();
-        if name == "vendor" && ledger(&path) {
-            if let Ok(rel) = path.strip_prefix(project_root) {
-                let rel = rel.to_string_lossy().replace('\\', "/");
-                let rel = rel.trim_matches('/').to_string();
-                if !rel.is_empty() && !already.iter().any(|p| p == &rel) {
-                    // A self-declaring vendor tree is a leaf — its whole subtree
-                    // is third-party, so don't descend into it.
-                    out.push(rel);
-                }
-            }
-            continue;
-        }
-        walk_for_vendor_ledger(project_root, &path, depth + 1, max_depth, already, ledger, out);
-    }
 }
 
 /// True when `rel_path` (project-root-relative) falls inside one of the

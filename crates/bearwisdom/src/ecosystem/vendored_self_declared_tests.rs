@@ -149,6 +149,39 @@ fn root_dot_path_npm_declines_gate() {
     assert!(prefixes.is_empty());
 }
 
+// Root package.json ON DISK gates the npm arm even when workspace detection
+// recorded a foreign (non-npm) workspace kind — on a polyglot monorepo the
+// single-valued workspace_kind can be won by another ecosystem's root
+// manifest while the host still owns npm.
+#[test]
+fn root_package_json_gates_despite_foreign_workspace_kind() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write_package_json(root, "", "host-monorepo");
+    write_package_json(root, "packages/x", "first-party-lib");
+
+    let packages = vec![npm_pkg("packages/x", "first-party-lib")];
+    let prefixes = self_declared_vendor_prefixes(root, &packages, Some("cargo-workspace"));
+    assert!(prefixes.is_empty());
+}
+
+// Root package.json ON DISK gates the npm arm even when no root npm row is
+// present in `packages` (the package table can omit the workspace-controller
+// manifest) — deep member rows alone must not read as vendored.
+#[test]
+fn root_package_json_gates_when_root_row_absent() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write_package_json(root, "", "host-app");
+
+    let packages = vec![
+        npm_pkg("packages/core", "@host/core"),
+        npm_pkg("examples/demo", "@host/demo"),
+    ];
+    let prefixes = self_declared_vendor_prefixes(root, &packages, None);
+    assert!(prefixes.is_empty());
+}
+
 // bower.json-only subtree (no sibling package.json) is invisible to the npm
 // manifest scan but IS self-declaring — discovered by the bower walk.
 #[test]

@@ -236,11 +236,16 @@ fn module_prefix_candidates(module: &str, rewrites: ModulePrefixRewrites) -> Vec
     }
     // A scheme-prefixed specifier (`node:assert/strict`) means the module
     // behind the scheme — probe the descheme'd form and its own rewrites
-    // alongside the literal.
+    // alongside the literal. The scheme also names the platform package that
+    // types the module, so the scheme-as-path form (`node/assert/strict`) is
+    // probed too — its rewrites reach the `@types/{scheme}/…` qnames the
+    // supply carries.
     if let Some(stripped) =
         crate::indexer::resolve::engine::module_scheme::strip_scheme_prefix(module)
     {
         out.extend(module_prefix_candidates(stripped, rewrites));
+        let scheme = &module[..module.len() - stripped.len() - 1];
+        out.extend(module_prefix_candidates(&format!("{scheme}/{stripped}"), rewrites));
         return out;
     }
     if definitely_typed && !module.starts_with("@types/") {

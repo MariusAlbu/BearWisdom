@@ -19,6 +19,7 @@ use rustc_hash::FxHashMap;
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 use crate::types::AliasTargetIds;
 
+use super::alias_gate::{head_names_nominal_type, uncontested_alias_target};
 use super::chain::{apply_args, callable_named_return, head_qname};
 use super::contract::SymbolLookup;
 
@@ -108,10 +109,12 @@ pub(crate) fn expand_with_id(
         // flattened RHS head when it carries no members of its own.
         // Id-keyed target wins on the head it describes — a bare-name alias
         // collision the use site disambiguates by the declaration it imported.
+        // The name-keyed fallback is gated: a head contested by a nominal type
+        // declaration keeps the nominal receiver (see `alias_gate`).
         // Consumed after this hop (later hops resolve by name); survives a prior
         // NoInfer/utility unwrap so `NoInfer<Logger>` still keys on `Logger`'s id.
         let by_id = recv_id.take().and_then(|id| lookup.alias_target_by_id(id));
-        let target = match by_id.or_else(|| lookup.alias_target(&head)) {
+        let target = match by_id.or_else(|| uncontested_alias_target(lookup, &head)) {
             // `ReturnType<typeof f>` / `ReturnType<F>` intrinsic — the return type
             // of the function value/type the single argument names. A captured
             // return is required; an uncaptured one (`break`) leaves the alias
@@ -354,20 +357,26 @@ fn application_target(arena: &TypeArena, root: TypeId, args: &[TypeId]) -> TypeI
 
 /// The next hop for a transparent (non-`Application`) alias: its flattened RHS
 /// head, recorded as the alias's field type. `None` — leaving the type
-/// unchanged — when `head` is not a type alias, or when the alias declares its
-/// own members (an object-literal alias `type T = { … }` / `type T = B & { … }`
-/// *is* those members, so following it would drop them), or when no field type
-/// is recorded.
+/// unchanged — when no same-qname declaration is a type alias, when a nominal
+/// type contests the qname (the scan covers ALL same-qname declarations, so
+/// the refusal is independent of symbol insertion order), when the alias
+/// declares its own members (an object-literal alias `type T = { … }` /
+/// `type T = B & { … }` *is* those members, so following it would drop them),
+/// or when no field type is recorded.
 fn transparent_alias_target(
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
     head: &str,
 ) -> Option<TypeId> {
-    let (id, is_alias) = match lookup.by_qualified_name(head) {
-        Some(s) => (s.id, s.kind == "type_alias"),
-        None => return None,
-    };
-    if !is_alias || !lookup.members_of_id(id).is_empty() {
+    if head_names_nominal_type(lookup, head) {
+        return None;
+    }
+    let id = lookup
+        .all_by_qualified_name(head)
+        .iter()
+        .find(|s| s.kind == "type_alias")?
+        .id;
+    if !lookup.members_of_id(id).is_empty() {
         return None;
     }
     if let Some(t) = lookup.field_type_id_of(id).or_else(|| lookup.field_type_id(head)) {

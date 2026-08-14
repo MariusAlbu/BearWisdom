@@ -182,3 +182,57 @@ fn passes_when_no_module_on_ref() {
     };
     assert!(matches!(ModuleAnchorRule.apply(&ctx), LookupResult::Pass));
 }
+
+/// Rewrites axis used by the scheme-prefix candidate tests.
+const SCHEME_REWRITES: ModulePrefixRewrites = ModulePrefixRewrites::On {
+    definitely_typed: true,
+    deep_import_peel: true,
+    decline_bare_directory_match: true,
+};
+
+/// A scheme-prefixed specifier with a subpath probes the scheme-as-path form:
+/// the descheme'd candidates keep their order and the scheme-as-path family
+/// (with its `@types/` rewrite and deep-import peels) follows, literal first.
+#[test]
+fn scheme_subpath_probes_scheme_as_package() {
+    let candidates = module_prefix_candidates("node:assert/strict", SCHEME_REWRITES);
+    let got: Vec<&str> = candidates.iter().map(String::as_str).collect();
+    assert_eq!(
+        got,
+        [
+            "node:assert/strict",
+            "assert/strict",
+            "@types/assert/strict",
+            "assert",
+            "node/assert/strict",
+            "@types/node/assert/strict",
+            "node/assert",
+            "node",
+        ]
+    );
+}
+
+/// A scheme-prefixed specifier without a subpath gains the scheme-as-path
+/// candidates without losing the descheme'd ones.
+#[test]
+fn scheme_without_subpath_keeps_existing_candidates() {
+    let candidates = module_prefix_candidates("node:fs", SCHEME_REWRITES);
+    let got: Vec<&str> = candidates.iter().map(String::as_str).collect();
+    assert_eq!(
+        got,
+        ["node:fs", "fs", "@types/fs", "node/fs", "@types/node/fs", "node"]
+    );
+}
+
+/// A scheme over a scoped specifier keeps its pre-existing candidate set in
+/// order; the added scheme-as-path probe is present but inert.
+#[test]
+fn scoped_scheme_unchanged() {
+    let candidates = module_prefix_candidates("jsr:@std/path", SCHEME_REWRITES);
+    let got: Vec<&str> = candidates.iter().map(String::as_str).collect();
+    assert_eq!(
+        &got[..3],
+        ["jsr:@std/path", "@std/path", "@types/std__path"]
+    );
+    assert!(got.contains(&"jsr/@std/path"));
+}

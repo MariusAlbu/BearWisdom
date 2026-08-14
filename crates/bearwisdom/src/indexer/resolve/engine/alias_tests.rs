@@ -213,6 +213,93 @@ fn infer_capture_declines_when_the_checked_type_is_not_the_pattern() {
 }
 
 #[test]
+fn contested_head_skips_name_keyed_fallback() {
+    // A class and a name-keyed alias share the bare head. The receiver already
+    // names the member-bearing class, so the alias's target must not swap it:
+    // expansion declines and the input comes back unchanged.
+    let lookup = Lookup::new()
+        .with(sym(1, "Playwright", "Playwright", "class", "lib/browsers/playwright.ts"))
+        .with_alias("Playwright", app("ReturnType", &["getPlaywright"]))
+        .with(sym(2, "getPlaywright", "getPlaywright", "function", "lib/browsers/util.ts"))
+        .with_return_type("getPlaywright", "PlaywrightSession");
+    let arena = lookup.type_arena().unwrap();
+    let recv = arena.class("Playwright");
+    assert_eq!(expand_with_id(recv, None, &lookup, arena), recv);
+}
+
+#[test]
+fn id_keyed_target_expands_despite_contested_name() {
+    // Same collision, but the use site pinned the alias declaration's id —
+    // identity is never gated, so the id-keyed target expands through the
+    // named callable's return.
+    let lookup = Lookup::new()
+        .with(sym(1, "Playwright", "Playwright", "class", "lib/browsers/playwright.ts"))
+        .with_alias("Playwright", app("ReturnType", &["getPlaywright"]))
+        .with_alias_id(100017, app("ReturnType", &["getPlaywright"]))
+        .with(sym(2, "getPlaywright", "getPlaywright", "function", "lib/browsers/util.ts"))
+        .with_return_type("getPlaywright", "PlaywrightSession");
+    let arena = lookup.type_arena().unwrap();
+    let out = expand_with_id(arena.class("Playwright"), Some(100017), &lookup, arena);
+    assert_eq!(arena.format_type(out), "PlaywrightSession");
+}
+
+#[test]
+fn uncontested_bare_alias_still_expands_by_name() {
+    // No same-named nominal type: the name-keyed fallback keeps working, and
+    // the alias's OWN declaration row does not contest its target.
+    let lookup = Lookup::new()
+        .with(sym(1, "PageMap", "PageMap", "type_alias", "types.ts"))
+        .with_alias("PageMap", app("Map", &["string", "Page"]));
+    let arena = lookup.type_arena().unwrap();
+    let out = expand_with_id(arena.class("PageMap"), None, &lookup, arena);
+    assert_eq!(arena.format_type(out), "Map<string, Page>");
+}
+
+#[test]
+fn transparent_target_refused_order_independently() {
+    // A member-less alias (with a recorded field type) and a class share the
+    // exact qname. Whichever declaration was inserted first, the transparent
+    // probe must refuse — the nominal class owns the head.
+    let alias_first = Lookup::new()
+        .with(sym(1, "Playwright", "Playwright", "type_alias", "types.d.ts"))
+        .with(sym(2, "Playwright", "Playwright", "class", "lib/browsers/playwright.ts"))
+        .with_field_type("Playwright", "Hijacked");
+    let arena = alias_first.type_arena().unwrap();
+    assert!(transparent_alias_target(&alias_first, arena, "Playwright").is_none());
+
+    let class_first = Lookup::new()
+        .with(sym(2, "Playwright", "Playwright", "class", "lib/browsers/playwright.ts"))
+        .with(sym(1, "Playwright", "Playwright", "type_alias", "types.d.ts"))
+        .with_field_type("Playwright", "Hijacked");
+    let arena = class_first.type_arena().unwrap();
+    assert!(transparent_alias_target(&class_first, arena, "Playwright").is_none());
+}
+
+#[test]
+fn member_resolves_on_class_past_contested_alias() {
+    use crate::indexer::resolve::engine::chain::{expand_receiver, lookup_member_on, Receiver};
+    // Chain-level end state: the receiver keeps the nominal head past the
+    // hijacking alias, and the qname climb finds the class's method even when
+    // the pinned id lands on the member-less alias row.
+    let lookup = Lookup::new()
+        .with(sym(1, "Playwright", "Playwright", "class", "lib/browsers/playwright.ts"))
+        .with(sym(3, "Playwright", "Playwright", "type_alias", "types.d.ts"))
+        .with_alias("Playwright", app("ReturnType", &["getPlaywright"]))
+        .with(sym(2, "getPlaywright", "getPlaywright", "function", "lib/browsers/util.ts"))
+        .with_return_type("getPlaywright", "PlaywrightSession")
+        .with_member(
+            "Playwright",
+            sym(4, "elementByCss", "Playwright.elementByCss", "method", "lib/browsers/playwright.ts"),
+        );
+    let arena = lookup.type_arena().unwrap();
+    let recv = expand_receiver(Receiver::untyped(arena.class("Playwright")), &lookup, arena, None);
+    assert_eq!(arena.format_type(recv.ty), "Playwright");
+    let m = lookup_member_on(&lookup, arena, recv, "elementByCss", &|_| true)
+        .expect("member on the nominal class");
+    assert_eq!(m.qualified_name, "Playwright.elementByCss");
+}
+
+#[test]
 fn returntype_intrinsic_beats_a_same_named_package_alias() {
     // A package declares its OWN `type ReturnType<T> = …` (an opaque helper);
     // the name-keyed map serves it for the bare head. A receiver typed
