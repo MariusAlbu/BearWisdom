@@ -151,6 +151,10 @@ pub struct Compilation {
     /// members from the child's actual base, not the first-wins qname collision —
     /// and a multi-supertype interface reaches members on every branch.
     inherits_by_id: FxHashMap<i64, Vec<i64>>,
+    /// `(child_qname, parent_head) → import module`: the child file's import
+    /// of that exact head, captured when the edge was recorded. The one
+    /// signal that survives homonyms when a head binds to a declaration.
+    inherits_import_evidence: FxHashMap<(String, String), String>,
     /// Nearest enclosing type-kind ancestor: source_qname → enclosing_type_qname.
     enclosing_type: FxHashMap<String, String>,
     /// Nearest enclosing namespace/module ancestor: source_qname → enclosing_ns_qname.
@@ -331,6 +335,7 @@ impl Compilation {
             inherits_args: FxHashMap::default(),
             inherits_arg_ids: FxHashMap::default(),
             inherits_by_id: FxHashMap::default(),
+            inherits_import_evidence: FxHashMap::default(),
             enclosing_type: FxHashMap::default(),
             enclosing_namespace: FxHashMap::default(),
             alias_target: FxHashMap::default(),
@@ -545,6 +550,14 @@ impl Compilation {
             }
 
             // Pass 3 — inheritance from refs (Inherits / Implements edges).
+            // The file's import bindings (name → module) disambiguate a parent
+            // head against homonyms when the head binds to a declaration id.
+            let import_modules: FxHashMap<&str, &str> = pf
+                .refs
+                .iter()
+                .filter(|r| r.is_import_binding || r.kind == EdgeKind::Imports)
+                .filter_map(|r| r.module.as_deref().map(|m| (r.target_name.as_str(), m)))
+                .collect();
             for r in &pf.refs {
                 if !matches!(r.kind, EdgeKind::Inherits | EdgeKind::Implements) {
                     continue;
@@ -562,6 +575,11 @@ impl Compilation {
                 let parents = self.inherits.entry(child_sym.qualified_name.clone()).or_default();
                 if !parents.contains(&parent_head) {
                     parents.push(parent_head.clone());
+                }
+                if let Some(module) = import_modules.get(parent_head.as_str()) {
+                    self.inherits_import_evidence
+                        .entry((child_sym.qualified_name.clone(), parent_head.clone()))
+                        .or_insert_with(|| (*module).to_string());
                 }
                 if !parent_args.is_empty() {
                     let args: Vec<String> =
@@ -827,29 +845,17 @@ impl Compilation {
         self.rebuild_inherits_by_id();
     }
 
-    /// Rebuild `inherits_by_id` from the string-keyed `inherits` map and the
-    /// fully-built symbol indexes. For each `child_qname → parent_head` edge,
-    /// resolve the child to its id via `by_qname` and the parent head to a
-    /// SPECIFIC parent symbol id, preferring a candidate in the child's own
-    /// workspace package over a same-named type elsewhere. Rebuilt in full (not
-    /// incrementally) because `ingest` / `ingest_from_db` each run over the
-    /// cumulative symbol set.
+    /// Rebuild `inherits_by_id` from the string-keyed `inherits` map, the
+    /// captured import evidence, and the fully-built symbol indexes. Rebuilt
+    /// in full (not incrementally) because `ingest` / `ingest_from_db` each
+    /// run over the cumulative symbol set. Resolution ranking lives in
+    /// `engine/parent_resolution`.
     fn rebuild_inherits_by_id(&mut self) {
-        let mut inherits_by_id: FxHashMap<i64, Vec<i64>> = FxHashMap::default();
-        for (child_qname, parent_heads) in &self.inherits {
-            let Some(child) = self.by_qname.get(child_qname) else {
-                continue;
-            };
-            for parent_head in parent_heads {
-                if let Some(parent_id) = self.resolve_parent_id(parent_head, child.package_id) {
-                    let parents = inherits_by_id.entry(child.id).or_default();
-                    if !parents.contains(&parent_id) {
-                        parents.push(parent_id);
-                    }
-                }
-            }
-        }
-        self.inherits_by_id = inherits_by_id;
+        self.inherits_by_id = super::parent_resolution::rebuild_inherits_by_id(
+            self,
+            &self.inherits,
+            &self.inherits_import_evidence,
+        );
     }
 
     /// Merge TypeScript module-augmentation supertypes into the augmented
@@ -950,41 +956,6 @@ impl Compilation {
     /// whichever same-named type won the first-wins qname race. With no
     /// same-package signal, an exact qname match is used, then the first type-like
     /// same-name candidate anywhere.
-    fn resolve_parent_id(&self, parent_head: &str, child_package: Option<i64>) -> Option<i64> {
-        let simple = parent_head.rsplit('.').next().unwrap_or(parent_head);
-        let declares_members =
-            |id: i64| self.members_by_id.get(&id).is_some_and(|m| !m.is_empty());
-        let mut same_package: Option<i64> = None;
-        let mut member_bearing: Option<i64> = None;
-        let mut fallback: Option<i64> = None;
-        for cand in self.by_name(simple).iter() {
-            if !is_type_like(&cand.kind) {
-                continue;
-            }
-            let in_package = child_package.is_some() && cand.package_id == child_package;
-            if in_package && declares_members(cand.id) {
-                return Some(cand.id);
-            }
-            if in_package {
-                same_package.get_or_insert(cand.id);
-            }
-            if declares_members(cand.id) {
-                member_bearing.get_or_insert(cand.id);
-            }
-            fallback.get_or_insert(cand.id);
-        }
-        if let Some(id) = same_package {
-            return Some(id);
-        }
-        if let Some(parent) = self.by_qname.get(parent_head) {
-            return Some(parent.id);
-        }
-        // A supertype that declares nothing cannot satisfy the member lookup the
-        // climb exists for. When one name has several type-like declarations —
-        // a package that exports both `type X = …` and the `interface X` the
-        // members live on — the member-bearing one is the parent the walk needs.
-        member_bearing.or(fallback)
-    }
 
     /// Derive per-symbol type metadata from `TypeRef` refs and signature
     /// strings for one parsed file, writing into `self.type_info`. Slots

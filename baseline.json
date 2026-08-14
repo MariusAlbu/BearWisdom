@@ -8589,7 +8589,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 36
+        "min_resolution_rate": 48
       },
       "code_chunks": 208171,
       "drained_refs": 1252,
@@ -8599,8 +8599,8 @@
       },
       "flow_edges": 45,
       "generated_files_reclassified": 3,
-      "internal_edges": 81613,
-      "internal_unresolved": 139501,
+      "internal_edges": 107692,
+      "internal_unresolved": 113429,
       "languages": {
         "blade": 83,
         "css": 1,
@@ -8615,30 +8615,30 @@
       },
       "path": "F:/Work/Projects/TestProjects/php-laravel",
       "perf": {
-        "end_ws_mb": 218,
-        "files_per_sec": 47,
-        "index_duration_ms": 61793
+        "end_ws_mb": 99,
+        "files_per_sec": 70,
+        "index_duration_ms": 41547
       },
       "project": "php-laravel",
       "rate_by_language": {
-        "blade": 0.0,
+        "blade": 2.5,
         "markdown": 100.0,
-        "php": 36.93
+        "php": 48.73
       },
-      "resolution_rate": 36.91,
+      "resolution_rate": 48.7,
       "routes": 51,
       "symbols": 37700,
       "unresolved_by_lang_kind": {
-        "blade.calls": 97,
+        "blade.calls": 94,
         "blade.imports": 9,
         "blade.instantiates": 1,
         "blade.type_ref": 13,
-        "php.calls": 127006,
+        "php.calls": 102267,
         "php.implements": 1110,
-        "php.imports": 1854,
-        "php.inherits": 756,
-        "php.instantiates": 2676,
-        "php.type_ref": 5979
+        "php.imports": 1711,
+        "php.inherits": 117,
+        "php.instantiates": 2584,
+        "php.type_ref": 5523
       },
       "vendored_files_reclassified": 58
     },
