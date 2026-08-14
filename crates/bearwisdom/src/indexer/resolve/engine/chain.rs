@@ -31,6 +31,7 @@ use super::composite_members;
 use super::mapped_members;
 use super::arg_types::resolve_arg_types;
 use super::cause::{Cause, CauseKind};
+use super::root_import_discipline::RootImportOutcome;
 use super::generics::{param_patterns, bind_arg_generics, fill_yield_from_args, substitute_env};
 use super::head_decl::{
     head_symbol_id, head_symbol_id_preferring_package, receiver_type_for_head, yielded_receiver,
@@ -445,7 +446,7 @@ impl Receiver {
 
     /// A receiver typed but not yet bound to a declaration id; the id is
     /// recovered from the type's head when `expand_receiver` runs.
-    fn untyped(ty: TypeId) -> Self {
+    pub(super) fn untyped(ty: TypeId) -> Self {
         Self { ty, id: None }
     }
 }
@@ -1655,16 +1656,15 @@ fn resolve_root_impl(
         let ty = arena.class(&enc_sym.qualified_name);
         return Ok(Receiver { ty, id: Some(enc_sym.id) });
     }
-    // An externally-imported root binds to the imported module's declaration of
-    // the name, never a same-named symbol from a different external package: a `z`
-    // imported from `zod` roots on zod's `z`, not a DOM `CSSRotate.z`; an `expect`
-    // from `vitest` on vitest's, not playwright's. The import names both the
-    // identifier AND its source module, so it disambiguates a collision the bare
-    // by-name fallbacks below cannot. Fires only when the imported module actually
-    // declares the name (an `ext:` file under that module); otherwise those
-    // fallbacks run unchanged.
-    if let Some(recv) = import_scoped_external_root(file_ctx, lookup, arena, seg) {
-        return Ok(recv);
+    // An import-bound root types through its import's own candidate set —
+    // external ext-files, the internally-linked module file, or the named
+    // workspace package — or dies with the import as its cause. The unscoped
+    // by-name fallbacks below never run for such a root: a same-named symbol
+    // from an unrelated file is a hijack, not a resolution.
+    match super::root_import_discipline::apply(file_ctx, lookup, arena, seg) {
+        RootImportOutcome::Typed(recv) => return Ok(recv),
+        RootImportOutcome::Deny(c) => return Err(Some(c)),
+        RootImportOutcome::Unconstrained => {}
     }
 
     // Nothing typed the root outright. The remaining strategies may still find
@@ -1817,7 +1817,7 @@ fn external_import_entry<'a>(file_ctx: &'a FileContext, name: &str) -> Option<&'
 /// in `resolve_root_impl` for why an import attribution gates the pick. Returns the
 /// typed receiver, or None when `name` is not externally imported or the module's
 /// declaration of it can't be typed (the caller keeps its generic fallbacks).
-fn import_scoped_external_root(
+pub(super) fn import_scoped_external_root(
     file_ctx: &FileContext,
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
