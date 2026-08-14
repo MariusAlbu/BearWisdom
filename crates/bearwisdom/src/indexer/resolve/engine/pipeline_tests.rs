@@ -481,7 +481,7 @@ fn engine_resolves_local_var_member_call_via_scope_exact_root() {
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(std::slice::from_ref(&pf), &id_map, arena);
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
-    let (edges, unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map);
+    let (edges, unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map, None);
     // mount (target id 4) must resolve as an edge from SolidQueryDevtools (1).
     assert!(edges.iter().any(|e| e.1 == 4), "devtools.mount must resolve to TanstackQueryDevtools.mount");
 }
@@ -556,7 +556,7 @@ fn engine_types_a_new_expression_local_for_a_later_member_call() {
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(std::slice::from_ref(&pf), &id_map, arena);
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
-    let (edges, _unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map);
+    let (edges, _unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map, None);
     assert!(
         edges.iter().any(|e| e.1 == 4),
         "observer.getCurrentResult must resolve to QueryObserver.getCurrentResult via new-expression typing"
@@ -679,7 +679,7 @@ fn engine_distinguishes_same_named_devtools_across_packages() {
     let mount_b = id_map[&("packages/vue-query/devtools.ts".to_string(), "VueDevtoolsImpl.mount".to_string())];
 
     // Package A resolves to A's mount, NOT B's.
-    let (edges_a, _, _) = super::resolve_one_file(&files[0], &tree, &profiles, &no_plugins(), None, &solver, &id_map);
+    let (edges_a, _, _) = super::resolve_one_file(&files[0], &tree, &profiles, &no_plugins(), None, &solver, &id_map, None);
     assert!(
         edges_a.iter().any(|e| e.1 == mount_a),
         "package A's devtools.mount must bind A's ReactDevtoolsImpl.mount (id {mount_a}); edges={edges_a:?}"
@@ -690,7 +690,7 @@ fn engine_distinguishes_same_named_devtools_across_packages() {
     );
 
     // Package B resolves to B's mount, NOT A's.
-    let (edges_b, _, _) = super::resolve_one_file(&files[1], &tree, &profiles, &no_plugins(), None, &solver, &id_map);
+    let (edges_b, _, _) = super::resolve_one_file(&files[1], &tree, &profiles, &no_plugins(), None, &solver, &id_map, None);
     assert!(
         edges_b.iter().any(|e| e.1 == mount_b),
         "package B's devtools.mount must bind B's VueDevtoolsImpl.mount (id {mount_b}); edges={edges_b:?}"
@@ -798,7 +798,7 @@ fn snippet_source_symbol_propagates_from_snippet_to_unresolved_row() {
     let solver = super::SemanticModel::production();
 
     let (_edges, unresolved, _ref_log) =
-        super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map);
+        super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map, None);
 
     // The ref to "NonexistentApi" must be unresolved (no matching symbol in the
     // compilation tree) and the unresolved row must carry from_snippet=true.
@@ -978,7 +978,7 @@ fn awaited_binding_strips_promise_wrapper_at_seed() {
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
 
-    let (edges, _unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map);
+    let (edges, _unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map, None);
 
     // `res.json()` must resolve to `Response.json` (id 4).
     assert!(
@@ -1138,7 +1138,7 @@ fn non_awaited_promise_binding_keeps_promise_head_at_seed() {
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
 
-    let (edges, _unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map);
+    let (edges, _unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map, None);
 
     // `p.then()` must resolve to `Promise.then` (id 4) — Promise head is preserved.
     assert!(
@@ -1235,7 +1235,7 @@ fn member_refs_on_uncaptured_call_root_all_blame_the_initializer() {
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
     let (edges, unresolved, _ref_log) =
-        super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map);
+        super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map, None);
 
     // The factory call itself resolves.
     assert!(
@@ -1418,7 +1418,7 @@ fn rename_import_original_name_does_not_shadow_local_struct() {
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(&files, &id_map, arena);
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
-    let (edges, unresolved, _log) = super::resolve_one_file(&files[0], &tree, &profiles, &no_plugins(), None, &solver, &id_map);
+    let (edges, unresolved, _log) = super::resolve_one_file(&files[0], &tree, &profiles, &no_plugins(), None, &solver, &id_map, None);
     assert!(
         edges.iter().any(|e| e.1 == 1),
         "bare TypeRef must bind the local struct; edges={edges:?} unresolved={unresolved:?}"
@@ -1660,7 +1660,7 @@ fn duplicate_ref_emissions_collapse_to_one_row_per_site() {
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
     let (_edges, unresolved, ref_log) =
-        super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map);
+        super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map, None);
 
     let count_a = unresolved.iter().filter(|(_, n, ..)| n == "missingA").count();
     let count_b = unresolved.iter().filter(|(_, n, ..)| n == "missingB").count();

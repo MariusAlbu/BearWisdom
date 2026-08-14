@@ -134,6 +134,7 @@ fn trace_captures_untypable_root_and_unresolved_result() {
         None,
         &solver,
         &id_map,
+        None,
     );
     trace::deactivate();
     let collected = trace::drain_collected();
@@ -231,6 +232,7 @@ fn trace_captures_resolved_ref_and_seed_none() {
         None,
         &solver,
         &id_map,
+        None,
     );
     trace::deactivate();
     let collected = trace::drain_collected();
@@ -359,6 +361,7 @@ fn trace_batch_filters_collect_multiple_refs() {
         None,
         &solver,
         &id_map,
+        None,
     );
     trace::deactivate();
     let collected = trace::drain_collected();

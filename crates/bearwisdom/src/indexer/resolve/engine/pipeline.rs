@@ -136,34 +136,19 @@ pub fn resolve_from_tree(
 
     let solver = SemanticModel::production();
 
-    // Resolve every internal file in parallel. Files are independent units of
-    // work; refs WITHIN a file stay ordered so forward flow inference (a local's
-    // type recorded by an earlier ref is visible to a later ref) is
-    // deterministic. The tree is read-only here, shared across workers by ref.
-    let per_file: Vec<(Vec<Edge>, Vec<Unresolved>, Vec<RefLog>)> = parsed
-        .par_iter()
-        .filter(|pf| !pf.path.starts_with("ext:"))
-        .map(|pf| {
-            resolve_one_file(
-                pf,
-                &tree,
-                &profiles,
-                &plugins,
-                plugin_state,
-                &solver,
-                symbol_id_map,
-            )
-        })
-        .collect();
+    // Inherits pre-pass: bind Inherits/Implements refs first and merge their
+    // RESOLVED (child, parent) ids into the inheritance map, so every member
+    // walk in the main sweep climbs the parents resolution actually chose —
+    // identity, never string re-derivation.
+    let (pre_edges, _, _) = super::parallel_pass::run(
+        parsed, &tree, &profiles, &plugins, plugin_state, &solver, symbol_id_map,
+        Some(super::parallel_pass::INHERIT_KINDS),
+    );
+    tree.apply_resolved_inherits(pre_edges.iter().map(|e| (e.0, e.1)));
 
-    let mut edges: Vec<Edge> = Vec::new();
-    let mut unresolved: Vec<Unresolved> = Vec::new();
-    let mut ref_log: Vec<RefLog> = Vec::new();
-    for (e, u, r) in per_file {
-        edges.extend(e);
-        unresolved.extend(u);
-        ref_log.extend(r);
-    }
+    let (edges, unresolved, ref_log) = super::parallel_pass::run(
+        parsed, &tree, &profiles, &plugins, plugin_state, &solver, symbol_id_map, None,
+    );
 
     let mut stats = ResolutionStats::default();
     stats.resolved = edges.len() as u64;
@@ -259,30 +244,15 @@ pub fn resolve_incremental_pass(
 
     let solver = SemanticModel::production();
 
-    let per_file: Vec<(Vec<Edge>, Vec<Unresolved>, Vec<RefLog>)> = parsed
-        .par_iter()
-        .filter(|pf| !pf.path.starts_with("ext:"))
-        .map(|pf| {
-            resolve_one_file(
-                pf,
-                &tree,
-                &profiles,
-                &plugins,
-                plugin_state,
-                &solver,
-                &full_id_map,
-            )
-        })
-        .collect();
+    let (pre_edges, _, _) = super::parallel_pass::run(
+        parsed, &tree, &profiles, &plugins, plugin_state, &solver, &full_id_map,
+        Some(super::parallel_pass::INHERIT_KINDS),
+    );
+    tree.apply_resolved_inherits(pre_edges.iter().map(|e| (e.0, e.1)));
 
-    let mut edges: Vec<Edge> = Vec::new();
-    let mut unresolved: Vec<Unresolved> = Vec::new();
-    let mut ref_log: Vec<RefLog> = Vec::new();
-    for (e, u, r) in per_file {
-        edges.extend(e);
-        unresolved.extend(u);
-        ref_log.extend(r);
-    }
+    let (edges, unresolved, ref_log) = super::parallel_pass::run(
+        parsed, &tree, &profiles, &plugins, plugin_state, &solver, &full_id_map, None,
+    );
 
     let mut stats = ResolutionStats::default();
     stats.resolved = edges.len() as u64;
@@ -298,8 +268,10 @@ pub fn resolve_incremental_pass(
 /// Resolve one internal file's refs, returning its edges and unresolved rows.
 /// Refs are visited in source order so a later ref sees the flow-inferred type
 /// of a local bound by an earlier ref. No shared mutable state — files run
-/// concurrently over the read-only `tree`.
-fn resolve_one_file(
+/// concurrently over the read-only `tree`. `only_kinds` narrows the sweep to
+/// a ref-kind subset (the inherits pre-pass); `None` visits every ref.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn resolve_one_file(
     pf: &ParsedFile,
     tree: &Compilation,
     profiles: &FxHashMap<&'static str, &'static LanguageProfile>,
@@ -307,6 +279,7 @@ fn resolve_one_file(
     plugin_state: Option<&PluginStateBag>,
     solver: &SemanticModel,
     symbol_id_map: &HashMap<(String, String), i64>,
+    only_kinds: Option<&[EdgeKind]>,
 ) -> (Vec<Edge>, Vec<Unresolved>, Vec<RefLog>) {
     let mut edges: Vec<Edge> = Vec::new();
     let mut unresolved: Vec<Unresolved> = Vec::new();
@@ -362,6 +335,9 @@ fn resolve_one_file(
     let mut seen_sites = FxHashSet::default();
 
     for (ref_idx, r) in pf.refs.iter().enumerate() {
+        if only_kinds.is_some_and(|ks| !ks.contains(&r.kind)) {
+            continue;
+        }
         if !seen_sites.insert((
             r.source_symbol_index,
             r.kind,

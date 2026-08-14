@@ -54,6 +54,7 @@ pub mod segment_args;
 pub mod substitution;
 pub mod type_mention_demand;
 mod module_scheme;
+mod parallel_pass;
 mod parent_resolution;
 mod root_import_discipline;
 mod unbound_cause;

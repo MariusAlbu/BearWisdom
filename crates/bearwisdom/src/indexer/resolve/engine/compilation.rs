@@ -552,12 +552,7 @@ impl Compilation {
             // Pass 3 — inheritance from refs (Inherits / Implements edges).
             // The file's import bindings (name → module) disambiguate a parent
             // head against homonyms when the head binds to a declaration id.
-            let import_modules: FxHashMap<&str, &str> = pf
-                .refs
-                .iter()
-                .filter(|r| r.is_import_binding || r.kind == EdgeKind::Imports)
-                .filter_map(|r| r.module.as_deref().map(|m| (r.target_name.as_str(), m)))
-                .collect();
+            let import_modules = super::parent_resolution::import_evidence_of(pf);
             for r in &pf.refs {
                 if !matches!(r.kind, EdgeKind::Inherits | EdgeKind::Implements) {
                     continue;
@@ -843,6 +838,11 @@ impl Compilation {
         // → parent head string) + `by_qname`. Each edge resolves to specific
         // symbol ids so the chain walker climbs supertypes by identity.
         self.rebuild_inherits_by_id();
+    }
+
+    /// Merge ladder-RESOLVED inheritance edges into the climb map — see `parent_resolution::apply_resolved`.
+    pub(crate) fn apply_resolved_inherits(&mut self, pairs: impl IntoIterator<Item = (i64, i64)>) {
+        super::parent_resolution::apply_resolved(&mut self.inherits_by_id, pairs);
     }
 
     /// Rebuild `inherits_by_id` from the string-keyed `inherits` map, the

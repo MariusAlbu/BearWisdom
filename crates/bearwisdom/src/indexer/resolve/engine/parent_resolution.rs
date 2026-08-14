@@ -14,6 +14,35 @@ use rustc_hash::FxHashMap;
 use super::contract::util::is_type_like_kind;
 use super::contract::SymbolLookup;
 
+/// Merge ladder-RESOLVED inheritance pairs (child symbol id → parent symbol
+/// id) into the climb map. A resolved pair appends if absent — resolution-
+/// bound identity joins the name-derived seed, so the walk reaches the parent
+/// resolution actually chose.
+pub(super) fn apply_resolved(
+    map: &mut FxHashMap<i64, Vec<i64>>,
+    pairs: impl IntoIterator<Item = (i64, i64)>,
+) {
+    for (child, parent) in pairs {
+        let parents = map.entry(child).or_default();
+        if !parents.contains(&parent) {
+            parents.push(parent);
+        }
+    }
+}
+
+/// The file's import bindings as `name → module`: `use`-style imports-kind
+/// refs and TS import-binding refs alike. The module is the evidence a bare
+/// inheritance head resolves through.
+pub(super) fn import_evidence_of(
+    pf: &crate::types::ParsedFile,
+) -> FxHashMap<&str, &str> {
+    pf.refs
+        .iter()
+        .filter(|r| r.is_import_binding || r.kind == crate::types::EdgeKind::Imports)
+        .filter_map(|r| r.module.as_deref().map(|m| (r.target_name.as_str(), m)))
+        .collect()
+}
+
 /// Rebuild the id-keyed inherits map from the string-keyed one. `evidence`
 /// carries `(child_qname, parent_head) → import module` captured when the
 /// edge was recorded from the child's file.
