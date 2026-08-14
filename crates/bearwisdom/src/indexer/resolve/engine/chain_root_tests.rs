@@ -120,17 +120,18 @@ fn open_namespace_qualifies_a_single_segment_root() {
 }
 
 /// A leading run that names nothing the index holds stays unresolved — but it
-/// carries the `unbound_root` cause rather than dying causeless, so the ref
-/// stays attributable.
+/// carries a classified unbound cause rather than dying causeless, so the ref
+/// stays attributable. A root name absent from imports, enclosing scopes, the
+/// external index, and the project classifies as `NameUnknown`.
 #[test]
-fn unanchorable_root_carries_an_unbound_root_cause() {
+fn unanchorable_root_carries_a_classified_unbound_cause() {
     let lookup = Lookup::new().with(sym(1, "Widget", "Alpha.Widget", "class", "src/widget.cs"));
     let segs = vec![seg("Nowhere"), seg("Missing"), member("Call")];
     let fc = file_ctx(vec![], None);
 
     assert_eq!(bind(&lookup, segs.clone(), &fc), None);
     let cause = bind_cause(&lookup, segs, &fc).expect("an unanchorable root must carry a cause");
-    assert_eq!(cause.kind, CauseKind::UnboundRoot);
+    assert_eq!(cause.kind, CauseKind::NameUnknown);
 }
 
 /// A bare type name still roots on segment 0 and steps to segment 1 — the

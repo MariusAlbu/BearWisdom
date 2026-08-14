@@ -3393,8 +3393,8 @@
       "files": 1281,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 170617,
-      "internal_unresolved": 161190,
+      "internal_edges": 170719,
+      "internal_unresolved": 161088,
       "languages": {
         "dart": 8,
         "erlang": 38,
@@ -3413,15 +3413,15 @@
       },
       "path": "F:/Work/Projects/TestProjects/fsharp-fable",
       "perf": {
-        "end_ws_mb": 6134,
+        "end_ws_mb": 5983,
         "files_per_sec": 6,
-        "index_duration_ms": 222816
+        "index_duration_ms": 226592
       },
       "project": "fsharp-fable",
       "rate_by_language": {
         "dart": 13.08,
         "erlang": 62.09,
-        "fsharp": 49.57,
+        "fsharp": 49.6,
         "javascript": 58.06,
         "markdown": 83.33,
         "php": 64.81,
@@ -3430,7 +3430,7 @@
         "shell": 0.0,
         "typescript": 93.56
       },
-      "resolution_rate": 51.42,
+      "resolution_rate": 51.45,
       "routes": 0,
       "symbols": 103315,
       "unresolved_by_lang_kind": {
@@ -3440,7 +3440,7 @@
         "dart.inherits": 1,
         "dart.type_ref": 2299,
         "erlang.calls": 1068,
-        "fsharp.calls": 143666,
+        "fsharp.calls": 143564,
         "fsharp.implements": 149,
         "fsharp.imports": 979,
         "fsharp.inherits": 35,
@@ -5564,9 +5564,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/javascript-ghost",
       "perf": {
-        "end_ws_mb": 381,
-        "files_per_sec": 27,
-        "index_duration_ms": 232045
+        "end_ws_mb": 200,
+        "files_per_sec": 41,
+        "index_duration_ms": 155693
       },
       "project": "javascript-ghost",
       "rate_by_language": {
@@ -8050,9 +8050,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/pascal-castle-fresh",
       "perf": {
-        "end_ws_mb": 5398,
+        "end_ws_mb": 5263,
         "files_per_sec": 3,
-        "index_duration_ms": 1344239
+        "index_duration_ms": 1401925
       },
       "project": "pascal-castle-fresh",
       "rate_by_language": {
@@ -8615,9 +8615,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/php-laravel",
       "perf": {
-        "end_ws_mb": 394,
-        "files_per_sec": 47,
-        "index_duration_ms": 61721
+        "end_ws_mb": 254,
+        "files_per_sec": 45,
+        "index_duration_ms": 64314
       },
       "project": "php-laravel",
       "rate_by_language": {
@@ -10044,9 +10044,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/python-superset",
       "perf": {
-        "end_ws_mb": 402,
+        "end_ws_mb": 260,
         "files_per_sec": 16,
-        "index_duration_ms": 272660
+        "index_duration_ms": 277446
       },
       "project": "python-superset",
       "rate_by_language": {
@@ -13211,8 +13211,8 @@
       },
       "flow_edges": 288,
       "generated_files_reclassified": 8,
-      "internal_edges": 378578,
-      "internal_unresolved": 95564,
+      "internal_edges": 378579,
+      "internal_unresolved": 95563,
       "languages": {
         "css": 318,
         "graphql": 3,
@@ -13232,9 +13232,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-nextjs",
       "perf": {
-        "end_ws_mb": 455,
-        "files_per_sec": 16,
-        "index_duration_ms": 965399
+        "end_ws_mb": 263,
+        "files_per_sec": 13,
+        "index_duration_ms": 1147037
       },
       "project": "ts-nextjs",
       "rate_by_language": {
@@ -13249,7 +13249,7 @@
         "shell": 47.83,
         "typescript": 80.12
       },
-      "resolution_rate": 79.84,
+      "resolution_rate": 79.85,
       "routes": 430,
       "symbols": 132899,
       "unresolved_by_lang_kind": {
@@ -13266,7 +13266,7 @@
         "python.calls": 6,
         "python.imports": 1,
         "python.type_ref": 6,
-        "rust.calls": 29589,
+        "rust.calls": 29588,
         "rust.implements": 214,
         "rust.imports": 2552,
         "rust.inherits": 3,

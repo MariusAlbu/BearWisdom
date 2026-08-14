@@ -97,6 +97,11 @@ impl SemanticModel {
                         && !chain_root_is_namespace(chain, lookup)
                         && !chain_root_is_wildcard_import(chain, file_ctx)
                     {
+                        // A declined walk without a cause of its own anchored the
+                        // root (a failed anchor always carries one) and died on a
+                        // later hop silently — record that as the chain's cause.
+                        let cause = cause
+                            .or(Some(Cause::new(None, CauseKind::ChainDeclined)));
                         if module_is_chain_qualifier(ref_ctx.extracted_ref, chain, profile) {
                             return match self.resolve_module_scoped(
                                 ref_ctx, file_ctx, lookup, profile,
@@ -114,7 +119,12 @@ impl SemanticModel {
         match self.resolve_chain_less(ref_ctx, file_ctx, lookup, profile) {
             BindOutcome::Resolved(res, _rule) => SolveOutcome::Resolved(res),
             BindOutcome::Unresolved => {
-                SolveOutcome::Unresolved(Some(Cause::new(None, CauseKind::UnboundRoot)))
+                SolveOutcome::Unresolved(Some(super::unbound_cause::classify_unbound_root(
+                    &ref_ctx.extracted_ref.target_name,
+                    &ref_ctx.scope_chain,
+                    file_ctx,
+                    lookup,
+                )))
             }
             BindOutcome::Drained => SolveOutcome::Drained,
         }

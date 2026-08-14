@@ -20,7 +20,7 @@ use crate::type_checker::core::types::TypeArena;
 use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::{ChainSegment, MemberChain};
 
-use super::cause::{Cause, CauseKind};
+use super::cause::Cause;
 use super::chain::{resolve_root, Receiver};
 use super::support::is_type_kind;
 
@@ -66,7 +66,14 @@ pub(super) fn anchor(
             );
             Ok((recv, consumed))
         }
-        None => Err(cause.or(Some(Cause::new(None, CauseKind::UnboundRoot)))),
+        None => Err(cause.or_else(|| {
+            Some(super::unbound_cause::classify_unbound_root(
+                &chain.segments[0].name,
+                &ref_ctx.scope_chain,
+                file_ctx,
+                lookup,
+            ))
+        })),
     }
 }
 

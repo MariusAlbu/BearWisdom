@@ -35,8 +35,33 @@ pub enum CauseKind {
     /// into a concrete member set.
     AliasOpaque,
     /// The chain's root segment, or the ladder's target name, names nothing
-    /// this file imports, declares, or has in ambient scope.
+    /// this file imports, declares, or has in ambient scope — and no probe
+    /// below could say anything more specific.
     UnboundRoot,
+    /// An import statement binds exactly this name in the file, but no rung
+    /// produced a resolution through it — the import's module never linked
+    /// to an indexed file or symbol.
+    ImportUnlinked,
+    /// An enclosing scope of the ref site declares a member of this name —
+    /// an implicit-receiver root (bare method/field access inside a type
+    /// body) the engine failed to dispatch. Blames the member candidate.
+    ScopeMemberRoot,
+    /// The name is externally attributable (primitive, framework global, or
+    /// manifest-declared dependency surface) yet no external binding
+    /// materialized — supply exists, the link failed.
+    ExternalKnownUnbound,
+    /// The project index holds at least one declaration of this name, but no
+    /// rung could reach it from this file — a reachability gap (missing
+    /// import semantics, scope rung, or qualification mismatch). Blames the
+    /// declaration when it is unique.
+    DefinedUnimported,
+    /// No declaration of this name exists anywhere the engine can see —
+    /// internal or external. Missing supply, or a dynamically-constructed
+    /// name.
+    NameUnknown,
+    /// A multi-segment member walk anchored its root but declined a later
+    /// hop without recording a cause of its own.
+    ChainDeclined,
 }
 
 impl CauseKind {
@@ -50,6 +75,12 @@ impl CauseKind {
             Self::MemberMissing => "member_missing",
             Self::AliasOpaque => "alias_opaque",
             Self::UnboundRoot => "unbound_root",
+            Self::ImportUnlinked => "unbound_import_unlinked",
+            Self::ScopeMemberRoot => "unbound_scope_member",
+            Self::ExternalKnownUnbound => "unbound_external_known",
+            Self::DefinedUnimported => "unbound_defined_unimported",
+            Self::NameUnknown => "unbound_name_unknown",
+            Self::ChainDeclined => "chain_declined",
         }
     }
 }
