@@ -16,6 +16,7 @@ use anyhow::{Context, Result};
 
 use crate::db::Database;
 use crate::ecosystem::symbol_index::SymbolLocationIndex;
+use crate::indexer::write::SymbolIds;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::compilation::Compilation;
 use crate::indexer::resolve::engine::externals_demand::materialize_externals;
@@ -35,11 +36,11 @@ use crate::types::ParsedFile;
 pub fn materialize_and_build_tree(
     db: &mut Database,
     parsed: &[ParsedFile],
-    symbol_id_map: &HashMap<(String, String), i64>,
+    symbol_id_map: &SymbolIds,
     project_ctx: Option<&ProjectContext>,
     arena: Arc<TypeArena>,
     loc: Arc<SymbolLocationIndex>,
-) -> Result<(Compilation, Vec<ParsedFile>, HashMap<(String, String), i64>)> {
+) -> Result<(Compilation, Vec<ParsedFile>, SymbolIds)> {
     let ambient_qnames = crate::ecosystem::ambient::ambient_global_qnames(parsed);
     let mut tree = Compilation::build_with_context(
         parsed,
@@ -63,7 +64,7 @@ pub fn materialize_and_build_tree(
 /// tree the resolve pass walks includes them.
 pub fn rebuild_tree(
     parsed: &[ParsedFile],
-    symbol_id_map: &HashMap<(String, String), i64>,
+    symbol_id_map: &SymbolIds,
     project_ctx: Option<&ProjectContext>,
     arena: Arc<TypeArena>,
 ) -> Compilation {

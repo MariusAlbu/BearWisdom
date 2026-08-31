@@ -25,6 +25,7 @@ use crate::indexer::resolve::engine::contract::{
 use crate::indexer::resolve::engine::support::resolve_module_exported_value_type;
 use crate::ecosystem::externals::ts_package_from_virtual_path;
 use crate::ecosystem::manifest::ManifestKind;
+use crate::indexer::write::SymbolIds;
 use crate::indexer::project_context::ProjectContext;
 use crate::type_checker::core::types::{GenericParamData, GenericParamId, Type, TypeArena, TypeId};
 use crate::type_checker::profile::language_profile::LanguageProfile;
@@ -228,7 +229,7 @@ impl Compilation {
     /// the canonical table the engine and rules consult.
     pub fn build(
         parsed: &[ParsedFile],
-        symbol_id_map: &HashMap<(String, String), i64>,
+        symbol_id_map: &SymbolIds,
         arena: Arc<TypeArena>,
     ) -> Self {
         Self::build_with_context(parsed, symbol_id_map, arena, None, &HashSet::new())
@@ -245,7 +246,7 @@ impl Compilation {
     /// ambient-scope rung can bind bare references to those globals.
     pub fn build_with_context(
         parsed: &[ParsedFile],
-        symbol_id_map: &HashMap<(String, String), i64>,
+        symbol_id_map: &SymbolIds,
         arena: Arc<TypeArena>,
         project_ctx: Option<&ProjectContext>,
         ambient_qnames: &HashSet<String>,
@@ -381,7 +382,7 @@ impl Compilation {
     pub fn ingest(
         &mut self,
         parsed: &[ParsedFile],
-        symbol_id_map: &HashMap<(String, String), i64>,
+        symbol_id_map: &SymbolIds,
         ambient_qnames: &HashSet<String>,
     ) {
         // -----------------------------------------------------------------------
@@ -417,8 +418,7 @@ impl Compilation {
                 if from_snippet {
                     continue;
                 }
-                let Some(&id) =
-                    symbol_id_map.get(&(pf.path.clone(), sym.qualified_name.clone()))
+                let Some(id) = symbol_id_map.id_of(&pf.path, sym_i, &sym.qualified_name)
                 else {
                     continue;
                 };
@@ -504,9 +504,9 @@ impl Compilation {
                 // chain walker, having typed a receiver to a specific declaration
                 // id, sees only that declaration's members. Top-level symbols (no
                 // structural parent) have no type receiver and stay qname-only.
-                if let Some(parent) = parent_sym {
-                    if let Some(&parent_id) =
-                        symbol_id_map.get(&(pf.path.clone(), parent.qualified_name.clone()))
+                if let (Some(p_idx), Some(parent)) = (sym.parent_index, parent_sym) {
+                    if let Some(parent_id) =
+                        symbol_id_map.id_of(&pf.path, p_idx, &parent.qualified_name)
                     {
                         self.members_by_id.entry(parent_id).or_default().push(info.id);
                     }
@@ -655,7 +655,7 @@ impl Compilation {
                 // aliases (two `type Logger = …`), but the declaration id does not —
                 // so a use site that resolves the alias to a specific declaration
                 // expands its OWN target, not the last writer's.
-                if let Some(&id) = symbol_id_map.get(&(pf.path.clone(), name.clone())) {
+                if let Some(&id) = symbol_id_map.by_key().get(&(pf.path.clone(), name.clone())) {
                     self.alias_target_by_id
                         .insert(id, intern_alias_target(&self.arena, target));
                 }
@@ -935,7 +935,7 @@ impl Compilation {
     fn derive_type_info_from_refs(
         &mut self,
         pf: &ParsedFile,
-        symbol_id_map: &HashMap<(String, String), i64>,
+        symbol_id_map: &SymbolIds,
         pending: &mut Vec<PendingModuleValue>,
     ) {
         // Collect TypeRef refs (excluding import bindings) per symbol index. The
@@ -1115,6 +1115,7 @@ impl Compilation {
                             // same-qname first-winner so a caller holding the resolved
                             // id reads THIS field's type.
                             if let Some(&id) = symbol_id_map
+                                .by_key()
                                 .get(&(pf.path.clone(), sym.qualified_name.clone()))
                             {
                                 let tid = self.type_info_by_id.entry(id).or_default();
@@ -1240,7 +1241,7 @@ impl Compilation {
                                     mti.field_type_id = Some(rid);
                                 }
                                 if let Some(&mid) =
-                                    symbol_id_map.get(&(pf.path.clone(), mqname))
+                                    symbol_id_map.by_key().get(&(pf.path.clone(), mqname))
                                 {
                                     let mtid = self.type_info_by_id.entry(mid).or_default();
                                     if mtid.field_type_id.is_none() {
@@ -1388,8 +1389,8 @@ impl Compilation {
                             ti.return_type_id = rid;
                         }
                         // Id slot — keyed by this symbol's id; no qname collision.
-                        if let Some(&id) =
-                            symbol_id_map.get(&(pf.path.clone(), sym.qualified_name.clone()))
+                        if let Some(id) =
+                            symbol_id_map.id_of(&pf.path, sym_idx, &sym.qualified_name)
                         {
                             let tid = self.type_info_by_id.entry(id).or_default();
                             if tid.return_type_id.is_none() {
@@ -1405,8 +1406,8 @@ impl Compilation {
                     if ti.return_type_id.is_none() {
                         ti.return_type_id = Some(class_id);
                     }
-                    if let Some(&id) =
-                        symbol_id_map.get(&(pf.path.clone(), sym.qualified_name.clone()))
+                    if let Some(id) =
+                        symbol_id_map.id_of(&pf.path, sym_idx, &sym.qualified_name)
                     {
                         let tid = self.type_info_by_id.entry(id).or_default();
                         if tid.return_type_id.is_none() {
@@ -1421,7 +1422,7 @@ impl Compilation {
         // Generic-param extraction from signatures for types and callables.
         // The clause locator is name-anchored: the declaration name's own
         // bracket group, never a return-type application's argument list.
-        for sym in &pf.symbols {
+        for (sym_idx, sym) in pf.symbols.iter().enumerate() {
             if !matches!(
                 sym.kind,
                 SymbolKind::Class
@@ -1468,8 +1469,8 @@ impl Compilation {
             // (path,qname) map resolves an overload set to its
             // implementation id, co-locating the overloads' params with
             // the return the resolver reads there.
-            if let Some(&id) =
-                symbol_id_map.get(&(pf.path.clone(), sym.qualified_name.clone()))
+            if let Some(id) =
+                symbol_id_map.id_of(&pf.path, sym_idx, &sym.qualified_name)
             {
                 let tid = self.type_info_by_id.entry(id).or_default();
                 if tid.generic_param_ids.is_empty() {

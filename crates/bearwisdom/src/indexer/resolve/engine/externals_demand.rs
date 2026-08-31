@@ -21,7 +21,7 @@ use crate::indexer::resolve::engine::compilation::Compilation;
 use crate::indexer::resolve::engine::demand_veto::{DemandVeto, FileLanguages};
 use crate::indexer::resolve::engine::relative_imports;
 use crate::indexer::resolve::engine::type_mention_demand;
-use crate::indexer::write::SymbolIdMap;
+use crate::indexer::write::SymbolIds;
 use crate::type_checker::core::types::TypeArena;
 use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::{EdgeKind, ParsedFile};
@@ -40,9 +40,9 @@ pub(super) fn materialize_externals(
     loc: &SymbolLocationIndex,
     arena: &Arc<TypeArena>,
     profiles: &FxHashMap<&'static str, &'static LanguageProfile>,
-) -> Result<(Vec<ParsedFile>, SymbolIdMap)> {
+) -> Result<(Vec<ParsedFile>, SymbolIds)> {
     if loc.is_empty() {
-        return Ok((Vec::new(), SymbolIdMap::default()));
+        return Ok((Vec::new(), SymbolIds::default()));
     }
 
     // Seed: the external files defining a name an INTERNAL ref reaches.
@@ -67,7 +67,7 @@ pub(super) fn materialize_externals(
         );
     }
     if frontier.is_empty() {
-        return Ok((Vec::new(), SymbolIdMap::default()));
+        return Ok((Vec::new(), SymbolIds::default()));
     }
 
     // Transitively pull the external type-dependency closure. A materialized
@@ -150,7 +150,7 @@ pub(super) fn materialize_externals(
         depth += 1;
     }
     if ext_parsed.is_empty() {
-        return Ok((Vec::new(), SymbolIdMap::default()));
+        return Ok((Vec::new(), SymbolIds::default()));
     }
 
     // Sorted by virtual path before write/ingest: the closure above discovers

@@ -81,7 +81,7 @@ fn empty_parsed_returns_ok_with_zero_counts() {
     // intermediate values are constructible.
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
         &parsed,
-        &symbol_id_map,
+        &symbol_id_map.clone().into(),
         Arc::clone(&arena),
     );
     let _ = tree; // constructed without panic
@@ -104,7 +104,7 @@ fn file_lookup_local_type_empty() {
     let symbol_id_map: HashMap<(String, String), i64> = HashMap::new();
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
         &[],
-        &symbol_id_map,
+        &symbol_id_map.clone().into(),
         arc_clone(&arena),
     );
     let lookup = FileLookup::new(&tree, "typescript");
@@ -118,7 +118,7 @@ fn file_lookup_record_then_read() {
     let symbol_id_map: HashMap<(String, String), i64> = HashMap::new();
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
         &[],
-        &symbol_id_map,
+        &symbol_id_map.clone().into(),
         arc_clone(&arena),
     );
     let lookup = FileLookup::new(&tree, "typescript");
@@ -240,7 +240,7 @@ fn file_lookup_local_type_union_single_branch() {
     let symbol_id_map: HashMap<(String, String), i64> = HashMap::new();
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
         &[],
-        &symbol_id_map,
+        &symbol_id_map.clone().into(),
         arc_clone(&arena),
     );
     let lookup = FileLookup::new(&tree, "typescript");
@@ -260,7 +260,7 @@ fn file_lookup_clear_evicts_bindings() {
     let symbol_id_map: HashMap<(String, String), i64> = HashMap::new();
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
         &[],
-        &symbol_id_map,
+        &symbol_id_map.clone().into(),
         arc_clone(&arena),
     );
     let lookup = FileLookup::new(&tree, "typescript");
@@ -278,7 +278,7 @@ fn file_lookup_delegates_structural_to_tree() {
     let symbol_id_map: HashMap<(String, String), i64> = HashMap::new();
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
         &[],
-        &symbol_id_map,
+        &symbol_id_map.clone().into(),
         arc_clone(&arena),
     );
     let lookup = FileLookup::new(&tree, "typescript");
@@ -311,7 +311,7 @@ fn local_type_id_round_trips_primitive_without_nominalization() {
     let symbol_id_map: HashMap<(String, String), i64> = HashMap::new();
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
         &[],
-        &symbol_id_map,
+        &symbol_id_map.clone().into(),
         arc_clone(&arena),
     );
     let lookup = FileLookup::new(&tree, "typescript");
@@ -360,7 +360,7 @@ fn local_type_id_round_trips_optional_without_nominalization() {
     let symbol_id_map: HashMap<(String, String), i64> = HashMap::new();
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
         &[],
-        &symbol_id_map,
+        &symbol_id_map.clone().into(),
         arc_clone(&arena),
     );
     let lookup = FileLookup::new(&tree, "typescript");
@@ -399,7 +399,7 @@ fn reassignment_latest_write_wins_across_both_caches() {
     let symbol_id_map: HashMap<(String, String), i64> = HashMap::new();
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
         &[],
-        &symbol_id_map,
+        &symbol_id_map.clone().into(),
         arc_clone(&arena),
     );
     let lookup = FileLookup::new(&tree, "typescript");
@@ -481,10 +481,10 @@ fn engine_resolves_local_var_member_call_via_scope_exact_root() {
     id_map.insert(("d.ts".to_string(), "TanstackQueryDevtools".to_string()), 3i64);
     id_map.insert(("d.ts".to_string(), "TanstackQueryDevtools.mount".to_string()), 4i64);
     let arena = Arc::new(TypeArena::new());
-    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(std::slice::from_ref(&pf), &id_map, arena);
+    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(std::slice::from_ref(&pf), &id_map.clone().into(), arena);
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
-    let (edges, unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map, None);
+    let (edges, unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map.clone().into(), None);
     // mount (target id 4) must resolve as an edge from SolidQueryDevtools (1).
     assert!(edges.iter().any(|e| e.1 == 4), "devtools.mount must resolve to TanstackQueryDevtools.mount");
 }
@@ -558,10 +558,10 @@ fn engine_types_a_new_expression_local_for_a_later_member_call() {
     id_map.insert(("d.ts".to_string(), "QueryObserver".to_string()), 3i64);
     id_map.insert(("d.ts".to_string(), "QueryObserver.getCurrentResult".to_string()), 4i64);
     let arena = Arc::new(TypeArena::new());
-    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(std::slice::from_ref(&pf), &id_map, arena);
+    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(std::slice::from_ref(&pf), &id_map.clone().into(), arena);
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
-    let (edges, _unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map, None);
+    let (edges, _unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map.clone().into(), None);
     assert!(
         edges.iter().any(|e| e.1 == 4),
         "observer.getCurrentResult must resolve to QueryObserver.getCurrentResult via new-expression typing"
@@ -678,7 +678,7 @@ fn engine_distinguishes_same_named_devtools_across_packages() {
     let files = vec![pf_a, pf_b];
     let arena = Arc::new(TypeArena::new());
     let tree =
-        crate::indexer::resolve::engine::compilation::Compilation::build(&files, &id_map, arena);
+        crate::indexer::resolve::engine::compilation::Compilation::build(&files, &id_map.clone().into(), arena);
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
 
@@ -686,7 +686,7 @@ fn engine_distinguishes_same_named_devtools_across_packages() {
     let mount_b = id_map[&("packages/vue-query/devtools.ts".to_string(), "VueDevtoolsImpl.mount".to_string())];
 
     // Package A resolves to A's mount, NOT B's.
-    let (edges_a, _, _) = super::resolve_one_file(&files[0], &tree, &profiles, &no_plugins(), None, &solver, &id_map, None);
+    let (edges_a, _, _) = super::resolve_one_file(&files[0], &tree, &profiles, &no_plugins(), None, &solver, &id_map.clone().into(), None);
     assert!(
         edges_a.iter().any(|e| e.1 == mount_a),
         "package A's devtools.mount must bind A's ReactDevtoolsImpl.mount (id {mount_a}); edges={edges_a:?}"
@@ -697,7 +697,7 @@ fn engine_distinguishes_same_named_devtools_across_packages() {
     );
 
     // Package B resolves to B's mount, NOT A's.
-    let (edges_b, _, _) = super::resolve_one_file(&files[1], &tree, &profiles, &no_plugins(), None, &solver, &id_map, None);
+    let (edges_b, _, _) = super::resolve_one_file(&files[1], &tree, &profiles, &no_plugins(), None, &solver, &id_map.clone().into(), None);
     assert!(
         edges_b.iter().any(|e| e.1 == mount_b),
         "package B's devtools.mount must bind B's VueDevtoolsImpl.mount (id {mount_b}); edges={edges_b:?}"
@@ -800,14 +800,14 @@ fn snippet_source_symbol_propagates_from_snippet_to_unresolved_row() {
     let arena = Arc::new(crate::type_checker::core::types::TypeArena::new());
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
         std::slice::from_ref(&pf),
-        &id_map,
+        &id_map.clone().into(),
         Arc::clone(&arena),
     );
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
 
     let (_edges, unresolved, _ref_log) =
-        super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map, None);
+        super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map.clone().into(), None);
 
     // The ref to "NonexistentApi" must be unresolved (no matching symbol in the
     // compilation tree) and the unresolved row must carry from_snippet=true.
@@ -983,13 +983,13 @@ fn awaited_binding_strips_promise_wrapper_at_seed() {
 
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
         std::slice::from_ref(&pf),
-        &id_map,
+        &id_map.clone().into(),
         Arc::clone(&arena),
     );
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
 
-    let (edges, _unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map, None);
+    let (edges, _unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map.clone().into(), None);
 
     // `res.json()` must resolve to `Response.json` (id 4).
     assert!(
@@ -1145,13 +1145,13 @@ fn non_awaited_promise_binding_keeps_promise_head_at_seed() {
 
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
         std::slice::from_ref(&pf),
-        &id_map,
+        &id_map.clone().into(),
         Arc::clone(&arena),
     );
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
 
-    let (edges, _unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map, None);
+    let (edges, _unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map.clone().into(), None);
 
     // `p.then()` must resolve to `Promise.then` (id 4) — Promise head is preserved.
     assert!(
@@ -1244,13 +1244,13 @@ fn member_refs_on_uncaptured_call_root_all_blame_the_initializer() {
     let arena = Arc::new(TypeArena::new());
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
         std::slice::from_ref(&pf),
-        &id_map,
+        &id_map.clone().into(),
         Arc::clone(&arena),
     );
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
     let (edges, unresolved, _ref_log) =
-        super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map, None);
+        super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map.clone().into(), None);
 
     // The factory call itself resolves.
     assert!(
@@ -1436,10 +1436,10 @@ fn rename_import_original_name_does_not_shadow_local_struct() {
     id_map.insert(("ext:rust:ext_pkg/src/lib.rs".to_string(), "Widget".to_string()), 3i64);
     let arena = Arc::new(TypeArena::new());
     let files = [pf, ext_pf];
-    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(&files, &id_map, arena);
+    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(&files, &id_map.clone().into(), arena);
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
-    let (edges, unresolved, _log) = super::resolve_one_file(&files[0], &tree, &profiles, &no_plugins(), None, &solver, &id_map, None);
+    let (edges, unresolved, _log) = super::resolve_one_file(&files[0], &tree, &profiles, &no_plugins(), None, &solver, &id_map.clone().into(), None);
     assert!(
         edges.iter().any(|e| e.1 == 1),
         "bare TypeRef must bind the local struct; edges={edges:?} unresolved={unresolved:?}"
@@ -1534,7 +1534,7 @@ fn file_lookup_by_name_respects_cross_language_ext_visibility() {
     };
     let tree = Compilation::build_with_context(
         &[py, ts],
-        &id_map,
+        &id_map.clone().into(),
         Arc::clone(&arena),
         Some(&ctx),
         &std::collections::HashSet::new(),
@@ -1680,13 +1680,13 @@ fn duplicate_ref_emissions_collapse_to_one_row_per_site() {
     let arena = Arc::new(TypeArena::new());
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
         std::slice::from_ref(&pf),
-        &id_map,
+        &id_map.clone().into(),
         arena,
     );
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
     let (_edges, unresolved, ref_log) =
-        super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map, None);
+        super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map.clone().into(), None);
 
     let count_a = unresolved.iter().filter(|(_, n, ..)| n == "missingA").count();
     let count_b = unresolved.iter().filter(|(_, n, ..)| n == "missingB").count();

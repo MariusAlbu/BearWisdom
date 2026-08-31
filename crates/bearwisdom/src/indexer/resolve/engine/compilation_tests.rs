@@ -168,7 +168,7 @@ fn build_fixture() -> (Compilation, Arc<TypeArena>) {
     id_map.insert(("src/repo.ts".to_string(), "Repo.db".to_string()), 3);
     id_map.insert(("src/repo.ts".to_string(), "UserRepo".to_string()), 4);
 
-    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+    let tree = Compilation::build(&[pf], &id_map.clone().into(), Arc::clone(&arena));
     (tree, arena)
 }
 
@@ -238,7 +238,7 @@ fn constructor_var_does_not_poison_instance_type_field_slot() {
     id_map.insert(("lib.es5.d.ts".to_string(), "Array".to_string()), 1);
     id_map.insert(("lib.es5.d.ts".to_string(), "Array.push".to_string()), 2);
 
-    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+    let tree = Compilation::build(&[pf], &id_map.clone().into(), Arc::clone(&arena));
 
     assert_ne!(
         tree.field_type_str("Array").as_deref(),
@@ -267,7 +267,7 @@ fn colliding_qname_field_types_are_kept_per_id() {
     id_map.insert(("packages/a/config.ts".to_string(), "config".to_string()), 10);
     id_map.insert(("packages/b/config.ts".to_string(), "config".to_string()), 20);
 
-    let tree = Compilation::build(&[pf_a, pf_b], &id_map, Arc::clone(&arena));
+    let tree = Compilation::build(&[pf_a, pf_b], &id_map.clone().into(), Arc::clone(&arena));
 
     let id10 = tree.field_type_id_of(10).expect("field_type_id_of(10) populated");
     let id20 = tree.field_type_id_of(20).expect("field_type_id_of(20) populated");
@@ -314,7 +314,7 @@ fn colliding_qname_return_types_are_kept_per_id() {
         20,
     );
 
-    let tree = Compilation::build(&[react_pf, preact_pf], &id_map, Arc::clone(&arena));
+    let tree = Compilation::build(&[react_pf, preact_pf], &id_map.clone().into(), Arc::clone(&arena));
 
     // Qname slot is first-writer-wins (one type for both copies); the id slot
     // must keep each declaration's OWN return.
@@ -354,7 +354,7 @@ fn same_qname_overload_generics_survive_by_id() {
     id_map.insert(("packages/react/useQuery.ts".to_string(), "useQuery".to_string()), 10);
     id_map.insert(("packages/preact/useQuery.ts".to_string(), "useQuery".to_string()), 20);
 
-    let tree = Compilation::build(&[react_pf, preact_pf], &id_map, Arc::clone(&arena));
+    let tree = Compilation::build(&[react_pf, preact_pf], &id_map.clone().into(), Arc::clone(&arena));
 
     let expected = vec!["TData".to_string(), "TError".to_string()];
     assert_eq!(
@@ -381,7 +381,7 @@ fn generic_param_defaults_are_captured_by_id() {
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
     id_map.insert(("a.ts".to_string(), "useQuery".to_string()), 10);
 
-    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+    let tree = Compilation::build(&[pf], &id_map.clone().into(), Arc::clone(&arena));
 
     let expected = vec![Some("string".to_string()), Some("TData".to_string())];
     assert_eq!(
@@ -412,7 +412,7 @@ fn call_wrapper_return_inferred_from_returned_call() {
     id_map.insert(("src/hooks.ts".to_string(), "useQuery".to_string()), 1);
     id_map.insert(("src/hooks.ts".to_string(), "usePost".to_string()), 2);
 
-    let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map, Arc::clone(&arena));
+    let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map.clone().into(), Arc::clone(&arena));
     // useQuery's own return derives from its signature; usePost's is inferred.
     assert_eq!(tree.return_type_str("usePost"), None, "no return before the pass");
     tree.infer_call_wrapper_returns(std::slice::from_ref(&pf));
@@ -492,7 +492,7 @@ fn call_wrapper_return_prefers_scoped_nested_callee_over_namesake() {
         id_map.insert(("src/logger.ts".to_string(), qname.to_string()), id);
     }
 
-    let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map, Arc::clone(&arena));
+    let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map.clone().into(), Arc::clone(&arena));
     assert_eq!(tree.return_type_str("createScopedLogger"), None, "no return before the pass");
     tree.infer_call_wrapper_returns(std::slice::from_ref(&pf));
     assert_eq!(
@@ -524,7 +524,7 @@ fn field_init_call_types_the_field() {
     id_map.insert(("src/c.ts".to_string(), "C".to_string()), 2);
     id_map.insert(("src/c.ts".to_string(), "C.svc".to_string()), 3);
 
-    let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map, Arc::clone(&arena));
+    let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map.clone().into(), Arc::clone(&arena));
     assert_eq!(tree.field_type_str("C.svc"), None, "no field type before the pass");
     tree.infer_field_init_types(std::slice::from_ref(&pf), &rustc_hash::FxHashMap::default());
     assert_eq!(
@@ -566,7 +566,7 @@ fn field_init_await_unwraps_the_async_wrapper() {
     id_map.insert(("src/c.ts".to_string(), "fetch".to_string()), 1);
     id_map.insert(("src/c.ts".to_string(), "res".to_string()), 2);
 
-    let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map, Arc::clone(&arena));
+    let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map.clone().into(), Arc::clone(&arena));
     let mut profiles: rustc_hash::FxHashMap<&'static str, &'static LanguageProfile> =
         rustc_hash::FxHashMap::default();
     profiles.insert("typescript", &ASYNC_PROFILE);
@@ -628,7 +628,7 @@ fn local_var_init_call_types_the_variable_not_the_callee() {
     id_map.insert(("src/m.ts".to_string(), "makeThing".to_string()), 1);
     id_map.insert(("src/m.ts".to_string(), "r".to_string()), 2);
 
-    let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map, Arc::clone(&arena));
+    let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map.clone().into(), Arc::clone(&arena));
     // derive_type_info_from_refs (run during build) must SKIP the chain-bearing
     // TypeRef — `r` must NOT be mis-typed to the callee name "makeThing".
     assert_eq!(
@@ -685,7 +685,7 @@ fn inferred_return_method_does_not_capture_last_param_as_return() {
         2,
     );
 
-    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+    let tree = Compilation::build(&[pf], &id_map.clone().into(), Arc::clone(&arena));
 
     assert_eq!(
         tree.return_type_str("Browser.elementByCss"),
@@ -726,7 +726,7 @@ fn object_type_return_routes_through_synth_ret_with_typed_members() {
     id_map.insert(("src/lib.ts".to_string(), "setup$Ret.browser".to_string()), 4);
     id_map.insert(("src/lib.ts".to_string(), "setup$Ret.flag".to_string()), 5);
 
-    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+    let tree = Compilation::build(&[pf], &id_map.clone().into(), Arc::clone(&arena));
 
     assert_eq!(
         tree.return_type_str("setup").as_deref(),
@@ -811,7 +811,7 @@ fn inherits_by_id_prefers_same_package_parent() {
     id_map.insert(("p2/mod.ts".to_string(), "Base".to_string()), 2);
     id_map.insert(("p2/mod.ts".to_string(), "Child".to_string()), 3);
 
-    let tree = Compilation::build(&[pf1, pf2], &id_map, arena);
+    let tree = Compilation::build(&[pf1, pf2], &id_map.clone().into(), arena);
 
     let child_id = 3;
     // Child lives in package 2, so its Base must be package 2's Base (id 2),
@@ -974,7 +974,7 @@ fn resolve_external_reexport_follows_export_star_package_chain() {
         700,
     );
 
-    let tree = Compilation::build(&[vue_entry, rt_dom, rt_core], &id_map, Arc::clone(&arena));
+    let tree = Compilation::build(&[vue_entry, rt_dom, rt_core], &id_map.clone().into(), Arc::clone(&arena));
 
     assert_eq!(
         tree.resolve_external_reexport("computed", "computed", "vue"),
@@ -1014,7 +1014,7 @@ fn selector_qname_resolves_component_selector_from_parsed_file() {
         1,
     );
 
-    let tree = Compilation::build(&[pf], &id_map, Arc::new(TypeArena::new()));
+    let tree = Compilation::build(&[pf], &id_map.clone().into(), Arc::new(TypeArena::new()));
 
     assert_eq!(
         tree.selector_qname("ngx-legend-chart"),
@@ -1053,7 +1053,7 @@ fn symbols_absent_from_id_map_are_skipped() {
     // Only "Real" is in the map; "Ghost" is absent.
     id_map.insert(("src/x.ts".to_string(), "Real".to_string()), 99);
 
-    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+    let tree = Compilation::build(&[pf], &id_map.clone().into(), Arc::clone(&arena));
     assert!(tree.by_qualified_name("Real").is_some());
     assert!(tree.by_qualified_name("Ghost").is_none());
 }
@@ -1067,7 +1067,7 @@ fn workspace_package_id_resolves_declared_name_and_deep_import() {
     };
     let tree = Compilation::build_with_context(
         &[],
-        &HashMap::new(),
+        &Default::default(),
         arena,
         Some(&ctx),
         &std::collections::HashSet::new(),
@@ -1108,7 +1108,7 @@ fn dart_bare_relative_specifier_resolves_via_language_resolver() {
     id_map.insert(("lib/foo.dart".to_string(), "Foo".to_string()), 1);
     id_map.insert(("lib/main.dart".to_string(), "Main".to_string()), 2);
 
-    let tree = Compilation::build(&[pf_foo, pf_main], &id_map, arena);
+    let tree = Compilation::build(&[pf_foo, pf_main], &id_map.clone().into(), arena);
 
     assert_eq!(tree.resolve_module_from("lib/main.dart", "foo.dart"), None);
     assert_eq!(
@@ -1150,7 +1150,7 @@ fn dart_package_self_specifier_resolves_via_language_resolver() {
     };
     let tree = Compilation::build_with_context(
         &[pf_user, pf_main],
-        &id_map,
+        &id_map.clone().into(),
         arena,
         Some(&ctx),
         &std::collections::HashSet::new(),
@@ -1182,7 +1182,7 @@ fn ts_bare_external_specifier_still_declines_via_language_resolver() {
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
     id_map.insert(("src/app.ts".to_string(), "App".to_string()), 1);
 
-    let tree = Compilation::build(&[pf], &id_map, arena);
+    let tree = Compilation::build(&[pf], &id_map.clone().into(), arena);
 
     assert_eq!(tree.resolve_module_from("src/app.ts", "lodash"), None);
     assert_eq!(
@@ -1200,7 +1200,7 @@ fn symbols_in_package_groups_symbols_by_package_id() {
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
     id_map.insert(("packages/utils/x.ts".to_string(), "Util".to_string()), 1);
 
-    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+    let tree = Compilation::build(&[pf], &id_map.clone().into(), Arc::clone(&arena));
     let in_pkg = tree.symbols_in_package(7);
     assert_eq!(in_pkg.len(), 1);
     assert_eq!(in_pkg.first().unwrap().qualified_name, "Util");
@@ -1283,7 +1283,7 @@ fn typeref_derived_return_type_for_method() {
     id_map.insert(("src/svc.ts".to_string(), "Svc".to_string()), 2);
     id_map.insert(("src/svc.ts".to_string(), "Svc.getUser".to_string()), 3);
 
-    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+    let tree = Compilation::build(&[pf], &id_map.clone().into(), Arc::clone(&arena));
 
     assert_eq!(
         tree.return_type_str("Svc.getUser").as_deref(),
@@ -1315,7 +1315,7 @@ fn typeref_derived_field_type_for_property() {
     id_map.insert(("src/app.ts".to_string(), "App".to_string()), 2);
     id_map.insert(("src/app.ts".to_string(), "App.config".to_string()), 3);
 
-    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+    let tree = Compilation::build(&[pf], &id_map.clone().into(), Arc::clone(&arena));
 
     assert_eq!(
         tree.field_type_str("App.config").as_deref(),
@@ -1346,7 +1346,7 @@ fn signature_derived_return_type_for_method() {
     id_map.insert(("src/loader.ts".to_string(), "User".to_string()), 1);
     id_map.insert(("src/loader.ts".to_string(), "load".to_string()), 2);
 
-    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+    let tree = Compilation::build(&[pf], &id_map.clone().into(), Arc::clone(&arena));
 
     assert_eq!(
         tree.return_type_str("load").as_deref(),
@@ -1382,7 +1382,7 @@ fn this_return_is_captured_over_parameter_typeref() {
     id_map.insert(("src/mock.ts".to_string(), "Proc".to_string()), 1);
     id_map.insert(("src/mock.ts".to_string(), "Mock.mockImpl".to_string()), 2);
 
-    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+    let tree = Compilation::build(&[pf], &id_map.clone().into(), Arc::clone(&arena));
 
     assert_eq!(
         tree.return_type_str("Mock.mockImpl").as_deref(),
@@ -1418,7 +1418,7 @@ fn typeid_is_not_overwritten_by_typeref() {
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
     id_map.insert(("src/f.ts".to_string(), "fetch".to_string()), 1);
 
-    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+    let tree = Compilation::build(&[pf], &id_map.clone().into(), Arc::clone(&arena));
 
     assert_eq!(
         tree.return_type_str("fetch").as_deref(),
@@ -1454,8 +1454,8 @@ fn ambient_scope_indexes_globals_namespace_symbols() {
     // Only the globals-namespace qname is flagged ambient by the materialization layer.
     let ambient: std::collections::HashSet<String> = [globals_qname].into_iter().collect();
     let arena2 = Arc::clone(&arena);
-    let mut tree = Compilation::build(&[], &HashMap::new(), arena2);
-    tree.ingest(&[pf], &id_map, &ambient);
+    let mut tree = Compilation::build(&[], &Default::default(), arena2);
+    tree.ingest(&[pf], &id_map.clone().into(), &ambient);
 
     let hits = tree.ambient_symbols("expect");
     assert_eq!(hits.len(), 1, "the flagged globals symbol is in ambient scope");
@@ -1534,7 +1534,7 @@ fn bare_identifier_return_infers_param_type() {
     let (pf, id_map) =
         build_hook_fixture("src/hooks.ts", "useQueryClient", "QueryClient", &mut next_id);
 
-    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+    let tree = Compilation::build(&[pf], &id_map.clone().into(), Arc::clone(&arena));
 
     assert_eq!(
         tree.return_type_str("useQueryClient").as_deref(),
@@ -1571,7 +1571,7 @@ fn declared_return_blocks_bare_identifier_inference() {
     id_map.insert(("src/hooks.ts".to_string(), "useQueryClient".to_string()), 1);
     id_map.insert(("src/hooks.ts".to_string(), "useQueryClient.qc".to_string()), 2);
 
-    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+    let tree = Compilation::build(&[pf], &id_map.clone().into(), Arc::clone(&arena));
 
     assert_eq!(
         tree.return_type_str("useQueryClient").as_deref(),
@@ -1597,7 +1597,7 @@ fn cross_module_agreement_infers_shared_qname() {
     let mut id_map = id1;
     id_map.extend(id2);
 
-    let tree = Compilation::build(&[pf1, pf2], &id_map, Arc::clone(&arena));
+    let tree = Compilation::build(&[pf1, pf2], &id_map.clone().into(), Arc::clone(&arena));
 
     assert_eq!(
         tree.return_type_str("useQueryClient").as_deref(),
@@ -1657,7 +1657,7 @@ fn inferred_return_lets_call_root_chain_resolve() {
     let mut next_id = 1;
     let (pf, id_map) =
         build_hook_fixture("src/hooks.ts", "useQueryClient", "QueryClient", &mut next_id);
-    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+    let tree = Compilation::build(&[pf], &id_map.clone().into(), Arc::clone(&arena));
 
     // `useQueryClient().clear()` — the call root reads useQueryClient's inferred
     // return (QueryClient), then `clear` binds on QueryClient.
@@ -1789,7 +1789,7 @@ fn module_tagged_value_typeref_resolves_to_exported_value_type() {
     id_map.insert(("ext:ts:mod/index.d.ts".to_string(), "mod.globalExp".to_string()), 2);
     id_map.insert(("ext:ts:g/globals.d.ts".to_string(), "g.exp".to_string()), 3);
 
-    let tree = Compilation::build(&[mod_pf, consumer_pf], &id_map, Arc::clone(&arena));
+    let tree = Compilation::build(&[mod_pf, consumer_pf], &id_map.clone().into(), Arc::clone(&arena));
 
     assert_eq!(
         tree.field_type_str("g.exp").as_deref(),
@@ -1821,8 +1821,8 @@ fn ambient_scope_indexes_materialization_flagged_globals() {
     let ambient: std::collections::HashSet<String> = ["Record".to_string()].into_iter().collect();
 
     let arena2 = Arc::clone(&arena);
-    let mut tree = Compilation::build(&[], &HashMap::new(), arena2);
-    tree.ingest(&[pf], &id_map, &ambient);
+    let mut tree = Compilation::build(&[], &Default::default(), arena2);
+    tree.ingest(&[pf], &id_map.clone().into(), &ambient);
 
     let hits = tree.ambient_symbols("Record");
     assert_eq!(hits.len(), 1, "the flagged lib global is in ambient scope");
@@ -1925,7 +1925,7 @@ fn build_reexport_alias_fixture() -> Compilation {
         ("ext:ts:lib-pkg/index.d.ts".to_string(), "lib-pkg.util".to_string()),
         20,
     );
-    let mut tree = Compilation::build(&[barrel, lib], &id_map, arena);
+    let mut tree = Compilation::build(&[barrel, lib], &id_map.clone().into(), arena);
     tree.apply_external_reexport_aliases(&[(
         "wrapper-pkg.util".to_string(),
         "lib-pkg.util".to_string(),
@@ -1975,7 +1975,7 @@ fn merged_value_type_pair_keeps_declared_type_off_field_slots() {
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
     id_map.insert(("src/lib.d.ts".to_string(), "D".to_string()), 1);
     id_map.insert(("src/lib.d.ts".to_string(), "gadget".to_string()), 2);
-    let tree = Compilation::build(&[pf], &id_map, Arc::clone(&arena));
+    let tree = Compilation::build(&[pf], &id_map.clone().into(), Arc::clone(&arena));
 
     assert_eq!(tree.field_type_id("D"), None);
     assert_eq!(tree.field_type_id_of(1), None);
@@ -2019,7 +2019,7 @@ fn build_with_active(
         active_ecosystems: active,
         ..Default::default()
     };
-    Compilation::build_with_context(files, id_map, arena, Some(&ctx), &std::collections::HashSet::new())
+    Compilation::build_with_context(files, &id_map.clone().into(), arena, Some(&ctx), &std::collections::HashSet::new())
 }
 
 #[test]
@@ -2183,7 +2183,7 @@ fn context_without_active_ecosystems_has_no_visibility_sets() {
     let ctx = ProjectContext::default();
     let tree = Compilation::build_with_context(
         &[pf],
-        &id_map,
+        &id_map.clone().into(),
         Arc::clone(&arena),
         Some(&ctx),
         &std::collections::HashSet::new(),
@@ -2247,7 +2247,7 @@ fn module_augmentation_grafts_onto_the_exported_interface_not_a_same_named_value
         ("ext:ts:@vitest/expect/index.d.ts".into(), "@vitest/expect.Assertion".into()),
         900,
     );
-    let mut tree = Compilation::build(&[aug, expect_pkg, vitest], &id_map, Arc::clone(&arena));
+    let mut tree = Compilation::build(&[aug, expect_pkg, vitest], &id_map.clone().into(), Arc::clone(&arena));
 
     tree.apply_module_augmentations(&[(
         "vitest".to_string(),
@@ -2305,7 +2305,7 @@ fn a_bare_supertype_head_climbs_to_the_member_bearing_declaration() {
     id_map.insert(("ext:ts:pkg/types/matchers.d.ts".into(), "pkg.matchers.Matchers.toBeVisible".into()), 21);
     id_map.insert(("ext:ts:other/index.d.ts".into(), "other.Assertion".into()), 30);
 
-    let tree = Compilation::build(&[alias_file, iface_file, child], &id_map, Arc::clone(&arena));
+    let tree = Compilation::build(&[alias_file, iface_file, child], &id_map.clone().into(), Arc::clone(&arena));
 
     assert_eq!(
         tree.parent_class_ids(30),
@@ -2356,7 +2356,7 @@ fn field_init_new_through_a_constructor_valued_name_yields_the_instance() {
     id_map.insert(("src/u.ts".to_string(), "useBaseQuery.Observer".to_string()), 2);
     id_map.insert(("src/u.ts".to_string(), "useBaseQuery.observer".to_string()), 3);
 
-    let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map, Arc::clone(&arena));
+    let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map.clone().into(), Arc::clone(&arena));
     tree.infer_field_init_types(std::slice::from_ref(&pf), &rustc_hash::FxHashMap::default());
     assert_eq!(
         tree.field_type_id("useBaseQuery.observer").map(|id| arena.format_type(id)).as_deref(),
@@ -2427,7 +2427,7 @@ fn chain_initialized_binding_types_from_the_chains_final_yield() {
         }
     }
 
-    let mut tree = Compilation::build(&[build_pf()], &id_map, Arc::clone(&arena));
+    let mut tree = Compilation::build(&[build_pf()], &id_map.clone().into(), Arc::clone(&arena));
     tree.infer_field_init_types(&[build_pf()], &profiles);
     tree.infer_chain_init_types(&[build_pf()], &profiles);
 
@@ -2435,4 +2435,38 @@ fn chain_initialized_binding_types_from_the_chains_final_yield() {
     assert_eq!(arena.format_type(base_ft), "Builder");
     let client_ft = tree.field_type_id_of(5).expect("client typed by chain-init pass");
     assert_eq!(arena.format_type(client_ft), "Builder");
+}
+
+/// An overload set: two rows with IDENTICAL (path, qname) in one file. The
+/// qname-keyed map physically cannot tell them apart (one key, last writer
+/// wins); the positional row map binds each row to its own id, so each
+/// overload keeps its own extractor-set return type in the id slot.
+#[test]
+fn same_file_overload_rows_keep_distinct_returns_by_row_id() {
+    let arena = Arc::new(TypeArena::new());
+    let ret_a = arena.class("ResultA");
+    let ret_b = arena.class("ResultB");
+
+    let over_a = make_symbol("Run", "Svc.Run", SymbolKind::Function, None, None, Some(ret_a));
+    let over_b = make_symbol("Run", "Svc.Run", SymbolKind::Function, None, None, Some(ret_b));
+    let pf = make_parsed_file("src/svc.cs", vec![over_a, over_b], vec![]);
+
+    let mut ids = crate::indexer::write::SymbolIds::default();
+    // Legacy key view: one entry, collapsed to the last-written row.
+    ids.insert_key("src/svc.cs".to_string(), "Svc.Run".to_string(), 11);
+    // Row view: both rows, positionally.
+    ids.set_rows("src/svc.cs".to_string(), vec![10, 11]);
+
+    let tree = Compilation::build(&[pf], &ids, Arc::clone(&arena));
+
+    assert_eq!(
+        tree.return_type_id_of(10),
+        Some(ret_a),
+        "first overload row keeps its own return type"
+    );
+    assert_eq!(
+        tree.return_type_id_of(11),
+        Some(ret_b),
+        "second overload row keeps its own return type"
+    );
 }

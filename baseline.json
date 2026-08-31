@@ -2357,8 +2357,8 @@
       "flow_edge_types": {},
       "flow_edges": 0,
       "generated_files_reclassified": 8,
-      "internal_edges": 15204,
-      "internal_unresolved": 4436,
+      "internal_edges": 15293,
+      "internal_unresolved": 4347,
       "languages": {
         "csharp": 432,
         "json": 7,
@@ -2367,20 +2367,20 @@
       },
       "path": "F:/Work/Projects/TestProjects/dotnet-spectre-console",
       "perf": {
-        "end_ws_mb": 8633,
-        "files_per_sec": 14,
-        "index_duration_ms": 32525
+        "end_ws_mb": 8640,
+        "files_per_sec": 16,
+        "index_duration_ms": 29319
       },
       "project": "dotnet-spectre-console",
       "rate_by_language": {
-        "csharp": 77.7,
+        "csharp": 78.15,
         "markdown": 27.27
       },
-      "resolution_rate": 77.41,
+      "resolution_rate": 77.87,
       "routes": 0,
       "symbols": 9103,
       "unresolved_by_lang_kind": {
-        "csharp.calls": 2501,
+        "csharp.calls": 2412,
         "csharp.implements": 9,
         "csharp.imports": 36,
         "csharp.instantiates": 275,
@@ -2392,7 +2392,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 81
+        "min_resolution_rate": 82
       },
       "code_chunks": 177525,
       "drained_refs": 2457,
@@ -2402,8 +2402,8 @@
       },
       "flow_edges": 510,
       "generated_files_reclassified": 2,
-      "internal_edges": 203314,
-      "internal_unresolved": 45339,
+      "internal_edges": 203931,
+      "internal_unresolved": 44744,
       "languages": {
         "angular_template": 291,
         "csharp": 2692,
@@ -2426,30 +2426,30 @@
       },
       "path": "F:/Work/Projects/TestProjects/dotnet-squidex",
       "perf": {
-        "end_ws_mb": 19295,
-        "files_per_sec": 13,
-        "index_duration_ms": 345535
+        "end_ws_mb": 19225,
+        "files_per_sec": 15,
+        "index_duration_ms": 296235
       },
       "project": "dotnet-squidex",
       "rate_by_language": {
         "angular_template": 59.23,
-        "csharp": 86.96,
+        "csharp": 87.33,
         "dockerfile": 12.5,
         "html": 13.04,
         "javascript": 76.76,
         "powershell": 0.0,
         "razor": 20.0,
         "scss": 6.35,
-        "typescript": 69.63
+        "typescript": 69.52
       },
-      "resolution_rate": 81.77,
+      "resolution_rate": 82.01,
       "routes": 512,
       "symbols": 79472,
       "unresolved_by_lang_kind": {
         "angular_template.calls": 1497,
-        "csharp.calls": 14038,
+        "csharp.calls": 13386,
         "csharp.implements": 66,
-        "csharp.imports": 2037,
+        "csharp.imports": 2021,
         "csharp.inherits": 27,
         "csharp.instantiates": 449,
         "csharp.type_ref": 6796,
@@ -2467,12 +2467,12 @@
         "razor.type_ref": 11,
         "scss.calls": 354,
         "scss.imports": 428,
-        "typescript.calls": 7289,
+        "typescript.calls": 7330,
         "typescript.implements": 18,
         "typescript.imports": 2,
         "typescript.inherits": 87,
         "typescript.instantiates": 1175,
-        "typescript.type_ref": 10880
+        "typescript.type_ref": 10912
       },
       "vendored_files_reclassified": 39
     },

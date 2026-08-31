@@ -22,6 +22,7 @@ use super::flush::{Edge, RefLog, Unresolved, flush_to_db};
 use crate::db::Database;
 use crate::ecosystem::symbol_index::SymbolLocationIndex;
 use crate::indexer::plugin_state::PluginStateBag;
+use crate::indexer::write::SymbolIds;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::contract::{FlowCacheLookup, RefContext, SymbolLookup};
 use crate::indexer::resolve::engine::contract::chain_walker::parse_type_head_and_args;
@@ -110,7 +111,7 @@ pub fn resolve_from_tree(
     db: &mut Database,
     mut tree: Compilation,
     parsed: &[ParsedFile],
-    symbol_id_map: &HashMap<(String, String), i64>,
+    symbol_id_map: &SymbolIds,
     project_ctx: Option<&ProjectContext>,
 ) -> Result<ResolutionStats> {
     let profiles = build_profiles();
@@ -176,7 +177,7 @@ pub fn resolve_from_tree(
 pub fn resolve_single_pass(
     db: &mut Database,
     parsed: &[ParsedFile],
-    symbol_id_map: &HashMap<(String, String), i64>,
+    symbol_id_map: &SymbolIds,
     project_ctx: Option<&ProjectContext>,
     arena: Arc<TypeArena>,
     loc: Arc<SymbolLocationIndex>,
@@ -198,7 +199,7 @@ pub fn resolve_single_pass(
 pub fn resolve_incremental_pass(
     db: &mut Database,
     parsed: &[ParsedFile],
-    symbol_id_map: &HashMap<(String, String), i64>,
+    symbol_id_map: &SymbolIds,
     project_ctx: Option<&ProjectContext>,
     arena: Arc<TypeArena>,
 ) -> Result<ResolutionStats> {
@@ -217,8 +218,8 @@ pub fn resolve_incremental_pass(
     // fold it into the changed-files map so an affected file's source symbols
     // (which live only in the DB) map to their ids during resolution.
     let mut full_id_map = symbol_id_map.clone();
-    for (k, v) in tree.ingest_from_db(db.conn()) {
-        full_id_map.entry(k).or_insert(v);
+    for ((path, qname), v) in tree.ingest_from_db(db.conn()) {
+        full_id_map.insert_key_if_absent(path, qname, v);
     }
 
     // Wrapped functions are now loaded from the DB; resolve `ReturnType<typeof fn>`
@@ -278,7 +279,7 @@ pub(super) fn resolve_one_file(
     plugins: &FxHashMap<&'static str, &'static dyn LanguagePlugin>,
     plugin_state: Option<&PluginStateBag>,
     solver: &SemanticModel,
-    symbol_id_map: &HashMap<(String, String), i64>,
+    symbol_id_map: &SymbolIds,
     only_kinds: Option<&[EdgeKind]>,
 ) -> (Vec<Edge>, Vec<Unresolved>, Vec<RefLog>) {
     let mut edges: Vec<Edge> = Vec::new();
@@ -350,8 +351,8 @@ pub(super) fn resolve_one_file(
         let Some(source_sym) = pf.symbols.get(r.source_symbol_index) else {
             continue;
         };
-        let Some(&source_id) =
-            symbol_id_map.get(&(pf.path.clone(), source_sym.qualified_name.clone()))
+        let Some(source_id) =
+            symbol_id_map.id_of(&pf.path, r.source_symbol_index, &source_sym.qualified_name)
         else {
             continue;
         };

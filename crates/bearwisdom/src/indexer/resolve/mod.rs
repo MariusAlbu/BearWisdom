@@ -30,6 +30,7 @@ use anyhow::{Context, Result};
 use std::collections::HashMap;
 
 use crate::db::Database;
+use crate::indexer::write::SymbolIds;
 use crate::indexer::project_context::ProjectContext;
 use crate::types::ParsedFile;
 
@@ -77,7 +78,7 @@ pub struct ResolutionStats {
 pub fn resolve_and_write_incremental(
     db: &mut Database,
     parsed: &[ParsedFile],
-    symbol_id_map: &HashMap<(String, String), i64>,
+    symbol_id_map: &SymbolIds,
     project_ctx: Option<&ProjectContext>,
 ) -> Result<ResolutionStats> {
     let arena = std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new());
@@ -101,7 +102,7 @@ pub fn resolve_and_write_incremental(
 pub fn resolve_and_write_incremental_and_arena(
     db: &mut Database,
     parsed: &[ParsedFile],
-    symbol_id_map: &HashMap<(String, String), i64>,
+    symbol_id_map: &SymbolIds,
     project_ctx: Option<&ProjectContext>,
     type_arena: std::sync::Arc<crate::type_checker::core::types::TypeArena>,
 ) -> Result<ResolutionStats> {

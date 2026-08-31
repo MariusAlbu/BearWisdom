@@ -27,7 +27,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use anyhow::{Context, Result};
 
 use crate::db::Database;
-use crate::indexer::write::SymbolIdMap;
+use crate::indexer::write::SymbolIds;
 use crate::types::{ParsedFile, SymbolKind};
 
 /// One planned splice: the fragment at `included_idx` joins the namespace
@@ -56,7 +56,7 @@ struct RowUpdate {
 pub fn assemble_includes(
     db: &Database,
     parsed: &mut [ParsedFile],
-    symbol_id_map: &mut SymbolIdMap,
+    symbol_id_map: &mut SymbolIds,
 ) -> Result<usize> {
     let _t = crate::indexer::phase_timer::scope("include_assembly");
     let splices = plan_splices(parsed);
@@ -199,7 +199,7 @@ fn namespace_qname(pf: &ParsedFile) -> Option<&str> {
 fn apply_splices(
     parsed: &mut [ParsedFile],
     splices: &[Splice],
-    symbol_id_map: &mut SymbolIdMap,
+    symbol_id_map: &mut SymbolIds,
 ) -> (usize, Vec<RowUpdate>) {
     let mut updates = Vec::new();
     let mut reparented = 0usize;
@@ -216,8 +216,8 @@ fn apply_splices(
                 None => None,
             };
             reparented += 1;
-            if let Some(id) = symbol_id_map.remove(&(pf.path.clone(), old_qname.clone())) {
-                symbol_id_map.insert((pf.path.clone(), new_qname.clone()), id);
+            if let Some(id) = symbol_id_map.remove_key(&pf.path, &old_qname) {
+                symbol_id_map.insert_key(pf.path.clone(), new_qname.clone(), id);
                 updates.push(RowUpdate {
                     id,
                     new_qname: new_qname.clone(),

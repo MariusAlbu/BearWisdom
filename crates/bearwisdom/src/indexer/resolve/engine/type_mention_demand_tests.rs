@@ -51,7 +51,7 @@ fn collect_return_type_files_follows_rust_path_qualified_head() {
     loc.insert("gadgetcrate", "Gadget", gadget_file.clone());
 
     let arena = Arc::new(TypeArena::new());
-    let tree = Compilation::build(&[], &HashMap::new(), arena);
+    let tree = Compilation::build(&[], &Default::default(), arena);
 
     let mut seen: HashSet<PathBuf> = HashSet::new();
     let mut out: Vec<PathBuf> = Vec::new();
@@ -110,7 +110,7 @@ fn qualified_return_head_not_suppressed_by_same_named_type() {
         1i64,
     );
     let arena = Arc::new(TypeArena::new());
-    let tree = Compilation::build(std::slice::from_ref(&decoy), &id_map, arena);
+    let tree = Compilation::build(std::slice::from_ref(&decoy), &id_map.clone().into(), arena);
 
     let mut seen: HashSet<PathBuf> = HashSet::new();
     let mut out: Vec<PathBuf> = Vec::new();
@@ -157,7 +157,7 @@ fn callback_param_type_head_is_demanded() {
     );
 
     let arena = Arc::new(TypeArena::new());
-    let tree = Compilation::build(&[], &HashMap::new(), arena);
+    let tree = Compilation::build(&[], &Default::default(), arena);
 
     let profiles = crate::indexer::resolve::engine::pipeline::_test_build_profiles();
     let mut seen: HashSet<PathBuf> = HashSet::new();
@@ -192,7 +192,7 @@ fn chain_root_declared_type_is_demanded() {
     loc.insert("system.runtime", "String", string_file.clone());
 
     let arena = Arc::new(TypeArena::new());
-    let tree = Compilation::build(&[], &HashMap::new(), arena);
+    let tree = Compilation::build(&[], &Default::default(), arena);
 
     let mut seen: HashSet<PathBuf> = HashSet::new();
     let mut out: Vec<PathBuf> = Vec::new();
@@ -229,7 +229,7 @@ fn qualified_chain_root_pulls_only_the_addressed_entry() {
     );
 
     let arena = Arc::new(TypeArena::new());
-    let tree = Compilation::build(&[], &HashMap::new(), arena);
+    let tree = Compilation::build(&[], &Default::default(), arena);
 
     let mut seen: HashSet<PathBuf> = HashSet::new();
     let mut out: Vec<PathBuf> = Vec::new();
@@ -260,7 +260,7 @@ fn bare_chain_root_declared_type_pulls_nothing() {
     loc.insert("crate.b", "Result", PathBuf::from("ext:b"));
 
     let arena = Arc::new(TypeArena::new());
-    let tree = Compilation::build(&[], &HashMap::new(), arena);
+    let tree = Compilation::build(&[], &Default::default(), arena);
 
     let mut seen: HashSet<PathBuf> = HashSet::new();
     let mut out: Vec<PathBuf> = Vec::new();
@@ -287,7 +287,7 @@ fn chain_root_without_declared_type_pulls_nothing() {
     loc.insert("system.runtime", "String", PathBuf::from("ext:string"));
 
     let arena = Arc::new(TypeArena::new());
-    let tree = Compilation::build(&[], &HashMap::new(), arena);
+    let tree = Compilation::build(&[], &Default::default(), arena);
 
     let mut seen: HashSet<PathBuf> = HashSet::new();
     let mut out: Vec<PathBuf> = Vec::new();

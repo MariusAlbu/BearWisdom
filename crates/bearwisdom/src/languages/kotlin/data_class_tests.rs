@@ -330,7 +330,7 @@ fn copy_return_ref_enables_chain_resolution() {
         );
     }
 
-    let index = Compilation::build(&[pf], &id_map, std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new()));
+    let index = Compilation::build(&[pf], &id_map.clone().into(), std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new()));
 
     // Both User and User.copy must be reachable in the index.
     assert!(

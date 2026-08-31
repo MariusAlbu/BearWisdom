@@ -341,7 +341,7 @@ fn deconstruct_resolves_through_index() {
         );
     }
 
-    let index = Compilation::build(&[pf], &id_map, std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new()));
+    let index = Compilation::build(&[pf], &id_map.clone().into(), std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new()));
 
     // Deconstruct must be a reachable member of Point after the splice — this is
     // the headline `point.Deconstruct(out _, out _)` / `var (a, b) = point` proof.
@@ -894,7 +894,7 @@ fn observable_recipient_resolves_messenger_through_index() {
         );
     }
 
-    let index = Compilation::build(&[pf], &id_map, std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new()));
+    let index = Compilation::build(&[pf], &id_map.clone().into(), std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new()));
 
     let members = index.members_of("App.VM");
     assert!(
@@ -960,7 +960,7 @@ fn observable_object_resolves_set_property_through_index() {
         );
     }
 
-    let index = Compilation::build(&[pf], &id_map, std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new()));
+    let index = Compilation::build(&[pf], &id_map.clone().into(), std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new()));
 
     let members = index.members_of("App.VM");
     assert!(
@@ -1022,7 +1022,7 @@ fn observable_property_resolves_through_index() {
         );
     }
 
-    let index = Compilation::build(&[pf], &id_map, std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new()));
+    let index = Compilation::build(&[pf], &id_map.clone().into(), std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new()));
 
     assert!(
         index.by_qualified_name("App.VM.Current").is_some(),

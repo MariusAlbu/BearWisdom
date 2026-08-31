@@ -80,7 +80,7 @@ fn build_shim_compilation() -> (Compilation, Arc<TypeArena>) {
     id_map.insert(("src/shims.d.ts".to_string(), "RegisterOptions".to_string()), 11);
     let tree = Compilation::build_with_context(
         &[pf],
-        &id_map,
+        &id_map.clone().into(),
         Arc::clone(&arena),
         None,
         &HashSet::new(),

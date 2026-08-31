@@ -33,6 +33,8 @@ pub type FileIdMap = HashMap<String, i64>;
 /// Maps (relative_path, qualified_name) → SQLite symbol row ID.
 pub type SymbolIdMap = HashMap<(String, String), i64>;
 
+pub use super::symbol_ids::SymbolIds;
+
 fn symbol_insert_sql(rows: usize) -> String {
     // Pre-sized: 14 vars per row, one tuple plus a separator of 3 chars,
     // plus the header/footer. 64 is a comfortable overshoot.
@@ -136,7 +138,7 @@ fn insert_symbols_batched(
     file_id: i64,
     pf: &ParsedFile,
     origin: &str,
-    symbol_id_map: &mut SymbolIdMap,
+    symbol_ids: &mut SymbolIds,
     arena: Option<&TypeArena>,
 ) -> Result<()> {
     if pf.symbols.is_empty() {
@@ -179,12 +181,13 @@ fn insert_symbols_batched(
         }
         for (i, sym_id) in (start..end).zip(ids.iter()) {
             let sym = &pf.symbols[i];
-            symbol_id_map.insert((pf.path.clone(), sym.qualified_name.clone()), *sym_id);
+            symbol_ids.insert_key(pf.path.clone(), sym.qualified_name.clone(), *sym_id);
             id_by_idx[i] = *sym_id;
         }
         start = end;
     }
     write_containment_and_locations(tx, file_id, pf, &id_by_idx)?;
+    symbol_ids.set_rows(pf.path.clone(), id_by_idx);
     Ok(())
 }
 
@@ -332,7 +335,7 @@ pub fn write_parsed_files_incremental(
     db: &Database,
     parsed: &[ParsedFile],
     arena: Option<&TypeArena>,
-) -> Result<(FileIdMap, SymbolIdMap, SurvivorReport)> {
+) -> Result<(FileIdMap, SymbolIds, SurvivorReport)> {
     let conn = db.conn();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -344,7 +347,7 @@ pub fn write_parsed_files_incremental(
         .context("Failed to begin incremental write transaction")?;
 
     let mut file_id_map: FileIdMap = HashMap::new();
-    let mut symbol_id_map: SymbolIdMap = HashMap::new();
+    let mut symbol_id_map: SymbolIds = SymbolIds::default();
     let mut report = SurvivorReport::default();
 
     for pf in parsed {
@@ -428,7 +431,7 @@ fn survivor_match_file(
     pf: &ParsedFile,
     origin: &str,
     arena: Option<&TypeArena>,
-    symbol_id_map: &mut SymbolIdMap,
+    symbol_ids: &mut SymbolIds,
     report: &mut SurvivorReport,
 ) -> Result<()> {
     let total = pf.symbols.len();
@@ -545,7 +548,7 @@ fn survivor_match_file(
             }
         };
         id_by_idx[idx] = id;
-        symbol_id_map.insert((pf.path.clone(), sym.qualified_name.clone()), id);
+        symbol_ids.insert_key(pf.path.clone(), sym.qualified_name.clone(), id);
     }
 
     // --- Vanished non-mergeable rows: full delete (cascade drops their edges) ---
@@ -613,6 +616,7 @@ fn survivor_match_file(
     clear_outgoing_refs(tx, &id_by_idx)?;
 
     write_containment(tx, pf, &id_by_idx)?;
+    symbol_ids.set_rows(pf.path.clone(), id_by_idx);
     Ok(())
 }
 
@@ -817,18 +821,12 @@ fn insert_routes_incremental(
     tx: &rusqlite::Transaction<'_>,
     file_id: i64,
     pf: &ParsedFile,
-    symbol_id_map: &SymbolIdMap,
+    symbol_id_map: &SymbolIds,
 ) -> Result<()> {
     for route in &pf.routes {
-        let sym_id = symbol_id_map
-            .get(&(
-                pf.path.clone(),
-                pf.symbols
-                    .get(route.handler_symbol_index)
-                    .map(|s| s.qualified_name.clone())
-                    .unwrap_or_default(),
-            ))
-            .copied();
+        let sym_id = pf.symbols.get(route.handler_symbol_index).and_then(|s| {
+            symbol_id_map.id_of(&pf.path, route.handler_symbol_index, &s.qualified_name)
+        });
 
         tx.prepare_cached(
             "INSERT OR IGNORE INTO routes
@@ -864,7 +862,7 @@ pub fn write_one_parsed_file(
     pf: &ParsedFile,
     origin: &str,
     now: i64,
-    symbol_id_map: &mut SymbolIdMap,
+    symbol_id_map: &mut SymbolIds,
     is_full: bool,
     arena: Option<&TypeArena>,
 ) -> Result<i64> {
@@ -899,15 +897,9 @@ pub fn write_one_parsed_file(
     insert_symbols_batched(tx, file_id, pf, origin, symbol_id_map, arena)?;
 
     for route in &pf.routes {
-        let sym_id = symbol_id_map
-            .get(&(
-                pf.path.clone(),
-                pf.symbols
-                    .get(route.handler_symbol_index)
-                    .map(|s| s.qualified_name.clone())
-                    .unwrap_or_default(),
-            ))
-            .copied();
+        let sym_id = pf.symbols.get(route.handler_symbol_index).and_then(|s| {
+            symbol_id_map.id_of(&pf.path, route.handler_symbol_index, &s.qualified_name)
+        });
 
         tx.prepare_cached(
             "INSERT OR IGNORE INTO routes
@@ -940,7 +932,7 @@ pub fn write_parsed_files_with_origin(
     parsed: &[ParsedFile],
     origin: &str,
     arena: Option<&TypeArena>,
-) -> Result<(FileIdMap, SymbolIdMap)> {
+) -> Result<(FileIdMap, SymbolIds)> {
     // Default to the full-index fast path (tables are fresh after
     // DROP+CREATE). Call sites that re-write over existing rows use the
     // `_incremental` variant, which keeps the per-file DELETE cleanup.
@@ -954,7 +946,7 @@ pub fn write_parsed_files_with_origin_incremental(
     parsed: &[ParsedFile],
     origin: &str,
     arena: Option<&TypeArena>,
-) -> Result<(FileIdMap, SymbolIdMap)> {
+) -> Result<(FileIdMap, SymbolIds)> {
     write_parsed_files_with_origin_impl(db, parsed, origin, /*is_full*/ false, arena)
 }
 
@@ -964,7 +956,7 @@ fn write_parsed_files_with_origin_impl(
     origin: &str,
     is_full: bool,
     arena: Option<&TypeArena>,
-) -> Result<(FileIdMap, SymbolIdMap)> {
+) -> Result<(FileIdMap, SymbolIds)> {
     let conn = db.conn();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -976,7 +968,7 @@ fn write_parsed_files_with_origin_impl(
         .context("Failed to begin transaction")?;
 
     let mut file_id_map: FileIdMap = HashMap::new();
-    let mut symbol_id_map: SymbolIdMap = HashMap::new();
+    let mut symbol_id_map: SymbolIds = SymbolIds::default();
 
     for pf in parsed {
         // Upsert file row and capture the assigned id via RETURNING.
@@ -1018,15 +1010,9 @@ fn write_parsed_files_with_origin_impl(
 
         // Insert route records (ASP.NET [HttpGet], [Route], etc.).
         for route in &pf.routes {
-            let sym_id = symbol_id_map
-                .get(&(
-                    pf.path.clone(),
-                    pf.symbols
-                        .get(route.handler_symbol_index)
-                        .map(|s| s.qualified_name.clone())
-                        .unwrap_or_default(),
-                ))
-                .copied();
+            let sym_id = pf.symbols.get(route.handler_symbol_index).and_then(|s| {
+                symbol_id_map.id_of(&pf.path, route.handler_symbol_index, &s.qualified_name)
+            });
 
             // `resolved_route` defaults to `route_template` at extract time —
             // connectors that know about controller-prefix / mount-path joining

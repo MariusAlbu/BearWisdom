@@ -73,7 +73,7 @@ fn external_same_name_symbol_does_not_veto_ref_pull() {
         1i64,
     );
     let arena = Arc::new(TypeArena::new());
-    let tree = Compilation::build(std::slice::from_ref(&ext_pf), &id_map, arena);
+    let tree = Compilation::build(std::slice::from_ref(&ext_pf), &id_map.clone().into(), arena);
 
     let mut loc = SymbolLocationIndex::new();
     let assert_file = PathBuf::from("ext:dotnet-type:/pkgs/xa.dll!!xunit.v3.assert!!Xunit.Assert");

@@ -78,7 +78,7 @@ fn id_map_of(files: &[ParsedFile]) -> HashMap<(String, String), i64> {
 }
 
 fn tree_of(files: &[ParsedFile]) -> Compilation {
-    Compilation::build(files, &id_map_of(files), Arc::new(TypeArena::new()))
+    Compilation::build(files, &id_map_of(files).into(), Arc::new(TypeArena::new()))
 }
 
 /// A compilation whose language-visibility relation is snapshot from `active` —
@@ -90,7 +90,7 @@ fn tree_with_ecosystems(files: &[ParsedFile], active: Vec<EcosystemId>) -> Compi
     };
     Compilation::build_with_context(
         files,
-        &id_map_of(files),
+        &id_map_of(files).into(),
         Arc::new(TypeArena::new()),
         Some(&ctx),
         &Default::default(),

@@ -514,7 +514,7 @@ fn write_full(
 
     let conn = db.conn();
     let tx = conn.unchecked_transaction().unwrap();
-    let mut map: SymbolIdMap = std::collections::HashMap::new();
+    let mut map = SymbolIds::default();
     let now = 0i64;
     let fid = write_one_parsed_file(&tx, &pf, "internal", now, &mut map, true, Some(arena))
         .unwrap();
@@ -598,7 +598,7 @@ fn full_index_cross_file_containment_resolved_by_post_write_pass() {
     );
 
     // `ingest_from_db` must surface the method under members_by_id(struct_id).
-    let mut compilation = Compilation::build(&[], &HashMap::new(), Arc::new(TypeArena::new()));
+    let mut compilation = Compilation::build(&[], &Default::default(), Arc::new(TypeArena::new()));
     compilation.ingest_from_db(db.conn());
     let members: Vec<i64> = compilation
         .members_of_id(struct_id)
@@ -802,4 +802,56 @@ fn full_index_cross_file_member_of_mergeable_parent_binds() {
         Some(ns_id),
         "cross-file member of a collapsed mergeable parent must bind to the canonical row"
     );
+}
+
+// ---------------------------------------------------------------------------
+// SymbolIds — per-row identity
+// ---------------------------------------------------------------------------
+
+/// Two symbols sharing (path, qname) in one file get DISTINCT row ids from
+/// the writer: the key view collapses to the last writer, the row view keeps
+/// both, and `id_of` prefers the row view.
+#[test]
+fn overload_rows_keep_distinct_ids_from_the_writer() {
+    let db = Database::open_in_memory().unwrap();
+    let arena = TypeArena::new();
+
+    let mut pf = pf("src/over.cs");
+    pf.language = "csharp".to_string();
+    pf.symbols = vec![
+        esym("Svc.Run", SymbolKind::Method, Some("void Run(int)"), 1),
+        esym("Svc.Run", SymbolKind::Method, Some("void Run(int, int)"), 2),
+    ];
+
+    let conn = db.conn();
+    let tx = conn.unchecked_transaction().unwrap();
+    let mut map = SymbolIds::default();
+    write_one_parsed_file(&tx, &pf, "internal", 0, &mut map, true, Some(&arena)).unwrap();
+    tx.commit().unwrap();
+
+    let a = map.id_of("src/over.cs", 0, "Svc.Run").expect("row 0 id");
+    let b = map.id_of("src/over.cs", 1, "Svc.Run").expect("row 1 id");
+    assert_ne!(a, b, "overload rows must carry distinct ids");
+    // The key view holds exactly one of them (last writer) — collapsed.
+    assert_eq!(
+        map.by_key().get(&("src/over.cs".to_string(), "Svc.Run".to_string())),
+        Some(&b)
+    );
+}
+
+/// `remap_ids` rewrites merged-away ids in BOTH views — a row id left stale
+/// in the positional view would resurrect a deleted symbol row.
+#[test]
+fn remap_ids_rewrites_key_and_row_views() {
+    let mut map = SymbolIds::default();
+    map.insert_key("f.rs".to_string(), "T.m".to_string(), 5);
+    map.set_rows("f.rs".to_string(), vec![4, 5]);
+
+    let mut remapped = std::collections::HashMap::new();
+    remapped.insert(5i64, 9i64);
+    map.remap_ids(&remapped);
+
+    assert_eq!(map.by_key().get(&("f.rs".to_string(), "T.m".to_string())), Some(&9));
+    assert_eq!(map.id_of("f.rs", 1, "T.m"), Some(9));
+    assert_eq!(map.id_of("f.rs", 0, "T.m"), Some(4));
 }

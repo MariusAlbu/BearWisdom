@@ -247,7 +247,7 @@ fn default_chains_through_at_index_level() {
         );
     }
 
-    let index = Compilation::build(&[pf], &id_map, std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new()));
+    let index = Compilation::build(&[pf], &id_map.clone().into(), std::sync::Arc::new(crate::type_checker::core::types::TypeArena::new()));
 
     // Config.default must be reachable with return_type == "Config".
     assert!(

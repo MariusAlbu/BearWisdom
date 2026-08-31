@@ -119,7 +119,7 @@ fn trace_captures_untypable_root_and_unresolved_result() {
     let arena = Arc::new(TypeArena::new());
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
         std::slice::from_ref(&pf),
-        &id_map,
+        &id_map.clone().into(),
         Arc::clone(&arena),
     );
     let profiles = super::build_profiles();
@@ -135,7 +135,7 @@ fn trace_captures_untypable_root_and_unresolved_result() {
         &rustc_hash::FxHashMap::default(),
         None,
         &solver,
-        &id_map,
+        &id_map.clone().into(),
         None,
     );
     trace::deactivate();
@@ -219,7 +219,7 @@ fn trace_captures_resolved_ref_and_seed_none() {
     let arena = Arc::new(TypeArena::new());
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
         std::slice::from_ref(&pf),
-        &id_map,
+        &id_map.clone().into(),
         Arc::clone(&arena),
     );
     let profiles = super::build_profiles();
@@ -235,7 +235,7 @@ fn trace_captures_resolved_ref_and_seed_none() {
         &rustc_hash::FxHashMap::default(),
         None,
         &solver,
-        &id_map,
+        &id_map.clone().into(),
         None,
     );
     trace::deactivate();
@@ -348,7 +348,7 @@ fn trace_batch_filters_collect_multiple_refs() {
     let arena = Arc::new(TypeArena::new());
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
         std::slice::from_ref(&pf),
-        &id_map,
+        &id_map.clone().into(),
         Arc::clone(&arena),
     );
     let profiles = super::build_profiles();
@@ -366,7 +366,7 @@ fn trace_batch_filters_collect_multiple_refs() {
         &rustc_hash::FxHashMap::default(),
         None,
         &solver,
-        &id_map,
+        &id_map.clone().into(),
         None,
     );
     trace::deactivate();

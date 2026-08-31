@@ -92,7 +92,7 @@ fn synthesize_and_persist_returns_false_when_nothing_synthesized() {
     let mut db = Database::open_in_memory().unwrap();
     let ctx = ProjectContext::default(); // language_presence is empty
     let mut parsed = vec![empty_parsed_file("src/a.ex", "elixir")];
-    let mut symbol_id_map: SymbolIdMap = HashMap::new();
+    let mut symbol_id_map = crate::indexer::write::SymbolIds::default();
     let arena = TypeArena::new();
 
     let synthesized = synthesize_and_persist(

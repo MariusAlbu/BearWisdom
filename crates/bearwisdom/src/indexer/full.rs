@@ -361,7 +361,7 @@ fn full_index_inner(
     let mut parsed: Vec<ParsedFile> = Vec::with_capacity(files.len());
     let mut vendored_parsed: Vec<ParsedFile> = Vec::new();
     let mut file_id_map: write::FileIdMap = std::collections::HashMap::new();
-    let mut symbol_id_map: write::SymbolIdMap = std::collections::HashMap::new();
+    let mut symbol_id_map: write::SymbolIds = write::SymbolIds::default();
     let mut files_with_errors = 0u32;
     let mut fts_count = 0u32;
     let mut total_chunks = 0u32;
@@ -783,7 +783,7 @@ fn full_index_inner(
             .context("Failed to write external index")?
         };
         info!("Wrote {} external symbols", ext_symbol_map.len());
-        symbol_id_map.extend(ext_symbol_map);
+        symbol_id_map.merge(ext_symbol_map);
         for pf in external_parsed.iter_mut() {
             pf.slim_for_resolve();
         }
@@ -845,7 +845,7 @@ fn full_index_inner(
                         Some(workspace_arena.as_ref()),
                     )
                     .context("Failed to write Robot library external index")?;
-                    symbol_id_map.extend(rb_symbol_map);
+                    symbol_id_map.merge(rb_symbol_map);
                     for pf in robot_external_parsed.iter_mut() {
                         pf.slim_for_resolve();
                     }
@@ -887,7 +887,7 @@ fn full_index_inner(
         )
         .context("Failed to write script-tag external index")?;
         info!("Wrote {} script-tag vendor symbols", st_symbol_map.len());
-        symbol_id_map.extend(st_symbol_map);
+        symbol_id_map.merge(st_symbol_map);
         for pf in script_tag_parsed.iter_mut() {
             pf.slim_for_resolve();
         }
@@ -965,11 +965,7 @@ fn full_index_inner(
         let remapped = write::resolve_cross_file_containment_and_merge(db)
             .context("Failed to resolve cross-file containment and merge mergeables")?;
         if !remapped.is_empty() {
-            for id in symbol_id_map.values_mut() {
-                if let Some(&canonical) = remapped.get(id) {
-                    *id = canonical;
-                }
-            }
+            symbol_id_map.remap_ids(&remapped);
         }
     }
     mem_probe::probe("08b_containment_merged");

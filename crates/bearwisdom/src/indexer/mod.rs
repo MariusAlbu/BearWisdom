@@ -44,4 +44,5 @@ pub mod resolve;
 pub mod scip;
 pub mod script_tag_deps;
 pub mod test_file_detection;
+pub mod symbol_ids;
 pub mod write;

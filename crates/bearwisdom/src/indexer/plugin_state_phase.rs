@@ -112,7 +112,7 @@ pub fn synthesize_and_persist(
     project_ctx: &ProjectContext,
     parsed: &mut [ParsedFile],
     db: &mut Database,
-    symbol_id_map: &mut SymbolIdMap,
+    symbol_id_map: &mut crate::indexer::write::SymbolIds,
     workspace_arena: &TypeArena,
 ) -> Result<bool> {
     let mut synthesized_by_path: HashMap<String, Vec<ExtractedSymbol>> = HashMap::new();
@@ -152,7 +152,7 @@ pub fn synthesize_and_persist(
             Some(workspace_arena),
         )
         .with_context(|| format!("Failed to persist synthesized symbols for {path}"))?;
-        symbol_id_map.extend(sym_map);
+        symbol_id_map.merge(sym_map);
     }
     if synthesized_count > 0 {
         info!("Synthesized {synthesized_count} project-wide member symbols");

@@ -41,7 +41,7 @@ pub(crate) struct PendingFile {
 /// the file has no non-relative named imports (nothing to requalify against).
 pub(crate) fn collect_pending(
     pf: &ParsedFile,
-    symbol_id_map: &std::collections::HashMap<(String, String), i64>,
+    symbol_id_map: &crate::indexer::write::SymbolIds,
 ) -> Option<PendingFile> {
     let mut imports: FxHashMap<String, Vec<String>> = FxHashMap::default();
     for r in &pf.refs {
@@ -78,11 +78,8 @@ pub(crate) fn collect_pending(
     let symbol_ids: Vec<i64> = pf
         .symbols
         .iter()
-        .filter_map(|s| {
-            symbol_id_map
-                .get(&(pf.path.clone(), s.qualified_name.clone()))
-                .copied()
-        })
+        .enumerate()
+        .filter_map(|(i, s)| symbol_id_map.id_of(&pf.path, i, &s.qualified_name))
         .collect();
     Some(PendingFile { path: pf.path.clone(), imports, symbol_ids })
 }

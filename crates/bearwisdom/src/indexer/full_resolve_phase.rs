@@ -23,7 +23,7 @@ use crate::indexer::plugin_state_phase;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::pipeline;
 use crate::indexer::resolve::ResolutionStats;
-use crate::indexer::write::SymbolIdMap;
+use crate::indexer::write::SymbolIds;
 use crate::languages::LanguageRegistry;
 use crate::type_checker::core::types::TypeArena;
 use crate::types::ParsedFile;
@@ -36,7 +36,7 @@ use crate::types::ParsedFile;
 pub fn resolve_with_plugin_refresh(
     db: &mut Database,
     parsed: &mut Vec<ParsedFile>,
-    symbol_id_map: &mut SymbolIdMap,
+    symbol_id_map: &mut SymbolIds,
     project_ctx: &mut ProjectContext,
     registry: &LanguageRegistry,
     project_root: &Path,
@@ -71,7 +71,7 @@ pub fn resolve_with_plugin_refresh(
     // sees the complete file universe, then rebuild the tree if that
     // surfaced new member symbols the resolve pass below needs to see.
     if !ext_parsed.is_empty() {
-        symbol_id_map.extend(ext_id_map);
+        symbol_id_map.merge(ext_id_map);
         parsed.extend(ext_parsed);
         // Demand-pulled files can be include fragments (or units carrying
         // include directives) that the eager include-assembly pass never

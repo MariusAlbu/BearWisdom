@@ -19,6 +19,7 @@ use rustc_hash::FxHashMap;
 
 use crate::languages::LanguagePlugin;
 use crate::type_checker::profile::language_profile::LanguageProfile;
+use crate::indexer::write::SymbolIds;
 use crate::types::{EdgeKind, ParsedFile};
 
 use super::compilation::Compilation;
@@ -38,7 +39,7 @@ pub(super) fn run(
     plugins: &FxHashMap<&'static str, &'static dyn LanguagePlugin>,
     plugin_state: Option<&PluginStateBag>,
     solver: &SemanticModel,
-    symbol_id_map: &HashMap<(String, String), i64>,
+    symbol_id_map: &SymbolIds,
     only_kinds: Option<&[EdgeKind]>,
 ) -> (Vec<Edge>, Vec<Unresolved>, Vec<RefLog>) {
     let per_file: Vec<(Vec<Edge>, Vec<Unresolved>, Vec<RefLog>)> = parsed

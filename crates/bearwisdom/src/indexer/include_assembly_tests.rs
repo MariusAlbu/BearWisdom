@@ -9,7 +9,7 @@ use super::assemble_includes;
 use crate::db::Database;
 use crate::indexer::resolve::engine::compilation::Compilation;
 use crate::indexer::resolve::engine::contract::SymbolLookup;
-use crate::indexer::write::SymbolIdMap;
+use crate::indexer::write::SymbolIds;
 use crate::type_checker::core::types::TypeArena;
 use crate::types::{
     EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, ParsedFile, SymbolKind, Visibility,
@@ -143,11 +143,11 @@ fn include_reparents_fragment_symbols_and_rekeys_id_map() {
         unit_file("src/myunit.pas", "MyUnit", &["helpers"]),
         fragment_file("src/helpers.inc"),
     ];
-    let mut id_map: SymbolIdMap = HashMap::new();
-    id_map.insert(("src/myunit.pas".into(), "MyUnit".into()), 1);
-    id_map.insert(("src/helpers.inc".into(), "Helper".into()), 2);
-    id_map.insert(("src/helpers.inc".into(), "TThing".into()), 3);
-    id_map.insert(("src/helpers.inc".into(), "TThing.Do".into()), 4);
+    let mut id_map = SymbolIds::default();
+    id_map.insert_key("src/myunit.pas".into(), "MyUnit".into(), 1);
+    id_map.insert_key("src/helpers.inc".into(), "Helper".into(), 2);
+    id_map.insert_key("src/helpers.inc".into(), "TThing".into(), 3);
+    id_map.insert_key("src/helpers.inc".into(), "TThing.Do".into(), 4);
 
     let n = assemble_includes(&db, &mut parsed, &mut id_map).expect("pass runs");
     assert_eq!(n, 3, "all three fragment symbols re-parent");
@@ -160,10 +160,10 @@ fn include_reparents_fragment_symbols_and_rekeys_id_map() {
 
     // Id map rekeyed under the new qnames; the old keys are gone.
     assert_eq!(
-        id_map.get(&("src/helpers.inc".into(), "MyUnit.Helper".into())),
+        id_map.by_key().get(&("src/helpers.inc".into(), "MyUnit.Helper".into())),
         Some(&2)
     );
-    assert!(!id_map.contains_key(&("src/helpers.inc".into(), "Helper".into())));
+    assert!(!id_map.by_key().contains_key(&("src/helpers.inc".into(), "Helper".into())));
 
     // The persisted rows were rewritten in place: qname, scope path, and the
     // qname-bearing prefix of symbol_key.
@@ -187,11 +187,11 @@ fn members_by_parent_lists_included_symbols_under_unit_namespace() {
         unit_file("src/myunit.pas", "MyUnit", &["helpers"]),
         fragment_file("src/helpers.inc"),
     ];
-    let mut id_map: SymbolIdMap = HashMap::new();
-    id_map.insert(("src/myunit.pas".into(), "MyUnit".into()), 1);
-    id_map.insert(("src/helpers.inc".into(), "Helper".into()), 2);
-    id_map.insert(("src/helpers.inc".into(), "TThing".into()), 3);
-    id_map.insert(("src/helpers.inc".into(), "TThing.Do".into()), 4);
+    let mut id_map = SymbolIds::default();
+    id_map.insert_key("src/myunit.pas".into(), "MyUnit".into(), 1);
+    id_map.insert_key("src/helpers.inc".into(), "Helper".into(), 2);
+    id_map.insert_key("src/helpers.inc".into(), "TThing".into(), 3);
+    id_map.insert_key("src/helpers.inc".into(), "TThing.Do".into(), 4);
 
     assemble_includes(&db, &mut parsed, &mut id_map).expect("pass runs");
 
@@ -223,7 +223,7 @@ fn ext_virtual_path_join_resolves_within_the_same_virtual_root() {
         // Same stem in a DIFFERENT virtual root — must not be claimed.
         fragment_file("ext:fpc:fpc-rtl-win/classes/classesh.inc"),
     ];
-    let mut id_map: SymbolIdMap = HashMap::new();
+    let mut id_map = SymbolIds::default();
 
     let n = assemble_includes(&db, &mut parsed, &mut id_map).expect("pass runs");
     assert_eq!(n, 3, "only the same-root fragment splices");
@@ -242,7 +242,7 @@ fn sibling_directory_probe_resolves_when_same_directory_misses() {
         unit_file("src/base/myunit.pas", "MyUnit", &["helpers"]),
         fragment_file("src/include/helpers.inc"),
     ];
-    let mut id_map: SymbolIdMap = HashMap::new();
+    let mut id_map = SymbolIds::default();
 
     assemble_includes(&db, &mut parsed, &mut id_map).expect("pass runs");
     assert_eq!(parsed[1].symbols[0].qualified_name, "MyUnit.Helper");
@@ -262,12 +262,12 @@ fn qualified_lookup_through_unit_reaches_included_member() {
         // members: present to mirror the cascade shape, not spliced itself.
         unit_file("src/consumer.pas", "Consumer", &[]),
     ];
-    let mut id_map: SymbolIdMap = HashMap::new();
-    id_map.insert(("src/myunit.pas".into(), "MyUnit".into()), 1);
-    id_map.insert(("src/helpers.inc".into(), "Helper".into()), 2);
-    id_map.insert(("src/helpers.inc".into(), "TThing".into()), 3);
-    id_map.insert(("src/helpers.inc".into(), "TThing.Do".into()), 4);
-    id_map.insert(("src/consumer.pas".into(), "Consumer".into()), 5);
+    let mut id_map = SymbolIds::default();
+    id_map.insert_key("src/myunit.pas".into(), "MyUnit".into(), 1);
+    id_map.insert_key("src/helpers.inc".into(), "Helper".into(), 2);
+    id_map.insert_key("src/helpers.inc".into(), "TThing".into(), 3);
+    id_map.insert_key("src/helpers.inc".into(), "TThing.Do".into(), 4);
+    id_map.insert_key("src/consumer.pas".into(), "Consumer".into(), 5);
 
     assemble_includes(&db, &mut parsed, &mut id_map).expect("pass runs");
 
@@ -299,7 +299,7 @@ fn a_file_declaring_its_own_namespace_is_never_claimed() {
         // Same stem, but a real unit of its own — not an include fragment.
         unit_file("src/other.pas", "Other", &[]),
     ];
-    let mut id_map: SymbolIdMap = HashMap::new();
+    let mut id_map = SymbolIds::default();
 
     let n = assemble_includes(&db, &mut parsed, &mut id_map).expect("pass runs");
     assert_eq!(n, 0);
@@ -313,7 +313,7 @@ fn pass_is_idempotent_across_repeat_invocations() {
         unit_file("src/myunit.pas", "MyUnit", &["helpers"]),
         fragment_file("src/helpers.inc"),
     ];
-    let mut id_map: SymbolIdMap = HashMap::new();
+    let mut id_map = SymbolIds::default();
 
     let first = assemble_includes(&db, &mut parsed, &mut id_map).expect("first run");
     assert_eq!(first, 3);
