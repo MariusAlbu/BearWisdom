@@ -223,6 +223,10 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.is_external_name(name, language)
     }
 
+    fn is_declared_dependency(&self, package_id: Option<i64>, spec: &str) -> bool {
+        self.tree.is_declared_dependency(package_id, spec)
+    }
+
     fn parent_class_qname(&self, class_qname: &str) -> Option<&str> {
         self.tree.parent_class_qname(class_qname)
     }

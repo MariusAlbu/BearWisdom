@@ -42,6 +42,12 @@ pub enum CauseKind {
     /// produced a resolution through it — the import's module never linked
     /// to an indexed file or symbol.
     ImportUnlinked,
+    /// `ImportUnlinked`, refined by manifest evidence: the manifest visible
+    /// to the source file's package (workspace union for files outside every
+    /// package) declares the import's module as a dependency, yet the
+    /// specifier links to no indexed file — the declared supply was never
+    /// materialized, most commonly an uninstalled dependency.
+    ImportDeclaredUnsupplied,
     /// An enclosing scope of the ref site declares a member of this name —
     /// an implicit-receiver root (bare method/field access inside a type
     /// body) the engine failed to dispatch. Blames the member candidate.
@@ -76,6 +82,7 @@ impl CauseKind {
             Self::AliasOpaque => "alias_opaque",
             Self::UnboundRoot => "unbound_root",
             Self::ImportUnlinked => "unbound_import_unlinked",
+            Self::ImportDeclaredUnsupplied => "unbound_import_declared_unsupplied",
             Self::ScopeMemberRoot => "unbound_scope_member",
             Self::ExternalKnownUnbound => "unbound_external_known",
             Self::DefinedUnimported => "unbound_defined_unimported",

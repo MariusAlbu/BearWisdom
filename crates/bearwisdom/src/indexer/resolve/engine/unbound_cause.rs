@@ -14,20 +14,36 @@ use super::cause::{Cause, CauseKind};
 use super::contract::{FileContext, SymbolLookup};
 
 /// Classify why `name` bound nothing. `scope_chain` is the ref site's
-/// enclosing scope qnames, innermost first.
+/// enclosing scope qnames, innermost first. `file_package_id` scopes the
+/// declared-dependency probe to the manifest the source file can see.
 pub(super) fn classify_unbound_root(
     name: &str,
     scope_chain: &[String],
     file_ctx: &FileContext,
     lookup: &dyn SymbolLookup,
+    file_package_id: Option<i64>,
 ) -> Cause {
     // A non-wildcard import binds exactly this name: the ladder's import
     // rungs ran and produced nothing, so the import itself never linked.
-    if file_ctx
+    if let Some(imp) = file_ctx
         .imports
         .iter()
-        .any(|imp| !imp.is_wildcard && imp.bound_name() == name)
+        .find(|imp| !imp.is_wildcard && imp.bound_name() == name)
     {
+        // Manifest refinement: the module IS declared as a dependency for
+        // this file's package, yet the specifier links to no indexed file —
+        // the declared supply was never materialized. A specifier that does
+        // link stays ImportUnlinked: supply exists, the link inside it
+        // failed.
+        if let Some(spec) = imp.module_path.as_deref() {
+            if lookup.is_declared_dependency(file_package_id, spec)
+                && lookup
+                    .resolve_module_from(&file_ctx.file_path, spec)
+                    .is_none()
+            {
+                return Cause::new(None, CauseKind::ImportDeclaredUnsupplied);
+            }
+        }
         return Cause::new(None, CauseKind::ImportUnlinked);
     }
     // An enclosing scope declares a member of this name — an implicit-receiver

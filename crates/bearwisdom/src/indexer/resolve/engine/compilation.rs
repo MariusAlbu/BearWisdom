@@ -180,6 +180,9 @@ pub struct Compilation {
     path_aliases_by_pkg: FxHashMap<i64, Vec<(String, String)>>,
     /// Workspace-wide path aliases, for files not under a per-package manifest.
     path_aliases_global: Vec<(String, String)>,
+    /// Manifest-declared dependency names, per package + union. Backs
+    /// `is_declared_dependency` — cause-attribution evidence only.
+    declared_deps: super::declared_deps::DeclaredDeps,
     /// Manifest-declared implicit/global namespace imports (`<ImplicitUsings>`,
     /// `<Using Include>`), per package and workspace-wide. Backs
     /// `SymbolLookup::implicit_wildcard_namespaces`.
@@ -294,6 +297,7 @@ impl Compilation {
             self.implicit_namespaces_global = nuget.global_usings.clone();
         }
         self.ext_langs = ExtLangVisibility::snapshot(ctx);
+        self.declared_deps = super::declared_deps::DeclaredDeps::snapshot(ctx);
     }
 
     /// The candidate-language codes whose EXTERNAL declarations a file of
@@ -343,6 +347,7 @@ impl Compilation {
             workspace_pkg_by_declared_name: FxHashMap::default(),
             path_aliases_by_pkg: FxHashMap::default(),
             path_aliases_global: Vec::new(),
+            declared_deps: super::declared_deps::DeclaredDeps::default(),
             implicit_namespaces_by_pkg: FxHashMap::default(),
             implicit_namespaces_global: Vec::new(),
             dep_renames_by_pkg: FxHashMap::default(),
@@ -2361,6 +2366,10 @@ impl SymbolLookup for Compilation {
     fn is_external_name(&self, _name: &str, _language: &str) -> bool {
         // External classification is a later phase; conservative false here.
         false
+    }
+
+    fn is_declared_dependency(&self, package_id: Option<i64>, spec: &str) -> bool {
+        self.declared_deps.contains(package_id, spec)
     }
 
     fn ambient_symbols(&self, name: &str) -> SymbolSet<'_> {

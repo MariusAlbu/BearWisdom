@@ -247,6 +247,15 @@ pub trait SymbolLookup: FlowCacheLookup {
     /// external and need not be resolved against the project index.
     fn is_external_name(&self, name: &str, language: &str) -> bool;
 
+    /// Whether `spec` — a module specifier, probed whole and by its bare
+    /// package head — is declared as a dependency in the manifest visible to
+    /// `package_id` (the package's own manifest when per-package data exists,
+    /// the workspace union otherwise). Cause-attribution evidence only; never
+    /// a resolution input.
+    fn is_declared_dependency(&self, _package_id: Option<i64>, _spec: &str) -> bool {
+        false
+    }
+
     /// Check whether a file path is known external-origin.
     ///
     /// Two signals combine: the historical `ext:` path-prefix convention

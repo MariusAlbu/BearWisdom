@@ -124,6 +124,7 @@ impl SemanticModel {
                     &ref_ctx.scope_chain,
                     file_ctx,
                     lookup,
+                    ref_ctx.file_package_id,
                 )))
             }
             BindOutcome::Drained => SolveOutcome::Drained,

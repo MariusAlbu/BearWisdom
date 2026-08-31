@@ -131,11 +131,13 @@ export default defineComponent({
 #[test]
 fn root_script_falls_back_to_union_manifest() {
     // A shared script at the workspace root has no package_id (it sits
-    // above every package). It still needs to classify external imports
-    // as external — M2's `manifests_for(None)` returns the union so that
-    // works. This test proves the end-to-end flow: a .ts at root imports
-    // a dep declared only in a child package and still gets classified
-    // against the union.
+    // above every package). Its unresolved imports must still be attributed
+    // against the manifest union — `manifests_for(None)` — so a dep declared
+    // only in a child package, with no supply on disk, dies as
+    // `unbound_import_declared_unsupplied` (ops-actionable: install it)
+    // rather than plain `unbound_import_unlinked`. An undeclared module from
+    // the same file keeps the plain cause — the union is evidence, not a
+    // blanket.
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
 
@@ -150,12 +152,15 @@ fn root_script_falls_back_to_union_manifest() {
         r#"{"name":"web","dependencies":{"lodash":"4"}}"#,
     );
     write_file(root, "apps/web/src/index.ts", r#"export const x = 1;"#);
-    // Root-level shared script — no package_id.
+    // Root-level shared script — no package_id. `lodash` is declared in the
+    // child package's manifest; `leftpad` is declared nowhere.
     write_file(
         root,
         "scripts/build.ts",
         r#"import { debounce } from 'lodash';
+import { pad } from 'leftpad';
 export const deb = debounce;
+export const p = pad;
 "#,
     );
 
@@ -177,23 +182,27 @@ export const deb = debounce;
         "root-level script should have no package_id"
     );
 
-    // `lodash` is declared in apps/web only. Since root script's
-    // package_id is None, manifests_for(None) returns the union which
-    // INCLUDES lodash — so the import MUST classify as external (not
-    // unresolved).
-    let lodash_external: i64 = db
-        .query_row(
-            "SELECT COUNT(*) FROM external_refs er
-             JOIN symbols s ON s.id = er.source_id
+    let cause_of = |module: &str| -> String {
+        db.query_row(
+            "SELECT ur.cause_kind FROM unresolved_refs ur
+             JOIN symbols s ON s.id = ur.source_id
              JOIN files   f ON f.id = s.file_id
              WHERE (f.path LIKE '%scripts/build.ts' OR f.path LIKE '%scripts\\build.ts')
-               AND er.namespace = 'lodash'",
-            [],
+               AND ur.module = ?1",
+            [module],
             |r| r.get(0),
         )
-        .unwrap();
-    assert!(
-        lodash_external > 0,
-        "root script's `import from lodash` must classify as external via union fallback"
+        .unwrap_or_else(|e| panic!("no unresolved ref with module={module}: {e}"))
+    };
+
+    assert_eq!(
+        cause_of("lodash"),
+        "unbound_import_declared_unsupplied",
+        "declared-in-union dep with no supply must carry the declared-unsupplied cause"
+    );
+    assert_eq!(
+        cause_of("leftpad"),
+        "unbound_import_unlinked",
+        "an undeclared module must keep the plain import-unlinked cause"
     );
 }

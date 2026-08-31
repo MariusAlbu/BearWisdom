@@ -72,6 +72,7 @@ pub(super) fn anchor(
                 &ref_ctx.scope_chain,
                 file_ctx,
                 lookup,
+                ref_ctx.file_package_id,
             ))
         })),
     }

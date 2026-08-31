@@ -12,6 +12,8 @@ struct FakeLookup {
     by_name: HashMap<String, Vec<ContractSymbol>>,
     members: HashMap<String, Vec<ContractSymbol>>,
     external_names: Vec<String>,
+    declared_deps: Vec<(Option<i64>, String)>,
+    module_link: Option<String>,
     empty: Vec<ContractSymbol>,
     empty_pairs: Vec<(String, String)>,
 }
@@ -69,6 +71,14 @@ impl SymbolLookup for FakeLookup {
     fn is_external_name(&self, name: &str, _: &str) -> bool {
         self.external_names.iter().any(|n| n == name)
     }
+    fn is_declared_dependency(&self, package_id: Option<i64>, spec: &str) -> bool {
+        self.declared_deps
+            .iter()
+            .any(|(p, s)| *p == package_id && s == spec)
+    }
+    fn resolve_module_from(&self, _: &str, _: &str) -> Option<&str> {
+        self.module_link.as_deref()
+    }
 }
 
 fn file_ctx(imports: Vec<ImportEntry>) -> FileContext {
@@ -94,7 +104,7 @@ fn matching_named_import_wins_over_everything() {
     let mut lookup = FakeLookup::default();
     lookup.by_name.insert("Foo".into(), vec![sym(7, "Foo", "m.Foo")]);
     lookup.external_names.push("Foo".into());
-    let cause = classify_unbound_root("Foo", &[], &file_ctx(vec![named_import("Foo")]), &lookup);
+    let cause = classify_unbound_root("Foo", &[], &file_ctx(vec![named_import("Foo")]), &lookup, None);
     assert_eq!(cause.kind, CauseKind::ImportUnlinked);
     assert_eq!(cause.symbol_id, None);
 }
@@ -106,12 +116,55 @@ fn aliased_import_matches_on_bound_name_only() {
     let lookup = FakeLookup::default();
     let ctx = file_ctx(vec![imp]);
     assert_eq!(
-        classify_unbound_root("Bound", &[], &ctx, &lookup).kind,
+        classify_unbound_root("Bound", &[], &ctx, &lookup, None).kind,
         CauseKind::ImportUnlinked
     );
     assert_eq!(
-        classify_unbound_root("Orig", &[], &ctx, &lookup).kind,
+        classify_unbound_root("Orig", &[], &ctx, &lookup, None).kind,
         CauseKind::NameUnknown
+    );
+}
+
+#[test]
+fn declared_unlinked_module_refines_to_declared_unsupplied() {
+    let mut lookup = FakeLookup::default();
+    lookup.declared_deps.push((None, "lodash".to_string()));
+    let mut imp = named_import("debounce");
+    imp.module_path = Some("lodash".to_string());
+    let cause = classify_unbound_root("debounce", &[], &file_ctx(vec![imp]), &lookup, None);
+    assert_eq!(cause.kind, CauseKind::ImportDeclaredUnsupplied);
+    assert_eq!(cause.symbol_id, None);
+}
+
+#[test]
+fn declared_probe_is_scoped_to_the_file_package() {
+    let mut lookup = FakeLookup::default();
+    lookup.declared_deps.push((Some(5), "lodash".to_string()));
+    let mut imp = named_import("debounce");
+    imp.module_path = Some("lodash".to_string());
+    let ctx = file_ctx(vec![imp]);
+    assert_eq!(
+        classify_unbound_root("debounce", &[], &ctx, &lookup, Some(5)).kind,
+        CauseKind::ImportDeclaredUnsupplied
+    );
+    assert_eq!(
+        classify_unbound_root("debounce", &[], &ctx, &lookup, Some(6)).kind,
+        CauseKind::ImportUnlinked
+    );
+}
+
+#[test]
+fn declared_module_that_links_to_a_file_stays_import_unlinked() {
+    // Supply exists (the specifier resolves to an indexed file); the failure
+    // is inside the link, not missing supply.
+    let mut lookup = FakeLookup::default();
+    lookup.declared_deps.push((None, "lodash".to_string()));
+    lookup.module_link = Some("ext:ts:lodash/index.d.ts".to_string());
+    let mut imp = named_import("debounce");
+    imp.module_path = Some("lodash".to_string());
+    assert_eq!(
+        classify_unbound_root("debounce", &[], &file_ctx(vec![imp]), &lookup, None).kind,
+        CauseKind::ImportUnlinked
     );
 }
 
@@ -121,7 +174,7 @@ fn wildcard_import_does_not_claim_the_name() {
     imp.is_wildcard = true;
     let lookup = FakeLookup::default();
     assert_eq!(
-        classify_unbound_root("NS", &[], &file_ctx(vec![imp]), &lookup).kind,
+        classify_unbound_root("NS", &[], &file_ctx(vec![imp]), &lookup, None).kind,
         CauseKind::NameUnknown
     );
 }
@@ -133,7 +186,7 @@ fn enclosing_scope_member_blames_the_member() {
         .members
         .insert("TForm".into(), vec![sym(42, "Render", "TForm.Render")]);
     let scopes = vec!["TForm.Setup".to_string(), "TForm".to_string()];
-    let cause = classify_unbound_root("Render", &scopes, &file_ctx(vec![]), &lookup);
+    let cause = classify_unbound_root("Render", &scopes, &file_ctx(vec![]), &lookup, None);
     assert_eq!(cause.kind, CauseKind::ScopeMemberRoot);
     assert_eq!(cause.symbol_id, Some(42));
 }
@@ -146,7 +199,7 @@ fn external_known_beats_project_declarations() {
         .by_name
         .insert("useQuery".into(), vec![sym(9, "useQuery", "x.useQuery")]);
     assert_eq!(
-        classify_unbound_root("useQuery", &[], &file_ctx(vec![]), &lookup).kind,
+        classify_unbound_root("useQuery", &[], &file_ctx(vec![]), &lookup, None).kind,
         CauseKind::ExternalKnownUnbound
     );
 }
@@ -157,7 +210,7 @@ fn unique_project_declaration_is_blamed() {
     lookup
         .by_name
         .insert("helper".into(), vec![sym(11, "helper", "util.helper")]);
-    let cause = classify_unbound_root("helper", &[], &file_ctx(vec![]), &lookup);
+    let cause = classify_unbound_root("helper", &[], &file_ctx(vec![]), &lookup, None);
     assert_eq!(cause.kind, CauseKind::DefinedUnimported);
     assert_eq!(cause.symbol_id, Some(11));
 }
@@ -169,7 +222,7 @@ fn ambiguous_project_declarations_blame_nothing() {
         "init".into(),
         vec![sym(1, "init", "a.init"), sym(2, "init", "b.init")],
     );
-    let cause = classify_unbound_root("init", &[], &file_ctx(vec![]), &lookup);
+    let cause = classify_unbound_root("init", &[], &file_ctx(vec![]), &lookup, None);
     assert_eq!(cause.kind, CauseKind::DefinedUnimported);
     assert_eq!(cause.symbol_id, None);
 }
@@ -177,7 +230,7 @@ fn ambiguous_project_declarations_blame_nothing() {
 #[test]
 fn nothing_anywhere_is_name_unknown() {
     let lookup = FakeLookup::default();
-    let cause = classify_unbound_root("Integer", &[], &file_ctx(vec![]), &lookup);
+    let cause = classify_unbound_root("Integer", &[], &file_ctx(vec![]), &lookup, None);
     assert_eq!(cause.kind, CauseKind::NameUnknown);
     assert_eq!(cause.symbol_id, None);
 }
