@@ -58,6 +58,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                 has_errors: true,
                 demand_contributions: Vec::new(),
                 alias_targets: Vec::new(),
+                declared_modules: Vec::new(),
             }
         }
     };

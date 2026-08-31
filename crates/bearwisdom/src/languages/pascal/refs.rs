@@ -30,6 +30,7 @@ pub(super) fn extract_typeref(
                 let name = node_text(child, src);
                 if !name.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: source_idx,
@@ -51,6 +52,7 @@ pub(super) fn extract_typeref(
                 let (member, qualifier) = split_dot_node(child, src);
                 if !member.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: source_idx,
@@ -90,6 +92,7 @@ pub(super) fn extract_call(
         let (name, module) = resolve_call_target(callee, src);
         if !name.is_empty() {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: source_idx,

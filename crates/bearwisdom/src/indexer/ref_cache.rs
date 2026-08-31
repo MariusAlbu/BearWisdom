@@ -163,6 +163,7 @@ mod tests {
                 generic_params: Vec::new(),
             }],
             refs: vec![crate::types::ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: 0,
@@ -189,6 +190,7 @@ mod tests {
             component_selectors: Vec::new(),
 
             plugin_flow_emissions: Vec::new(),
+            declared_modules: Vec::new(),
         }
     }
 

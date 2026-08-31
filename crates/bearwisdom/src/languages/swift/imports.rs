@@ -50,6 +50,7 @@ pub(super) fn push_import(
         "*".to_string()
     };
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: current_symbol_count,

@@ -415,6 +415,7 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
         if let Some(target_name) = target_name_opt {
             // Only emit the ref if we have a real target name.
             ctx.refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: ctx.symbols.len().saturating_sub(1).max(0),
@@ -524,6 +525,7 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
     if helpers::is_call_node(kind) {
         if let Some(callee_name) = helpers::extract_call_target(node, ctx) {
             ctx.refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: ctx.symbols.len().saturating_sub(1),
@@ -549,6 +551,7 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
                 let name = ctx.text(node).trim();
                 if !name.is_empty() && name != "void" && name != "var" {
                     ctx.refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: ctx.symbols.len().saturating_sub(1),

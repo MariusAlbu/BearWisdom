@@ -71,6 +71,7 @@ fn emit_annotation(
     if let Some(name) = annotation_name(node, src) {
         let first_arg = extract_first_string_arg(node, src);
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index,
@@ -278,6 +279,7 @@ fn extract_when_entry_condition(
                     "user_type" => {
                         if let Some(name) = name_from_user_type(&child, src) {
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index,
@@ -296,6 +298,7 @@ fn extract_when_entry_condition(
                     "type" => {
                         if let Some(name) = name_from_type_node(&child, src) {
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index,

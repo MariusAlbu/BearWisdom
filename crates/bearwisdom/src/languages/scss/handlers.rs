@@ -165,6 +165,7 @@ fn handle_include(
     let target = find_include_target(node, src);
     if !target.is_empty() {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index,
@@ -198,6 +199,7 @@ fn handle_extend(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>, source_sy
         return;
     }
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index,
@@ -228,6 +230,7 @@ fn handle_import(
     if !module.is_empty() {
         let target = path_to_target(&module);
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index,
@@ -260,6 +263,7 @@ fn handle_forward(
     if !module.is_empty() {
         let target = path_to_target(&module);
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index,
@@ -307,6 +311,7 @@ fn handle_use(
             path_to_target(&module)
         };
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index,
@@ -513,6 +518,7 @@ fn handle_call_expr(
     // treat all unresolved calls as external, which hides genuinely
     // broken `@include` references.
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index,

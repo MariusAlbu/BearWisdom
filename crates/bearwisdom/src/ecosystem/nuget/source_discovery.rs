@@ -207,5 +207,6 @@ pub(crate) fn parse_cs_source_file(
         component_selectors: Vec::new(),
 
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     })
 }

@@ -110,6 +110,7 @@ pub(super) fn extract_type_ref_from_type_assertion(
                 let type_name = node_text(child, src);
                 if !type_name.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -131,6 +132,7 @@ pub(super) fn extract_type_ref_from_type_assertion(
                     let type_name = node_text(name_node, src);
                     if !type_name.is_empty() {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,

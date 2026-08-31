@@ -174,6 +174,7 @@ pub(super) fn extract_extends(
                             let base_name = text(ggc, src);
                             if !base_name.is_empty() {
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index,

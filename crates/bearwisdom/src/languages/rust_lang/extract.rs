@@ -89,6 +89,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                 has_errors: true,
                 demand_contributions: Vec::new(),
                 alias_targets: Vec::new(),
+                declared_modules: Vec::new(),
             }
         }
     };
@@ -753,6 +754,7 @@ fn extract_from_node(
                     };
                     if !target.is_empty() {
                         refs.push(crate::types::ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: source_idx,
@@ -855,6 +857,7 @@ fn scan_all_type_identifiers(
                 let name = helpers::node_text(&child, source);
                 if !name.is_empty() && !symbols::is_rust_primitive(&name) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,
@@ -881,6 +884,7 @@ fn scan_all_type_identifiers(
                     });
                 if !name.is_empty() && !symbols::is_rust_primitive(&name) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,

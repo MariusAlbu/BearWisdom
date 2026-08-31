@@ -6,7 +6,9 @@ use crate::types::{EdgeKind, ExtractedRef};
 
 /// Scan the raw source for `{$include 'file.inc'}` / `{$i file.inc}` directives
 /// and emit one `Imports` ref per directive, keyed by the include file's bare
-/// stem (directory, quotes, and extension stripped).
+/// stem (directory, quotes, and extension stripped). Each ref carries
+/// `is_include = true` so the indexer's include-assembly pre-pass can splice
+/// the included file's symbols into the including unit's namespace.
 ///
 /// The `{$I}` short form is overloaded: `{$I+}` / `{$I-}` is the I/O-checking
 /// compiler switch, not an include. We only treat `{$i …}` as an include when a
@@ -34,6 +36,7 @@ pub(super) fn extract_include_directives(src: &str, refs: &mut Vec<ExtractedRef>
         let inner = &src[i + 2..close];
         if let Some(stem) = parse_include_directive(inner) {
             refs.push(ExtractedRef {
+                is_include: true,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: anchor,

@@ -160,17 +160,19 @@ fn file_looks_like_scss(path: &Path) -> bool {
     text.contains("@mixin ") || text.contains("@include ")
 }
 
-/// Read the first 512 bytes of a `.pp` file and look for Pascal-source
+/// Read the first 8192 bytes of a `.pp` file and look for Pascal-source
 /// markers. Catches `program`, `unit`, `library`, `{$mode ...}`, and the
 /// `(* ... *)` block-comment header style; Puppet manifests use `class`,
-/// `define`, `node`, `include`, `$var = ...` instead.
+/// `define`, `node`, `include`, `$var = ...` instead. The window must span
+/// a whole leading `{ ... }` license header — the comment-strip loop needs
+/// the closing `}` in view to reach the markers behind it.
 fn is_likely_pascal(path: &Path) -> bool {
     let Ok(file) = std::fs::File::open(path) else {
         return false;
     };
     use std::io::Read;
-    let mut head = [0u8; 512];
-    let n = match (&file).take(512).read(&mut head) {
+    let mut head = [0u8; 8192];
+    let n = match (&file).take(8192).read(&mut head) {
         Ok(n) => n,
         Err(_) => return false,
     };

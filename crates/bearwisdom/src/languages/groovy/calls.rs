@@ -414,6 +414,7 @@ fn emit_instantiates(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<E
         return;
     }
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: source_idx,

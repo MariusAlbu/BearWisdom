@@ -520,6 +520,7 @@ pub(super) fn extract_type_refs_recursive(
             let name = node_text(type_node, src);
             if !name.is_empty() && !is_java_primitive(&name) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -544,6 +545,7 @@ pub(super) fn extract_type_refs_recursive(
                         let name = type_node_simple_name(child, src);
                         if !name.is_empty() && !is_java_primitive(&name) {
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index,
@@ -579,6 +581,7 @@ pub(super) fn extract_type_refs_recursive(
             let name = type_node_simple_name(type_node, src);
             if !name.is_empty() && !is_java_primitive(&name) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -641,6 +644,7 @@ pub(super) fn push_import(
                 if has_wildcard {
                     // `import com.foo.*;` — wildcard: target_name = "*", module = package path.
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: current_symbol_count,
@@ -658,6 +662,7 @@ pub(super) fn push_import(
                     // `import com.foo.Bar;` — exact import.
                     let imported = full.rsplit('.').next().unwrap_or(&full).to_string();
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: current_symbol_count,
@@ -677,6 +682,7 @@ pub(super) fn push_import(
             "identifier" => {
                 let name = node_text(child, src);
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: current_symbol_count,
@@ -715,6 +721,7 @@ pub(super) fn extract_class_inheritance(
             let name = type_node_simple_name(child, src);
             if !name.is_empty() {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: source_idx,
@@ -783,6 +790,7 @@ fn extract_type_list_as_implements(
                 let name = type_node_simple_name(type_node, src);
                 if !name.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: source_idx,
@@ -882,6 +890,7 @@ pub(super) fn extract_java_typed_params_as_symbols(
         });
 
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: param_idx,

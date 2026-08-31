@@ -137,6 +137,7 @@ fn walk_node(
                 let name = text(ns_node, src);
                 if !name.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,
@@ -164,6 +165,7 @@ fn walk_node(
                     .collect();
                 if !name.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,
@@ -189,6 +191,7 @@ fn walk_node(
                     let name = text(child, src);
                     if !name.is_empty() && name != "Inherits" {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: sym_idx,
@@ -215,6 +218,7 @@ fn walk_node(
                 if !name.is_empty() && !super::keywords::OPERATOR_KEYWORDS.contains(&name.as_str())
                 {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,
@@ -238,6 +242,7 @@ fn walk_node(
                 let name = text(ty, src);
                 if !name.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,
@@ -263,6 +268,7 @@ fn walk_node(
             let sym_idx = parent_idx.unwrap_or(0);
             if let Some(base) = inherits_base_from_field_decl(node, src) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: sym_idx,

@@ -34,6 +34,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                 has_errors: true,
                 demand_contributions: Vec::new(),
                 alias_targets: Vec::new(),
+                declared_modules: Vec::new(),
             }
         }
     };
@@ -298,6 +299,7 @@ pub(super) fn extract_from_node(
                             let name = helpers::node_text(&fc, source);
                             if !name.is_empty() && name != "__future__" {
                                 refs.push(crate::types::ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index: owner,
@@ -461,6 +463,7 @@ fn emit_type_ref_from_annotation(
                 )
             {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -488,6 +491,7 @@ fn emit_type_ref_from_annotation(
                         .map(|o| node_text(&o, source))
                         .filter(|s| !s.is_empty());
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -542,6 +546,7 @@ fn scan_type_annotation_nodes(
                 // target to reference.
                 if let Some(name) = collect_first_nonbuiltin_type_name(&child, source) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,
@@ -560,6 +565,7 @@ fn scan_type_annotation_nodes(
             "generic_type" | "union_type" if child.is_named() => {
                 if let Some(name) = collect_first_nonbuiltin_type_name(&child, source) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,
@@ -611,6 +617,7 @@ fn emit_type_ref_from_type_node(
                 )
             {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: sym_idx,

@@ -198,6 +198,7 @@ pub(super) fn walk_node(
                                     let sym_name = text(item, src);
                                     if !sym_name.is_empty() {
                                         only_refs.push(ExtractedRef {
+                                            is_include: false,
                                             is_import_binding: false,
                                             is_reexport: false,
                                             source_symbol_index: sym_idx,
@@ -239,6 +240,7 @@ pub(super) fn walk_node(
                                     // so the resolver can look up source in the module file.
                                     if !local.is_empty() {
                                         only_refs.push(ExtractedRef {
+                                            is_include: false,
                                             is_import_binding: false,
                                             is_reexport: false,
                                             source_symbol_index: sym_idx,
@@ -271,6 +273,7 @@ pub(super) fn walk_node(
             // Always emit the module-level import (wildcard if no only: list).
             if !module_name.is_empty() {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: sym_idx,
@@ -336,6 +339,7 @@ pub(super) fn walk_node(
                                     Some(resolved)
                                 };
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index: sym_idx,
@@ -403,6 +407,7 @@ pub(super) fn walk_node(
                                     Some(resolved)
                                 };
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index: sym_idx,
@@ -470,6 +475,7 @@ fn push_bare_call_ref(
         return;
     }
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: sym_idx,

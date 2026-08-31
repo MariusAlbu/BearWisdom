@@ -498,6 +498,7 @@ fn extract_class_parameter(
         let type_name = super::calls::kotlin_type_name(&tn, src);
         if !type_name.is_empty() {
             refs.push(crate::types::ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: parent_index.unwrap_or(0),
@@ -662,6 +663,7 @@ pub(super) fn emit_import(
                     let full = node_text(child, src);
                     let target = full.rsplit('.').next().unwrap_or(&full).to_string();
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: current_symbol_count,
@@ -679,6 +681,7 @@ pub(super) fn emit_import(
                     let target = parts.last().cloned().unwrap_or_default();
                     let full = parts.join(".");
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: current_symbol_count,
@@ -699,6 +702,7 @@ pub(super) fn emit_import(
                 let full = node_text(child, src);
                 let target = full.rsplit('.').next().unwrap_or(&full).to_string();
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: current_symbol_count,
@@ -745,6 +749,7 @@ pub(super) fn extract_delegation_specifiers(
                                 EdgeKind::Implements
                             };
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index: source_idx,

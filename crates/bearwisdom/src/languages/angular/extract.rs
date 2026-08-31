@@ -103,6 +103,7 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
     if tag.contains('-') && !is_html5_custom_element_builtin(&tag) {
         let pascal = kebab_to_pascal(&tag);
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: 0,
@@ -121,6 +122,7 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
     {
         // PascalCase tags (e.g. <UserCard>, <MatButton>) — component usages
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: 0,
@@ -190,6 +192,7 @@ fn process_attribute(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
     if let Some(directive) = attr_name.strip_prefix('*') {
         let class_name = format!("{}Directive", to_pascal_case(directive));
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: 0,
@@ -231,6 +234,7 @@ fn extract_handler_from_value(value: &str, node: &Node, refs: &mut Vec<Extracted
     }
 
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,
@@ -294,6 +298,7 @@ fn extract_pipes_from_expression(
 
         let class_name = format!("{}Pipe", to_pascal_case(&pipe_name));
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: 0,

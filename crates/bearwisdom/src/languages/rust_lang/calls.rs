@@ -120,6 +120,7 @@ pub(super) fn extract_impl(
         // TypeRef to the implementing type — coverage signal for ref_node_kinds.
         if !is_rust_primitive(&type_name) {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: impl_sym_idx,
@@ -145,6 +146,7 @@ pub(super) fn extract_impl(
         let trait_name = rust_type_node_name(&trait_node, source);
         if !trait_name.is_empty() {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: impl_sym_idx,
@@ -273,6 +275,7 @@ pub(super) fn extract_impl(
                             let type_name = rust_type_node_name(&ty_node, source);
                             if !type_name.is_empty() {
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index: sym_idx,
@@ -576,6 +579,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     if !target.is_empty() {
                         let call_args = extract_macro_string_args(&child, source);
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -621,6 +625,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     let type_name = rust_type_node_name(&type_node, source);
                     if !type_name.is_empty() {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -718,6 +723,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     let name = rust_type_node_name(&name_node, source);
                     if !name.is_empty() {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -733,6 +739,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         });
                         // Also emit TypeRef so the type graph is connected.
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -810,6 +817,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     if !target_name.is_empty() && !target_name.starts_with('<') {
                         let call_args = extract_call_args(&child, source);
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -865,6 +873,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     && !super::symbols::is_generic_param_noise(&name)
                 {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -902,6 +911,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         None
                     };
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -1347,6 +1357,7 @@ fn infer_rust_variable_type(
                 let type_name = rust_type_node_name(&name_node, source);
                 if !type_name.is_empty() && !is_rust_primitive(&type_name) {
                     refs.push(crate::types::ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: var_sym_idx,
@@ -1405,6 +1416,7 @@ fn infer_rust_variable_type(
                 };
                 if !type_name.is_empty() && !is_rust_primitive(&type_name) {
                     refs.push(crate::types::ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: var_sym_idx,
@@ -1450,6 +1462,7 @@ fn infer_rust_variable_type(
                     let byte_offset = func.start_byte() as u32;
                     let line = func.start_position().row as u32;
                     refs.push(crate::types::ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: var_sym_idx,

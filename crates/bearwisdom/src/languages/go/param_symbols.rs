@@ -140,6 +140,7 @@ pub(super) fn extract_go_typed_params_as_symbols(
             });
 
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: param_idx,

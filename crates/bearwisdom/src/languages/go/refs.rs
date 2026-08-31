@@ -122,6 +122,7 @@ fn dispatch_ref_node(
                             };
 
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index,
@@ -155,6 +156,7 @@ fn dispatch_ref_node(
             {
                 if !name.is_empty() && !super::helpers::is_go_builtin_type(&name) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -179,6 +181,7 @@ fn dispatch_ref_node(
             let name = node_text(&child, source);
             if !name.is_empty() && !super::helpers::is_go_builtin_type(&name) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -206,6 +209,7 @@ fn dispatch_ref_node(
                 {
                     if !type_name.is_empty() && !super::helpers::is_go_builtin_type(&type_name) {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -261,6 +265,7 @@ fn dispatch_ref_node(
             {
                 if !type_name.is_empty() && !super::helpers::is_go_builtin_type(&type_name) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -293,6 +298,7 @@ fn dispatch_ref_node(
             {
                 if !type_name.is_empty() && !super::helpers::is_go_builtin_type(&type_name) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,

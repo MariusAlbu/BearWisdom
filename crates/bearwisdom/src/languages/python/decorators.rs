@@ -41,6 +41,7 @@ pub(super) fn extract_decorators(
         if child.kind() == "decorator" {
             if let Some((name, first_arg)) = parse_decorator(&child, source) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,

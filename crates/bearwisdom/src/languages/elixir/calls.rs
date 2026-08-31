@@ -63,6 +63,7 @@ pub(super) fn extract_calls_recursive(
                         };
                         if receiver_is_module {
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index,
@@ -98,6 +99,7 @@ pub(super) fn extract_calls_recursive(
                 if !name.is_empty() {
                     let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -179,6 +181,7 @@ pub(super) fn extract_dot_call_module_ref(
                             }
                             let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index,
@@ -234,6 +237,7 @@ pub(super) fn extract_pipe_calls(
                         let simple = n.rsplit('.').next().unwrap_or(&n).to_string();
                         let module = n.rfind('.').map(|i| n[..i].to_string());
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -263,6 +267,7 @@ pub(super) fn extract_pipe_calls(
             let simple = n.rsplit('.').next().unwrap_or(&n).to_string();
             let module = n.rfind('.').map(|i| n[..i].to_string());
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index,

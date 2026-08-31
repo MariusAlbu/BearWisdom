@@ -337,6 +337,7 @@ fn extract_binary_operator(
                 // Still emit the Call edge for the R6Class/setClass call itself
                 let source_idx = parent_index.unwrap_or(0);
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: source_idx,
@@ -446,6 +447,7 @@ fn extract_call(
                 format!("{lhs}.{rhs}")
             };
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: source_idx,
@@ -471,6 +473,7 @@ fn extract_call(
     if IMPORT_FUNCS.contains(&callee.as_str()) {
         if let Some(pkg) = get_first_string_arg(node, src) {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: source_idx,
@@ -540,6 +543,7 @@ fn extract_call(
 
     // Generic call → Calls edge
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: source_idx,
@@ -675,6 +679,7 @@ fn extract_namespace_operator(
         return;
     }
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: source_idx,

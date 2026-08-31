@@ -130,6 +130,7 @@ pub(super) fn emit_type_refs_from_type_node(
             {
                 if !name.is_empty() && !super::helpers::is_go_builtin_type(&name) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,

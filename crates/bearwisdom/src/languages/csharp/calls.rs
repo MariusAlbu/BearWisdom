@@ -294,6 +294,7 @@ pub(super) fn extract_calls_from_body(
                     if !name.is_empty() && !is_csharp_keyword(&name) {
                         let call_args = extract_call_args(&child, src);
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -317,6 +318,7 @@ pub(super) fn extract_calls_from_body(
                     let name = simple_type_name(type_node, src);
                     if !name.is_empty() {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -468,6 +470,7 @@ pub(super) fn extract_calls_from_body(
                         };
                         if !name.is_empty() && !is_csharp_keyword(&name) {
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index,

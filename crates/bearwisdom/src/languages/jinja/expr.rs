@@ -141,6 +141,7 @@ pub fn scan_expression(
         }
 
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index,

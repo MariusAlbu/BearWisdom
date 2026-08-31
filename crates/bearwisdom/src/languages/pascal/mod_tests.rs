@@ -27,6 +27,7 @@ fn empty_file(path: &str) -> ParsedFile {
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 

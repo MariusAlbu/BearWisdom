@@ -330,6 +330,7 @@ fn deconstruct_resolves_through_index() {
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     };
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
@@ -882,6 +883,7 @@ fn observable_recipient_resolves_messenger_through_index() {
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     };
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
@@ -947,6 +949,7 @@ fn observable_object_resolves_set_property_through_index() {
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     };
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
@@ -1008,6 +1011,7 @@ fn observable_property_resolves_through_index() {
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     };
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();

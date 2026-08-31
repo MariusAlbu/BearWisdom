@@ -12,18 +12,19 @@ use std::path::{Path, PathBuf};
 use rayon::prelude::*;
 use tracing::debug;
 
+use super::clr_projection::SourceNameProjection;
 use super::dll_locator::{
     collect_dotnet_project_files, collect_transitive_coords_from_assets_json,
     collect_transitive_coords_from_deps_json, dominant_dotnet_language, find_dlls_in_version_dir,
     nuget_packages_root,
 };
-use super::version_select::select_version_subdir;
 use super::manifest::{parse_package_references_full, NuGetCoord};
-use super::signature_format::{
-    format_generic_suffix, format_method_signature, strip_backtick_arity,
-};
 use super::source_discovery::{discover_nuget_source_files, parse_cs_source_file};
-use super::type_qname::{assembly_type_defs, qualified_type_name};
+use super::type_qname::assembly_type_defs;
+use super::type_symbols::{
+    emit_type_symbols, is_public_type, is_static_class, projected_type_identity,
+};
+use super::version_select::select_version_subdir;
 
 /// Public entry point used by back-compat re-exports in `externals.rs`.
 /// Returns DLL metadata ParsedFiles only — source ParsedFiles are merged by
@@ -64,6 +65,7 @@ pub(crate) fn list_dll_type_names(
         .assembly()
         .map(|a| a.name.clone())
         .unwrap_or_else(|| package_name.to_string());
+    let projection = SourceNameProjection::from_assembly(&assembly);
     let dll_str = dll_path.to_string_lossy().replace('\\', "/");
     let mut out = Vec::new();
     for type_def in assembly_type_defs(&assembly).iter() {
@@ -71,22 +73,20 @@ pub(crate) fn list_dll_type_names(
         if name.starts_with('<') || name == "<Module>" {
             continue;
         }
-        let visibility_mask = type_def.flags & 0x07;
-        if visibility_mask != 1 && visibility_mask != 2 {
+        if !is_public_type(type_def) {
             continue;
         }
-        let simple = strip_backtick_arity(&name).to_string();
-        let (qualified, _) = qualified_type_name(type_def, &simple);
+        let (display, qualified, _) = projected_type_identity(type_def, &projection);
         // Virtual path encodes the DLL location + assembly name + qualified type name.
         // The materialize path decodes this to re-open just this one type.
         let virt = format!("ext:dotnet-type:{dll_str}!!{assembly_name}!!{qualified}");
-        // A STATIC class's public static METHOD names are also offered: an
-        // extension method is reached by METHOD name (`x.HasColumnType(...)`)
-        // — no ref ever names the declaring `…Extensions` class, so without
-        // these entries the class is never demanded. Materializing the entry
+        // A STATIC class's (or compiled module's) public static METHOD names
+        // are also offered under their source-projected form: an extension
+        // method or module function is reached by MEMBER name — no ref ever
+        // names the declaring `…Extensions`/`…Module` class — so without
+        // these entries the type is never demanded. Materializing the entry
         // cracks the whole type, methods included.
-        let is_static_class = type_def.flags & 0x80 != 0 && type_def.flags & 0x100 != 0;
-        if is_static_class {
+        if is_static_class(type_def) || projection.is_module(type_def.token.value()) {
             for (_, method_ref) in type_def.methods.iter() {
                 let Some(method) = method_ref.upgrade() else {
                     continue;
@@ -99,176 +99,44 @@ pub(crate) fn list_dll_type_names(
                 {
                     continue;
                 }
-                out.push((method.name.clone(), virt.clone()));
+                let offered = projection
+                    .method_name(method.token.value(), &method.name)
+                    .to_string();
+                out.push((offered, virt.clone()));
             }
         }
-        out.push((simple, virt));
+        out.push((display, virt));
     }
     out
 }
 
-/// `Inherits`/`Implements` refs for a cracked type's base class and interface
-/// list. The refs make the inheritance map climbable for DLL types — a member
-/// declared on a base interface resolves on the derived receiver — and let
-/// the demand closure pull each supertype's own defining file, so an
-/// interface chain materializes transitively. Targets carry the bare declared
-/// name, matching the source-level extractor's base-list emission.
-fn emit_supertype_refs(
-    type_def: &dotscope::metadata::typesystem::CilType,
-    source_symbol_index: usize,
-    refs: &mut Vec<crate::types::ExtractedRef>,
-) {
-    use crate::types::{EdgeKind, ExtractedRef};
-    let mut push = |name: &str, kind: EdgeKind| {
-        let simple = strip_backtick_arity(name);
-        if simple.is_empty() {
-            return;
-        }
-        refs.push(ExtractedRef {
-            is_import_binding: false,
-            is_reexport: false,
-            source_symbol_index,
-            target_name: simple.to_string(),
-            kind,
-            line: 0,
-            col: 0,
-            module: None,
-            chain: None,
-            byte_offset: 0,
-            namespace_segments: Vec::new(),
-            call_args: Vec::new(),
-        });
-    };
-    if let Some(base) = type_def.base() {
-        push(&base.name, EdgeKind::Inherits);
-    }
-    for (_, iface_ref) in type_def.interfaces.iter() {
-        if let Some(iface) = iface_ref.upgrade() {
-            push(&iface.name, EdgeKind::Implements);
-        }
-    }
-}
-
-/// Extract one type (and its public methods) from an already-parsed assembly.
+/// Extract one type (and its public members) from an already-parsed assembly.
 /// Runs ONLY on the dotscope thread (see `dotscope_worker`).
 pub(super) fn extract_type_from_assembly(
     assembly: &dotscope::prelude::CilObject,
+    projection: &SourceNameProjection,
     qualified_type: &str,
     lang_id: &str,
     virtual_path: &str,
     dll_path: &Path,
 ) -> Option<crate::types::ParsedFile> {
-    use dotscope::metadata::method::MethodAccessFlags;
-    use crate::types::{ExtractedSymbol, SymbolKind};
-
-    // Find the matching type definition by qualified name.
-    let mut symbols: Vec<ExtractedSymbol> = Vec::new();
+    // Find the matching type definition by projected qualified name — the
+    // same identity `list_dll_type_names` minted into the virtual path.
+    let mut symbols: Vec<crate::types::ExtractedSymbol> = Vec::new();
     let mut refs: Vec<crate::types::ExtractedRef> = Vec::new();
     for type_def in assembly_type_defs(assembly).iter() {
         let name = type_def.name.clone();
         if name.starts_with('<') || name == "<Module>" {
             continue;
         }
-        let visibility_mask = type_def.flags & 0x07;
-        if visibility_mask != 1 && visibility_mask != 2 {
+        if !is_public_type(type_def) {
             continue;
         }
-        let display_name = strip_backtick_arity(&name);
-        let (this_qualified, scope_path) = qualified_type_name(type_def, display_name);
+        let (_, this_qualified, _) = projected_type_identity(type_def, projection);
         if this_qualified != qualified_type {
             continue;
         }
-        // ECMA-335 TypeAttributes: Abstract|Sealed together = a STATIC class,
-        // the only container the C# compiler allows extension methods in.
-        let is_static_class = type_def.flags & 0x80 != 0 && type_def.flags & 0x100 != 0;
-        let is_interface = type_def.flags & 0x20 != 0;
-        let kind = if is_interface {
-            SymbolKind::Interface
-        } else {
-            SymbolKind::Class
-        };
-        let type_generic_names: Vec<String> = type_def
-            .generic_params
-            .iter()
-            .map(|(_, gp)| gp.name.clone())
-            .collect();
-        let type_gp_suffix = format_generic_suffix(&type_generic_names);
-        let type_sym_idx = symbols.len();
-        emit_supertype_refs(type_def, type_sym_idx, &mut refs);
-        symbols.push(ExtractedSymbol {
-            name: display_name.to_string(),
-            qualified_name: qualified_type.to_string(),
-            kind,
-            visibility: Some(crate::types::Visibility::Public),
-            start_line: 0,
-            end_line: 0,
-            start_col: 0,
-            end_col: 0,
-            signature: Some(format!(
-                "{} {}{}",
-                if is_interface { "interface" } else { "class" },
-                display_name,
-                type_gp_suffix
-            )),
-            doc_comment: None,
-            scope_path,
-            parent_index: None,
-            byte_offset: 0,
-            declared_type: None,
-            return_type: None,
-            param_types: Vec::new(),
-            generic_params: Vec::new(),
-        });
-        for (_, method_ref) in type_def.methods.iter() {
-            let Some(method) = method_ref.upgrade() else {
-                continue;
-            };
-            if method.name.starts_with('<') || method.name.starts_with('.') {
-                continue;
-            }
-            if method.flags_access != MethodAccessFlags::PUBLIC {
-                continue;
-            }
-            let method_name = method.name.clone();
-            let method_qname = format!("{qualified_type}.{method_name}");
-            let method_generic_names: Vec<String> = method
-                .generic_params
-                .iter()
-                .map(|(_, gp)| gp.name.clone())
-                .collect();
-            let is_extension_candidate = is_static_class
-                && method
-                    .flags_modifiers
-                    .contains(dotscope::metadata::method::MethodModifiers::STATIC)
-                && !method.signature.params.is_empty();
-            let signature = format_method_signature(
-                &method_name,
-                &method.signature,
-                &type_generic_names,
-                &method_generic_names,
-                &assembly,
-                is_extension_candidate,
-            );
-            symbols.push(ExtractedSymbol {
-                name: method_name,
-                qualified_name: method_qname,
-                kind: SymbolKind::Method,
-                visibility: Some(crate::types::Visibility::Public),
-                start_line: 0,
-                end_line: 0,
-                start_col: 0,
-                end_col: 0,
-                signature: Some(signature),
-                doc_comment: None,
-                scope_path: Some(qualified_type.to_string()),
-                parent_index: Some(type_sym_idx),
-                byte_offset: 0,
-                declared_type: None,
-                return_type: None,
-                param_types: Vec::new(),
-                generic_params: Vec::new(),
-            });
-        }
+        emit_type_symbols(type_def, assembly, projection, &mut symbols, &mut refs);
         break;
     }
     if symbols.is_empty() {
@@ -303,6 +171,7 @@ pub(super) fn extract_type_from_assembly(
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     })
 }
 
@@ -447,9 +316,8 @@ pub(super) fn parse_dotnet_dll(
     package_name: &str,
     lang_id: &str,
 ) -> std::result::Result<crate::types::ParsedFile, String> {
-    use crate::types::{ExtractedSymbol, ParsedFile, SymbolKind};
+    use crate::types::{ExtractedSymbol, ParsedFile};
     use dotscope::metadata::cilassemblyview::CilAssemblyView;
-    use dotscope::metadata::method::MethodAccessFlags;
     use dotscope::metadata::validation::ValidationConfig;
     use dotscope::prelude::CilObject;
 
@@ -480,6 +348,7 @@ pub(super) fn parse_dotnet_dll(
         .map(|a| a.name.clone())
         .unwrap_or_else(|| package_name.to_string());
     let virtual_path = format!("ext:dotnet:{}/{}", package_name, assembly_name);
+    let projection = SourceNameProjection::from_assembly(&assembly);
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<crate::types::ExtractedRef> = Vec::new();
 
@@ -488,108 +357,10 @@ pub(super) fn parse_dotnet_dll(
         if name.starts_with('<') || name == "<Module>" {
             continue;
         }
-        let visibility_mask = type_def.flags & 0x07;
-        if visibility_mask != 1 && visibility_mask != 2 {
+        if !is_public_type(type_def) {
             continue;
         }
-        // ECMA-335 TypeAttributes: Abstract|Sealed together = a STATIC class,
-        // the only container the C# compiler allows extension methods in.
-        let is_static_class = type_def.flags & 0x80 != 0 && type_def.flags & 0x100 != 0;
-        let is_interface = type_def.flags & 0x20 != 0;
-        let kind = if is_interface {
-            SymbolKind::Interface
-        } else {
-            SymbolKind::Class
-        };
-
-        let display_name = strip_backtick_arity(&name);
-        let (qualified_name, scope_path) = qualified_type_name(type_def, display_name);
-
-        let type_generic_names: Vec<String> = type_def
-            .generic_params
-            .iter()
-            .map(|(_, gp)| gp.name.clone())
-            .collect();
-        let type_gp_suffix = format_generic_suffix(&type_generic_names);
-
-        let type_sym_idx = symbols.len();
-        emit_supertype_refs(type_def, type_sym_idx, &mut refs);
-        symbols.push(ExtractedSymbol {
-            name: display_name.to_string(),
-            qualified_name: qualified_name.clone(),
-            kind,
-            visibility: Some(crate::types::Visibility::Public),
-            start_line: 0,
-            end_line: 0,
-            start_col: 0,
-            end_col: 0,
-            signature: Some(format!(
-                "{} {}{}",
-                if is_interface { "interface" } else { "class" },
-                display_name,
-                type_gp_suffix
-            )),
-            doc_comment: None,
-            scope_path,
-            parent_index: None,
-            byte_offset: 0,
-            declared_type: None,
-            return_type: None,
-            param_types: Vec::new(),
-            generic_params: Vec::new(),
-        });
-
-        for (_, method_ref) in type_def.methods.iter() {
-            let Some(method) = method_ref.upgrade() else {
-                continue;
-            };
-            if method.name.starts_with('<') || method.name.starts_with('.') {
-                continue;
-            }
-            if method.flags_access != MethodAccessFlags::PUBLIC {
-                continue;
-            }
-
-            let method_name = method.name.clone();
-            let method_qname = format!("{qualified_name}.{method_name}");
-            let method_generic_names: Vec<String> = method
-                .generic_params
-                .iter()
-                .map(|(_, gp)| gp.name.clone())
-                .collect();
-            let is_extension_candidate = is_static_class
-                && method
-                    .flags_modifiers
-                    .contains(dotscope::metadata::method::MethodModifiers::STATIC)
-                && !method.signature.params.is_empty();
-            let signature = format_method_signature(
-                &method_name,
-                &method.signature,
-                &type_generic_names,
-                &method_generic_names,
-                &assembly,
-                is_extension_candidate,
-            );
-            symbols.push(ExtractedSymbol {
-                name: method_name,
-                qualified_name: method_qname,
-                kind: SymbolKind::Method,
-                visibility: Some(crate::types::Visibility::Public),
-                start_line: 0,
-                end_line: 0,
-                start_col: 0,
-                end_col: 0,
-                signature: Some(signature),
-                doc_comment: None,
-                scope_path: Some(qualified_name.clone()),
-                parent_index: Some(type_sym_idx),
-                byte_offset: 0,
-                declared_type: None,
-                return_type: None,
-                param_types: Vec::new(),
-                generic_params: Vec::new(),
-            });
-        }
+        emit_type_symbols(type_def, &assembly, &projection, &mut symbols, &mut refs);
     }
 
     debug!(
@@ -630,6 +401,7 @@ pub(super) fn parse_dotnet_dll(
         component_selectors: Vec::new(),
 
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     })
 }
 

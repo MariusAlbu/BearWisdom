@@ -156,6 +156,8 @@ pub(crate) struct CachedRef {
     call_args: Vec<CallArg>,
     is_import_binding: bool,
     is_reexport: bool,
+    #[serde(default)]
+    is_include: bool,
 }
 
 impl CachedRef {
@@ -178,11 +180,13 @@ impl CachedRef {
             call_args: r.call_args.clone(),
             is_import_binding: r.is_import_binding,
             is_reexport: r.is_reexport,
+            is_include: r.is_include,
         }
     }
 
     fn into_extracted(self, im: &mut TypeImporter<'_>) -> ExtractedRef {
         ExtractedRef {
+            is_include: self.is_include,
             source_symbol_index: self.source_symbol_index,
             target_name: self.target_name,
             kind: self.kind,
@@ -233,6 +237,12 @@ pub(crate) struct CachedParse {
     /// File-local generic-parameter table referenced by `CachedType::Generic`
     /// and `CachedSym::generic_params`.
     type_params: Vec<CachedGenericParam>,
+    /// Ambient `declare module '<name>'` names. The module-entry pass keys
+    /// each name to the declaring file; dropping them on a cache hit would
+    /// leave imports of those specifiers unlinked on warm reindexes.
+    /// `default` keeps payloads written before the field readable.
+    #[serde(default)]
+    declared_modules: Vec<String>,
 }
 
 impl CachedParse {
@@ -264,6 +274,7 @@ impl CachedParse {
             alias_targets: pf.alias_targets.clone(),
             component_selectors: pf.component_selectors.clone(),
             type_params: ex.into_params(),
+            declared_modules: pf.declared_modules.clone(),
         }
     }
 
@@ -309,6 +320,7 @@ impl CachedParse {
             alias_targets: self.alias_targets,
             component_selectors: self.component_selectors,
             plugin_flow_emissions: Vec::new(),
+            declared_modules: self.declared_modules,
         }
     }
 }

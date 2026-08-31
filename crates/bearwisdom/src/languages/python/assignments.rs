@@ -197,6 +197,7 @@ fn infer_python_variable_type(
     };
 
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: var_sym_idx,
@@ -272,6 +273,7 @@ pub(super) fn extract_augmented_assignment(
                     .unwrap_or_default();
                 if !target.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: enclosing_symbol_index,

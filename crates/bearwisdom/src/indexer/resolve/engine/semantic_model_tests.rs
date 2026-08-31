@@ -64,6 +64,7 @@ fn module_tagged_declined_chain_falls_through_to_ladder() {
         type_arg_ids: Vec::new(),
     };
     let mut r = ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,
@@ -137,6 +138,7 @@ fn module_tagged_declined_chain_cannot_hijack_a_same_named_sibling() {
         type_arg_ids: Vec::new(),
     };
     let r = ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,

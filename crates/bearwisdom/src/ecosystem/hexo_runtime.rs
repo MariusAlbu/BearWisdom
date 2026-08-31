@@ -287,6 +287,7 @@ pub(crate) fn synthesise_hexo_helpers(project_root: &Path) -> Vec<ParsedFile> {
         component_selectors: Vec::new(),
 
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     }]
 }
 

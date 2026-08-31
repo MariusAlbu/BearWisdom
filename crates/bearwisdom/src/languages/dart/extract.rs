@@ -184,6 +184,7 @@ fn visit(
                 if !name.is_empty() && !predicates::is_dart_primitive_type(&name) {
                     if let Some(sym_idx) = parent_index {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: sym_idx,
@@ -218,6 +219,7 @@ fn visit(
                         if !name.is_empty() && !predicates::is_dart_primitive_type(&name) {
                             if let Some(idx) = parent_index {
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index: idx,
@@ -348,6 +350,7 @@ fn extract_factory_constructor_at_visit(
             let t = nt(child, src);
             if !t.is_empty() && !predicates::is_dart_primitive_type(&t) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: idx,
@@ -381,6 +384,7 @@ fn scan_all_type_identifiers(
             let name = node_text(child, src);
             if !name.is_empty() && !predicates::is_dart_primitive_type(&name) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: sym_idx,

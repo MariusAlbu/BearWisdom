@@ -77,6 +77,7 @@ pub(super) fn extract_apply(
         return;
     }
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: source_idx,
@@ -200,6 +201,7 @@ pub(super) fn extract_infix(
     }
 
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: source_idx,

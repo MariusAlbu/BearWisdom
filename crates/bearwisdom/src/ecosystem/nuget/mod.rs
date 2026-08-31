@@ -28,6 +28,7 @@ use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
 
 mod assembly_cache;
+mod clr_projection;
 mod cs_header;
 mod dll_locator;
 mod dll_metadata;
@@ -37,6 +38,7 @@ mod signature_format;
 mod source_discovery;
 mod symbol_index;
 mod type_qname;
+mod type_symbols;
 mod version_select;
 
 pub use dll_locator::nuget_packages_root;

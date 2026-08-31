@@ -166,6 +166,7 @@ pub(super) fn scan_all_type_identifiers(
                 let name = helpers::node_text(child, src);
                 if !name.is_empty() && !is_ts_primitive(&name) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,
@@ -190,6 +191,7 @@ pub(super) fn scan_all_type_identifiers(
                 let name = helpers::node_text(child, src);
                 if !name.is_empty() && !is_ts_primitive(&name) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,
@@ -219,6 +221,7 @@ pub(super) fn scan_all_type_identifiers(
                     let name = helpers::node_text(base, src);
                     if !name.is_empty() && !is_ts_primitive(&name) {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: sym_idx,
@@ -261,6 +264,7 @@ pub(super) fn scan_all_type_identifiers(
                     let name = helpers::node_text(tn, src);
                     if !name.is_empty() {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: sym_idx,
@@ -302,6 +306,7 @@ pub(super) fn scan_all_type_identifiers(
                         // cast type like an annotation (object/literal/function →
                         // `_primitive`, real type → its root name).
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: sym_idx,
@@ -335,6 +340,7 @@ pub(super) fn scan_all_type_identifiers(
                         // literal / function `satisfies` targets emit the
                         // `_primitive` sentinel instead of leaking a property name.
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: sym_idx,

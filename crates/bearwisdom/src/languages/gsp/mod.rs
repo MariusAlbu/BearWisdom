@@ -73,6 +73,7 @@ impl LanguagePlugin for GspPlugin {
         // edge is emitted separately below as an `Imports` ref.
         for tag in taglib::scan_markup_tags(source) {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: 0,
@@ -96,6 +97,7 @@ impl LanguagePlugin for GspPlugin {
                     if let Some(end) = rest[start..].find('"') {
                         let name = rest[start..start + end].trim_start_matches('_').to_string();
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: 0,
@@ -121,6 +123,7 @@ impl LanguagePlugin for GspPlugin {
             has_errors: false,
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
+            declared_modules: Vec::new(),
         }
     }
     fn embedded_regions(&self, source: &str, _p: &str, _l: &str) -> Vec<EmbeddedRegion> {

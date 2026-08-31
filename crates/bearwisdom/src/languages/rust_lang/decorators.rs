@@ -74,6 +74,7 @@ pub(super) fn extract_decorators(
                 let url_ok = url_or_none.map_or(name == "command", |u| u.starts_with('/'));
                 if url_ok {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -217,6 +218,7 @@ fn extract_trait_names_from_token_tree(
                 }
 
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -238,6 +240,7 @@ fn extract_trait_names_from_token_tree(
                 let full_name = node_text(&child, source);
                 if !full_name.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,

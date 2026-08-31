@@ -31,6 +31,7 @@ fn make_pf(symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 
@@ -58,6 +59,7 @@ fn make_sym(name: &str, qname: &str, kind: SymbolKind) -> ExtractedSymbol {
 
 fn make_ref(source_idx: usize, target: &str, kind: EdgeKind) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: source_idx,

@@ -941,6 +941,13 @@ fn full_index_inner(
     )?;
     mem_probe::probe("08c_project_symbols_synthesized");
 
+    // --- Step 4d.4: Include assembly — splice textual-include fragments into
+    // their including unit's namespace before the containment binder and the
+    // Compilation build. See `indexer::include_assembly`.
+    super::include_assembly::assemble_includes(db, &mut parsed, &mut symbol_id_map)
+        .context("Include assembly failed")?;
+    mem_probe::probe("08d_includes_assembled");
+
     // --- Step 4e: Cross-file containment + mergeable collapse ---
     //
     // The streaming per-file write only resolves intra-file parent_index

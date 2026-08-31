@@ -71,6 +71,7 @@ fn emit_annotation(
         "marker_annotation" => {
             if let Some(name) = annotation_name(node, src) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -90,6 +91,7 @@ fn emit_annotation(
             if let Some(name) = annotation_name(node, src) {
                 let first_arg = extract_first_string_arg(node, src);
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,

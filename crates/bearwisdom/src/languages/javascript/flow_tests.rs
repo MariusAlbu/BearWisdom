@@ -43,6 +43,7 @@ fn mk_sym(name: &str, kind: SymbolKind, start_line: u32) -> ExtractedSymbol {
 
 fn mk_call_ref(target: &str, line: u32, byte_offset: u32) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,

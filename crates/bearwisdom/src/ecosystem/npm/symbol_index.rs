@@ -243,15 +243,12 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
             index.insert(module, name, def_file);
         }
     }
-    // Expose each package's `.` entry. A barrel package re-exports its names from
-    // other packages (`vue` → `@vue/runtime-dom` → @vue/runtime-core), so the leaf
-    // is qnamed under the DEFINING package, not the imported one. Materializing the
-    // package entry brings in its `export *` chain (whose re-export refs carry the
-    // source module, so the demand pass pulls each hop) and lets re-export-following
-    // bind `import { computed } from 'vue'`.
-    for (module, entry) in &pkg_entry {
-        index.insert_module_entry(module.clone(), entry.clone());
-    }
+    super::module_registration::register_module_entries(
+        &mut index,
+        &pkg_entry,
+        &subpath_entry,
+        &scanned,
+    );
     index
 }
 

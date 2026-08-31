@@ -52,6 +52,7 @@ fn cseg(name: &str, is_call: bool) -> ChainSegment {
 
 fn chain_ref(src: usize, target: &str, segments: Vec<ChainSegment>) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: src,
@@ -108,6 +109,7 @@ fn trace_captures_untypable_root_and_unresolved_result() {
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     };
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
@@ -171,6 +173,7 @@ fn trace_captures_resolved_ref_and_seed_none() {
     ];
     // A bare TypeRef from `caller` to `Target`.
     let refs = vec![ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,
@@ -206,6 +209,7 @@ fn trace_captures_resolved_ref_and_seed_none() {
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     };
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
@@ -296,6 +300,7 @@ fn trace_batch_filters_collect_multiple_refs() {
         esym("TargetB", "TargetB", SymbolKind::Class),  // 2
     ];
     let mk_typeref = |target: &str, line: u32| ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,
@@ -332,6 +337,7 @@ fn trace_batch_filters_collect_multiple_refs() {
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     };
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();

@@ -53,6 +53,7 @@ pub fn append_amd_define_imports(source: &str, result: &mut crate::types::Extrac
             continue;
         }
         result.refs.push(crate::types::ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: 0,

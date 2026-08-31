@@ -74,6 +74,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         } else if let Some(rest) = trimmed.strip_prefix("<%include") {
             if let Some(file) = extract_attr(rest, "file") {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: host_index,
@@ -91,6 +92,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         } else if let Some(rest) = trimmed.strip_prefix("<%inherit") {
             if let Some(file) = extract_attr(rest, "file") {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: host_index,
@@ -116,6 +118,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         has_errors: false,
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 

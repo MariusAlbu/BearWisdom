@@ -620,6 +620,7 @@ fn infer_type_from_value(
                 };
                 if let Some(name) = type_name {
                     refs.push(crate::types::ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,
@@ -641,6 +642,7 @@ fn infer_type_from_value(
             let name = helpers::node_text(*value_node, src);
             if name.starts_with(|c: char| c.is_uppercase()) {
                 refs.push(crate::types::ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: sym_idx,

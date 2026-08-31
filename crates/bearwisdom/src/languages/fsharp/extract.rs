@@ -31,6 +31,7 @@ use crate::types::{
 use tree_sitter::{Node, Parser};
 
 use super::applications::collect_applications;
+use super::members::extract_method_or_prop;
 use super::type_defs::extract_type_def;
 
 /// Build the qualified name for a child symbol by prefixing the parent's qname.
@@ -127,14 +128,10 @@ pub(super) fn visit(
             "class_inherits_decl" => {
                 extract_class_inherits(&child, src, parent_index, refs);
             }
-            // Collect application_expression and dot_expression refs from
-            // method_or_prop_defn bodies (class/type member implementations).
-            // These are not wrapped in function_or_value_defn so collect_applications
-            // would not otherwise be called on them.
+            // Type members: emit the Method/Property symbol and collect the
+            // body's application_expression / dot_expression refs against it.
             "method_or_prop_defn" => {
-                let source_idx = parent_index.unwrap_or(0);
-                collect_applications(&child, src, source_idx, refs);
-                visit(child, src, symbols, refs, parent_index);
+                extract_method_or_prop(&child, src, symbols, refs, parent_index);
             }
             _ => {
                 visit(child, src, symbols, refs, parent_index);
@@ -154,10 +151,7 @@ fn extract_namespace(
     refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
 ) {
-    let name = node
-        .child_by_field_name("name")
-        .map(|n| node_text(&n, src).to_string())
-        .unwrap_or_default();
+    let name = super::module_header::module_header_name(node, src);
 
     if name.is_empty() {
         visit(node.clone(), src, symbols, refs, parent_index);
@@ -352,6 +346,7 @@ fn extract_hash_r_directives(src: &str, refs: &mut Vec<ExtractedRef>) {
         }
 
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: 0,
@@ -380,6 +375,7 @@ fn extract_open(node: &Node, src: &str, source_symbol_index: usize, refs: &mut V
         return;
     }
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index,
@@ -639,6 +635,7 @@ pub(super) fn extract_interface_implementation(
         let iface_name = last_identifier_text(child, src);
         if !iface_name.is_empty() {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: source_idx,
@@ -682,6 +679,7 @@ pub(super) fn extract_class_inherits(
         let base_name = first_identifier_from_type(child, src);
         if !base_name.is_empty() {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: source_idx,

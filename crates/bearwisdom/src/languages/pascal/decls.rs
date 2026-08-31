@@ -278,6 +278,7 @@ pub(super) fn extract_class(
                             let parent_name = node_text(tc, src);
                             if !parent_name.is_empty() {
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index: idx,
@@ -298,6 +299,7 @@ pub(super) fn extract_class(
                             let (member, qualifier) = split_dot_node(tc, src);
                             if !member.is_empty() {
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index: idx,
@@ -502,6 +504,7 @@ pub(super) fn extract_uses(
             let name = node_text(child, src);
             if !name.is_empty() {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: sym_idx,

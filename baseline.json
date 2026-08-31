@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-08-14T00:00:00Z",
+  "captured_at": "2026-08-31T00:00:00Z",
   "engine": "resolution-engine",
   "note": "Fresh new-engine baseline; grows as projects are added. Old baseline-all.json (pre-cutover) retired.",
   "projects": [
@@ -2357,8 +2357,8 @@
       "flow_edge_types": {},
       "flow_edges": 0,
       "generated_files_reclassified": 8,
-      "internal_edges": 15197,
-      "internal_unresolved": 4443,
+      "internal_edges": 15204,
+      "internal_unresolved": 4436,
       "languages": {
         "csharp": 432,
         "json": 7,
@@ -2367,22 +2367,22 @@
       },
       "path": "F:/Work/Projects/TestProjects/dotnet-spectre-console",
       "perf": {
-        "end_ws_mb": 8744,
-        "files_per_sec": 7,
-        "index_duration_ms": 68101
+        "end_ws_mb": 8633,
+        "files_per_sec": 14,
+        "index_duration_ms": 32525
       },
       "project": "dotnet-spectre-console",
       "rate_by_language": {
-        "csharp": 77.66,
+        "csharp": 77.7,
         "markdown": 27.27
       },
-      "resolution_rate": 77.38,
+      "resolution_rate": 77.41,
       "routes": 0,
       "symbols": 9103,
       "unresolved_by_lang_kind": {
         "csharp.calls": 2501,
         "csharp.implements": 9,
-        "csharp.imports": 43,
+        "csharp.imports": 36,
         "csharp.instantiates": 275,
         "csharp.type_ref": 1535,
         "markdown.calls": 23,
@@ -3386,15 +3386,15 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 51
+        "min_resolution_rate": 61
       },
-      "code_chunks": 254110,
-      "drained_refs": 6262,
+      "code_chunks": 258456,
+      "drained_refs": 6276,
       "files": 1281,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 170657,
-      "internal_unresolved": 161149,
+      "internal_edges": 203915,
+      "internal_unresolved": 129604,
       "languages": {
         "dart": 8,
         "erlang": 38,
@@ -3413,71 +3413,71 @@
       },
       "path": "F:/Work/Projects/TestProjects/fsharp-fable",
       "perf": {
-        "end_ws_mb": 5981,
-        "files_per_sec": 9,
-        "index_duration_ms": 140012
+        "end_ws_mb": 5680,
+        "files_per_sec": 7,
+        "index_duration_ms": 182891
       },
       "project": "fsharp-fable",
       "rate_by_language": {
-        "dart": 13.08,
-        "erlang": 62.09,
-        "fsharp": 49.58,
+        "dart": 13.39,
+        "erlang": 63.47,
+        "fsharp": 60.8,
         "javascript": 58.06,
         "markdown": 83.33,
-        "php": 64.81,
-        "python": 54.16,
-        "rust": 64.76,
+        "php": 64.91,
+        "python": 54.23,
+        "rust": 64.6,
         "shell": 0.0,
-        "typescript": 93.56
+        "typescript": 93.49
       },
-      "resolution_rate": 51.43,
+      "resolution_rate": 61.14,
       "routes": 0,
-      "symbols": 103315,
+      "symbols": 110209,
       "unresolved_by_lang_kind": {
         "dart.calls": 98,
         "dart.implements": 10,
         "dart.imports": 37,
         "dart.inherits": 1,
         "dart.type_ref": 2299,
-        "erlang.calls": 1068,
-        "fsharp.calls": 143625,
+        "erlang.calls": 1029,
+        "fsharp.calls": 112111,
         "fsharp.implements": 149,
-        "fsharp.imports": 979,
+        "fsharp.imports": 946,
         "fsharp.inherits": 35,
         "javascript.calls": 62,
         "javascript.imports": 35,
         "javascript.type_ref": 33,
         "markdown.calls": 2,
-        "php.calls": 179,
+        "php.calls": 183,
         "php.implements": 6,
         "php.instantiates": 23,
         "php.type_ref": 1,
-        "python.calls": 1211,
-        "python.imports": 97,
-        "python.type_ref": 3821,
-        "rust.calls": 2801,
+        "python.calls": 1216,
+        "python.imports": 90,
+        "python.type_ref": 3823,
+        "rust.calls": 2832,
         "rust.implements": 7,
         "rust.imports": 102,
         "rust.type_ref": 3998,
         "shell.calls": 1,
-        "typescript.calls": 222,
+        "typescript.calls": 226,
         "typescript.imports": 4,
         "typescript.instantiates": 14,
-        "typescript.type_ref": 229
+        "typescript.type_ref": 231
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 62
+        "min_resolution_rate": 73
       },
-      "code_chunks": 29083,
+      "code_chunks": 29875,
       "drained_refs": 89,
       "files": 545,
       "flow_edge_types": {},
       "flow_edges": 0,
       "generated_files_reclassified": 2,
-      "internal_edges": 13626,
-      "internal_unresolved": 8316,
+      "internal_edges": 16241,
+      "internal_unresolved": 5833,
       "languages": {
         "fsharp": 159,
         "html": 11,
@@ -3487,35 +3487,35 @@
       },
       "path": "F:/Work/Projects/TestProjects/fsharp-fstoolkit",
       "perf": {
-        "end_ws_mb": 6035,
-        "files_per_sec": 12,
-        "index_duration_ms": 43920
+        "end_ws_mb": 6785,
+        "files_per_sec": 21,
+        "index_duration_ms": 25835
       },
       "project": "fsharp-fstoolkit",
       "rate_by_language": {
-        "fsharp": 61.17,
+        "fsharp": 72.93,
         "markdown": 100.0
       },
-      "resolution_rate": 62.1,
+      "resolution_rate": 73.58,
       "routes": 0,
-      "symbols": 11419,
+      "symbols": 12047,
       "unresolved_by_lang_kind": {
-        "fsharp.calls": 8166,
+        "fsharp.calls": 5683,
         "fsharp.imports": 148,
         "fsharp.inherits": 2
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 23
+        "min_resolution_rate": 33
       },
-      "code_chunks": 7545,
+      "code_chunks": 7667,
       "drained_refs": 117,
       "files": 61,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 2080,
-      "internal_unresolved": 6625,
+      "internal_edges": 2920,
+      "internal_unresolved": 5811,
       "languages": {
         "fsharp": 48,
         "html": 1,
@@ -3524,36 +3524,36 @@
       },
       "path": "F:/Work/Projects/TestProjects/fsharp-giraffe",
       "perf": {
-        "end_ws_mb": 4757,
-        "files_per_sec": 2,
-        "index_duration_ms": 29417
+        "end_ws_mb": 4998,
+        "files_per_sec": 3,
+        "index_duration_ms": 17842
       },
       "project": "fsharp-giraffe",
       "rate_by_language": {
-        "fsharp": 23.88,
+        "fsharp": 33.43,
         "markdown": 100.0
       },
-      "resolution_rate": 23.89,
+      "resolution_rate": 33.44,
       "routes": 0,
-      "symbols": 3203,
+      "symbols": 3310,
       "unresolved_by_lang_kind": {
-        "fsharp.calls": 6392,
+        "fsharp.calls": 5609,
         "fsharp.implements": 3,
-        "fsharp.imports": 230
+        "fsharp.imports": 199
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 33
+        "min_resolution_rate": 32
       },
-      "code_chunks": 9458,
-      "drained_refs": 110,
+      "code_chunks": 9525,
+      "drained_refs": 113,
       "files": 107,
       "flow_edge_types": {},
       "flow_edges": 0,
       "generated_files_reclassified": 2,
-      "internal_edges": 2066,
-      "internal_unresolved": 4128,
+      "internal_edges": 2087,
+      "internal_unresolved": 4311,
       "languages": {
         "fsharp": 33,
         "json": 8,
@@ -3563,21 +3563,21 @@
       },
       "path": "F:/Work/Projects/TestProjects/fsharp-ionide",
       "perf": {
-        "end_ws_mb": 3040,
-        "files_per_sec": 5,
-        "index_duration_ms": 22683
+        "end_ws_mb": 3098,
+        "files_per_sec": 7,
+        "index_duration_ms": 16417
       },
       "project": "fsharp-ionide",
       "rate_by_language": {
-        "fsharp": 33.34,
+        "fsharp": 32.61,
         "markdown": 100.0
       },
-      "resolution_rate": 33.35,
+      "resolution_rate": 32.62,
       "routes": 0,
-      "symbols": 3087,
+      "symbols": 3130,
       "unresolved_by_lang_kind": {
-        "fsharp.calls": 4049,
-        "fsharp.imports": 78,
+        "fsharp.calls": 4238,
+        "fsharp.imports": 72,
         "fsharp.inherits": 1
       }
     },
@@ -3625,15 +3625,15 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 29
+        "min_resolution_rate": 34
       },
-      "code_chunks": 4134,
+      "code_chunks": 4269,
       "drained_refs": 152,
       "files": 110,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 1300,
-      "internal_unresolved": 3144,
+      "internal_edges": 1522,
+      "internal_unresolved": 2919,
       "languages": {
         "css": 8,
         "fsharp": 75,
@@ -3646,23 +3646,23 @@
       },
       "path": "F:/Work/Projects/TestProjects/fsharp-saturn",
       "perf": {
-        "end_ws_mb": 6796,
-        "files_per_sec": 2,
-        "index_duration_ms": 45767
+        "end_ws_mb": 7520,
+        "files_per_sec": 3,
+        "index_duration_ms": 35134
       },
       "project": "fsharp-saturn",
       "rate_by_language": {
-        "fsharp": 29.59,
+        "fsharp": 35.06,
         "html": 50.0,
         "javascript": 24.43,
         "markdown": 100.0,
         "shell": 0.0
       },
-      "resolution_rate": 29.25,
+      "resolution_rate": 34.27,
       "routes": 0,
-      "symbols": 1484,
+      "symbols": 1584,
       "unresolved_by_lang_kind": {
-        "fsharp.calls": 2651,
+        "fsharp.calls": 2426,
         "fsharp.implements": 4,
         "fsharp.imports": 218,
         "fsharp.inherits": 1,
@@ -5546,8 +5546,8 @@
       "flow_edge_types": {},
       "flow_edges": 0,
       "generated_files_reclassified": 5,
-      "internal_edges": 158871,
-      "internal_unresolved": 111290,
+      "internal_edges": 158891,
+      "internal_unresolved": 111270,
       "languages": {
         "css": 177,
         "dockerfile": 3,
@@ -5564,16 +5564,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/javascript-ghost",
       "perf": {
-        "end_ws_mb": 122,
-        "files_per_sec": 71,
-        "index_duration_ms": 89025
+        "end_ws_mb": 128,
+        "files_per_sec": 43,
+        "index_duration_ms": 146138
       },
       "project": "javascript-ghost",
       "rate_by_language": {
         "dockerfile": 0.0,
         "handlebars": 87.23,
         "html": 0.0,
-        "javascript": 43.6,
+        "javascript": 43.61,
         "markdown": 21.21,
         "mdx": 66.29,
         "shell": 52.38,
@@ -5589,7 +5589,7 @@
         "handlebars.calls": 8,
         "handlebars.imports": 4,
         "html.imports": 19,
-        "javascript.calls": 72876,
+        "javascript.calls": 72858,
         "javascript.imports": 9262,
         "javascript.inherits": 204,
         "javascript.type_ref": 8822,
@@ -5599,11 +5599,11 @@
         "mdx.type_ref": 24,
         "shell.calls": 7,
         "shell.imports": 3,
-        "typescript.calls": 12395,
+        "typescript.calls": 12394,
         "typescript.imports": 185,
         "typescript.inherits": 67,
         "typescript.instantiates": 377,
-        "typescript.type_ref": 6971
+        "typescript.type_ref": 6970
       }
     },
     {
@@ -8013,16 +8013,16 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 77
+        "min_resolution_rate": 76
       },
-      "code_chunks": 478468,
-      "drained_refs": 39215,
+      "code_chunks": 478743,
+      "drained_refs": 39282,
       "files": 3857,
       "flow_edge_types": {},
       "flow_edges": 0,
       "generated_files_reclassified": 2,
-      "internal_edges": 275771,
-      "internal_unresolved": 81444,
+      "internal_edges": 274476,
+      "internal_unresolved": 83624,
       "languages": {
         "c": 109,
         "cmake": 20,
@@ -8036,11 +8036,10 @@
         "json": 34,
         "markdown": 272,
         "matlab": 35,
-        "pascal": 2420,
+        "pascal": 2421,
         "php": 5,
         "powershell": 1,
         "prolog": 1,
-        "puppet": 1,
         "scss": 1,
         "shell": 39,
         "toml": 2,
@@ -8050,51 +8049,51 @@
       },
       "path": "F:/Work/Projects/TestProjects/pascal-castle-fresh",
       "perf": {
-        "end_ws_mb": 5249,
-        "files_per_sec": 4,
-        "index_duration_ms": 897212
+        "end_ws_mb": 5155,
+        "files_per_sec": 1,
+        "index_duration_ms": 3092878
       },
       "project": "pascal-castle-fresh",
       "rate_by_language": {
-        "c": 77.65,
+        "c": 77.58,
         "cmake": 80.47,
-        "cpp": 56.99,
+        "cpp": 56.65,
         "html": 0.0,
-        "java": 67.79,
+        "java": 68.11,
         "markdown": 42.86,
         "matlab": 54.19,
-        "pascal": 81.99,
+        "pascal": 81.35,
         "php": 0.0,
         "scss": 0.0,
         "shell": 36.36
       },
-      "resolution_rate": 77.2,
+      "resolution_rate": 76.65,
       "routes": 0,
-      "symbols": 271329,
+      "symbols": 271567,
       "unresolved_by_lang_kind": {
-        "c.calls": 232,
+        "c.calls": 236,
         "c.imports": 3,
         "c.type_ref": 1051,
         "cmake.calls": 1,
         "cmake.imports": 30,
         "cmake.type_ref": 77,
-        "cpp.calls": 14645,
+        "cpp.calls": 14715,
         "cpp.imports": 788,
         "cpp.inherits": 14,
         "cpp.instantiates": 20,
-        "cpp.type_ref": 12667,
+        "cpp.type_ref": 12816,
         "html.calls": 14,
         "html.imports": 5,
-        "java.calls": 539,
+        "java.calls": 530,
         "java.implements": 5,
         "java.imports": 90,
         "java.instantiates": 29,
         "java.type_ref": 246,
         "markdown.calls": 4,
         "matlab.calls": 82,
-        "pascal.calls": 47819,
+        "pascal.calls": 49872,
         "pascal.imports": 2460,
-        "pascal.inherits": 581,
+        "pascal.inherits": 494,
         "php.calls": 4,
         "php.imports": 1,
         "scss.calls": 1,
@@ -8589,7 +8588,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 48
+        "min_resolution_rate": 50
       },
       "code_chunks": 208171,
       "drained_refs": 1252,
@@ -8599,8 +8598,8 @@
       },
       "flow_edges": 45,
       "generated_files_reclassified": 3,
-      "internal_edges": 107694,
-      "internal_unresolved": 113427,
+      "internal_edges": 111370,
+      "internal_unresolved": 109777,
       "languages": {
         "blade": 83,
         "css": 1,
@@ -8615,17 +8614,17 @@
       },
       "path": "F:/Work/Projects/TestProjects/php-laravel",
       "perf": {
-        "end_ws_mb": 223,
-        "files_per_sec": 59,
-        "index_duration_ms": 49516
+        "end_ws_mb": 174,
+        "files_per_sec": 36,
+        "index_duration_ms": 80917
       },
       "project": "php-laravel",
       "rate_by_language": {
         "blade": 2.5,
         "markdown": 100.0,
-        "php": 48.73
+        "php": 50.39
       },
-      "resolution_rate": 48.7,
+      "resolution_rate": 50.36,
       "routes": 51,
       "symbols": 37700,
       "unresolved_by_lang_kind": {
@@ -8633,12 +8632,12 @@
         "blade.imports": 9,
         "blade.instantiates": 1,
         "blade.type_ref": 13,
-        "php.calls": 102265,
-        "php.implements": 1110,
-        "php.imports": 1711,
-        "php.inherits": 117,
-        "php.instantiates": 2584,
-        "php.type_ref": 5523
+        "php.calls": 102304,
+        "php.implements": 1095,
+        "php.imports": 1054,
+        "php.inherits": 84,
+        "php.instantiates": 2083,
+        "php.type_ref": 3040
       },
       "vendored_files_reclassified": 58
     },
@@ -10011,17 +10010,17 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 57
+        "min_resolution_rate": 72
       },
       "code_chunks": 293720,
-      "drained_refs": 15060,
+      "drained_refs": 15066,
       "files": 4369,
       "flow_edge_types": {
         "service_dependency": 4
       },
       "flow_edges": 4,
-      "internal_edges": 175053,
-      "internal_unresolved": 130528,
+      "internal_edges": 222601,
+      "internal_unresolved": 82956,
       "languages": {
         "c": 2,
         "css": 5,
@@ -10044,55 +10043,55 @@
       },
       "path": "F:/Work/Projects/TestProjects/python-superset",
       "perf": {
-        "end_ws_mb": 130,
-        "files_per_sec": 18,
-        "index_duration_ms": 243132
+        "end_ws_mb": 147,
+        "files_per_sec": 10,
+        "index_duration_ms": 417082
       },
       "project": "python-superset",
       "rate_by_language": {
         "c": 0.0,
         "dockerfile": 0.0,
         "gotemplate": 0.0,
-        "html": 46.15,
-        "javascript": 52.44,
+        "html": 38.46,
+        "javascript": 69.66,
         "jinja": 72.73,
         "mako": 0.0,
-        "markdown": 48.89,
-        "mdx": 34.74,
-        "python": 58.68,
+        "markdown": 51.82,
+        "mdx": 34.04,
+        "python": 53.9,
         "shell": 72.13,
-        "typescript": 56.36
+        "typescript": 87.17
       },
-      "resolution_rate": 57.29,
+      "resolution_rate": 72.85,
       "routes": 0,
-      "symbols": 143806,
+      "symbols": 143803,
       "unresolved_by_lang_kind": {
         "c.calls": 1,
         "c.type_ref": 70,
         "dockerfile.imports": 4,
         "dockerfile.inherits": 2,
         "gotemplate.imports": 8,
-        "html.calls": 5,
+        "html.calls": 6,
         "html.imports": 1,
         "html.type_ref": 1,
-        "javascript.calls": 861,
-        "javascript.imports": 96,
-        "javascript.type_ref": 309,
+        "javascript.calls": 432,
+        "javascript.imports": 87,
+        "javascript.type_ref": 291,
         "jinja.type_ref": 21,
         "mako.calls": 2,
-        "markdown.calls": 37,
+        "markdown.calls": 34,
         "markdown.type_ref": 32,
-        "mdx.calls": 34,
-        "mdx.type_ref": 28,
-        "python.calls": 36769,
-        "python.imports": 1590,
-        "python.type_ref": 15111,
+        "mdx.calls": 36,
+        "mdx.type_ref": 26,
+        "python.calls": 40356,
+        "python.imports": 1861,
+        "python.type_ref": 17478,
         "shell.calls": 17,
-        "typescript.calls": 56452,
-        "typescript.imports": 104,
-        "typescript.inherits": 73,
-        "typescript.instantiates": 52,
-        "typescript.type_ref": 18848
+        "typescript.calls": 14156,
+        "typescript.imports": 96,
+        "typescript.inherits": 25,
+        "typescript.instantiates": 34,
+        "typescript.type_ref": 7879
       },
       "vendored_files_reclassified": 1997
     },
@@ -13211,8 +13210,8 @@
       },
       "flow_edges": 458,
       "generated_files_reclassified": 340,
-      "internal_edges": 549067,
-      "internal_unresolved": 109130,
+      "internal_edges": 549254,
+      "internal_unresolved": 108941,
       "languages": {
         "c": 1,
         "css": 644,
@@ -13238,27 +13237,27 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-nextjs",
       "perf": {
-        "end_ws_mb": 245,
-        "files_per_sec": 19,
-        "index_duration_ms": 1286414
+        "end_ws_mb": 162,
+        "files_per_sec": 12,
+        "index_duration_ms": 1908482
       },
       "project": "ts-nextjs",
       "rate_by_language": {
         "dockerfile": 73.53,
         "graphql": 60.61,
         "html": 19.44,
-        "javascript": 68.26,
+        "javascript": 68.3,
         "markdown": 79.05,
         "mdx": 48.86,
         "php": 100.0,
         "prisma": 100.0,
-        "python": 55.17,
-        "rust": 82.09,
+        "python": 48.28,
+        "rust": 82.08,
         "scss": 2.14,
         "shell": 51.85,
-        "typescript": 87.68
+        "typescript": 87.73
       },
-      "resolution_rate": 83.42,
+      "resolution_rate": 83.45,
       "routes": 458,
       "symbols": 205960,
       "unresolved_by_lang_kind": {
@@ -13269,7 +13268,7 @@
         "html.calls": 63,
         "html.imports": 11,
         "html.type_ref": 13,
-        "javascript.calls": 6632,
+        "javascript.calls": 6598,
         "javascript.imports": 6810,
         "javascript.inherits": 32,
         "javascript.type_ref": 8984,
@@ -13277,10 +13276,10 @@
         "markdown.type_ref": 151,
         "mdx.calls": 353,
         "mdx.type_ref": 27,
-        "python.calls": 6,
+        "python.calls": 7,
         "python.imports": 1,
-        "python.type_ref": 6,
-        "rust.calls": 28446,
+        "python.type_ref": 7,
+        "rust.calls": 28463,
         "rust.implements": 215,
         "rust.imports": 2566,
         "rust.inherits": 3,
@@ -13289,12 +13288,12 @@
         "scss.imports": 100,
         "scss.inherits": 1,
         "shell.calls": 13,
-        "typescript.calls": 26150,
+        "typescript.calls": 26068,
         "typescript.implements": 13,
-        "typescript.imports": 241,
+        "typescript.imports": 229,
         "typescript.inherits": 27,
         "typescript.instantiates": 208,
-        "typescript.type_ref": 15571
+        "typescript.type_ref": 15491
       },
       "vendored_files_reclassified": 673
     },

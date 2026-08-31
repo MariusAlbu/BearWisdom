@@ -498,6 +498,7 @@ pub(super) fn extract_python_typed_params_as_symbols(
                 });
 
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: param_idx,
@@ -817,6 +818,7 @@ fn extract_superclass_refs(
             "identifier" => {
                 let name = node_text(&child, source);
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: class_idx,
@@ -838,6 +840,7 @@ fn extract_superclass_refs(
                         .child_by_field_name("object")
                         .map(|o| node_text(&o, source));
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: class_idx,

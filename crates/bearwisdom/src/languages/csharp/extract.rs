@@ -116,6 +116,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                 has_errors: true,
                 demand_contributions: Vec::new(),
                 alias_targets: Vec::new(),
+                declared_modules: Vec::new(),
             }
         }
     };
@@ -304,6 +305,7 @@ pub fn extract(source: &str) -> ExtractionResult {
         has_errors,
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 
@@ -941,6 +943,7 @@ fn extract_constructor_initializer_call(
 
     if let Some(name) = target_name {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: sym_idx,
@@ -1037,6 +1040,7 @@ fn scan_all_type_positions(
             "implicit_object_creation_expression" => {
                 if let Some(type_name) = types::declared_type_for_target_typed_new(child, src) {
                     refs.push(crate::types::ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: attr.source_at(child.start_position().row as u32),
@@ -1146,6 +1150,7 @@ fn emit_csharp_type_ref(
                 && attr.claim(&name, line)
             {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: attr.source_at(line),
@@ -1174,6 +1179,7 @@ fn emit_csharp_type_ref(
                         && attr.claim(&name, line)
                     {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: attr.source_at(line),

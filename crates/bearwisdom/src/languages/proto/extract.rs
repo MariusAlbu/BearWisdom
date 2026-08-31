@@ -181,6 +181,7 @@ fn extract_import(
             None,
         ));
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: idx,
@@ -336,6 +337,7 @@ fn extract_rpc(
     // TypeRef to request type
     if !req_type.is_empty() && !is_primitive(&req_type) {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: idx,
@@ -354,6 +356,7 @@ fn extract_rpc(
     // TypeRef to response type
     if !resp_type.is_empty() && !is_primitive(&resp_type) {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: idx,
@@ -475,6 +478,7 @@ fn extract_field(
     if let Some(t) = type_name {
         if !is_primitive(&t) {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: idx,
@@ -528,6 +532,7 @@ fn extract_map_field(
     if let Some(t) = val_type {
         if !is_primitive(&t) {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: idx,
@@ -608,6 +613,7 @@ fn extract_extend(
     ));
 
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: idx,

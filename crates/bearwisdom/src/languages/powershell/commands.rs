@@ -67,6 +67,7 @@ pub(super) fn extract_command(
         match module {
             Some(module) => {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -86,6 +87,7 @@ pub(super) fn extract_command(
                 // computed path, an interpolated string, ...) — still emit
                 // so the node is covered.
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -105,6 +107,7 @@ pub(super) fn extract_command(
     }
 
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index,
@@ -207,6 +210,7 @@ fn extract_invokation_operator_command(
         return;
     }
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index,
@@ -257,6 +261,7 @@ pub(super) fn visit_for_calls(
             if !name.is_empty() {
                 let module = invokation_module(&child, src);
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: source_idx,

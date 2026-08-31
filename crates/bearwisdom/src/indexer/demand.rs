@@ -224,6 +224,7 @@ mod tests {
 
     fn mk_ref(target: &str, kind: EdgeKind, module: Option<&str>) -> ExtractedRef {
         ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: 0,
@@ -241,6 +242,7 @@ mod tests {
 
     fn mk_ref_with_chain(target: &str, root: &str) -> ExtractedRef {
         ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: 0,
@@ -309,6 +311,7 @@ mod tests {
             component_selectors: Vec::new(),
 
             plugin_flow_emissions: Vec::new(),
+            declared_modules: Vec::new(),
         }
     }
 

@@ -72,6 +72,7 @@ pub(super) fn extract_bare_reexports_via_imports(
                     if !alias.is_empty() && declared_locally {
                         let source_idx = symbols.len().saturating_sub(1);
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: true,
                             source_symbol_index: source_idx,
@@ -146,6 +147,7 @@ pub(super) fn extract_bare_reexports_via_imports(
 
                 let source_idx = symbols.len().saturating_sub(1);
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: true,
                     source_symbol_index: source_idx,
@@ -317,6 +319,7 @@ fn emit_triple_slash_ref(
         _ => value.to_string(),
     };
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,
@@ -431,6 +434,7 @@ pub(super) fn extract_reexports(
                             // the original so the resolver can find it in the
                             // source module. (Unchanged from prior behavior.)
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: true,
                                 source_symbol_index: source_idx,
@@ -511,6 +515,7 @@ pub(super) fn extract_reexports(
 
     if has_wildcard {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: true,
             source_symbol_index: source_idx,

@@ -131,6 +131,7 @@ fn walk_node(
                         generic_params: Vec::new(),
                     });
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,
@@ -179,6 +180,7 @@ fn walk_node(
                         let module =
                             extracted_module.or_else(|| local_open_ctx.map(|m| m.to_string()));
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: sym_idx,
@@ -242,6 +244,7 @@ fn walk_node(
                 let name = first_identifier_in_subtree(cls_node, src);
                 if !name.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,
@@ -268,6 +271,7 @@ fn walk_node(
                     let name = first_identifier_in_subtree(child, src);
                     if !name.is_empty() {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: sym_idx,

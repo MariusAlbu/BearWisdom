@@ -29,6 +29,7 @@ fn sym(name: &str, qname: &str, kind: SymbolKind, parent: Option<usize>) -> Extr
 
 fn type_ref(source_idx: usize, target: &str) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: source_idx,

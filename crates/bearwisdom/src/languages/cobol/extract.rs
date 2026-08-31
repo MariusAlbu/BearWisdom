@@ -139,6 +139,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                 if let Some(copybook) = parse_copy(&stmt_upper_data) {
                     let source_idx = current_para.unwrap_or(0);
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: source_idx,
@@ -230,6 +231,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                 // PERFORM <para-name> [THRU <para-name>] [VARYING ...]
                 if let Some(target) = parse_perform(&stmt_upper) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: source_idx,
@@ -248,6 +250,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                 // CALL '<program>' or CALL "program"
                 if let Some(prog) = parse_call(&stmt_upper) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: source_idx,
@@ -262,6 +265,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                         call_args: Vec::new(),
                     });
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: source_idx,
@@ -280,6 +284,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                 // COPY <copybook>
                 if let Some(copybook) = parse_copy(&stmt_upper) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: source_idx,
@@ -298,6 +303,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                 // GO TO <para-name>
                 if let Some(target) = parse_goto(&stmt_upper) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: source_idx,
@@ -337,6 +343,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                 let source_idx = current_para.unwrap_or(0);
                 if let Some(copybook) = parse_copy(&stmt_upper) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: source_idx,

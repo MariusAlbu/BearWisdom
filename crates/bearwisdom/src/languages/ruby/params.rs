@@ -207,6 +207,7 @@ pub(super) fn extract_rescue(
                             let type_name = node_text(&exc, src);
                             if !type_name.is_empty() {
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index,

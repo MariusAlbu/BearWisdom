@@ -88,6 +88,7 @@ pub fn push_import_refs(
     if opts.emit_line_imports {
         if let Some(mod_path) = &module_path {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: current_symbol_count,
@@ -123,6 +124,7 @@ pub fn push_import_refs(
     if opts.emit_side_effect_fallback && refs.len() == initial_ref_count {
         if let Some(mod_path) = &module_path {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: current_symbol_count,
@@ -153,6 +155,7 @@ fn emit_clause_refs(
             // `import Foo from 'pkg'` — default import.
             "identifier" => {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: true,
                     is_reexport: false,
                     source_symbol_index: sym_idx,
@@ -181,6 +184,7 @@ fn emit_clause_refs(
                         .map(|n| text_of(n, src))
                         .unwrap_or_else(|| text_of(spec, src));
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: true,
                         is_reexport: false,
                         source_symbol_index: sym_idx,
@@ -202,6 +206,7 @@ fn emit_clause_refs(
                 for ns_child in item.children(&mut nc) {
                     if ns_child.kind() == "identifier" {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: true,
                             is_reexport: false,
                             source_symbol_index: sym_idx,
@@ -248,6 +253,7 @@ fn emit_require_clause_ref(
     }
     if !local_name.is_empty() {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: sym_idx,

@@ -109,6 +109,7 @@ fn mk_sym(name: &str, kind: SymbolKind, start_line: u32) -> ExtractedSymbol {
 
 fn mk_call_ref(target: &str, line: u32, byte_offset: u32) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,
@@ -490,6 +491,7 @@ fn flow_type_args_populate_chain_segment() {
     //   findOne at bytes 5..12 (property_identifier: 'findOne')
     let symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs = vec![ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,
@@ -555,6 +557,7 @@ fn flow_bare_call_type_args_populate_segment() {
     //   'const x = ' = 0..10, 'useQuery' = 10..18, '<DogsResp>' = 18..28
     let symbols: Vec<ExtractedSymbol> = vec![mk_sym("x", SymbolKind::Variable, 0)];
     let mut refs = vec![ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,

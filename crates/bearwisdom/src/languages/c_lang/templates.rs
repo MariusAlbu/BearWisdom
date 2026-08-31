@@ -319,6 +319,7 @@ pub(super) fn push_using_decl(
                 let name = node_text(child, src);
                 if !name.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: current_symbol_count,

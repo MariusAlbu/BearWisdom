@@ -219,6 +219,7 @@ fn process_directive(
         };
         if !module_name.is_empty() {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: source_idx,
@@ -265,6 +266,7 @@ fn process_directive(
         };
         if !module_name.is_empty() {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: source_idx,
@@ -336,6 +338,7 @@ fn extract_body_goals(
             continue;
         }
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: source_idx,

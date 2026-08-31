@@ -37,6 +37,7 @@ pub(super) fn extract_calls_from_body(
                     );
                     if !target_name.is_empty() {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -178,6 +179,7 @@ pub(super) fn extract_type_ref_from_swift_type(
     let name = swift_type_name(node, src);
     if !name.is_empty() {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index,
@@ -237,6 +239,7 @@ fn extract_all_type_identifiers(
                     });
                     if !already_emitted {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -353,6 +356,7 @@ pub(super) fn extract_protocol_composition_refs(
         let n = swift_type_name(&child, src);
         if !n.is_empty() {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index,

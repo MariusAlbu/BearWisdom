@@ -126,6 +126,7 @@ fn emit_import_ref(
     };
 
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: current_symbol_count,

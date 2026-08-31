@@ -467,6 +467,7 @@ fn extract_import(
         .to_string();
 
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: source_idx,
@@ -533,6 +534,7 @@ fn extract_call_ref(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<E
     }
 
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: source_idx,
@@ -582,6 +584,7 @@ fn extract_binary_ref(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec
             };
             if !name.is_empty() {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: source_idx,
@@ -610,6 +613,7 @@ fn extract_binary_ref(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec
 
     if !op_text.is_empty() {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: source_idx,

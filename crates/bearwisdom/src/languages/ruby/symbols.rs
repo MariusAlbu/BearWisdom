@@ -89,6 +89,7 @@ pub(super) fn extract_class(
             })
         };
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: idx,
@@ -370,6 +371,7 @@ pub(super) fn extract_call_statement(
                         let name = node_text(&arg, src);
                         if !name.is_empty() {
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index: current_symbol_count.saturating_sub(1),
@@ -403,6 +405,7 @@ pub(super) fn extract_call_statement(
                         let raw = node_text(&arg, src);
                         let assoc_name = raw.trim_start_matches(':').to_string();
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: current_symbol_count.saturating_sub(1),
@@ -429,6 +432,7 @@ pub(super) fn extract_call_statement(
                     if let Some(mname) = method_name.as_deref() {
                         if mname == "new" {
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index: pidx,
@@ -444,6 +448,7 @@ pub(super) fn extract_call_statement(
                             });
                         } else {
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index: pidx,
@@ -461,6 +466,7 @@ pub(super) fn extract_call_statement(
                     }
                 } else if let Some(mname) = method_name.as_deref() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: pidx,
@@ -519,6 +525,7 @@ fn extract_require(
                     (stem, Some(path))
                 };
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: current_symbol_count,

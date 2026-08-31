@@ -778,6 +778,7 @@ pub(super) fn extract_type_inheritance(
                                 };
                                 first = false;
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index: source_idx,
@@ -806,6 +807,7 @@ pub(super) fn extract_type_inheritance(
                     };
                     first = false;
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: source_idx,
@@ -948,6 +950,7 @@ pub(super) fn handle_class_declaration(
             // the extended/implementing type; the reroute normalizes generics.
             let extended = symbols[sym_idx].name.clone();
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: sym_idx,

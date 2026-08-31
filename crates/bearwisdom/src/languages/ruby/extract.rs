@@ -156,6 +156,7 @@ pub(super) fn extract_from_node(
                 let type_name = super::helpers::node_text(&child, src);
                 if !type_name.is_empty() {
                     refs.push(crate::types::ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,
@@ -180,6 +181,7 @@ pub(super) fn extract_from_node(
                 let type_name = super::helpers::node_text(&child, src);
                 if !type_name.is_empty() {
                     refs.push(crate::types::ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,
@@ -247,6 +249,7 @@ fn scan_all_constants(
                 let name = super::helpers::node_text(&child, src);
                 if !name.is_empty() {
                     refs.push(crate::types::ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,
@@ -268,6 +271,7 @@ fn scan_all_constants(
                 let name = full.rsplit("::").next().unwrap_or(&full).to_string();
                 if !name.is_empty() {
                     refs.push(crate::types::ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,

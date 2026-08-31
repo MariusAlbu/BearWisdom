@@ -41,6 +41,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
             has_errors: true,
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
+            declared_modules: Vec::new(),
         };
     };
 
@@ -79,6 +80,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         has_errors: false,
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 

@@ -330,6 +330,7 @@ fn synthesize_file() -> ParsedFile {
         component_selectors: Vec::new(),
 
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 

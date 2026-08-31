@@ -73,13 +73,21 @@ pub fn resolve_with_plugin_refresh(
     if !ext_parsed.is_empty() {
         symbol_id_map.extend(ext_id_map);
         parsed.extend(ext_parsed);
+        // Demand-pulled files can be include fragments (or units carrying
+        // include directives) that the eager include-assembly pass never
+        // saw. Splice them now; a re-parented symbol changes qnames the
+        // tree already ingested, so it forces the same rebuild synthesized
+        // members do. Idempotent over the eager batch.
+        let spliced = crate::indexer::include_assembly::assemble_includes(
+            db, parsed, symbol_id_map,
+        )?;
         plugin_state_phase::populate_post_externals(
             registry, project_ctx, parsed, project_root, None,
         );
         let gained_members = plugin_state_phase::synthesize_and_persist(
             registry, project_ctx, parsed, db, symbol_id_map, arena.as_ref(),
         )?;
-        if gained_members {
+        if gained_members || spliced > 0 {
             let parsed_ref = &*parsed;
             let sid_ref = &*symbol_id_map;
             let pctx_ref = &*project_ctx;

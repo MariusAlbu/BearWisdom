@@ -248,6 +248,7 @@ pub(super) fn extract_instance(
     // Implements edge: this type instance → the type class
     let source_idx = idx;
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: source_idx,
@@ -330,6 +331,7 @@ fn collect_deriving_names(
                 let name = node_text(child, src);
                 if !name.is_empty() && name != "deriving" {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: source_idx,
@@ -507,6 +509,7 @@ pub(super) fn extract_import(
         None => module.rsplit('.').next().unwrap_or(&module).to_string(),
     };
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: source_idx,
@@ -754,6 +757,7 @@ pub(super) fn extract_signature_symbols(
         // from this symbol, so the generic-param bind is observable as an edge.
         for tv in &tyvars {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: idx,

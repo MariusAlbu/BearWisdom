@@ -653,6 +653,7 @@ fn extract_function_call(
                 // Extract the module path
                 if let Some(module_path) = extract_require_arg(node, src) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: source_idx,
@@ -672,6 +673,7 @@ fn extract_function_call(
                 // Emit Calls for setmetatable itself, then Inherits for the parent if
                 // the second arg has `__index = <name>`.
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: source_idx,
@@ -687,6 +689,7 @@ fn extract_function_call(
                 });
                 if let Some(parent) = extract_setmetatable_parent(node, src) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: source_idx,
@@ -703,6 +706,7 @@ fn extract_function_call(
                 }
             } else if !name.is_empty() {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: source_idx,
@@ -722,6 +726,7 @@ fn extract_function_call(
             let method = get_index_field_name(&callee, src);
             if !method.is_empty() {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: source_idx,
@@ -755,6 +760,7 @@ fn extract_function_call(
                     .map(|n| n.start_byte() as u32)
                     .unwrap_or(call_byte_offset);
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: source_idx,
@@ -780,6 +786,7 @@ fn extract_function_call(
                 });
             } else if !method.is_empty() {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: source_idx,

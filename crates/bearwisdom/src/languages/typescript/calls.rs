@@ -26,6 +26,7 @@ pub(super) fn emit_call_ref(
         if !target_name.is_empty() && target_name != "undefined" {
             let call_args = extract_call_args(call_node, src);
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index,
@@ -91,6 +92,7 @@ pub(super) fn emit_new_ref(
             ) {
                 if matches!(name.as_str(), "Queue" | "Worker") {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -107,6 +109,7 @@ pub(super) fn emit_new_ref(
                 }
             }
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index,
@@ -243,6 +246,7 @@ fn emit_config_lookup_ref(
     // target. The flow detector still receives them via the dispatcher's
     // Imports-kind chain branch.
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index,
@@ -362,6 +366,7 @@ pub(super) fn extract_calls(
                     if !target_name.is_empty() && target_name != "undefined" {
                         let call_args = extract_call_args(&child, src);
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -419,6 +424,7 @@ pub(super) fn extract_calls(
                             })
                             .unwrap_or_default();
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -492,6 +498,7 @@ fn emit_arrow_body_member_ref(
         return;
     }
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index,
@@ -540,6 +547,7 @@ pub(super) fn emit_jsx_component_ref(
         .unwrap_or(tag_name);
     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &tag_node, refs);
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index,

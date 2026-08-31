@@ -106,6 +106,7 @@ impl LanguagePlugin for VelocityPlugin {
                                 .unwrap_or(file)
                                 .to_string();
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index: 0,
@@ -132,6 +133,7 @@ impl LanguagePlugin for VelocityPlugin {
             has_errors: false,
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
+            declared_modules: Vec::new(),
         }
     }
     fn embedded_regions(&self, source: &str, _p: &str, _l: &str) -> Vec<EmbeddedRegion> {

@@ -147,6 +147,7 @@ pub(super) fn emit_misparsed_base_class_refs(
                     continue;
                 }
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: source_idx,

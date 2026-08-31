@@ -106,6 +106,7 @@ pub(super) fn extract_class(
                         || base_child.kind() == "identifier"
                     {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: idx,
@@ -140,6 +141,7 @@ pub(super) fn extract_class(
                 if bc.kind() == "qualified_name" || bc.kind() == "name" || bc.kind() == "identifier"
                 {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: idx,
@@ -192,6 +194,7 @@ pub(super) fn extract_interface_list(
             || child.kind() == "identifier"
         {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: class_idx,

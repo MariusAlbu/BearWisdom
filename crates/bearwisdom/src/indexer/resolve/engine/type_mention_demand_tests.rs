@@ -325,6 +325,7 @@ fn external_file(path: &str, symbols: Vec<ExtractedSymbol>) -> ParsedFile {
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 
@@ -334,6 +335,7 @@ fn chain_ref(target: &str, root_name: &str, root_type: Option<&str>) -> Extracte
     let root = segment(root_name, root_type, false);
     let member = segment(target, None, true);
     ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,

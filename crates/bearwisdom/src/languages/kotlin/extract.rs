@@ -595,6 +595,7 @@ fn push_type_decl_alias(
             let target = calls::kotlin_type_name(&child, src);
             if !target.is_empty() {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: idx,
@@ -631,6 +632,7 @@ fn emit_annotation_ref(
 ) {
     if let Some(name) = annotation_type_name(node, src) {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index,
@@ -709,6 +711,7 @@ fn scan_type_refs_inner(
             // but we need the ref emitted for coverage credit at this line.
             if !name.is_empty() {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -745,6 +748,7 @@ fn scan_type_refs_inner(
             let name = calls::kotlin_type_name(&node, src);
             if !name.is_empty() {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -777,6 +781,7 @@ fn scan_type_refs_inner(
         "annotation" | "file_annotation" => {
             if let Some(name) = annotation_name_pub(&node, src) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -823,6 +828,7 @@ fn scan_type_refs_inner(
             }
             if !found_name.is_empty() {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -948,6 +954,7 @@ fn infer_type_from_initializer(
                     };
                     if let Some(name) = type_name {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: sym_idx,
@@ -969,6 +976,7 @@ fn infer_type_from_initializer(
                 let name = node_text(child, src);
                 if name.starts_with(|c: char| c.is_uppercase()) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,

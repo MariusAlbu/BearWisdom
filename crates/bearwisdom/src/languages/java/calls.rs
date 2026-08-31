@@ -250,6 +250,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     if !target_name.is_empty() {
                         let call_args = extract_call_args(&child, src);
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -283,6 +284,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     let name = type_node_simple_name(type_node, src);
                     if !name.is_empty() {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -461,6 +463,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 };
                 if !target.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -558,6 +561,7 @@ fn extract_catch_clause_refs(
                         let name = super::helpers::type_node_simple_name(type_node, src);
                         if !name.is_empty() {
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index,
@@ -626,6 +630,7 @@ fn extract_try_with_resources_refs(
                     let type_name = super::helpers::type_node_simple_name(tn, src);
                     if !type_name.is_empty() {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -668,6 +673,7 @@ fn extract_cast_expression_refs(
         let name = super::helpers::type_node_simple_name(type_node, src);
         if !name.is_empty() && !super::helpers::is_java_primitive(&name) {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index,
@@ -724,6 +730,7 @@ fn extract_method_reference_calls(
     if let Some(name) = method_name {
         if !name.is_empty() && name != "new" {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index,
@@ -757,6 +764,7 @@ fn extract_method_reference_calls(
             let name = node_text(recv, src);
             if !name.is_empty() && !super::helpers::is_java_primitive(&name) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -794,6 +802,7 @@ fn extract_enhanced_for_refs(
         let type_name = super::helpers::type_node_simple_name(tn, src);
         if !type_name.is_empty() && !super::helpers::is_java_primitive(&type_name) {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index,
@@ -845,6 +854,7 @@ fn extract_class_literal_ref(
         let name = super::helpers::type_node_simple_name(child, src);
         if !name.is_empty() && !super::helpers::is_java_primitive(&name) {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index,
@@ -911,6 +921,7 @@ fn extract_instanceof_refs(
     }
 
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index,
@@ -938,6 +949,7 @@ fn extract_instanceof_refs(
                     let var_idx = syms.len();
                     syms.push(make_variable_symbol(var_name, &c, source_symbol_index));
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: var_idx,

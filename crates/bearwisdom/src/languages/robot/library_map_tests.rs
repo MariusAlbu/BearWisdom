@@ -6,6 +6,7 @@ use crate::types::{EdgeKind, ExtractedRef, FlowMeta, ParsedFile};
 
 fn import_ref(target: &str) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,
@@ -50,6 +51,7 @@ fn pf(path: &str, refs: Vec<ExtractedRef>) -> ParsedFile {
         component_selectors: Vec::new(),
 
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 

@@ -167,6 +167,7 @@ fn visit_def_body(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extr
                 // Only emit Calls for user-defined (non-builtin) commands.
                 if !is_cmake_builtin(&name) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: source_idx,
@@ -243,6 +244,7 @@ fn collect_variable_refs(node: Node, src: &str, refs: &mut Vec<ExtractedRef>) {
         // add noise to unresolved-ref counts.
         if !target.is_empty() && !target.contains('}') {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: 0,

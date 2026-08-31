@@ -29,6 +29,7 @@ fn parsed_file(
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 
@@ -56,6 +57,7 @@ fn namespace_symbol(name: &str, parent_index: Option<usize>) -> ExtractedSymbol 
 
 fn uses_ref(source_symbol_index: usize, unit_name: &str) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index,
@@ -208,6 +210,7 @@ fn include_directive_imports_are_excluded_from_uses_clause_units() {
     // it must not leak into the fragment's wildcard list as a fake unit name.
     let mut main = main_unit_file("src/audio/castlesoundengine.pas", "castlesoundengine", &["SysUtils"]);
     main.refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,

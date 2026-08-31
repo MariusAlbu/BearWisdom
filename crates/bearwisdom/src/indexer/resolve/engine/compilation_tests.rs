@@ -48,6 +48,7 @@ fn make_symbol(
 
 fn inherits_ref(source_symbol_index: usize, parent_name: &str) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         source_symbol_index,
         target_name: parent_name.to_string(),
         kind: EdgeKind::Inherits,
@@ -65,6 +66,7 @@ fn inherits_ref(source_symbol_index: usize, parent_name: &str) -> ExtractedRef {
 
 fn type_ref(source_symbol_index: usize, type_name: &str) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         source_symbol_index,
         target_name: type_name.to_string(),
         kind: EdgeKind::TypeRef,
@@ -108,6 +110,7 @@ fn make_parsed_file(
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 
@@ -589,6 +592,7 @@ fn local_var_init_call_types_the_variable_not_the_callee() {
     // The extractor emits BOTH: a chain-bearing TypeRef (target = callee name)
     // AND the call's Calls ref, both attributed to the variable.
     let chain_typeref = ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 1,
@@ -881,6 +885,7 @@ fn reexports_from_returns_empty_for_non_barrel() {
 /// target_name="*", module=Some(pkg) — mirrors how `reexport_map` is fed.
 fn star_reexport(module: &str) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         source_symbol_index: 0,
         target_name: "*".to_string(),
         kind: EdgeKind::Imports,
@@ -900,6 +905,7 @@ fn star_reexport(module: &str) -> ExtractedRef {
 /// entry uses to surface another package's declaration under its own module.
 fn named_reexport(name: &str, module: &str) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         source_symbol_index: 0,
         target_name: name.to_string(),
         kind: EdgeKind::Imports,
@@ -1207,6 +1213,7 @@ fn symbols_in_package_groups_symbols_by_package_id() {
 
 fn typeref_ref(source_symbol_index: usize, target_name: &str) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         source_symbol_index,
         target_name: target_name.to_string(),
         kind: EdgeKind::TypeRef,
@@ -1750,6 +1757,7 @@ fn module_tagged_value_typeref_resolves_to_exported_value_type() {
     // this as a re-export ref carrying the local source name in `target_name`
     // and the exposed name in `namespace_segments[0]`, with no `module`.
     let local_rename = ExtractedRef {
+        is_include: false,
         source_symbol_index: 1,
         target_name: "globalExp".to_string(),
         kind: EdgeKind::Imports,

@@ -179,6 +179,7 @@ fn push_typeref(name_node: Node, src: &[u8], source_idx: usize, refs: &mut Vec<E
         return;
     }
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: source_idx,
@@ -234,6 +235,7 @@ pub(super) fn extract_bases(
                     "type_identifier" => {
                         let name = node_text(base, src);
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: source_idx,
@@ -254,6 +256,7 @@ pub(super) fn extract_bases(
                             if inner.kind() == "type_identifier" {
                                 let name = node_text(inner, src);
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index: source_idx,

@@ -95,6 +95,7 @@ fn extract_type_refs_from_annotation(
             let name = node_text(node, source);
             if !name.is_empty() && name != "None" {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: symbol_idx,
@@ -124,6 +125,7 @@ fn extract_type_refs_from_annotation(
                         .map(|o| node_text(&o, source))
                         .filter(|s| !s.is_empty());
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: symbol_idx,

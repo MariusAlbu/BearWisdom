@@ -293,6 +293,7 @@ fn make_synth(
 /// synthesized symbol list — `parse_file` rebases onto the file table).
 fn return_type_ref(source_symbol_index: usize, type_name: &str, line: u32) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index,

@@ -893,6 +893,7 @@ fn extract_heritage(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<R
                 match n.kind() {
                     "identifier" => {
                         refs.push(Ref {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: source_idx,
@@ -912,6 +913,7 @@ fn extract_heritage(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<R
                         for type_node in n.children(&mut ec) {
                             if type_node.kind() == "identifier" {
                                 refs.push(Ref {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index: source_idx,
@@ -1019,6 +1021,7 @@ fn extract_for_loop_var(
             // pollutes unresolved_refs with no possible resolution target.
             if !target.is_empty() && !is_enclosing_function_parameter(right, src, &target) {
                 refs.push(Ref {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: idx,

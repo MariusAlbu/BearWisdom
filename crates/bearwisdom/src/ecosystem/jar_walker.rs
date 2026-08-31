@@ -438,6 +438,7 @@ fn parsed_class_to_parsed_file(virt_path: String, cls: ParsedClass) -> ParsedFil
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 

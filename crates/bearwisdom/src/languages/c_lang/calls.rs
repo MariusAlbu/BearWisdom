@@ -126,6 +126,7 @@ pub(super) fn extract_calls_from_body(
                         && !is_c_compiler_intrinsic(&target_name)
                     {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -163,6 +164,7 @@ pub(super) fn extract_calls_from_body(
                     let tok = node_text(op, src);
                     if is_overloadable_binary_operator(&tok) {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -183,6 +185,7 @@ pub(super) fn extract_calls_from_body(
 
             "subscript_expression" if language != "c" => {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -240,6 +243,7 @@ pub(super) fn extract_calls_from_body(
                                     let name = node_text(pchild, src);
                                     if !name.is_empty() {
                                         refs.push(ExtractedRef {
+                                            is_include: false,
                                             is_import_binding: false,
                                             is_reexport: false,
                                             source_symbol_index,
@@ -276,6 +280,7 @@ pub(super) fn extract_calls_from_body(
                             let name = node_text(inner, src);
                             if !name.is_empty() {
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index,
@@ -290,6 +295,7 @@ pub(super) fn extract_calls_from_body(
                                     call_args: Vec::new(),
                                 });
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index,
@@ -311,6 +317,7 @@ pub(super) fn extract_calls_from_body(
                                     let name = node_text(name_node, src);
                                     if !name.is_empty() {
                                         refs.push(ExtractedRef {
+                                            is_include: false,
                                             is_import_binding: false,
                                             is_reexport: false,
                                             source_symbol_index,
@@ -325,6 +332,7 @@ pub(super) fn extract_calls_from_body(
                                             call_args: Vec::new(),
                                         });
                                         refs.push(ExtractedRef {
+                                            is_include: false,
                                             is_import_binding: false,
                                             is_reexport: false,
                                             source_symbol_index,
@@ -431,6 +439,7 @@ fn extract_lambda_param_typerefs(
                                 let name = node_text(inner, src);
                                 if !name.is_empty() {
                                     refs.push(ExtractedRef {
+                                        is_include: false,
                                         is_import_binding: false,
                                         is_reexport: false,
                                         source_symbol_index,
@@ -472,6 +481,7 @@ fn extract_catch_typerefs(
                         let name = node_text(inner, src);
                         if !name.is_empty() {
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index,
@@ -493,6 +503,7 @@ fn extract_catch_typerefs(
                             let name = node_text(name_node, src);
                             if !name.is_empty() {
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index,

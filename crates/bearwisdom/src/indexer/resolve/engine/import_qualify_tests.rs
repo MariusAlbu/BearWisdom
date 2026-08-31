@@ -44,6 +44,7 @@ fn make_symbol(
 
 fn import_ref(local: &str, module: &str) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         source_symbol_index: 0,
         target_name: local.to_string(),
         kind: EdgeKind::Imports,
@@ -86,6 +87,7 @@ fn make_parsed_file(
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 

@@ -383,6 +383,7 @@ fn extract_calls(line: &str, line_num: u32, out: &mut Vec<ExtractedRef>) {
             let target = ident.to_string();
 
             out.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: 0,
@@ -881,6 +882,7 @@ fn collect_import_block(lines: &[&str], start: usize) -> (String, usize) {
 /// Parse a fully-collected import statement string into ExtractedRefs.
 fn parse_collected_import(text: &str, line_num: u32, byte_offset: u32) -> Vec<ExtractedRef> {
     let make_ref = |name: String| ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,
@@ -945,6 +947,7 @@ fn parse_collected_export(text: &str, line_num: u32, byte_offset: u32) -> Vec<Ex
     expand_nim_imports(rest)
         .into_iter()
         .map(|module| ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: true,
             source_symbol_index: 0,
@@ -973,6 +976,7 @@ fn parse_include_line(line: &str, line_num: u32, byte_offset: u32) -> Option<Ext
         return None;
     }
     Some(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,

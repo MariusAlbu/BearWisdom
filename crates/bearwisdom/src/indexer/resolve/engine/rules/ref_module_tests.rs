@@ -8,6 +8,7 @@ use crate::types::{EdgeKind, ExtractedRef};
 /// Build an `ExtractedRef` for `target` with `module` set.
 fn module_ref(target: &str, module: &str) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,

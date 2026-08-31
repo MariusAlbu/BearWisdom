@@ -407,6 +407,7 @@ fn build_namespace_parsed_file(named: Vec<NamedSymbol>) -> ParsedFile {
         component_selectors: Vec::new(),
 
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 

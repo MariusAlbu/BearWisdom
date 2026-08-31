@@ -263,6 +263,7 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                     generic_params: Vec::new(),
                 });
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: decl_idx,
@@ -548,6 +549,7 @@ fn extract_struct_body(
                     .map_or(false, |c| c.is_alphanumeric() || c == '_')
             {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: field_idx,
@@ -1051,6 +1053,7 @@ fn extract_call_identifiers(
         if i < bytes.len() && bytes[i] == b'(' {
             if !ZIG_KEYWORDS.contains(&ident) && !is_primitive(ident) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,

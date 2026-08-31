@@ -317,6 +317,7 @@ fn extract_module_block(
     // Look for `source = "..."` attribute in the block body — emit as Imports
     if let Some(source_val) = find_attribute_value(node, src, "source") {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: idx,
@@ -585,6 +586,7 @@ fn extract_reference_chain(
     }
 
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index,
@@ -609,6 +611,7 @@ fn extract_function_call_ref(
 ) {
     if let Some(name) = first_identifier_text(node, src) {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index,

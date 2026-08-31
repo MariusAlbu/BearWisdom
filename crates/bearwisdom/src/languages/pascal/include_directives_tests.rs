@@ -53,4 +53,20 @@ fn extract_include_directives_emits_imports_ref_with_stem_and_line() {
     assert_eq!(refs[0].module.as_deref(), Some("helpers"));
     assert_eq!(refs[0].kind, EdgeKind::Imports);
     assert_eq!(refs[0].line, 1);
+    assert!(
+        refs[0].is_include,
+        "include-directive refs must carry the is_include marker for the \
+         include-assembly pre-pass"
+    );
+}
+
+#[test]
+fn short_form_directive_ref_carries_include_marker() {
+    let src = "unit Foo;\n{$i castlevectors_ops.inc}\n";
+    let mut refs = Vec::new();
+    extract_include_directives(src, &mut refs);
+
+    assert_eq!(refs.len(), 1);
+    assert!(refs[0].is_include);
+    assert_eq!(refs[0].module.as_deref(), Some("castlevectors_ops"));
 }

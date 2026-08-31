@@ -63,6 +63,7 @@ pub(super) fn extract_apply(
             if let Some(target) = fallback {
                 if !target.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -89,6 +90,7 @@ pub(super) fn extract_apply(
         if let Some(arg) = apply_argument(&node) {
             if let Some(p) = extract_path_or_string(arg, src) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -114,6 +116,7 @@ pub(super) fn extract_apply(
         if let Some(arg) = apply_argument(&node) {
             if let Some(p) = extract_path_or_string(arg, src) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -135,6 +138,7 @@ pub(super) fn extract_apply(
 
     // General function application — emit Calls edge.
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index,
@@ -238,6 +242,7 @@ pub(super) fn extract_with(
     if let Some(env_node) = env {
         if let Some(name) = resolve_var_name(env_node, src) {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index,

@@ -117,6 +117,7 @@ fn infer_field_type_from_initializer(
                 return;
             }
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: field_idx,
@@ -146,6 +147,7 @@ fn infer_field_type_from_initializer(
                             continue;
                         }
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: field_idx,

@@ -37,6 +37,10 @@ pub(super) struct FileExports {
     /// `declare global { ... }` names — surfaced separately (pollute the
     /// global namespace regardless of any import).
     pub(super) globals: Vec<String>,
+    /// String-named ambient modules: `declare module '<name>'` → the names
+    /// its body exports (empty for shorthand declarations). The index
+    /// builder registers each declared name as its own module key.
+    pub(super) ambient_modules: Vec<(String, Vec<String>)>,
 }
 
 /// Header-only tree-sitter scan of a TS/TSX/JS source file. Returns a
@@ -91,6 +95,10 @@ pub(crate) fn scan_ts_file_exports(source: &str, language: &str) -> FileExports 
             collect_file_exports(&child, bytes, &mut out, &imports);
         }
     }
+
+    // String-named ambient modules (`declare module 'name'`), each paired
+    // with its body's exported names.
+    out.ambient_modules = super::ts_scan_ambient::scan_ambient_modules(&root, bytes, &imports);
 
     // `declare global { ... }` extraction: tree-sitter-typescript's grammar
     // wraps this inconsistently across minor grammar releases, so fall back
@@ -668,3 +676,7 @@ pub(crate) fn find_named_child<'a>(node: &'a Node<'a>, kinds: &[&str]) -> Option
     }
     None
 }
+
+#[cfg(test)]
+#[path = "ts_scan_tests.rs"]
+mod tests;

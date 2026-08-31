@@ -329,6 +329,7 @@ fn extract_union_type(
     // TypeRef for each member type
     for member in &members {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: idx,
@@ -515,6 +516,7 @@ fn extract_input_value(
 
     if let Some(t) = type_ref {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: idx,
@@ -599,6 +601,7 @@ fn extract_schema_def(
         if child.kind() == "root_operation_type_definition" {
             if let Some(type_name) = resolve_named_type_in_subtree(&child, src) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: idx,
@@ -713,6 +716,7 @@ fn extract_fragment_def(
 
     if let Some(t) = on_type {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: idx,
@@ -741,6 +745,7 @@ fn extract_type_extension(
 ) {
     if let Some(name) = child_name_text(node, src) {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index,
@@ -822,6 +827,7 @@ fn extract_field_def(
 
     if let Some(t) = type_ref {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: idx,
@@ -886,6 +892,7 @@ fn collect_implements_interfaces(
                 if let Some(name) = first_child_of_kind(&child, "name").map(|n| node_text(n, src)) {
                     if !name.is_empty() {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,

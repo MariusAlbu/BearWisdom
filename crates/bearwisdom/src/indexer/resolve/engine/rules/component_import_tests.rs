@@ -128,6 +128,7 @@ impl SymbolLookup for ComponentLookup {
 
 fn calls_ref(target: &str) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,
@@ -315,6 +316,7 @@ fn passes_for_non_calls_edge() {
     let s = vue_sym(8, "MyCard");
     let lookup = ComponentLookup::new().with_sym(s);
     let r = ExtractedRef {
+        is_include: false,
         kind: EdgeKind::TypeRef,
         target_name: "MyCard".to_string(),
         is_import_binding: false,

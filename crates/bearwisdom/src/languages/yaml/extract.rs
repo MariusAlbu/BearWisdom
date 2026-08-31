@@ -136,6 +136,7 @@ fn collect_uses_refs(source: &str, file_path: &str) -> Vec<ExtractedRef> {
             continue;
         }
         out.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: 0,

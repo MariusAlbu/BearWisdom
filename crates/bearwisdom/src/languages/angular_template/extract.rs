@@ -69,6 +69,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
             has_errors: true,
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
+            declared_modules: Vec::new(),
         };
     }
     let Some(tree) = parser.parse(source, None) else {
@@ -80,6 +81,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
             has_errors: true,
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
+            declared_modules: Vec::new(),
         };
     };
 
@@ -93,6 +95,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         has_errors: tree.root_node().has_error(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 
@@ -124,6 +127,7 @@ fn collect_component_refs(
                     // engine's generic module-based external classifier
                     // from mis-treating "app-avatar" as an npm package.
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: host_index,
@@ -194,6 +198,7 @@ fn collect_attribute_directive_refs(
             };
             if let Some(selector) = normalize_attribute_as_directive(raw_attr) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: host_index,

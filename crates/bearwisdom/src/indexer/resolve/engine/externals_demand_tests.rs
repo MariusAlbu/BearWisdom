@@ -62,6 +62,7 @@ fn external_same_name_symbol_does_not_veto_ref_pull() {
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     };
     let mut id_map = HashMap::new();
     id_map.insert(
@@ -79,6 +80,7 @@ fn external_same_name_symbol_does_not_veto_ref_pull() {
     loc.insert("xunit.v3.assert", "Assert", assert_file.clone());
 
     let r = ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,

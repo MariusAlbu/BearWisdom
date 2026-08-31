@@ -66,6 +66,7 @@ impl LanguagePlugin for FreemarkerPlugin {
             has_errors: false,
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
+            declared_modules: Vec::new(),
         }
     }
     fn embedded_regions(&self, source: &str, _p: &str, _l: &str) -> Vec<EmbeddedRegion> {
@@ -184,6 +185,7 @@ fn imports_ref(name: &str, line: u32, byte_offset: u32) -> ExtractedRef {
         .unwrap_or(name)
         .to_string();
     ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,

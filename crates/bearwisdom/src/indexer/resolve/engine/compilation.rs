@@ -678,48 +678,10 @@ impl Compilation {
             tid.field_type_id = Some(type_id);
         }
 
-        // Module-entry map — bare package specifier → the indexed entry file that
-        // re-export following starts from. For each external `ext:<lang>:<pkg>/…`
-        // file key `<pkg>` (scoped packages keep both leading segments); when a
-        // package contributes several files prefer the barrel (non-empty
-        // re-exports), then the shallowest path. Runs after Pass 4 so `reexport_map`
-        // is complete; iterates a sorted list so the pick is reindex-deterministic.
-        fn package_from_ext_path(path: &str) -> Option<&str> {
-            let after_lang = path.strip_prefix("ext:")?.split_once(':')?.1;
-            if after_lang.starts_with('@') {
-                let mut segs = after_lang.splitn(3, '/');
-                let scope = segs.next()?;
-                let name = segs.next()?;
-                Some(&after_lang[..scope.len() + 1 + name.len()])
-            } else {
-                after_lang.split('/').next()
-            }
-        }
-        let mut ext_paths: Vec<&str> = parsed
-            .iter()
-            .map(|pf| pf.path.as_str())
-            .filter(|p| p.starts_with("ext:"))
-            .collect();
-        ext_paths.sort_unstable();
-        for path in ext_paths {
-            let Some(pkg) = package_from_ext_path(path) else {
-                continue;
-            };
-            let has_reexports = self.reexport_map.get(path).is_some_and(|v| !v.is_empty());
-            let depth = path.matches('/').count();
-            let replace = match self.module_entry.get(pkg) {
-                None => true,
-                Some(existing) => {
-                    let ex_has =
-                        self.reexport_map.get(existing).is_some_and(|v| !v.is_empty());
-                    let ex_depth = existing.matches('/').count();
-                    (has_reexports && !ex_has) || (has_reexports == ex_has && depth < ex_depth)
-                }
-            };
-            if replace {
-                self.module_entry.insert(pkg.to_string(), path.to_string());
-            }
-        }
+        // Module-entry map — package entries and declared ambient-module names
+        // key module specifiers to the file re-export following starts from.
+        // Runs after Pass 4 so `reexport_map` is complete. See `module_entry`.
+        super::module_entry::populate(&mut self.module_entry, &self.reexport_map, parsed);
 
         self.module_specifier.file_paths.extend(module_specifier::internal_file_paths(parsed));
 

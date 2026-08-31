@@ -151,6 +151,7 @@ pub fn filter_extraction_to_demand(
         has_errors,
         demand_contributions,
         alias_targets,
+        declared_modules,
     } = result;
 
     // Surviving qualified names for alias_targets pruning (keyed by qname, not
@@ -228,6 +229,9 @@ pub fn filter_extraction_to_demand(
         // demand_contributions carries no symbol index — preserve verbatim.
         demand_contributions,
         alias_targets: new_alias_targets,
+        // Declared ambient-module names carry no symbol index — preserve
+        // verbatim so a demanded declaration file keeps its module keys.
+        declared_modules,
     }
 }
 

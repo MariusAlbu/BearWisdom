@@ -34,6 +34,7 @@ fn empty_parsed(path: &str, language: &str) -> ParsedFile {
         component_selectors: Vec::new(),
 
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 
@@ -56,6 +57,7 @@ fn tilde_prefixed_url_resolves_to_wwwroot() {
 
     let mut host = empty_parsed("src/WebApp/Views/Shared/_Layout.cshtml", "razor");
     host.refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,
@@ -95,6 +97,7 @@ fn cdn_and_absolute_urls_filtered_at_extraction() {
         "//cdn.example.com/vue.js",
     ] {
         host.refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: 0,
@@ -130,6 +133,7 @@ fn relative_url_resolves_against_host_dir() {
 
     let mut host = empty_parsed("pages/index.html", "html");
     host.refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,
@@ -166,6 +170,7 @@ fn already_parsed_file_not_duplicated() {
     let host = {
         let mut pf = empty_parsed("index.html", "html");
         pf.refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: 0,

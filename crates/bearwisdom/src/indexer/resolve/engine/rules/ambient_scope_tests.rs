@@ -10,6 +10,7 @@ use crate::types::EdgeKind;
 fn typed_ref(target: &str, kind: EdgeKind) -> crate::types::ExtractedRef {
     use crate::types::ExtractedRef;
     ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,

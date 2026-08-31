@@ -261,6 +261,7 @@ pub(super) fn extract_calls_from_body(
                         refs,
                     );
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -292,6 +293,7 @@ pub(super) fn extract_calls_from_body(
                         refs,
                     );
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -332,6 +334,7 @@ pub(super) fn extract_calls_from_body(
                 if let Some(cls_node) = cls_node_opt {
                     let cls_name = node_text(&cls_node, src);
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -354,6 +357,7 @@ pub(super) fn extract_calls_from_body(
                     let simple = callee.rsplit('\\').next().unwrap_or(&callee).to_string();
                     let call_args = extract_call_args(&child, src);
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -650,6 +654,7 @@ fn extract_catch_type_refs(
             let simple = name.rsplit('\\').next().unwrap_or(&name).to_string();
             if !simple.is_empty() {
                 refs.push(crate::types::ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -801,6 +806,7 @@ pub(super) fn extract_type_refs_from_php_type(
                 )
             {
                 refs.push(crate::types::ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -975,6 +981,7 @@ pub(super) fn extract_trait_use(
                 None
             };
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: current_symbol_count.saturating_sub(1),

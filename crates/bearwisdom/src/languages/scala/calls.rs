@@ -137,6 +137,7 @@ pub(super) fn extract_calls_from_body(
                     if !target_name.is_empty() {
                         let call_args = extract_call_args(&child, src);
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -167,6 +168,7 @@ pub(super) fn extract_calls_from_body(
                     let target_name = node_text(op, src);
                     if !target_name.is_empty() {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -195,6 +197,7 @@ pub(super) fn extract_calls_from_body(
                             let name = node_text(inner, src);
                             if !name.is_empty() {
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index,
@@ -216,6 +219,7 @@ pub(super) fn extract_calls_from_body(
                             let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
                             if !simple.is_empty() {
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index,
@@ -270,6 +274,7 @@ fn extract_type_refs_from_type_arguments(
                 let name = node_text(child, src);
                 if !name.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -293,6 +298,7 @@ fn extract_type_refs_from_type_arguments(
                 let simple = full.rsplit('.').next().unwrap_or(&full);
                 if !simple.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,

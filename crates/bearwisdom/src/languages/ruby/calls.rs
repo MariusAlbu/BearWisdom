@@ -214,6 +214,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         if let Some(recv) = child.child_by_field_name("receiver") {
                             let recv_text = node_text(&recv, src);
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index,
@@ -253,6 +254,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     );
                     let call_args = extract_call_args(&child, src);
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -289,6 +291,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         let chain = build_chain(&child, src);
                         let call_args = extract_call_args(&child, src);
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -311,6 +314,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             let mname = node_text(&gc, src);
                             if !mname.is_empty() {
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index,
@@ -351,6 +355,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         let chain = build_chain(&child, src);
                         let call_args = extract_call_args(&child, src);
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -480,6 +485,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 let type_name = node_text(&child, src);
                 if !type_name.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -502,6 +508,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 let type_name = node_text(&child, src);
                 if !type_name.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,

@@ -153,6 +153,7 @@ fn extract_with_item(
                             .unwrap_or_default();
                         if !target.is_empty() {
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index: sym_idx,
@@ -349,6 +350,7 @@ pub(super) fn extract_named_expression(
                     .unwrap_or_default();
                 if !target.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,
@@ -524,6 +526,7 @@ fn extract_pattern_refs(
                 let class_name = node_text(&class_node, source);
                 if !class_name.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: enclosing_symbol_index,
@@ -884,6 +887,7 @@ pub(super) fn extract_except_clause(
                 // Skip the `except` keyword itself (though it's usually anonymous).
                 if !name.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: enclosing_symbol_index,
@@ -929,6 +933,7 @@ fn extract_except_type_refs(
             let name = node_text(node, source);
             if !name.is_empty() {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: enclosing_symbol_index,
@@ -949,6 +954,7 @@ fn extract_except_type_refs(
                 let name = node_text(&attr, source);
                 if !name.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: enclosing_symbol_index,
@@ -1003,6 +1009,7 @@ pub(super) fn extract_raise_statement(
                 let name = node_text(&child, source);
                 if !name.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: enclosing_symbol_index,
@@ -1025,6 +1032,7 @@ pub(super) fn extract_raise_statement(
                             let name = node_text(&func, source);
                             if !name.is_empty() {
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index: enclosing_symbol_index,
@@ -1045,6 +1053,7 @@ pub(super) fn extract_raise_statement(
                                 let name = node_text(&attr, source);
                                 if !name.is_empty() {
                                     refs.push(ExtractedRef {
+                                        is_include: false,
                                         is_import_binding: false,
                                         is_reexport: false,
                                         source_symbol_index: enclosing_symbol_index,

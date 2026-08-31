@@ -68,6 +68,7 @@ impl LanguagePlugin for ThymeleafPlugin {
             has_errors: false,
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
+            declared_modules: Vec::new(),
         }
     }
     fn embedded_regions(&self, source: &str, _p: &str, _l: &str) -> Vec<EmbeddedRegion> {

@@ -25,6 +25,7 @@ pub(super) fn extract_attribute_type_refs(
             let name = node_text(child, src);
             if !name.is_empty() {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -124,6 +125,7 @@ fn scan_type_refs_inner(
             if !name.is_empty() {
                 let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -153,6 +155,7 @@ fn scan_type_refs_inner(
                             if first_char.is_uppercase() || name.contains('.') {
                                 let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index,

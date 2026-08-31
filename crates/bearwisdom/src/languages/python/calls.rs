@@ -255,6 +255,7 @@ pub(super) fn extract_calls_from_body(
                 if func_name == "isinstance" {
                     extract_isinstance_type_ref(&child, source, source_symbol_index, refs);
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -305,6 +306,7 @@ pub(super) fn extract_calls_from_body(
                 if let Some(target_name) = target_name {
                     let call_args = extract_call_args(&child, source);
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -380,6 +382,7 @@ fn emit_isinstance_type_node(
             let name = node_text(node, source);
             if !name.is_empty() {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -403,6 +406,7 @@ fn emit_isinstance_type_node(
                     let name = node_text(&child, source);
                     if !name.is_empty() {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -425,6 +429,7 @@ fn emit_isinstance_type_node(
             let name = node_text(node, source);
             if !name.is_empty() {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,

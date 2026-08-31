@@ -549,6 +549,7 @@ pub(super) fn extract_node<'a>(
                 let name = helpers::node_text(child, src);
                 if !name.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,
@@ -592,6 +593,7 @@ fn extract_type_refs_from_type_node(
         let name = helpers::node_text(*type_node, src);
         if !name.is_empty() {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index,
@@ -616,6 +618,7 @@ fn extract_type_refs_from_type_node(
                 let name = helpers::node_text(child, src);
                 if !name.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -655,6 +658,7 @@ fn extract_type_refs_from_type_node(
                 let simple = full.rsplit('.').next().unwrap_or(&full);
                 if !simple.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -716,6 +720,7 @@ fn dispatch_body_node(
                 let target_name = node_text(op, src);
                 if !target_name.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -746,6 +751,7 @@ fn dispatch_body_node(
                 if !target_name.is_empty() {
                     let call_args = calls::extract_call_args(&node, src);
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -771,6 +777,7 @@ fn dispatch_body_node(
                         let name = node_text(inner, src);
                         if !name.is_empty() {
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index,
@@ -791,6 +798,7 @@ fn dispatch_body_node(
                         let simple = full.rsplit('.').next().unwrap_or(&full).to_string();
                         if !simple.is_empty() {
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index,
@@ -838,6 +846,7 @@ fn scan_type_refs_inner(
         let name = helpers::node_text(node, src);
         if !name.is_empty() && !super::predicates::is_scala_primitive_type(&name) {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index,
@@ -903,6 +912,7 @@ fn infer_type_from_value(
                 };
                 if let Some(name) = type_name {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,
@@ -924,6 +934,7 @@ fn infer_type_from_value(
             let name = helpers::node_text(*value_node, src);
             if name.starts_with(|c: char| c.is_uppercase()) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: sym_idx,
@@ -946,6 +957,7 @@ fn infer_type_from_value(
                 let name = helpers::node_text(type_node, src);
                 if name.starts_with(|c: char| c.is_uppercase()) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,

@@ -131,6 +131,7 @@ pub(super) fn push_variable_decl(
                                     let callee = node_text(func, src);
                                     if !callee.is_empty() {
                                         refs.push(ExtractedRef {
+                                            is_include: false,
                                             is_import_binding: false,
                                             is_reexport: false,
                                             source_symbol_index: idx,
@@ -155,6 +156,7 @@ pub(super) fn push_variable_decl(
                                         .unwrap_or_default();
                                     if !target.is_empty() {
                                         refs.push(ExtractedRef {
+                                            is_include: false,
                                             is_import_binding: false,
                                             is_reexport: false,
                                             source_symbol_index: idx,
@@ -181,6 +183,7 @@ pub(super) fn push_variable_decl(
                                 };
                                 if !type_name.is_empty() {
                                     refs.push(ExtractedRef {
+                                        is_include: false,
                                         is_import_binding: false,
                                         is_reexport: false,
                                         source_symbol_index: idx,
@@ -206,6 +209,7 @@ pub(super) fn push_variable_decl(
                                     .unwrap_or_default();
                                 if !target.is_empty() {
                                     refs.push(ExtractedRef {
+                                        is_include: false,
                                         is_import_binding: false,
                                         is_reexport: false,
                                         source_symbol_index: idx,
@@ -239,6 +243,7 @@ pub(super) fn push_variable_decl(
                             // members (map/push/filter/…) resolve through the lib
                             // Array type. Element type is not inferred here.
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index: idx,
@@ -352,6 +357,7 @@ pub(super) fn push_variable_decl(
                                 type_arg_ids: Vec::new(),
                             });
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index: prop_idx,
@@ -485,6 +491,7 @@ pub(super) fn push_variable_decl(
                                     type_arg_ids: Vec::new(),
                                 });
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index: elem_sym_idx,

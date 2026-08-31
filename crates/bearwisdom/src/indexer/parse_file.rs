@@ -212,6 +212,7 @@ fn parse_file_internal(
             alias_targets: Vec::new(),
             component_selectors: Vec::new(),
             plugin_flow_emissions: Vec::new(),
+            declared_modules: Vec::new(),
         });
     }
 
@@ -489,6 +490,7 @@ fn parse_file_internal(
         alias_targets: r.alias_targets,
         component_selectors,
         plugin_flow_emissions,
+        declared_modules: r.declared_modules,
     };
 
     // populate_positions runs against the workspace arena when the caller

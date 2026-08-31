@@ -54,6 +54,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                 if !name.is_empty() {
                     let line_start = line_starts.get(line_no).copied().unwrap_or(0);
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: 0,
@@ -83,6 +84,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         has_errors: false,
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 

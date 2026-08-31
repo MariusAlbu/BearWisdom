@@ -236,6 +236,7 @@ fn extract_field(
     {
         let _ = is_optional;
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: field_index,

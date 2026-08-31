@@ -56,6 +56,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
     let mut refs: Vec<ExtractedRef> = extract_script_refs(source)
         .into_iter()
         .map(|sr| ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: host_index,
@@ -82,6 +83,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
             has_errors: true,
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
+            declared_modules: Vec::new(),
         };
     }
 
@@ -94,6 +96,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
             has_errors: true,
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
+            declared_modules: Vec::new(),
         };
     };
 
@@ -114,6 +117,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         has_errors: tree.root_node().has_error(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 
@@ -175,6 +179,7 @@ fn collect_component_tags(
         if matches!(child.kind(), "element" | "self_closing_element") {
             if let Some((target, byte_offset, line)) = component_tag_ref(&child, source) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: host_index,

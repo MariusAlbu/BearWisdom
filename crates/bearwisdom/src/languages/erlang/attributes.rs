@@ -138,6 +138,7 @@ pub(super) fn extract_behaviour(
         return;
     }
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index,
@@ -196,6 +197,7 @@ pub(super) fn extract_import_attr(
         }
         let target = format!("{}/{}", fun_name, arity_str);
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index,
@@ -216,6 +218,7 @@ pub(super) fn extract_import_attr(
     // to a single module-level import so the resolver can still wildcard-match.
     if !emitted {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index,
@@ -260,6 +263,7 @@ pub(super) fn extract_include(
 
     if !file.is_empty() {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index,

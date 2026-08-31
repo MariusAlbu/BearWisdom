@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 use once_cell::sync::Lazy;
 
 use super::assembly_cache::{AssemblyCache, DEFAULT_BUDGET};
+use super::clr_projection::SourceNameProjection;
 use super::dll_metadata::extract_type_from_assembly;
 
 /// A request to crack one type out of a DLL, sent to the dedicated dotscope
@@ -58,8 +59,12 @@ static DOTSCOPE_TX: Lazy<Mutex<std::sync::mpsc::Sender<DotscopeMsg>>> = Lazy::ne
     std::thread::Builder::new()
         .name("bw-dotscope".into())
         .spawn(move || {
-            let mut cache: AssemblyCache<Arc<dotscope::prelude::CilObject>> =
-                AssemblyCache::new(DEFAULT_BUDGET);
+            // The projection is built once per parsed assembly and cached with
+            // it — the raw CustomAttribute table is scanned once, not per
+            // cracked type.
+            let mut cache: AssemblyCache<
+                Arc<(dotscope::prelude::CilObject, SourceNameProjection)>,
+            > = AssemblyCache::new(DEFAULT_BUDGET);
             while let Ok(msg) = rx.recv() {
                 let req = match msg {
                     DotscopeMsg::Flush => {
@@ -68,11 +73,16 @@ static DOTSCOPE_TX: Lazy<Mutex<std::sync::mpsc::Sender<DotscopeMsg>>> = Lazy::ne
                     }
                     DotscopeMsg::Crack(req) => req,
                 };
-                let assembly = cache
-                    .get_or_load(&req.dll_path, |p| load_assembly(p).map(|a| (Arc::new(a), 1)));
-                let result = assembly.and_then(|asm| {
+                let assembly = cache.get_or_load(&req.dll_path, |p| {
+                    load_assembly(p).map(|a| {
+                        let projection = SourceNameProjection::from_assembly(&a);
+                        (Arc::new((a, projection)), 1)
+                    })
+                });
+                let result = assembly.and_then(|entry| {
                     extract_type_from_assembly(
-                        &asm,
+                        &entry.0,
+                        &entry.1,
                         &req.qualified_type,
                         &req.lang_id,
                         &req.virtual_path,

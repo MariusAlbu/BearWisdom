@@ -68,6 +68,7 @@ fn emit_attribute(
 ) {
     if let Some(name) = attribute_name(node, src) {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index,
@@ -208,6 +209,7 @@ fn extract_binding_pattern_type(
                         Some(node_text(child, src))
                     } {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -297,6 +299,7 @@ fn extract_pattern_type_refs(
                 if child.kind() == "user_type" {
                     if let Some(name) = name_from_user_type(&child, src) {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -315,6 +318,7 @@ fn extract_pattern_type_refs(
                     let name = node_text(child, src);
                     if !name.is_empty() && name != "is" {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -339,6 +343,7 @@ fn extract_pattern_type_refs(
                 for inner in rhs.children(&mut nc) {
                     if inner.kind() == "simple_identifier" {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -400,6 +405,7 @@ pub(super) fn extract_extension_conformances(
                         if inner.kind() == "user_type" {
                             if let Some(name) = name_from_user_type(&inner, src) {
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index,

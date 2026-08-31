@@ -44,6 +44,7 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
         if let Some((var_name, dotnet_type)) = binding {
             if is_dotnet_type_name(&dotnet_type) && emitted_vars.insert(var_name.clone()) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: 0,
@@ -69,6 +70,7 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
                 let key = registry_var.to_string();
                 if emitted_vars.insert(key.clone()) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: 0,
@@ -91,6 +93,7 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
         // System.Windows.UIElement. One sentinel per file is enough.
         if line.contains("$_.") && emitted_vars.insert("_".to_string()) {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: 0,
@@ -112,6 +115,7 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
         if let Some(tag) = try_parse_cmdlet_result_chain(line) {
             if emitted_vars.insert(tag.clone()) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: 0,
@@ -143,6 +147,7 @@ pub(super) fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<Extract
                     .any(|v| *v == rhs_root.as_str());
             if bound && emitted_vars.insert(lhs.clone()) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: 0,

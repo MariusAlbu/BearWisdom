@@ -142,6 +142,7 @@ fn extract_resource_declaration(
     if let Some(type_str) = res_type {
         if is_valid_resource_type_string(&type_str) {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: idx,
@@ -196,6 +197,7 @@ fn extract_module_declaration(
     // Emit an Imports edge for the module path.
     if let Some(path) = module_path {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: idx,
@@ -382,6 +384,7 @@ fn extract_import_statement(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>
     // The import path is a string literal child.
     if let Some(path) = find_string_literal(node, src) {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: 0,
@@ -401,6 +404,7 @@ fn extract_import_statement(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>
 fn extract_using_statement(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
     if let Some(path) = find_string_literal(node, src) {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: 0,
@@ -432,6 +436,7 @@ fn extract_calls_in_subtree(
             let name = node_text(func, src);
             if is_valid_call_target(&name) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: source_idx,
@@ -454,6 +459,7 @@ fn extract_calls_in_subtree(
                     let name = node_text(child, src);
                     if is_valid_call_target(&name) {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: source_idx,
@@ -636,6 +642,7 @@ fn collect_all_call_expressions(node: Node, src: &str, refs: &mut Vec<ExtractedR
         };
         if is_valid_call_target(&name) {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: 0,

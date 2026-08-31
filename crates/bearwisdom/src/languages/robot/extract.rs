@@ -200,6 +200,7 @@ fn extract_settings_line(
                 let t = target.trim().to_string();
                 if !t.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: source_idx,
@@ -323,6 +324,7 @@ fn emit_keyword_call(
         (None, keyword_name.to_string())
     };
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: source_idx,
@@ -434,6 +436,7 @@ fn extract_keyword_invocation(
     };
 
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: source_idx,

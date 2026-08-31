@@ -347,6 +347,7 @@ fn scan_type_refs_inner(
                 .to_string();
             if !name.is_empty() && !is_php_primitive(&name) {
                 refs.push(crate::types::ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -372,6 +373,7 @@ fn scan_type_refs_inner(
                 .to_string();
             if !name.is_empty() && !is_php_primitive(&name) {
                 refs.push(crate::types::ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -419,6 +421,7 @@ fn scan_type_refs_inner(
                         .to_string();
                     if !name.is_empty() && !is_php_primitive(&name) {
                         refs.push(crate::types::ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,

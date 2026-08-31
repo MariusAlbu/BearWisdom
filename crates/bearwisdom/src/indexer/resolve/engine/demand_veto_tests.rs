@@ -61,6 +61,7 @@ fn internal_file(path: &str, language: &str, symbols: Vec<ExtractedSymbol>) -> P
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 
@@ -98,6 +99,7 @@ fn tree_with_ecosystems(files: &[ParsedFile], active: Vec<EcosystemId>) -> Compi
 
 fn ref_named(target: &str, kind: EdgeKind) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,

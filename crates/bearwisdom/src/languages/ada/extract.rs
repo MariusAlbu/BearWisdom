@@ -75,6 +75,7 @@ fn link_types_and_chains(symbols: &[ExtractedSymbol], refs: &mut Vec<ExtractedRe
             continue;
         };
         type_refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: idx,
@@ -591,6 +592,7 @@ fn walk_node(
             if let (Some(alias), Some(target)) = (alias_name, target_module) {
                 if !alias.is_empty() && !target.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,
@@ -631,6 +633,7 @@ fn walk_node(
                         let name = text(child, src);
                         if !name.is_empty() {
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index: sym_idx,
@@ -651,6 +654,7 @@ fn walk_node(
                         let name = text(child, src);
                         if !name.is_empty() {
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index: sym_idx,
@@ -684,6 +688,7 @@ fn walk_node(
                     let name = call_target_text(name_node, src);
                     if !name.is_empty() {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: sym_idx,

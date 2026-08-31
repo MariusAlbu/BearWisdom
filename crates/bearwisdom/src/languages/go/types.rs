@@ -159,6 +159,7 @@ fn emit_alias_head_ref(
     }
 
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index,
@@ -437,6 +438,7 @@ fn extract_field_declaration(
         if !et.is_empty() {
             // Emit Inherits edge from the struct (parent_index) to the embedded type.
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: parent_index.unwrap_or(0),
@@ -538,6 +540,7 @@ fn emit_type_refs_from_subtree(
             let name = node_text(node, source);
             if !name.is_empty() && !is_go_builtin_type(&name) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -567,6 +570,7 @@ fn emit_type_refs_from_subtree(
             if let Some((package, name)) = parts {
                 if !name.is_empty() && !is_go_builtin_type(&name) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,

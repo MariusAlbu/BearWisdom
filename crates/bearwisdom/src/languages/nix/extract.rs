@@ -111,6 +111,7 @@ fn visit_expr(
             let name = resolve_call_name(node, src).unwrap_or_else(|| node_text(node, src));
             if !name.is_empty() {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: source_idx,
@@ -355,6 +356,7 @@ pub(super) fn extract_value_refs(
             let name = resolve_call_name(node, src).unwrap_or_else(|| node_text(node, src));
             if !name.is_empty() {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -403,6 +405,7 @@ pub(super) fn extract_value_refs(
             // bind a dotted target whose head is this binding (`l.mkOption`).
             if let Some(name) = resolve_call_name(node, src) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,

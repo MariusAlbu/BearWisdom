@@ -259,3 +259,67 @@ fn cross_package_reexport_alias_tracks_a_rename() {
     assert_eq!(target_file, lib.join("index.d.ts").as_path());
     assert_eq!(target_name, "Orig");
 }
+
+#[test]
+fn ambient_declare_module_names_resolve_under_the_declared_key() {
+    // A `.d.ts` entry declaring `declare module 'scheme:thing'` registers the
+    // declared literal as its own module key: the specifier users import is
+    // that literal, not the declaring package's name. Inner names locate
+    // under the declared key and the module entry points at the declaring
+    // file so demand can materialize it.
+    let tmp = tempfile::TempDir::new().unwrap();
+    let nm = tmp.path().join("node_modules");
+    let root = write_pkg(
+        &nm,
+        "types-pkg",
+        "types-pkg",
+        "declare module 'scheme:thing' {\n  export function inner(): void;\n}\n",
+    );
+    let entry = root.join("index.d.ts");
+
+    let dep = mkdep(root, "types-pkg");
+    let idx = build_npm_symbol_index(std::slice::from_ref(&dep));
+
+    assert_eq!(
+        idx.locate("scheme:thing", "inner"),
+        Some(entry.as_path()),
+        "inner exported names must locate under the declared module key"
+    );
+    assert_eq!(
+        idx.module_entry("scheme:thing"),
+        Some(entry.as_path()),
+        "the declared name must get a module-entry key at the declaring file"
+    );
+}
+
+#[test]
+fn subpath_export_entry_gets_a_module_entry_key() {
+    // A package publishing `./test` in its `exports` map (the
+    // `playwright/test` shape) must key the full deep specifier so a ref
+    // tagged with it materializes the subpath's own entry file.
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path().join("node_modules").join("runner-pkg");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(
+        root.join("package.json"),
+        r#"{"name":"runner-pkg","version":"1.0.0","types":"index.d.ts","exports":{".":{"types":"./index.d.ts"},"./test":{"types":"./test.d.ts"}}}"#,
+    )
+    .unwrap();
+    std::fs::write(root.join("index.d.ts"), "export declare const version: string;\n").unwrap();
+    let sub_entry = root.join("test.d.ts");
+    std::fs::write(&sub_entry, "export declare function test(name: string): void;\n").unwrap();
+
+    let dep = mkdep(root.clone(), "runner-pkg");
+    let idx = build_npm_symbol_index(std::slice::from_ref(&dep));
+
+    assert_eq!(
+        idx.module_entry("runner-pkg/test"),
+        Some(sub_entry.as_path()),
+        "the subpath specifier must key the subpath's entry file"
+    );
+    assert_eq!(
+        idx.module_entry("runner-pkg"),
+        Some(root.join("index.d.ts").as_path()),
+        "the `.` entry key stays untouched"
+    );
+}

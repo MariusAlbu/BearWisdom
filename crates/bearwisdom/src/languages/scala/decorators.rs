@@ -59,6 +59,7 @@ fn emit_annotation(
     if let Some(name) = annotation_name(node, src) {
         let first_arg = extract_first_string_arg(node, src);
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index,
@@ -217,6 +218,7 @@ fn extract_pattern_refs(
             if let Some(type_node) = node.child_by_field_name("type") {
                 if let Some(name) = extract_type_name(&type_node, src) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -241,6 +243,7 @@ fn extract_pattern_refs(
                     "type_identifier" | "stable_type_identifier" | "generic_type" => {
                         if let Some(name) = extract_type_name(&child, src) {
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index,

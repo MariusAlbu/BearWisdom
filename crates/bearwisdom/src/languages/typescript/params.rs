@@ -321,6 +321,7 @@ pub(super) fn extract_for_loop_var(
             );
         if !target.is_empty() && !shadowed {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: idx,
@@ -346,6 +347,7 @@ pub(super) fn extract_for_loop_var(
         );
         if !target.is_empty() && !shadowed {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: idx,

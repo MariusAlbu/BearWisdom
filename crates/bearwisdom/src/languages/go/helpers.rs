@@ -163,6 +163,7 @@ pub(super) fn extract_function_type_refs(
                                 {
                                     if !name.is_empty() && !is_go_builtin_type(&name) {
                                         refs.push(crate::types::ExtractedRef {
+                                            is_include: false,
                                             is_import_binding: false,
                                             is_reexport: false,
                                             source_symbol_index,
@@ -187,6 +188,7 @@ pub(super) fn extract_function_type_refs(
                             {
                                 if !name.is_empty() && !is_go_builtin_type(&name) {
                                     refs.push(crate::types::ExtractedRef {
+                                        is_include: false,
                                         is_import_binding: false,
                                         is_reexport: false,
                                         source_symbol_index,

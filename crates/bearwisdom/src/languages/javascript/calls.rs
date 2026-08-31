@@ -38,6 +38,7 @@ pub(super) fn extract_calls(
                     if callee == "require" {
                         if let Some(module) = extract_require_path(&child, src) {
                             refs.push(Ref {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index,
@@ -57,6 +58,7 @@ pub(super) fn extract_calls(
                     else if callee == "import" {
                         if let Some(module) = extract_first_string_arg(&child, src) {
                             refs.push(Ref {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index,
@@ -95,6 +97,7 @@ pub(super) fn extract_calls(
                             );
                             let call_args = extract_call_args(&child, src);
                             refs.push(Ref {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index,
@@ -121,6 +124,7 @@ pub(super) fn extract_calls(
                     if !name.is_empty() {
                         let call_args = extract_call_args(&child, src);
                         refs.push(Ref {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -157,6 +161,7 @@ pub(super) fn extract_calls(
                             })
                             .unwrap_or_default();
                         refs.push(Ref {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -212,6 +217,7 @@ pub(super) fn extract_calls(
                             refs,
                         );
                         refs.push(Ref {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -311,6 +317,7 @@ pub(super) fn emit_call_ref_js(
     if callee == "require" {
         if let Some(module) = extract_require_path(call_node, src) {
             refs.push(Ref {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index,
@@ -328,6 +335,7 @@ pub(super) fn emit_call_ref_js(
     } else if callee == "import" {
         if let Some(module) = extract_first_string_arg(call_node, src) {
             refs.push(Ref {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index,
@@ -366,6 +374,7 @@ pub(super) fn emit_call_ref_js(
         crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
         let call_args = extract_call_args(call_node, src);
         refs.push(Ref {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index,
@@ -556,6 +565,7 @@ pub(super) fn emit_new_ref_js(
     if !name.is_empty() {
         let call_args = extract_call_args(new_node, src);
         refs.push(Ref {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index,

@@ -45,6 +45,7 @@ pub(super) fn extract_normal_command(
     // for them produces unresolved noise against the project symbol index.
     if !is_cmake_builtin(&cmd) {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: sym_idx,
@@ -454,6 +455,7 @@ fn extract_include_command(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>)
         None => return,
     };
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,
@@ -489,6 +491,7 @@ fn extract_find_package_command(
         None => return,
     };
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,
@@ -558,6 +561,7 @@ fn extract_add_subdirectory_command(node: &Node, src: &str, refs: &mut Vec<Extra
         None => return,
     };
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,
@@ -622,6 +626,7 @@ fn extract_target_link_libraries(
             EdgeKind::Calls
         };
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: target_idx,
@@ -771,6 +776,7 @@ pub(super) fn collect_all_normal_commands(
             // Only emit Calls ref for user-defined (non-builtin) commands.
             if !is_cmake_builtin(&cmd) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: sym_idx,

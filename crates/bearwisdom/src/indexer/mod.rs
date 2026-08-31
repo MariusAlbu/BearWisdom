@@ -17,6 +17,7 @@ mod flow_tests;
 pub mod ext_virtual_path;
 pub mod full;
 mod full_resolve_phase;
+pub mod include_assembly;
 pub mod incremental;
 pub mod keywords;
 pub mod local_refs;

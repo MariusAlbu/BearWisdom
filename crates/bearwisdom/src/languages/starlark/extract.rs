@@ -229,6 +229,7 @@ fn extract_assignment(
                     };
                     let sym_idx = parent_idx.unwrap_or(idx);
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,
@@ -358,6 +359,7 @@ fn extract_call(node: Node, src: &[u8], refs: &mut Vec<ExtractedRef>, parent_idx
             };
 
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: sym_idx,
@@ -471,6 +473,7 @@ fn extract_load_refs(call_node: Node, src: &[u8], sym_idx: usize, refs: &mut Vec
             return;
         }
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: sym_idx,
@@ -506,6 +509,7 @@ fn extract_load_refs(call_node: Node, src: &[u8], sym_idx: usize, refs: &mut Vec
             };
             if !sym.is_empty() {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: sym_idx,

@@ -8,6 +8,7 @@
 mod alias_classify;
 mod alias_type_text;
 mod alias_union;
+mod ambient_modules;
 mod annotation_members;
 mod annotation_named_type;
 mod calls;

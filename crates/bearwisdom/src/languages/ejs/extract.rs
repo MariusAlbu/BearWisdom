@@ -47,6 +47,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         has_errors: false,
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 
@@ -129,6 +130,7 @@ fn collect_include_refs(source: &str) -> Vec<ExtractedRef> {
         if !target.is_empty() {
             let line = line_at(bytes, absolute);
             out.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: 0,

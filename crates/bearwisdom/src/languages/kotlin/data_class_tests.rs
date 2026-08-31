@@ -319,6 +319,7 @@ fn copy_return_ref_enables_chain_resolution() {
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     };
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();

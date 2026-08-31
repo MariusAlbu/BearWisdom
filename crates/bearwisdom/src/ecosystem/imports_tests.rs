@@ -3,6 +3,7 @@ use crate::types::ExtractedRef;
 
 fn typeref(target: &str) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,
@@ -72,6 +73,7 @@ fn renamed_named_import_substitutes_target() {
     // import { foo as bar } from 'pkg'; ... bar() — ref carries
     // target_name="bar", needs to become "foo".
     let mut refs = vec![ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,
@@ -107,6 +109,7 @@ fn unmapped_target_left_alone() {
 #[test]
 fn already_canonicalized_skipped() {
     let mut refs = vec![ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,

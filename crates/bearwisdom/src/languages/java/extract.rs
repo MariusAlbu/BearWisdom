@@ -89,6 +89,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                 has_errors: true,
                 demand_contributions: Vec::new(),
                 alias_targets: Vec::new(),
+                declared_modules: Vec::new(),
             }
         }
     };
@@ -622,6 +623,7 @@ fn scan_all_type_identifiers(
                 let name = helpers::node_text(child, src);
                 if !name.is_empty() && !is_java_primitive_type(&name) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,
@@ -642,6 +644,7 @@ fn scan_all_type_identifiers(
                 let name = helpers::type_node_simple_name(child, src);
                 if !name.is_empty() && !is_java_primitive_type(&name) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,

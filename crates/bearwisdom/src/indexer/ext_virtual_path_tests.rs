@@ -401,3 +401,64 @@ fn pascal_pulled_non_layout_path_falls_through() {
     let abs = Path::new("/some/where/else/foo.pas");
     assert_eq!(virtual_path_for_pulled(abs, "pascal"), None);
 }
+
+#[test]
+fn python_pulled_site_packages_file_matches_eager_walker_shape() {
+    // A demand-pulled site-packages file must reconstruct the eager pypi
+    // walker's `ext:py:<pkg>/<rel>` virtual path, so the `already_walked`
+    // dedupe recognizes a re-pulled file and `ExtMatch::PkgSegment` reads
+    // the package name back out.
+    let abs = Path::new(r"C:\proj\.venv\Lib\site-packages\requests\api.py");
+    assert_eq!(
+        virtual_path_for_pulled(abs, "python").as_deref(),
+        Some("ext:py:requests/api.py"),
+    );
+}
+
+#[test]
+fn python_pulled_site_packages_single_file_module_keys_on_its_stem() {
+    let abs = Path::new("/usr/lib/python3.12/site-packages/six.py");
+    assert_eq!(
+        virtual_path_for_pulled(abs, "python").as_deref(),
+        Some("ext:py:six/six.py"),
+    );
+}
+
+#[test]
+fn python_pulled_stdlib_single_file_module_keys_on_its_stem() {
+    // `Lib/typing.py` — the top module is the file stem for single-file
+    // stdlib modules.
+    let abs = Path::new(r"C:\Python312\Lib\typing.py");
+    assert_eq!(
+        virtual_path_for_pulled(abs, "python").as_deref(),
+        Some("ext:py:typing/typing.py"),
+    );
+}
+
+#[test]
+fn python_pulled_stdlib_package_file_keys_on_its_top_dir() {
+    let abs = Path::new(r"C:\Python312\Lib\email\mime\text.py");
+    assert_eq!(
+        virtual_path_for_pulled(abs, "python").as_deref(),
+        Some("ext:py:email/mime/text.py"),
+    );
+}
+
+#[test]
+fn python_pulled_venv_site_packages_wins_over_the_lib_marker() {
+    // A Windows venv nests `Lib/site-packages/` — the site-packages arm must
+    // win so the package segment is the import root, not `site-packages`.
+    let abs = Path::new(r"C:\proj\.venv\Lib\site-packages\sqlalchemy\orm\session.py");
+    assert_eq!(
+        virtual_path_for_pulled(abs, "python").as_deref(),
+        Some("ext:py:sqlalchemy/orm/session.py"),
+    );
+}
+
+#[test]
+fn python_pulled_non_layout_path_falls_through() {
+    // Neither `/site-packages/` nor `/Lib/` present — caller falls back to
+    // `ext:idx:`.
+    let abs = Path::new("/some/where/else/foo.py");
+    assert_eq!(virtual_path_for_pulled(abs, "python"), None);
+}

@@ -170,6 +170,7 @@ fn extract_class(
                 let target = node_text(&sc_child, src).to_string();
                 if !target.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: class_idx,
@@ -366,6 +367,7 @@ fn extract_type_list_refs(
                 let name = node_text(&child, src).to_string();
                 if !name.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: source_idx,
@@ -613,6 +615,7 @@ fn extract_import(
     };
 
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index,
@@ -670,6 +673,7 @@ pub(super) fn extract_call(
     let call_args = extract_call_args(node, src);
 
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index,

@@ -175,6 +175,7 @@ fn collect_link_refs(
                                 let col_bytes: u32 =
                                     chars[..i].iter().map(|c| c.len_utf8() as u32).sum();
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index: host_index,

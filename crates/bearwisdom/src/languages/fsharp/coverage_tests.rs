@@ -239,10 +239,15 @@ fn symbol_import_decl() {
 fn ref_application_expression() {
     let r = extract("module M\nlet bar x = String.length x\nlet dummy y = y");
     assert!(
-        r.refs
-            .iter()
-            .any(|rf| rf.target_name == "String.length" && rf.kind == EdgeKind::Calls),
-        "expected Calls String.length from application_expression; got {:?}",
+        r.refs.iter().any(|rf| {
+            rf.target_name == "length"
+                && rf.kind == EdgeKind::Calls
+                && rf
+                    .chain
+                    .as_ref()
+                    .is_some_and(|c| c.segments.first().is_some_and(|s| s.name == "String"))
+        }),
+        "expected Calls `length` chained on root `String`; got {:?}",
         r.refs
             .iter()
             .map(|rf| (&rf.target_name, rf.kind))
@@ -709,7 +714,16 @@ fn capitalized_dotted_value_ref_emits_once() {
     let dotted = r
         .refs
         .iter()
-        .filter(|f| f.kind == EdgeKind::Calls && f.target_name == "Option.None")
+        .filter(|f| {
+            f.kind == EdgeKind::Calls
+                && f.target_name == "None"
+                && f.chain
+                    .as_ref()
+                    .is_some_and(|c| c.segments.first().is_some_and(|s| s.name == "Option"))
+        })
         .count();
-    assert_eq!(dotted, 1, "capitalized dotted value ref emits exactly once");
+    assert_eq!(
+        dotted, 1,
+        "capitalized dotted value ref emits exactly one chained ref"
+    );
 }

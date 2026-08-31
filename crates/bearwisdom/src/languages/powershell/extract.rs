@@ -161,6 +161,7 @@ fn visit(
                 if !name.is_empty() {
                     let module = invokation_module(&child, src);
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: source_idx,
@@ -327,6 +328,7 @@ fn extract_class(
                     let base = node_text(&child, src).to_string();
                     if !base.is_empty() {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: class_idx,
@@ -532,6 +534,7 @@ fn extract_using(node: &Node, src: &str, source_symbol_index: usize, refs: &mut 
 
     if !target.is_empty() {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index,
@@ -735,6 +738,7 @@ fn extract_member_access(
         }
 
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index,

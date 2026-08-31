@@ -25,11 +25,17 @@ mod keywords_tests;
 pub use profile::FSHARP_PROFILE;
 mod applications;
 pub mod extract;
+mod members;
+mod module_header;
 mod type_defs;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
+
+#[cfg(test)]
+#[path = "extract_tests.rs"]
+mod extract_tests;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;

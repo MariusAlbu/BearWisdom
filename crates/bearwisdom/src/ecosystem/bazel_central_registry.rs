@@ -1243,6 +1243,7 @@ pub fn synth_ctx_api() -> ParsedFile {
         component_selectors: Vec::new(),
 
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 
@@ -1318,6 +1319,7 @@ pub fn synth_env_api() -> ParsedFile {
         component_selectors: Vec::new(),
 
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 
@@ -1401,6 +1403,7 @@ pub fn synth_builtin_rules() -> ParsedFile {
         component_selectors: Vec::new(),
 
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 

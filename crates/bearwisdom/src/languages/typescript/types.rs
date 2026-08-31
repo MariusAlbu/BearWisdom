@@ -31,6 +31,7 @@ pub(super) fn extract_type_ref_from_annotation(
         "type_identifier" | "identifier" | "predefined_type" => {
             let type_name = node_text(type_node, src);
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index,
@@ -53,6 +54,7 @@ pub(super) fn extract_type_ref_from_annotation(
                 let base_name = node_text(name, src);
                 // Emit base type ref (for edge resolution to the type itself).
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -98,6 +100,7 @@ pub(super) fn extract_type_ref_from_annotation(
                                 };
                                 if !arg_name.is_empty() {
                                     refs.push(ExtractedRef {
+                                        is_include: false,
                                         is_import_binding: false,
                                         is_reexport: false,
                                         source_symbol_index,
@@ -133,6 +136,7 @@ pub(super) fn extract_type_ref_from_annotation(
             // same way `import { Readable } from 'node:stream'` does.
             if let Some((module, ty)) = parse_import_type_expression(&type_name) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -149,6 +153,7 @@ pub(super) fn extract_type_ref_from_annotation(
                 return;
             }
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index,
@@ -223,6 +228,7 @@ pub(super) fn extract_type_ref_from_annotation(
             // field_type derivation roots member calls (map/filter/forEach/…) on
             // Array; the element type follows and lands in type_args.
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index,
@@ -338,6 +344,7 @@ pub(super) fn extract_type_ref_from_annotation(
         "lookup_type" => {
             if let Some((module, key)) = import_lookup_type_parts(&type_node, src) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -365,6 +372,7 @@ pub(super) fn extract_type_ref_from_annotation(
             // type referring to its default export).
             if let Some(module) = import_type_query_module(&type_node, src) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -385,6 +393,7 @@ pub(super) fn extract_type_ref_from_annotation(
                 let name = node_text(expr, src);
                 if !name.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -407,6 +416,7 @@ pub(super) fn extract_type_ref_from_annotation(
                             let name = node_text(child, src);
                             if !name.is_empty() {
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index,
@@ -507,6 +517,7 @@ pub(super) fn extract_type_ref_from_annotation(
         "call_expression" => {
             if let Some(module) = import_call_module(&type_node, src) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -561,6 +572,7 @@ pub(super) fn extract_type_refs_recursive(
             let name = node_text(*node, src);
             if !name.is_empty() && !is_ts_primitive(&name) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -620,6 +632,7 @@ pub(super) fn extract_type_refs_recursive(
                             let name = node_text(child, src);
                             if !name.is_empty() && !is_ts_primitive(&name) {
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index,

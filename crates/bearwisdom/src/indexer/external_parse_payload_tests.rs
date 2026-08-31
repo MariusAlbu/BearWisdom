@@ -54,6 +54,7 @@ fn sample() -> (ParsedFile, TypeArena) {
     };
 
     let chain_ref = ExtractedRef {
+        is_include: false,
         source_symbol_index: 1,
         target_name: "collect".into(),
         kind: EdgeKind::Calls,
@@ -117,6 +118,7 @@ fn sample() -> (ParsedFile, TypeArena) {
         )],
         component_selectors: vec![("nb-card".into(), "@nebular/theme.NbCardComponent".into())],
         plugin_flow_emissions: Vec::new(),
+        declared_modules: vec!["virtual:pwa-register".into()],
     };
     (pf, arena)
 }
@@ -161,6 +163,7 @@ fn parsed_file_roundtrip_is_field_for_field_faithful() {
         alias_targets,
         component_selectors,
         plugin_flow_emissions,
+        declared_modules,
     } = got;
 
     assert_eq!(path, pf.path);
@@ -182,6 +185,7 @@ fn parsed_file_roundtrip_is_field_for_field_faithful() {
     assert_eq!(has_errors, pf.has_errors);
     assert_eq!(alias_targets, pf.alias_targets);
     assert_eq!(component_selectors, pf.component_selectors);
+    assert_eq!(declared_modules, pf.declared_modules);
     // Excluded by contract: content is re-read from disk by its consumers;
     // the remaining fields have no external-file consumer.
     assert!(content.is_none());
@@ -266,6 +270,7 @@ fn ref_roundtrip_preserves_chain_and_call_args() {
     // Exhaustive destructure — a new ExtractedRef field breaks this test at
     // compile time until the payload carries it.
     let ExtractedRef {
+        is_include: _,
         source_symbol_index,
         target_name,
         kind,

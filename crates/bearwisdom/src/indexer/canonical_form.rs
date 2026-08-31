@@ -346,6 +346,7 @@ pub fn validate_extraction(
         alias_targets: extraction.alias_targets,
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: extraction.declared_modules,
     };
     let arena = TypeArena::new();
     populate_positions(&mut parsed, &arena);

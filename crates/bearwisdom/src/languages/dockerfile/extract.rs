@@ -190,6 +190,7 @@ fn extract_from(
     // Imports edge to the base image
     if let Some(img) = &image {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: idx,
@@ -205,6 +206,7 @@ fn extract_from(
         });
         // Inherits edge: each stage inherits its base image
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: idx,
@@ -487,6 +489,7 @@ fn extract_copy(
                     raw_stage
                 };
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,
@@ -508,6 +511,7 @@ fn extract_copy(
     // so the copy_instruction appears in coverage as matched.
     if !found_from_param {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index,

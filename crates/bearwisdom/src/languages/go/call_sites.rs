@@ -111,6 +111,7 @@ pub(super) fn extract_call_ref(
         && !super::helpers::is_go_builtin_type(&target_name)
     {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index,
@@ -129,6 +130,7 @@ pub(super) fn extract_call_ref(
     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
     let call_args = extract_call_args(&node, source);
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index,
@@ -182,6 +184,7 @@ fn extract_make_chan_type_ref(
                 if let Some((elem_name, module)) = go_type_ref_target(&elem, source) {
                     if !elem_name.is_empty() {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -246,6 +249,7 @@ pub(super) fn extract_composite_literal_ref(
     }
 
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index,
@@ -295,6 +299,7 @@ pub(super) fn extract_type_assertion_ref(
     };
 
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index,
@@ -338,6 +343,7 @@ pub(super) fn extract_type_switch_refs(
                         if let Some((name, module)) = go_type_ref_target(&type_child, source) {
                             if !name.is_empty() {
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index,

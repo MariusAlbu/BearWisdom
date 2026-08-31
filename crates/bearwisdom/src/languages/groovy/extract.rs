@@ -635,6 +635,7 @@ fn extract_class_inherits_from_source(src: &str, class_idx: usize, refs: &mut Ve
                 .trim_end_matches(|c: char| !c.is_alphanumeric() && c != '_' && c != '.');
             if !superclass.is_empty() {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: class_idx,

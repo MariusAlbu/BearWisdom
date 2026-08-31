@@ -429,6 +429,7 @@ pub(super) fn push_type_definition(
         let alias_name = type_name_from_node(&type_node, src);
         if !alias_name.is_empty() {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: idx,
@@ -498,6 +499,7 @@ pub(super) fn push_given_definition(
         let type_name = type_name_from_node(&rt, src);
         if !type_name.is_empty() {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: idx,
@@ -674,6 +676,7 @@ pub(super) fn push_export(
                 let full = node_text(child, src);
                 let target = full.rsplit('.').next().unwrap_or(&full).to_string();
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: current_symbol_count,
@@ -714,6 +717,7 @@ pub(super) fn push_import(
                 let full = node_text(child, src);
                 let target = full.rsplit('.').next().unwrap_or(&full).to_string();
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: current_symbol_count,
@@ -761,6 +765,7 @@ fn emit_import_expression(
                             format!("{base_path}.{name}")
                         };
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: current_symbol_count,
@@ -785,6 +790,7 @@ fn emit_import_expression(
     if let Some(full) = base {
         let target = full.rsplit('.').next().unwrap_or(&full).to_string();
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: current_symbol_count,
@@ -833,6 +839,7 @@ pub(super) fn extract_extends_with_node(
                 EdgeKind::Implements
             };
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: source_idx,
@@ -919,6 +926,7 @@ pub(super) fn extract_extends_with(
                             EdgeKind::Implements
                         };
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: source_idx,
@@ -942,6 +950,7 @@ pub(super) fn extract_extends_with(
                     let names = collect_type_names_from_node(&type_node, src);
                     for name in names {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: source_idx,

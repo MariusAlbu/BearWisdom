@@ -413,6 +413,7 @@ pub(super) fn extract_node<'a>(
                                 && !is_qualifier_macro_position(&type_node)
                             {
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index: type_source_idx,

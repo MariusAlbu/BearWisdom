@@ -41,6 +41,7 @@ pub(super) fn extract_resource_declaration(
 
     // Calls edge to the resource type.
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: idx,
@@ -106,6 +107,7 @@ pub(super) fn extract_include_or_require(
             let name = node_text(child, src);
             // Imports edge.
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: source_idx,
@@ -121,6 +123,7 @@ pub(super) fn extract_include_or_require(
             });
             // Calls edge.
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: source_idx,
@@ -184,6 +187,7 @@ pub(super) fn extract_function_call(
     };
 
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: source_idx,
@@ -237,6 +241,7 @@ pub(super) fn collect_all_function_calls(node: Node, src: &str, refs: &mut Vec<E
                 .to_string();
         }
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: 0,
@@ -287,6 +292,7 @@ pub(super) fn collect_resource_references(node: Node, src: &str, refs: &mut Vec<
             name = raw.split('[').next().unwrap_or("").trim().to_string();
         }
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: 0,

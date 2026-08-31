@@ -35,6 +35,7 @@ fn module_symbol(name: &str) -> ExtractedSymbol {
 /// same shape a real `use`/`alias` directive's extracted ref carries.
 fn use_ref(target: &str) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,
@@ -100,6 +101,7 @@ end
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     };
 
     let mut db = Database::open_in_memory().unwrap();

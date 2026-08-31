@@ -63,6 +63,7 @@ pub(super) fn extract_is_expression_refs(
                     };
                     if !type_name.is_empty() && !is_csharp_keyword(&type_name) {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,
@@ -141,6 +142,7 @@ pub(super) fn extract_is_expression_refs(
         };
         if !type_name.is_empty() && !is_csharp_keyword(&type_name) {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index,
@@ -191,6 +193,7 @@ fn extract_pattern_type_refs_recursive(
                 };
                 if !type_name.is_empty() && !is_csharp_keyword(&type_name) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -258,6 +261,7 @@ fn emit_pattern_type_ref(
         };
         if !type_name.is_empty() && !is_csharp_keyword(&type_name) {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index,

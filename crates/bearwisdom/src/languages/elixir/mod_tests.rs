@@ -8,6 +8,7 @@ use crate::types::{EdgeKind, ExtractedRef, ParsedFile};
 
 fn use_ref(target_name: &str, module: &str) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,
@@ -53,6 +54,7 @@ fn file_with_refs(refs: Vec<ExtractedRef>) -> ParsedFile {
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 

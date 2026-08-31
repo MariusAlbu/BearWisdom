@@ -231,6 +231,36 @@ fn detect_pl_clause_only_promotes_prolog() {
 }
 
 #[test]
+fn detect_pp_pascal_with_long_brace_header() {
+    // A `{ ... }` license header whose closing brace sits well past 512 bytes
+    // must still strip, exposing the `unit` marker behind it.
+    let dir = TempDir::new().unwrap();
+    let pp = dir.path().join("foo.pp");
+    let mut content = String::from("{\n");
+    for _ in 0..12 {
+        content.push_str(
+            "    This file is part of the Free Component Library and is distributed\n    under the terms of the library license as documented in the header.\n",
+        );
+    }
+    assert!(content.len() > 512, "header must exceed the old sniff window");
+    content.push_str("}\nunit Foo;\n\ninterface\n\nimplementation\n\nend.\n");
+    fs::write(&pp, content).unwrap();
+    assert_eq!(detect_language(&pp), Some("pascal"));
+}
+
+#[test]
+fn detect_pp_puppet_manifest_stays_puppet() {
+    let dir = TempDir::new().unwrap();
+    let pp = dir.path().join("nginx.pp");
+    fs::write(
+        &pp,
+        "# Class: nginx\nclass nginx (\n  $package_name = 'nginx',\n) {\n  include nginx::install\n}\n",
+    )
+    .unwrap();
+    assert_eq!(detect_language(&pp), Some("puppet"));
+}
+
+#[test]
 fn detect_css_with_mixin_promotes_scss() {
     let dir = TempDir::new().unwrap();
     let css = dir.path().join("_mixins.css");

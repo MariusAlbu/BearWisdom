@@ -380,6 +380,7 @@ pub(in super::super) fn push_using_directive(
                     "identifier" | "qualified_name" => {
                         let full = node_text(child, src);
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: current_symbol_count,
@@ -411,6 +412,7 @@ pub(in super::super) fn push_using_directive(
             "identifier" => {
                 let name = node_text(child, src);
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: current_symbol_count,
@@ -429,6 +431,7 @@ pub(in super::super) fn push_using_directive(
             "qualified_name" => {
                 let full = node_text(child, src);
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: current_symbol_count,

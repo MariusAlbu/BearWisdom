@@ -137,6 +137,7 @@ fn push_fq_import(
     let target_name = alias.unwrap_or(original);
 
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: current_symbol_count,
@@ -186,6 +187,7 @@ pub(super) fn extract_include_require(
                 None
             };
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index,

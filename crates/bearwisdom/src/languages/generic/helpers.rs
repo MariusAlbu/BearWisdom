@@ -584,6 +584,7 @@ pub(super) fn for_each_type_child<'src>(
         if child.is_named() {
             if let Some(name) = extract_type_name(child, ctx) {
                 ctx.refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: source_idx,

@@ -163,6 +163,7 @@ fn extract_import(
         .unwrap_or_else(|| name.clone());
 
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: sym_idx,
@@ -379,6 +380,7 @@ fn extract_using(node: Node, src: &[u8], source_symbol_index: usize, refs: &mut 
     if let Some(id) = find_first_identifier(node, src) {
         if !id.is_empty() {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index,
@@ -421,6 +423,7 @@ fn extract_calls_in_subtree(
 
             if !target.is_empty() && target != "(" {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,

@@ -775,6 +775,7 @@ pub(super) fn extract_type_refs_from_type_node(
                     .filter(|p| !p.is_empty());
                 let line = node.start_position().row as u32;
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: sym_index,
@@ -895,6 +896,7 @@ pub(super) fn extract_type_refs_from_type_node(
 
 fn make_type_ref(sym_index: usize, name: String, line: u32, byte_offset: u32) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: sym_index,

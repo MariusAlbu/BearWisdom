@@ -52,6 +52,7 @@ pub(super) fn extract_decorators(
             // downstream consumers (controller-prefix pre-pass, route-decorator
             // detector) misroute one for the other.
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index,

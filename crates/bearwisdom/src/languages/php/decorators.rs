@@ -72,6 +72,7 @@ fn extract_from_attribute_group(
         if child.kind() == "attribute" {
             if let Some((name, first_arg)) = parse_attribute(&child, src) {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index,

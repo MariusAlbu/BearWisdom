@@ -223,6 +223,7 @@ pub(super) fn collect_calls(
                                 let fun_is_var = fun_node.kind() == "var";
                                 if !fun_name.is_empty() && !fun_is_var {
                                     refs.push(ExtractedRef {
+                                        is_include: false,
                                         is_import_binding: false,
                                         is_reexport: false,
                                         source_symbol_index: source_idx,
@@ -263,6 +264,7 @@ pub(super) fn collect_calls(
                     let bare = target.split('/').next().unwrap_or(&target);
                     if !ATTR_CALL_SKIP.contains(&bare) {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: source_idx,
@@ -296,6 +298,7 @@ pub(super) fn collect_calls(
                             format!("{}/{}", name, arity)
                         };
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: source_idx,
@@ -331,6 +334,7 @@ pub(super) fn collect_calls(
                             format!("{}/{}", fun_name, arity)
                         };
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: source_idx,
@@ -363,6 +367,7 @@ pub(super) fn collect_calls(
                     let record_name = strip_quoted_atom(raw_name).to_string();
                     if !record_name.is_empty() {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index: source_idx,

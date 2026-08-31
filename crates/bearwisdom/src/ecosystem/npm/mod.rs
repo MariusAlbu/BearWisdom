@@ -657,10 +657,12 @@ fn node_builtins() -> std::collections::HashSet<&'static str> {
 mod externals;
 mod externals_imports;
 mod externals_node_modules;
+mod module_registration;
 mod post_process;
 mod reexport_bridge;
 mod symbol_index;
 mod ts_scan;
+mod ts_scan_ambient;
 mod walk;
 
 pub(crate) use externals::*;

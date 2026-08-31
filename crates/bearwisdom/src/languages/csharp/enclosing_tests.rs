@@ -29,6 +29,7 @@ fn sym(name: &str, kind: SymbolKind, start: u32, end: u32) -> ExtractedSymbol {
 
 fn type_ref(name: &str, line: u32) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,

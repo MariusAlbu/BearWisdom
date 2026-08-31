@@ -13,8 +13,8 @@ use super::reexports::{
 };
 use super::type_scan::{collect_type_param_scopes, is_ts_primitive, scan_all_type_identifiers};
 use super::{
-    alias_classify, annotation_members, annotation_named_type, calls, decorators, helpers,
-    imports, narrowing, params, symbols, types,
+    alias_classify, ambient_modules, annotation_members, annotation_named_type, calls, decorators,
+    helpers, imports, narrowing, params, symbols, types,
 };
 
 use crate::ecosystem::ecmascript_imports::build_import_map;
@@ -103,6 +103,7 @@ fn extract_inner(source: &str, is_tsx: bool, demand: Option<&HashSet<String>>) -
                 has_errors: true,
                 demand_contributions: Vec::new(),
                 alias_targets: Vec::new(),
+                declared_modules: Vec::new(),
             }
         }
     };
@@ -271,6 +272,7 @@ fn extract_inner(source: &str, is_tsx: bool, demand: Option<&HashSet<String>>) -
 
     let mut result = ExtractionResult::new(symbols, refs, has_errors);
     result.alias_targets = alias_targets;
+    result.declared_modules = ambient_modules::collect_declared_modules(root, src_bytes);
     result
 }
 
@@ -1122,6 +1124,7 @@ fn extract_node(
                         let type_name = helpers::node_text(right, src);
                         if !type_name.is_empty() {
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index: sym_idx,
@@ -1207,6 +1210,7 @@ fn extract_node(
                 let name = helpers::node_text(child, src);
                 if !name.is_empty() && !is_ts_primitive(&name) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,
@@ -1233,6 +1237,7 @@ fn extract_node(
                 let name = helpers::node_text(child, src);
                 if !name.is_empty() && !is_ts_primitive(&name) {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,

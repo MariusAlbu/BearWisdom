@@ -162,6 +162,7 @@ fn push_heritage_refs(
             target.push_str(&node_text(args, src));
         }
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: source_idx,

@@ -126,6 +126,7 @@ pub(super) fn extract_short_var_decl(
                                 .unwrap_or_default();
                             if !target.is_empty() {
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index: sym_idx,
@@ -145,6 +146,7 @@ pub(super) fn extract_short_var_decl(
                             let target = node_text(&func, source);
                             if !target.is_empty() && target != "_" {
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index: sym_idx,
@@ -171,6 +173,7 @@ pub(super) fn extract_short_var_decl(
                                     .unwrap_or_else(|| (node_text(&type_node, source), None));
                             if !type_name.is_empty() && !is_go_builtin_type(&type_name) {
                                 refs.push(ExtractedRef {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index: sym_idx,
@@ -373,6 +376,7 @@ fn extract_const_var_spec(
     if let Some((name, module)) = ref_target {
         if !name.is_empty() && !is_go_builtin_type(&name) {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: parent_index.unwrap_or(0),

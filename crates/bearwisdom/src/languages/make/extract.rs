@@ -196,6 +196,7 @@ fn extract_prerequisites(node: &Node, src: &str, source_idx: usize, refs: &mut V
                             && !is_unresolvable_prereq(&name)
                         {
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index: source_idx,
@@ -402,6 +403,7 @@ fn extract_include_directive(node: &Node, src: &str, refs: &mut Vec<ExtractedRef
     for path in paths {
         if !path.is_empty() {
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: 0,
@@ -453,6 +455,7 @@ fn extract_function_calls_in_subtree(
         "function_call" | "shell_function" => {
             if let Some(func_name) = find_field_text(node, src, "function") {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: source_idx,

@@ -94,6 +94,7 @@ pub(super) fn extract_inherit_from(
     let dummy_source_idx = symbols.len();
     if let Some(src_name) = &source_name {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: dummy_source_idx,

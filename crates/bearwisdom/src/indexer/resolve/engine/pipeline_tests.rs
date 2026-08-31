@@ -192,6 +192,7 @@ fn blank_parsed_file(lang: &str) -> ParsedFile {
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 
@@ -442,6 +443,7 @@ fn engine_resolves_local_var_member_call_via_scope_exact_root() {
     }
     fn eref(src: usize, target: &str, kind: EdgeKind, chain: Option<MemberChain>) -> ExtractedRef {
         ExtractedRef {
+            is_include: false,
             is_import_binding: false, is_reexport: false, source_symbol_index: src,
             target_name: target.into(), kind, line: 1, col: 0, module: None, chain,
             byte_offset: 1, namespace_segments: Vec::new(), call_args: Vec::new(),
@@ -471,6 +473,7 @@ fn engine_resolves_local_var_member_call_via_scope_exact_root() {
         ref_origin_languages: Vec::new(), symbol_from_snippet: Vec::new(), content: None,
         has_errors: false, flow: FlowMeta::default(), demand_contributions: Vec::new(),
         alias_targets: Vec::new(), component_selectors: Vec::new(), plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     };
     let mut id_map = HashMap::new();
     id_map.insert(("d.ts".to_string(), "SolidQueryDevtools".to_string()), 1i64);
@@ -515,6 +518,7 @@ fn engine_types_a_new_expression_local_for_a_later_member_call() {
     }
     fn eref(src: usize, target: &str, kind: EdgeKind, chain: Option<MemberChain>) -> ExtractedRef {
         ExtractedRef {
+            is_include: false,
             is_import_binding: false, is_reexport: false, source_symbol_index: src,
             target_name: target.into(), kind, line: 1, col: 0, module: None, chain,
             byte_offset: 1, namespace_segments: Vec::new(), call_args: Vec::new(),
@@ -546,6 +550,7 @@ fn engine_types_a_new_expression_local_for_a_later_member_call() {
         ref_origin_languages: Vec::new(), symbol_from_snippet: Vec::new(), content: None,
         has_errors: false, flow, demand_contributions: Vec::new(),
         alias_targets: Vec::new(), component_selectors: Vec::new(), plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     };
     let mut id_map = HashMap::new();
     id_map.insert(("d.ts".to_string(), "useTest".to_string()), 1i64);
@@ -603,6 +608,7 @@ fn engine_distinguishes_same_named_devtools_across_packages() {
     }
     fn eref(src: usize, target: &str, kind: EdgeKind, chain: Option<MemberChain>) -> ExtractedRef {
         ExtractedRef {
+            is_include: false,
             is_import_binding: false, is_reexport: false, source_symbol_index: src,
             target_name: target.into(), kind, line: 1, col: 0, module: None, chain,
             byte_offset: 1, namespace_segments: Vec::new(), call_args: Vec::new(),
@@ -643,6 +649,7 @@ fn engine_distinguishes_same_named_devtools_across_packages() {
             ref_origin_languages: Vec::new(), symbol_from_snippet: Vec::new(), content: None,
             has_errors: false, flow: FlowMeta::default(), demand_contributions: Vec::new(),
             alias_targets: Vec::new(), component_selectors: Vec::new(), plugin_flow_emissions: Vec::new(),
+            declared_modules: Vec::new(),
         };
         let qnames = vec![
             ((path.to_string(), host.to_string()), ()),
@@ -735,6 +742,7 @@ fn snippet_source_symbol_propagates_from_snippet_to_unresolved_row() {
     }
     fn eref(src: usize, target: &str, kind: EdgeKind) -> ExtractedRef {
         ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: src,
@@ -782,6 +790,7 @@ fn snippet_source_symbol_propagates_from_snippet_to_unresolved_row() {
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     };
 
     let mut id_map = std::collections::HashMap::new();
@@ -880,6 +889,7 @@ fn awaited_binding_strips_promise_wrapper_at_seed() {
     }
     fn eref(src: usize, target: &str, kind: EdgeKind, chain: Option<MemberChain>, byte: u32) -> ExtractedRef {
         ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: src,
@@ -961,6 +971,7 @@ fn awaited_binding_strips_promise_wrapper_at_seed() {
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     };
 
     let mut id_map = HashMap::new();
@@ -1045,6 +1056,7 @@ fn non_awaited_promise_binding_keeps_promise_head_at_seed() {
     }
     fn eref(src: usize, target: &str, kind: EdgeKind, chain: Option<MemberChain>, byte: u32) -> ExtractedRef {
         ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: src,
@@ -1121,6 +1133,7 @@ fn non_awaited_promise_binding_keeps_promise_head_at_seed() {
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     };
 
     let mut id_map = HashMap::new();
@@ -1183,6 +1196,7 @@ fn member_refs_on_uncaptured_call_root_all_blame_the_initializer() {
     }
     fn eref(src: usize, target: &str, kind: EdgeKind, chain: Option<MemberChain>) -> ExtractedRef {
         ExtractedRef {
+            is_include: false,
             is_import_binding: false, is_reexport: false, source_symbol_index: src,
             target_name: target.into(), kind, line: 1, col: 0, module: None, chain,
             byte_offset: 1, namespace_segments: Vec::new(), call_args: Vec::new(),
@@ -1221,6 +1235,7 @@ fn member_refs_on_uncaptured_call_root_all_blame_the_initializer() {
         ref_origin_languages: Vec::new(), symbol_from_snippet: Vec::new(), content: None,
         has_errors: false, flow, demand_contributions: Vec::new(),
         alias_targets: Vec::new(), component_selectors: Vec::new(), plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     };
     let mut id_map = HashMap::new();
     id_map.insert(("logger.ts".to_string(), "caller".to_string()), 1i64);
@@ -1263,6 +1278,7 @@ fn rename_import_ref_splits_original_name_and_alias() {
     };
     fn import_ref(target: &str, module: &str, original: Option<&str>) -> ExtractedRef {
         ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: 0,
@@ -1316,6 +1332,7 @@ fn rename_import_ref_splits_original_name_and_alias() {
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     };
     let fc = super::build_file_context(
         "rust",
@@ -1363,6 +1380,7 @@ fn rename_import_original_name_does_not_shadow_local_struct() {
     }
     fn import_ref(target: &str, module: &str, original: Option<&str>, line: u32) -> ExtractedRef {
         ExtractedRef {
+            is_include: false,
             is_import_binding: false, is_reexport: false, source_symbol_index: 0,
             target_name: target.into(), kind: EdgeKind::Imports,
             line, col: 0, module: Some(module.into()),
@@ -1376,6 +1394,7 @@ fn rename_import_original_name_does_not_shadow_local_struct() {
         }
     }
     let type_ref = ExtractedRef {
+        is_include: false,
         is_import_binding: false, is_reexport: false, source_symbol_index: 1,
         target_name: "Widget".into(), kind: EdgeKind::TypeRef,
         line: 10, col: 0, module: None, chain: None,
@@ -1397,6 +1416,7 @@ fn rename_import_original_name_does_not_shadow_local_struct() {
         ref_origin_languages: Vec::new(), symbol_from_snippet: Vec::new(), content: None,
         has_errors: false, flow: FlowMeta::default(), demand_contributions: Vec::new(),
         alias_targets: Vec::new(), component_selectors: Vec::new(), plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     };
     pf.symbols[0].visibility = Some(Visibility::Public);
     let ext_pf = ParsedFile {
@@ -1408,6 +1428,7 @@ fn rename_import_original_name_does_not_shadow_local_struct() {
         ref_origin_languages: Vec::new(), symbol_from_snippet: Vec::new(), content: None,
         has_errors: false, flow: FlowMeta::default(), demand_contributions: Vec::new(),
         alias_targets: Vec::new(), component_selectors: Vec::new(), plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     };
     let mut id_map = HashMap::new();
     id_map.insert(("widgets/src/widget.rs".to_string(), "Widget".to_string()), 1i64);
@@ -1480,6 +1501,7 @@ fn ext_value_file(
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 
@@ -1546,6 +1568,7 @@ fn namespace_import_entry_is_a_wildcard_under_the_profile_flag() {
     use crate::types::{EdgeKind, ExtractedRef, FlowMeta, ParsedFile};
     fn using_ref(ns: &str) -> ExtractedRef {
         ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: 0,
@@ -1582,6 +1605,7 @@ fn namespace_import_entry_is_a_wildcard_under_the_profile_flag() {
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     };
     let fc = super::build_file_context(
         "csharp",
@@ -1625,6 +1649,7 @@ fn duplicate_ref_emissions_collapse_to_one_row_per_site() {
     }
     fn eref(target: &str, line: u32, byte: u32) -> ExtractedRef {
         ExtractedRef {
+            is_include: false,
             is_import_binding: false, is_reexport: false, source_symbol_index: 0,
             target_name: target.into(), kind: EdgeKind::Calls, line, col: 0,
             module: None, chain: None, byte_offset: byte,
@@ -1648,6 +1673,7 @@ fn duplicate_ref_emissions_collapse_to_one_row_per_site() {
         ref_origin_languages: Vec::new(), symbol_from_snippet: Vec::new(), content: None,
         has_errors: false, flow: FlowMeta::default(), demand_contributions: Vec::new(),
         alias_targets: Vec::new(), component_selectors: Vec::new(), plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     };
     let mut id_map = HashMap::new();
     id_map.insert(("dup.ts".to_string(), "f".to_string()), 1i64);
@@ -1681,6 +1707,7 @@ fn fqn_import_refs_carry_module_path_into_file_context() {
     use crate::types::{EdgeKind, ExtractedRef, FlowMeta, ParsedFile};
     fn import_ref(target: &str, module: &str) -> ExtractedRef {
         ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: 0,
@@ -1720,6 +1747,7 @@ fn fqn_import_refs_carry_module_path_into_file_context() {
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     };
     let fc = super::build_file_context(
         "java",

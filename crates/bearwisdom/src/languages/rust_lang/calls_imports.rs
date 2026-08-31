@@ -38,6 +38,7 @@ pub(super) fn extract_extern_crate(
         return;
     }
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: current_symbol_count,
@@ -124,6 +125,7 @@ fn walk_use_tree(
 
             let module = resolve_relative_module(&build_module_path(prefix, &path), qualified_prefix);
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport,
                 source_symbol_index: current_symbol_count,
@@ -308,6 +310,7 @@ fn walk_use_tree(
             }
 
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport,
                 source_symbol_index: current_symbol_count,
@@ -342,6 +345,7 @@ fn walk_use_tree(
                 Some(resolve_relative_module(&module, qualified_prefix))
             };
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport,
                 source_symbol_index: current_symbol_count,
@@ -368,6 +372,7 @@ fn walk_use_tree(
                 Some(resolve_relative_module(prefix, qualified_prefix))
             };
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport,
                 source_symbol_index: current_symbol_count,

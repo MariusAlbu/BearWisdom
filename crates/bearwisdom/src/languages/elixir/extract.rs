@@ -195,6 +195,7 @@ fn visit(
             if !name.is_empty() {
                 let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: sym_idx,
@@ -288,6 +289,7 @@ fn dispatch_call(
                 .to_string();
             let module = qualified.rfind('.').map(|i| qualified[..i].to_string());
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: sym_idx,
@@ -603,6 +605,7 @@ fn extract_implementation(
 
     // Emit TypeRef to the protocol being implemented
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: idx,
@@ -679,6 +682,7 @@ fn dispatch_attribute(
                 // Use the parent symbol index if available; otherwise use current symbol count.
                 let source_idx = parent_index.unwrap_or(symbols.len());
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: source_idx,

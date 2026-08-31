@@ -273,6 +273,7 @@ fn walk_node(
                         let is_cell_index = src.get(name_node.end_byte()).copied() == Some(b'{');
                         if !method_text.is_empty() && !is_cell_index {
                             refs.push(ExtractedRef {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index: sym_idx,
@@ -325,6 +326,7 @@ fn walk_node(
 
                 if !target.is_empty() && !has_brace && !is_truncated {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index: sym_idx,

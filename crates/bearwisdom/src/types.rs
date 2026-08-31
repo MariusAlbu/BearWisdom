@@ -732,6 +732,13 @@ pub struct ExtractedRef {
     /// through a re-export hop follows to its declaring symbol while a private
     /// `use`/`import` does not.
     pub is_reexport: bool,
+    /// True when an `Imports` ref is a textual file-include directive: the
+    /// included file's contents are compiled as part of the including file's
+    /// own scope, not imported as a separate module. `target_name`/`module`
+    /// carry the include file's bare stem. The indexer's include-assembly
+    /// pre-pass (see `indexer::include_assembly`) splices the included file's
+    /// top-level symbols into the including unit's namespace from these refs.
+    pub is_include: bool,
 }
 
 /// An HTTP route attribute extracted from C#.
@@ -796,6 +803,11 @@ pub struct ExtractionResult {
     /// populates this today; other languages leave it empty and the engine
     /// derives an `Application` shape from `field_type` for their typedefs.
     pub alias_targets: Vec<(String, AliasTarget)>,
+    /// Module names this file declares as ambient modules — the string
+    /// literals of `declare module '<name>'` blocks (bodied or shorthand).
+    /// Any language may populate it; the module-entry pass keys each name
+    /// to the declaring file so imports of that specifier link to it.
+    pub declared_modules: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -912,6 +924,7 @@ impl ExtractionResult {
             has_errors,
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
+            declared_modules: Vec::new(),
         }
     }
 
@@ -930,6 +943,7 @@ impl ExtractionResult {
             has_errors,
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
+            declared_modules: Vec::new(),
         }
     }
 
@@ -942,6 +956,7 @@ impl ExtractionResult {
             has_errors: false,
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
+            declared_modules: Vec::new(),
         }
     }
 }
@@ -1183,6 +1198,12 @@ pub struct ParsedFile {
     /// to chain-walk resolver-time emission. Accumulated by
     /// `indexer/resolve/mod.rs` alongside resolver-emitted flows.
     pub plugin_flow_emissions: Vec<(u32, crate::indexer::resolve::flow_emit::FlowEmission)>,
+    /// Ambient module names this file declares (`declare module '<name>'`
+    /// string literals, bodied or shorthand). The module-entry pass inserts
+    /// each name → this file's path so an import of that specifier links
+    /// here. Any language may populate it; read during resolve, so it
+    /// survives `slim_for_resolve`.
+    pub declared_modules: Vec<String>,
 }
 
 impl ParsedFile {

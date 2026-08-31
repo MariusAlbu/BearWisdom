@@ -910,6 +910,7 @@ impl<'a> MvvmEmit<'a> {
 
 fn return_type_ref(source_symbol_index: usize, type_name: &str, line: u32) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index,

@@ -54,6 +54,7 @@ pub mod relative_imports;
 pub mod segment_args;
 pub mod substitution;
 pub mod type_mention_demand;
+mod module_entry;
 mod module_scheme;
 mod parallel_pass;
 mod parent_resolution;

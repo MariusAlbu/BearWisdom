@@ -245,6 +245,7 @@ fn passes_when_edge_kind_not_in_selector_resolution() {
     // Profile only allows Calls; use TypeRef.
     let profile = &SELECTOR_PROFILE;
     let r = ExtractedRef {
+        is_include: false,
         kind: EdgeKind::TypeRef,
         target_name: "app-root".to_string(),
         is_import_binding: false,

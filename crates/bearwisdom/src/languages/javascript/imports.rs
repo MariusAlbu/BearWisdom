@@ -56,6 +56,7 @@ pub(super) fn push_export_refs(
                             .unwrap_or_default();
                         if !exported.is_empty() {
                             refs.push(Ref {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index,
@@ -78,6 +79,7 @@ pub(super) fn push_export_refs(
             "namespace_export" => {
                 if let Some(mod_path) = &module_path {
                     refs.push(Ref {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -99,6 +101,7 @@ pub(super) fn push_export_refs(
                 let name = node_text(child, src);
                 if name != "default" && name != "export" && !name.is_empty() {
                     refs.push(Ref {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -135,6 +138,7 @@ pub(super) fn push_export_refs(
                             let name = node_text(name_node, src);
                             if !name.is_empty() {
                                 refs.push(Ref {
+                                    is_include: false,
                                     is_import_binding: false,
                                     is_reexport: false,
                                     source_symbol_index,
@@ -176,6 +180,7 @@ pub(super) fn push_export_refs(
                         let name = node_text(name_node, src);
                         if !name.is_empty() {
                             refs.push(Ref {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index,
@@ -203,6 +208,7 @@ pub(super) fn push_export_refs(
                         let name = node_text(name_node, src);
                         if !name.is_empty() {
                             refs.push(Ref {
+                                is_include: false,
                                 is_import_binding: false,
                                 is_reexport: false,
                                 source_symbol_index,
@@ -231,6 +237,7 @@ pub(super) fn push_export_refs(
     if refs.len() == initial_ref_count {
         let target = module_path.clone().unwrap_or_else(|| "default".to_string());
         refs.push(Ref {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index,
@@ -345,6 +352,7 @@ pub(super) fn extract_module_exports(
         };
 
         refs.push(Ref {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: current_symbol_count,
@@ -506,6 +514,7 @@ pub(super) fn try_emit_require(
     }
     if let Some(module) = extract_require_path(init_node, src) {
         refs.push(Ref {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index,

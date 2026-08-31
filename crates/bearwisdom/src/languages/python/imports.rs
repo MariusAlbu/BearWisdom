@@ -186,6 +186,7 @@ pub(super) fn extract_import_statement(
                 // `import foo.bar` binds the TOP segment `foo` as the local name.
                 let local = parts.first().copied().unwrap_or(full.as_str());
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: dunder_all.contains(local),
                     source_symbol_index: current_symbol_count,
@@ -223,6 +224,7 @@ pub(super) fn extract_import_statement(
                     let (target_name, chain) =
                         aliased_target(declared, &local, is_reexport, byte_offset);
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport,
                         source_symbol_index: current_symbol_count,
@@ -282,6 +284,7 @@ pub(super) fn extract_import_from_statement(
                 // `from .mod import A` binds `A` (the imported name) locally.
                 let is_reexport = dunder_all.contains(&name);
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport,
                     source_symbol_index: current_symbol_count,
@@ -308,6 +311,7 @@ pub(super) fn extract_import_from_statement(
                     let (target_name, chain) =
                         aliased_target(declared, &local, is_reexport, byte_offset);
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport,
                         source_symbol_index: current_symbol_count,
@@ -325,6 +329,7 @@ pub(super) fn extract_import_from_statement(
             }
             "wildcard_import" => {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: current_symbol_count,

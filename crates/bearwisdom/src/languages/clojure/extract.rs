@@ -149,6 +149,7 @@ pub(super) fn walk_node(
         {
             let ns = sym_lit_ns(node, src);
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: parent_idx.unwrap_or(0),
@@ -178,6 +179,7 @@ pub(super) fn walk_node(
             {
                 let ns = sym_lit_ns(child, src);
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: parent_idx.unwrap_or(0),
@@ -258,6 +260,7 @@ fn process_list(
         && !head_is_local
     {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: parent_idx.unwrap_or(0),
@@ -281,6 +284,7 @@ fn process_list(
             }
             // Emit a ref for the name sym_lit so its sym_name node is covered.
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: parent_idx.unwrap_or(0),
@@ -317,6 +321,7 @@ fn process_list(
                 return;
             }
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: parent_idx.unwrap_or(0),
@@ -346,6 +351,7 @@ fn process_list(
                 return;
             }
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: parent_idx.unwrap_or(0),
@@ -412,6 +418,7 @@ fn process_list(
                 return;
             }
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: parent_idx.unwrap_or(0),
@@ -446,6 +453,7 @@ fn process_list(
             let (ns_name, name_line) = list_second_name_with_line(node, src);
             if !ns_name.is_empty() {
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: parent_idx.unwrap_or(0),
@@ -606,6 +614,7 @@ fn walk_def_macro_body(
             {
                 let ns = sym_lit_ns(child, src);
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: parent_idx.unwrap_or(0),
@@ -698,6 +707,7 @@ fn walk_call_args(
             {
                 let ns = sym_lit_ns(child, src);
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: parent_idx.unwrap_or(0),
@@ -860,6 +870,7 @@ fn emit_import_entry(entry: Node, src: &[u8], refs: &mut Vec<ExtractedRef>, sym_
         return;
     }
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: sym_idx,
@@ -928,6 +939,7 @@ fn collect_refer_names(
                     continue;
                 }
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: sym_idx,

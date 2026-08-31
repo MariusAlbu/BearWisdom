@@ -23,11 +23,13 @@ fn blank_parsed_file(lang: &str) -> ParsedFile {
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 
 fn imports_ref(target_name: &str, module: &str, is_reexport: bool) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport,
         source_symbol_index: 0,

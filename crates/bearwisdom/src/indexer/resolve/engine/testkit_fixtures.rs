@@ -64,6 +64,7 @@ pub(crate) fn file_ctx(imports: Vec<ImportEntry>, ns: Option<&str>) -> FileConte
 /// A bare `Calls` ref to `target`.
 pub(crate) fn call_ref(target: &str) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index: 0,

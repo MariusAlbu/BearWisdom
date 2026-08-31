@@ -471,6 +471,7 @@ fn make_typeref(
     byte_offset: u32,
 ) -> ExtractedRef {
     ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index,
@@ -511,6 +512,7 @@ fn make_scoped_typeref(
         None
     };
     ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index,
@@ -586,6 +588,7 @@ fn emit_inherits_from_trait_bounds(
                 let name = node_text(&child, source);
                 if !name.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -611,6 +614,7 @@ fn emit_inherits_from_trait_bounds(
                     });
                 if !name.is_empty() {
                     refs.push(ExtractedRef {
+                        is_include: false,
                         is_import_binding: false,
                         is_reexport: false,
                         source_symbol_index,
@@ -631,6 +635,7 @@ fn emit_inherits_from_trait_bounds(
                     let name = node_text(&base, source);
                     if !name.is_empty() {
                         refs.push(ExtractedRef {
+                            is_include: false,
                             is_import_binding: false,
                             is_reexport: false,
                             source_symbol_index,

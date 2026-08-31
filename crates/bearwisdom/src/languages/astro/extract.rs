@@ -115,6 +115,7 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
     // PascalCase tags → component call
     if tag.chars().next().map_or(false, |c| c.is_uppercase()) {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: 0,
@@ -134,6 +135,7 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
     // Kebab-case custom elements → PascalCase component call
     if tag.contains('-') {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: false,
             source_symbol_index: 0,

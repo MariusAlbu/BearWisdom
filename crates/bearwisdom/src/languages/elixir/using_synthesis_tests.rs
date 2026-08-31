@@ -55,6 +55,7 @@ fn ex_file(path: &str, symbols: Vec<ExtractedSymbol>) -> ParsedFile {
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 

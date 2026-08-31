@@ -25,6 +25,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         has_errors: false,
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        declared_modules: Vec::new(),
     }
 }
 
@@ -61,6 +62,7 @@ fn collect_jsx_refs(source: &str, host_index: usize, refs: &mut Vec<ExtractedRef
                 let line = line_of_byte(bytes, i);
                 let (target_name, chain) = build_jsx_ref(&name);
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: host_index,

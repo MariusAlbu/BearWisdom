@@ -322,6 +322,7 @@ fn extract_source_import(
                 .trim_end_matches(".sh")
                 .to_string();
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index,
@@ -362,6 +363,7 @@ fn extract_command_call(
         return;
     }
     refs.push(ExtractedRef {
+        is_include: false,
         is_import_binding: false,
         is_reexport: false,
         source_symbol_index,

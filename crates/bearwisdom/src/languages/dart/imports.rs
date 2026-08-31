@@ -129,6 +129,7 @@ fn extract_import_spec_recursive(
                     (stem, module)
                 };
                 refs.push(ExtractedRef {
+                    is_include: false,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: current_symbol_count,
@@ -174,6 +175,7 @@ fn push_export_refs(
     };
     for target_name in names {
         refs.push(ExtractedRef {
+            is_include: false,
             is_import_binding: false,
             is_reexport: true,
             source_symbol_index: current_symbol_count,
@@ -223,6 +225,7 @@ pub(super) fn extract_part_directive(
                 .trim_end_matches(".dart")
                 .to_string();
             refs.push(ExtractedRef {
+                is_include: false,
                 is_import_binding: false,
                 is_reexport: false,
                 source_symbol_index: current_symbol_count,

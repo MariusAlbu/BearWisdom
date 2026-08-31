@@ -236,6 +236,7 @@ fn default_chains_through_at_index_level() {
         alias_targets: Vec::new(),
         component_selectors: Vec::new(),
         plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
     };
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
