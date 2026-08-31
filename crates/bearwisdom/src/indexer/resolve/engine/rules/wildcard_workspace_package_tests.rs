@@ -195,6 +195,7 @@ fn resolve(
         source_symbol: &s,
         scope_chain: vec![],
         file_package_id,
+        source_symbol_id: None,
     };
     let kind = accept_any;
     let ctx = BinderContext {

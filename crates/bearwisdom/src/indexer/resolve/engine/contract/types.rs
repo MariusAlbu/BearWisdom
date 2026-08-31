@@ -70,6 +70,10 @@ pub struct RefContext<'a> {
     /// to the package that declared the dep — prevents `server/` from
     /// reaching `e2e/`'s devDependencies in a pnpm monorepo.
     pub file_package_id: Option<i64>,
+    /// The source symbol's db row id, when the caller has bound it. Lets
+    /// enclosing-scope lookups key on identity instead of the source qname
+    /// (which a same-named declaration in another package shares).
+    pub source_symbol_id: Option<i64>,
 }
 
 /// The confidence every name resolution carries. SymbolInfo is binary — a

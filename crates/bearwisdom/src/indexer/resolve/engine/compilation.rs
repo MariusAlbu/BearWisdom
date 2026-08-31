@@ -158,6 +158,8 @@ pub struct Compilation {
     inherits_import_evidence: FxHashMap<(String, String), String>,
     /// Nearest enclosing type-kind ancestor: source_qname → enclosing_type_qname.
     enclosing_type: FxHashMap<String, String>,
+    /// Identity twin: source row id → enclosing type's row id.
+    enclosing_type_by_id: FxHashMap<i64, i64>,
     /// Nearest enclosing namespace/module ancestor: source_qname → enclosing_ns_qname.
     enclosing_namespace: FxHashMap<String, String>,
     /// Type-alias targets, keyed by both qualified and simple name. Populated
@@ -342,6 +344,7 @@ impl Compilation {
             inherits_by_id: FxHashMap::default(),
             inherits_import_evidence: FxHashMap::default(),
             enclosing_type: FxHashMap::default(),
+            enclosing_type_by_id: FxHashMap::default(),
             enclosing_namespace: FxHashMap::default(),
             alias_target: FxHashMap::default(),
             alias_target_by_id: FxHashMap::default(),
@@ -544,15 +547,13 @@ impl Compilation {
             }
 
             // Pass 2 — enclosing_type / enclosing_namespace via parent_index.
-            for sym in &pf.symbols {
-                let (found_type, found_ns) = enclosing_chain(&pf.symbols, sym.parent_index);
-                if let Some(t) = found_type {
-                    self.enclosing_type.insert(sym.qualified_name.clone(), t);
-                }
-                if let Some(n) = found_ns {
-                    self.enclosing_namespace.insert(sym.qualified_name.clone(), n);
-                }
-            }
+            super::enclosing::build_enclosing_maps(
+                pf,
+                symbol_id_map,
+                &mut self.enclosing_type,
+                &mut self.enclosing_type_by_id,
+                &mut self.enclosing_namespace,
+            );
 
             // Pass 3 — inheritance from refs (Inherits / Implements edges).
             // The file's import bindings (name → module) disambiguate a parent
@@ -2086,6 +2087,7 @@ impl Compilation {
                         source_symbol: field,
                         scope_chain: build_scope_chain(field.scope_path.as_deref()),
                         file_package_id: pf.package_id,
+                        source_symbol_id: field_id,
                     };
                     match super::chain::bind_member_access(&ref_ctx, &file_ctx, self, profile) {
                         Ok(res) => res.resolved_yield_type,
@@ -2424,6 +2426,10 @@ impl SymbolLookup for Compilation {
         self.enclosing_type
             .get(source_qname)
             .map(|s| s.as_str())
+    }
+
+    fn enclosing_type_id_of(&self, source_symbol_id: i64) -> Option<i64> {
+        self.enclosing_type_by_id.get(&source_symbol_id).copied()
     }
 
     fn enclosing_namespace_qname(&self, source_qname: &str) -> Option<&str> {
@@ -2831,46 +2837,6 @@ fn is_bare_type_identifier(s: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// Walk a symbol's `parent_index` ancestry to the nearest enclosing type-like
-/// symbol and the nearest enclosing namespace/module, returning their qualified
-/// names as `(enclosing_type, enclosing_namespace)`. Stops as soon as both are
-/// found.
-///
-/// Cycle-guarded: a `parent_index` chain that revisits an index — a self-parent
-/// (`parent_index` == the symbol's own slot) or a longer loop, which a
-/// name-based symbol merge can produce when a same-named parent and descendant
-/// collapse onto one slot — terminates at the first repeat. Without the guard a
-/// self-parented symbol that never reaches both a type AND a namespace ancestor
-/// spins forever.
-fn enclosing_chain(
-    symbols: &[ExtractedSymbol],
-    start: Option<usize>,
-) -> (Option<String>, Option<String>) {
-    let mut cursor = start;
-    let mut found_type: Option<String> = None;
-    let mut found_ns: Option<String> = None;
-    let mut visited: FxHashSet<usize> = FxHashSet::default();
-    while let Some(idx) = cursor {
-        if !visited.insert(idx) {
-            break;
-        }
-        let Some(ancestor) = symbols.get(idx) else {
-            break;
-        };
-        let ancestor_kind = ancestor.kind.as_str();
-        if found_type.is_none() && is_type_like(ancestor_kind) {
-            found_type = Some(ancestor.qualified_name.clone());
-        }
-        if found_ns.is_none() && matches!(ancestor_kind, "namespace" | "module") {
-            found_ns = Some(ancestor.qualified_name.clone());
-        }
-        if found_type.is_some() && found_ns.is_some() {
-            break;
-        }
-        cursor = ancestor.parent_index;
-    }
-    (found_type, found_ns)
-}
 
 /// Test-only re-export of the type-like predicate so `tree_tests.rs` can
 /// assert that `types_by_name` only surfaces type-like symbols without

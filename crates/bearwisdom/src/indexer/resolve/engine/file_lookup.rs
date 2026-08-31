@@ -254,6 +254,10 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.enclosing_type_qname(source_qname)
     }
 
+    fn enclosing_type_id_of(&self, source_symbol_id: i64) -> Option<i64> {
+        self.tree.enclosing_type_id_of(source_symbol_id)
+    }
+
     fn enclosing_namespace_qname(&self, source_qname: &str) -> Option<&str> {
         self.tree.enclosing_namespace_qname(source_qname)
     }

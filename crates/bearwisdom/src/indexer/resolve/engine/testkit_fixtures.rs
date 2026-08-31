@@ -114,6 +114,7 @@ pub(crate) fn ref_ctx<'a>(
         source_symbol: sym,
         scope_chain,
         file_package_id: None,
+        source_symbol_id: None,
     }
 }
 

@@ -380,6 +380,7 @@ pub(super) fn resolve_one_file(
             source_symbol: source_sym,
             scope_chain: build_scope_chain(source_sym.scope_path.as_deref()),
             file_package_id: pf.package_id,
+            source_symbol_id: Some(source_id),
         };
 
         let kind_str = edge_kind_str(r.kind);

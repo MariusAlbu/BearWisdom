@@ -1853,8 +1853,8 @@ fn enclosing_chain_terminates_on_self_parent() {
         None,
         None,
     )];
-    let (found_type, found_ns) = super::enclosing_chain(&symbols, symbols[0].parent_index);
-    assert_eq!(found_type.as_deref(), Some("fixed-top"));
+    let (found_type, found_ns) = crate::indexer::resolve::engine::enclosing::_test_enclosing_chain(&symbols, symbols[0].parent_index);
+    assert_eq!(found_type, Some(0));
     assert_eq!(found_ns, None);
 }
 
@@ -1865,8 +1865,8 @@ fn enclosing_chain_terminates_on_two_cycle() {
         make_symbol("a", "a", SymbolKind::Class, Some(1), None, None),
         make_symbol("b", "b", SymbolKind::Class, Some(0), None, None),
     ];
-    let (found_type, found_ns) = super::enclosing_chain(&symbols, symbols[0].parent_index);
-    assert_eq!(found_type.as_deref(), Some("b"));
+    let (found_type, found_ns) = crate::indexer::resolve::engine::enclosing::_test_enclosing_chain(&symbols, symbols[0].parent_index);
+    assert_eq!(found_type, Some(1));
     assert_eq!(found_ns, None);
 }
 
@@ -1878,9 +1878,9 @@ fn enclosing_chain_finds_nearest_type_and_namespace() {
         make_symbol("Svc", "App.Svc", SymbolKind::Class, Some(0), None, None),
         make_symbol("run", "App.Svc.run", SymbolKind::Method, Some(1), None, None),
     ];
-    let (found_type, found_ns) = super::enclosing_chain(&symbols, symbols[2].parent_index);
-    assert_eq!(found_type.as_deref(), Some("App.Svc"));
-    assert_eq!(found_ns.as_deref(), Some("App"));
+    let (found_type, found_ns) = crate::indexer::resolve::engine::enclosing::_test_enclosing_chain(&symbols, symbols[2].parent_index);
+    assert_eq!(found_type, Some(1));
+    assert_eq!(found_ns, Some(0));
 }
 
 // ---------------------------------------------------------------------------

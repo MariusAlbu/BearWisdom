@@ -132,28 +132,20 @@ fn type_candidate(
         ));
     }
     if is_call {
-        if let Some(id) = lookup
-            .return_type_id_of(sym.id)
-            .or_else(|| lookup.return_type_id(&sym.qualified_name))
-            .or_else(|| {
-                lookup
-                    .return_type_str(&sym.qualified_name)
-                    .map(|s| arena.intern_type_str(&s))
-            })
-        {
+        if let Some(id) = super::type_slots::return_type_by_identity(lookup, sym).or_else(|| {
+            lookup
+                .return_type_str(&sym.qualified_name)
+                .map(|s| arena.intern_type_str(&s))
+        }) {
             return RootImportOutcome::Typed(Receiver::untyped(id));
         }
         return RootImportOutcome::Deny(Cause::new(Some(sym.id), CauseKind::UncapturedReturn));
     }
-    if let Some(id) = lookup
-        .field_type_id_of(sym.id)
-        .or_else(|| lookup.field_type_id(&sym.qualified_name))
-        .or_else(|| {
-            lookup
-                .field_type_str(&sym.qualified_name)
-                .map(|s| arena.intern_type_str(&s))
-        })
-    {
+    if let Some(id) = super::type_slots::field_type_by_identity(lookup, sym).or_else(|| {
+        lookup
+            .field_type_str(&sym.qualified_name)
+            .map(|s| arena.intern_type_str(&s))
+    }) {
         return RootImportOutcome::Typed(Receiver::untyped(id));
     }
     RootImportOutcome::Deny(Cause::new(Some(sym.id), CauseKind::UncapturedField))

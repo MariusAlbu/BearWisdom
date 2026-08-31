@@ -256,6 +256,12 @@ pub trait SymbolLookup: FlowCacheLookup {
         false
     }
 
+    /// The nearest enclosing type-kind ancestor of the symbol `source_symbol_id`,
+    /// by row id — the identity twin of `enclosing_type_qname`.
+    fn enclosing_type_id_of(&self, _source_symbol_id: i64) -> Option<i64> {
+        None
+    }
+
     /// Check whether a file path is known external-origin.
     ///
     /// Two signals combine: the historical `ext:` path-prefix convention

@@ -26,6 +26,18 @@ pub struct EnclosingMemberRule;
 /// the same helper in `self_keyword` — inlined so this file is self-contained.
 fn enclosing_type<'a>(ctx: &'a BinderContext<'_>) -> Option<&'a Symbol> {
     let lk = ctx.lookup;
+    // Identity path first: the qname map below answers by source qname, which
+    // a same-named declaration in another package shares.
+    if let Some(sym) = ctx
+        .ref_ctx
+        .source_symbol_id
+        .and_then(|sid| lk.enclosing_type_id_of(sid))
+        .and_then(|eid| lk.symbol_by_id(eid))
+    {
+        if is_type_kind(&sym.kind) {
+            return Some(sym);
+        }
+    }
     if let Some(type_qname) =
         lk.enclosing_type_qname(&ctx.ref_ctx.source_symbol.qualified_name)
     {

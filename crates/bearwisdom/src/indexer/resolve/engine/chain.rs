@@ -1484,10 +1484,7 @@ pub(crate) fn member_yield_type(
 ) -> Option<TypeId> {
     let qname = member.qualified_name.as_str();
     if is_call {
-        if let Some(id) = lookup
-            .return_type_id_of(member.id)
-            .or_else(|| lookup.return_type_id(qname))
-        {
+        if let Some(id) = super::type_slots::return_type_by_identity(lookup, member) {
             return Some(id);
         }
         if let Some(s) = lookup.return_type_str(qname) {
@@ -1506,9 +1503,7 @@ pub(crate) fn member_yield_type(
         // that NAMES a function/method symbol (a property typed `typeof someFn`)
         // interns as a nominal head, not a `Type::Function`, so resolve it to
         // the named function's own return type here.
-        let ft = lookup
-            .field_type_id_of(member.id)
-            .or_else(|| lookup.field_type_id(qname))
+        let ft = super::type_slots::field_type_by_identity(lookup, member)
             .or_else(|| lookup.field_type_str(qname).map(|s| arena.intern_type_str(&s)))?;
         if let Some(head) = head_qname(arena, ft) {
             if let Some(rt) = callable_named_return(lookup, arena, &head) {
@@ -1517,10 +1512,7 @@ pub(crate) fn member_yield_type(
         }
         return Some(ft);
     }
-    if let Some(id) = lookup
-        .field_type_id_of(member.id)
-        .or_else(|| lookup.field_type_id(qname))
-    {
+    if let Some(id) = super::type_slots::field_type_by_identity(lookup, member) {
         return Some(id);
     }
     if let Some(s) = lookup.field_type_str(qname) {
@@ -1531,10 +1523,7 @@ pub(crate) fn member_yield_type(
     // field type. A member with a return type but no field type is a getter; a
     // bare method reference whose chain continues roots on the same return, so
     // this fallback only adds yields, never replaces a field/return a call needs.
-    if let Some(id) = lookup
-        .return_type_id_of(member.id)
-        .or_else(|| lookup.return_type_id(qname))
-    {
+    if let Some(id) = super::type_slots::return_type_by_identity(lookup, member) {
         return Some(id);
     }
     lookup.return_type_str(qname).map(|s| arena.intern_type_str(&s))
@@ -1631,7 +1620,17 @@ fn resolve_root_impl(
     if matches!(seg.kind, SegmentKind::SelfRef) {
         // `this`/`self` roots on the enclosing type — the one declaration whose
         // members the chain walks. Bind its id so an inherited-member climb keys
-        // on identity, not the enclosing type's qname string.
+        // on identity, not the enclosing type's qname string. The id-keyed
+        // enclosing lookup runs first: the qname map answers by source qname,
+        // which a same-named declaration in another package shares.
+        if let Some(enc) = ref_ctx
+            .source_symbol_id
+            .and_then(|sid| lookup.enclosing_type_id_of(sid))
+            .and_then(|eid| lookup.symbol_by_id(eid))
+        {
+            let ty = arena.class(&enc.qualified_name);
+            return Ok(Receiver { ty, id: Some(enc.id) });
+        }
         if let Some(enc_qname) =
             lookup.enclosing_type_qname(&ref_ctx.source_symbol.qualified_name)
         {
@@ -1855,10 +1854,7 @@ pub(super) fn import_scoped_external_root(
     if seg.is_call {
         // A callable declaration in the module yields its return type.
         for s in scoped.iter().filter(|s| is_callable(&s.kind)) {
-            if let Some(id) = lookup
-                .return_type_id_of(s.id)
-                .or_else(|| lookup.return_type_id(&s.qualified_name))
-            {
+            if let Some(id) = super::type_slots::return_type_by_identity(lookup, s) {
                 return Some(Receiver::untyped(id));
             }
         }
@@ -2442,10 +2438,7 @@ fn resolve_callee_return_and_id(
             if lookup.by_qualified_name(&ret_qname).is_some() {
                 return Ok((arena.class(&ret_qname), cand.id));
             }
-            if let Some(id) = lookup
-                .return_type_id_of(cand.id)
-                .or_else(|| lookup.return_type_id(&cand.qualified_name))
-            {
+            if let Some(id) = super::type_slots::return_type_by_identity(lookup, cand) {
                 return Ok((id, cand.id));
             }
             if let Some(s) = lookup.return_type_str(&cand.qualified_name) {
@@ -2484,7 +2477,7 @@ fn resolve_callee_return_and_id(
             }
         }
         if let Some(callee) = scoped.first() {
-            if let Some(id) = lookup.return_type_id(&callee.qualified_name) {
+            if let Some(id) = super::type_slots::return_type_by_identity(lookup, callee) {
                 return Ok((id, callee.id));
             }
             if let Some(n) = lookup.return_type_str(&callee.qualified_name) {
