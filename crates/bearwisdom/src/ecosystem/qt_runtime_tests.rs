@@ -34,6 +34,7 @@ fn fixture_qt_include() -> (TempDir, std::path::PathBuf) {
 
 #[test]
 fn qt_locator_finds_install_via_standard_qtdir_env() {
+    let _env = crate::ecosystem::QTDIR_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     // `QTDIR` is the standard env var the Qt toolchain/qmake exports — it
     // names the install root, and discovery drills into its `include/`.
     // No BearWisdom-private override is consulted; standard discovery alone
@@ -123,6 +124,7 @@ fn qt_resolve_header_finds_by_relative_or_basename() {
 #[test]
 #[cfg(target_os = "windows")]
 fn qt_windows_probe_finds_standard_install_root() {
+    let _env = crate::ecosystem::QTDIR_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     // The official Qt online installer lays the SDK out as
     // `C:/Qt/<version>/<kit>/include`. When such an install exists on the
     // host, the Windows autodetect probe must surface its `include/` dir —

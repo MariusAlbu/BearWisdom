@@ -600,3 +600,8 @@ pub use registry::{default_locator, default_registry, EcosystemRegistry};
 #[cfg(test)]
 #[path = "mod_tests.rs"]
 mod tests;
+
+/// `QTDIR` is process-global; every test that sets and restores it must hold
+/// this lock, or a parallel sibling's restore clobbers the fixture mid-run.
+#[cfg(test)]
+pub(crate) static QTDIR_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

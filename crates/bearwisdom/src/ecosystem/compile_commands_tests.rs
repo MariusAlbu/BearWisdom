@@ -379,6 +379,7 @@ fn project_has_compile_commands_json_returns_false_when_absent() {
 
 #[test]
 fn precedence_qt_walker_suppressed_when_compile_commands_present() {
+    let _env = crate::ecosystem::QTDIR_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     use crate::ecosystem::{Ecosystem, EcosystemId, QtRuntimeEcosystem};
     use std::collections::HashMap;
     // Point QTDIR at a real fixture so the walker WOULD return a root
@@ -413,6 +414,7 @@ fn precedence_qt_walker_suppressed_when_compile_commands_present() {
 
 #[test]
 fn precedence_qt_walker_active_without_compile_commands() {
+    let _env = crate::ecosystem::QTDIR_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     use crate::ecosystem::{Ecosystem, EcosystemId, QtRuntimeEcosystem};
     use std::collections::HashMap;
     // Same fixture, but no compile_commands.json — Qt walker SHOULD activate.
