@@ -72,6 +72,7 @@ pub const CSHARP_PROFILE: LanguageProfile = LanguageProfile {
     compiled_name_prefixes: &[],
     id: "csharp",
     qname_separator: ".",
+    declaration_merging: crate::type_checker::profile::language_profile::MergeScope::SamePackage,
     self_keywords: &["this", "base"],
     supertype_discovery: SupertypeDiscovery::Explicit,
     ancestor_order: crate::type_checker::profile::language_profile::AncestorOrder::Bfs,

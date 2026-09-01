@@ -2402,8 +2402,8 @@
       },
       "flow_edges": 510,
       "generated_files_reclassified": 2,
-      "internal_edges": 203931,
-      "internal_unresolved": 44744,
+      "internal_edges": 204028,
+      "internal_unresolved": 44648,
       "languages": {
         "angular_template": 291,
         "csharp": 2692,
@@ -2426,33 +2426,33 @@
       },
       "path": "F:/Work/Projects/TestProjects/dotnet-squidex",
       "perf": {
-        "end_ws_mb": 19249,
-        "files_per_sec": 17,
-        "index_duration_ms": 252026
+        "end_ws_mb": 19086,
+        "files_per_sec": 14,
+        "index_duration_ms": 312475
       },
       "project": "dotnet-squidex",
       "rate_by_language": {
         "angular_template": 59.23,
-        "csharp": 87.33,
+        "csharp": 87.39,
         "dockerfile": 12.5,
         "html": 13.04,
         "javascript": 76.76,
         "powershell": 0.0,
         "razor": 20.0,
         "scss": 6.35,
-        "typescript": 69.52
+        "typescript": 69.5
       },
-      "resolution_rate": 82.01,
+      "resolution_rate": 82.05,
       "routes": 512,
       "symbols": 79472,
       "unresolved_by_lang_kind": {
         "angular_template.calls": 1497,
-        "csharp.calls": 13370,
+        "csharp.calls": 13279,
         "csharp.implements": 66,
         "csharp.imports": 2021,
         "csharp.inherits": 27,
-        "csharp.instantiates": 450,
-        "csharp.type_ref": 6811,
+        "csharp.instantiates": 449,
+        "csharp.type_ref": 6795,
         "dockerfile.imports": 7,
         "dockerfile.inherits": 7,
         "html.calls": 6,
@@ -2467,12 +2467,12 @@
         "razor.type_ref": 11,
         "scss.calls": 354,
         "scss.imports": 428,
-        "typescript.calls": 7330,
+        "typescript.calls": 7341,
         "typescript.implements": 18,
         "typescript.imports": 2,
         "typescript.inherits": 87,
         "typescript.instantiates": 1175,
-        "typescript.type_ref": 10912
+        "typescript.type_ref": 10913
       },
       "vendored_files_reclassified": 39
     },
@@ -8614,9 +8614,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/php-laravel",
       "perf": {
-        "end_ws_mb": 99,
-        "files_per_sec": 49,
-        "index_duration_ms": 59041
+        "end_ws_mb": 237,
+        "files_per_sec": 22,
+        "index_duration_ms": 131786
       },
       "project": "php-laravel",
       "rate_by_language": {
@@ -10257,8 +10257,8 @@
         "http_call": 7
       },
       "flow_edges": 7,
-      "internal_edges": 88454,
-      "internal_unresolved": 4821,
+      "internal_edges": 88460,
+      "internal_unresolved": 4815,
       "languages": {
         "angular_template": 17,
         "astro": 2,
@@ -10275,9 +10275,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/react-tanstack-query",
       "perf": {
-        "end_ws_mb": 107,
-        "files_per_sec": 15,
-        "index_duration_ms": 135591
+        "end_ws_mb": 222,
+        "files_per_sec": 17,
+        "index_duration_ms": 119160
       },
       "project": "react-tanstack-query",
       "rate_by_language": {
@@ -10287,10 +10287,10 @@
         "javascript": 59.41,
         "markdown": 67.75,
         "svelte": 91.18,
-        "typescript": 95.46,
+        "typescript": 95.47,
         "vue": 68.75
       },
-      "resolution_rate": 94.83,
+      "resolution_rate": 94.84,
       "routes": 7,
       "symbols": 28432,
       "unresolved_by_lang_kind": {
@@ -10305,11 +10305,11 @@
         "markdown.type_ref": 82,
         "svelte.calls": 5,
         "svelte.type_ref": 1,
-        "typescript.calls": 2495,
+        "typescript.calls": 2493,
         "typescript.imports": 39,
         "typescript.inherits": 23,
         "typescript.instantiates": 47,
-        "typescript.type_ref": 1546,
+        "typescript.type_ref": 1542,
         "vue.calls": 10
       }
     },
@@ -13237,9 +13237,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-nextjs",
       "perf": {
-        "end_ws_mb": 172,
-        "files_per_sec": 14,
-        "index_duration_ms": 1671328
+        "end_ws_mb": 247,
+        "files_per_sec": 13,
+        "index_duration_ms": 1819890
       },
       "project": "ts-nextjs",
       "rate_by_language": {
@@ -13286,12 +13286,12 @@
         "scss.imports": 100,
         "scss.inherits": 1,
         "shell.calls": 13,
-        "typescript.calls": 25868,
+        "typescript.calls": 25871,
         "typescript.implements": 13,
         "typescript.imports": 229,
         "typescript.inherits": 27,
         "typescript.instantiates": 208,
-        "typescript.type_ref": 15534
+        "typescript.type_ref": 15531
       },
       "vendored_files_reclassified": 673
     },

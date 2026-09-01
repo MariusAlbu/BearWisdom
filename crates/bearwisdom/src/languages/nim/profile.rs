@@ -61,6 +61,7 @@ pub const NIM_PROFILE: LanguageProfile = LanguageProfile {
     compiled_name_prefixes: &[],
     id: "nim",
     qname_separator: ".",
+    declaration_merging: crate::type_checker::profile::language_profile::MergeScope::None,
     self_keywords: &[],
     supertype_discovery: SupertypeDiscovery::Explicit,
     ancestor_order: crate::type_checker::profile::language_profile::AncestorOrder::Bfs,

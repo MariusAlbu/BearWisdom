@@ -1557,7 +1557,7 @@ fn resolve_root_impl(
             .and_then(|sid| lookup.enclosing_type_id_of(sid))
             .and_then(|eid| lookup.symbol_by_id(eid))
         {
-            let ty = super::head_decl::nominal_head(arena, &enc);
+            let ty = super::head_decl::nominal_head(lookup, arena, &enc);
             return Ok(Receiver { ty, id: Some(enc.id) });
         }
         if let Some(enc_qname) =
@@ -1581,7 +1581,7 @@ fn resolve_root_impl(
                 lookup.by_qualified_name(sp).filter(|s| is_type_kind(&s.kind))
             })
             .ok_or(None)?;
-        let ty = super::head_decl::nominal_head(arena, enc_sym);
+        let ty = super::head_decl::nominal_head(lookup, arena, enc_sym);
         return Ok(Receiver { ty, id: Some(enc_sym.id) });
     }
     // An import-bound root types through its import's own candidate set —
@@ -1679,7 +1679,7 @@ fn resolve_root_impl(
         // generic "this binding itself is untyped" signal collected above.
         return Err(lookup.root_cause_hint(&seg.name).or(cause));
     };
-    let ty = with_segment_args(arena, super::head_decl::nominal_head(arena, s), &seg.type_args);
+    let ty = with_segment_args(arena, super::head_decl::nominal_head(lookup, arena, s), &seg.type_args);
     Ok(Receiver::new(ty, s.id))
 }
 
@@ -1822,7 +1822,7 @@ pub(super) fn import_scoped_external_root(
         }
     }
     let s = scoped.first()?;
-    Some(Receiver::new(super::head_decl::nominal_head(arena, s), s.id))
+    Some(Receiver::new(super::head_decl::nominal_head(lookup, arena, s), s.id))
 }
 
 /// The package that DECLARES `name` as an ambient global — read off the declaring

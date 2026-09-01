@@ -108,6 +108,7 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     // `::` matches the `::`-form a ref's `module` and chain prefixes carry
     // (`crate::db`). The probe set is deduped to the two joins by the engine.
     qname_separator: "::",
+    declaration_merging: crate::type_checker::profile::language_profile::MergeScope::None,
     // `self`, `Self`, and `&self` / `&mut self` — the chain extractor
     // collapses receivers to a single `self` token; engine treats it
     // uniformly. `super::` is a module-path qualifier handled by the

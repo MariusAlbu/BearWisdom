@@ -155,6 +155,10 @@ pub struct Compilation {
     /// Generic args of an `extends`/`implements` edge, keyed by the RESOLVED
     /// (child_id, parent_id) pair — the identity twin of `inherits_arg_ids`.
     inherits_args_by_pair: FxHashMap<(i64, i64), Vec<TypeId>>,
+    /// Declaration-merging buckets recorded in Pass 1 (profile `MergeScope`).
+    merge_groups: super::merge_canonical::MergeGroups,
+    /// Non-canonical merge-set row id → the set's canonical (smallest) id.
+    merge_canonical: FxHashMap<i64, i64>,
     /// `(child_qname, parent_head) → import module`: the child file's import
     /// of that exact head, captured when the edge was recorded. The one
     /// signal that survives homonyms when a head binds to a declaration.
@@ -346,6 +350,8 @@ impl Compilation {
             inherits_arg_ids: FxHashMap::default(),
             inherits_by_id: FxHashMap::default(),
             inherits_args_by_pair: FxHashMap::default(),
+            merge_groups: super::merge_canonical::MergeGroups::default(),
+            merge_canonical: FxHashMap::default(),
             inherits_import_evidence: FxHashMap::default(),
             enclosing_type: FxHashMap::default(),
             enclosing_type_by_id: FxHashMap::default(),
@@ -399,7 +405,12 @@ impl Compilation {
         // merged value+type qname guard sees every type declaration:
         // `(qname, symbol id, declared TypeId)`.
         let mut pending_field_types: Vec<(String, i64, TypeId)> = Vec::new();
+        let profiles = super::file_context::build_profiles();
         for pf in parsed {
+            let merge_scope = profiles
+                .get(pf.language.as_str())
+                .map(|p| p.declaration_merging)
+                .unwrap_or(crate::type_checker::profile::language_profile::MergeScope::None);
             let file_arc: Arc<str> = Arc::from(pf.path.as_str());
 
             // External file: record its parse language for the cross-language
@@ -475,6 +486,14 @@ impl Compilation {
                 // Ambient scope: the materialization layer (ecosystem::ambient)
                 // classified which qnames are import-free globals; index those by
                 // simple name so the ambient-scope rung can bind a bare reference.
+                super::merge_canonical::record(
+                    &mut self.merge_groups,
+                    merge_scope,
+                    &info,
+                    &pf.path,
+                    pf.package_id,
+                );
+
                 if ambient_qnames.contains(&info.qualified_name) {
                     self.ambient_scope
                         .entry(info.name.clone())
@@ -692,6 +711,18 @@ impl Compilation {
         // key module specifiers to the file re-export following starts from.
         // Runs after Pass 4 so `reexport_map` is complete. See `module_entry`.
         super::module_entry::populate(&mut self.module_entry, &self.reexport_map, parsed);
+
+        // Declaration merging: fold the id-keyed structural indexes onto each
+        // merge set's canonical id. Runs per batch; idempotent.
+        self.merge_canonical = super::merge_canonical::compute(&self.merge_groups);
+        super::merge_canonical::apply(
+            &self.merge_canonical,
+            &mut self.members_by_id,
+            &mut self.inherits_by_id,
+            &mut self.inherits_args_by_pair,
+            &mut self.enclosing_type_by_id,
+        );
+        super::merge_canonical::fold_type_info(&self.merge_canonical, &mut self.type_info_by_id);
 
         self.module_specifier.file_paths.extend(module_specifier::internal_file_paths(parsed));
 
@@ -2163,6 +2194,14 @@ fn init_pass_file_ctx(pf: &ParsedFile) -> FileContext {
 
 // All flow-cache methods keep their no-op defaults: the per-file cache lives
 // on the FileLookup overlay, never on the shared tree.
+impl Compilation {
+    /// Canonical id of a merge-set member; identity for everything else.
+    fn canon_id(&self, id: i64) -> i64 {
+        self.merge_canonical.get(&id).copied().unwrap_or(id)
+    }
+
+}
+
 impl crate::indexer::resolve::engine::contract::FlowCacheLookup for Compilation {}
 
 impl SymbolLookup for Compilation {
@@ -2203,7 +2242,7 @@ impl SymbolLookup for Compilation {
     }
 
     fn members_of_id(&self, parent_id: i64) -> SymbolSet<'_> {
-        match self.members_by_id.get(&parent_id) {
+        match self.members_by_id.get(&self.canon_id(parent_id)) {
             Some(ids) => {
                 SymbolSet::Owned(ids.iter().filter_map(|id| self.by_id.get(id)).collect())
             }
@@ -2417,7 +2456,7 @@ impl SymbolLookup for Compilation {
     }
 
     fn parent_class_ids(&self, child_id: i64) -> Vec<i64> {
-        self.inherits_by_id.get(&child_id).cloned().unwrap_or_default()
+        self.inherits_by_id.get(&self.canon_id(child_id)).cloned().unwrap_or_default()
     }
 
     fn parent_class_args(&self, child_head: &str, parent_head: &str) -> &[String] {
@@ -2430,7 +2469,7 @@ impl SymbolLookup for Compilation {
 
     fn parent_class_arg_ids_of(&self, child_id: i64, parent_id: i64) -> &[TypeId] {
         self.inherits_args_by_pair
-            .get(&(child_id, parent_id))
+            .get(&(self.canon_id(child_id), self.canon_id(parent_id)))
             .map(|v| v.as_slice())
             .unwrap_or(&[])
     }
@@ -2450,7 +2489,13 @@ impl SymbolLookup for Compilation {
     }
 
     fn enclosing_type_id_of(&self, source_symbol_id: i64) -> Option<i64> {
-        self.enclosing_type_by_id.get(&source_symbol_id).copied()
+        self.enclosing_type_by_id
+            .get(&self.canon_id(source_symbol_id))
+            .copied()
+    }
+
+    fn canonical_decl_id(&self, id: i64) -> i64 {
+        self.canon_id(id)
     }
 
     fn enclosing_namespace_qname(&self, source_qname: &str) -> Option<&str> {

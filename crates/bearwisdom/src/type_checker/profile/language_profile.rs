@@ -24,10 +24,26 @@ pub use super::syntax_specs::*;
 // Top-level struct
 // ---------------------------------------------------------------------------
 
+/// How far apart two same-qname type declarations may sit and still be ONE
+/// logical type (Roslyn-style declaration merging).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MergeScope {
+    /// No declaration merging — same-qname declarations are distinct types.
+    None,
+    /// Merge only within one file (TS `interface Foo` + `namespace Foo`;
+    /// module scoping makes same-name declarations in other files distinct).
+    SameFile,
+    /// Merge across files within one package (C# partial classes — qnames
+    /// are namespace-qualified, so one qname is one type per package).
+    SamePackage,
+}
+
 pub struct LanguageProfile {
     // === Identity ===
     pub id: &'static str,
     pub qname_separator: &'static str,
+    /// Declaration-merging reach for this language's type declarations.
+    pub declaration_merging: MergeScope,
     pub self_keywords: &'static [&'static str],
 
     // === Type system (engine) ===

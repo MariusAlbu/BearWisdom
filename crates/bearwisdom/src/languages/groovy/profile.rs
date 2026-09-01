@@ -47,6 +47,7 @@ pub const GROOVY_PROFILE: LanguageProfile = LanguageProfile {
     compiled_name_prefixes: &[],
     id: "groovy",
     qname_separator: ".",
+    declaration_merging: crate::type_checker::profile::language_profile::MergeScope::None,
     self_keywords: &["this", "super"],
     supertype_discovery: SupertypeDiscovery::Explicit,
     ancestor_order: crate::type_checker::profile::language_profile::AncestorOrder::Bfs,

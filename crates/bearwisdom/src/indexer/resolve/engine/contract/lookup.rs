@@ -476,6 +476,13 @@ pub trait SymbolLookup: FlowCacheLookup {
 
     /// Interned-id form of `parent_class_args`. Default empty; the real store
     /// overrides it. Consumers fall back to interning `parent_class_args` on empty.
+    /// The canonical declaration id under declaration merging: a merge-set
+    /// member (TS interface+namespace pair, C# partial class rows) maps to
+    /// the set's canonical row; everything else maps to itself.
+    fn canonical_decl_id(&self, id: i64) -> i64 {
+        id
+    }
+
     /// The identity twin of `parent_class_arg_ids`: edge args keyed by the
     /// resolved (child, parent) declaration ids.
     fn parent_class_arg_ids_of(&self, _child_id: i64, _parent_id: i64) -> &[TypeId] {

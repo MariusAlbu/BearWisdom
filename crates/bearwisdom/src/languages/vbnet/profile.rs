@@ -57,6 +57,7 @@ pub const VBNET_PROFILE: LanguageProfile = LanguageProfile {
     compiled_name_prefixes: &[],
     id: "vbnet",
     qname_separator: ".",
+    declaration_merging: crate::type_checker::profile::language_profile::MergeScope::None,
     self_keywords: &["Me", "MyClass", "MyBase"],
     supertype_discovery: SupertypeDiscovery::Explicit,
     ancestor_order: crate::type_checker::profile::language_profile::AncestorOrder::Bfs,

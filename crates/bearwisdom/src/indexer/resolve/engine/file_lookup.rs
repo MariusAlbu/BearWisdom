@@ -254,6 +254,10 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.parent_class_arg_ids_of(child_id, parent_id)
     }
 
+    fn canonical_decl_id(&self, id: i64) -> i64 {
+        self.tree.canonical_decl_id(id)
+    }
+
     fn enclosing_type_qname(&self, source_qname: &str) -> Option<&str> {
         self.tree.enclosing_type_qname(source_qname)
     }

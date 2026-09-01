@@ -10,6 +10,7 @@ pub const HCL_PROFILE: LanguageProfile = LanguageProfile {
     compiled_name_prefixes: &[],
     id: "hcl",
     qname_separator: ".",
+    declaration_merging: crate::type_checker::profile::language_profile::MergeScope::None,
     // `var.X` / `local.X` carry a sigil head the bare-name probes strip so the
     // reference binds to the same-file `X` Variable / `local` attribute.
     self_keywords: &["var", "local"],

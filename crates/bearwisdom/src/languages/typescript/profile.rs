@@ -106,6 +106,7 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     compiled_name_prefixes: &[],
     id: "typescript",
     qname_separator: ".",
+    declaration_merging: crate::type_checker::profile::language_profile::MergeScope::SameFile,
     // `this` is the only receiver keyword TS surfaces at the chain-walker
     // root; `super` is handled by the resolver via parent-class lookup
     // (no SelfRef SegmentKind today carries `super`).

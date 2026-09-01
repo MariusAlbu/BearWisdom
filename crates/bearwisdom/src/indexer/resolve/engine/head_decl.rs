@@ -27,9 +27,9 @@ use super::chain::{head_qname, Receiver};
 /// a name-shaped proxy for its type, and alias/namespace declarations stay
 /// name-addressed so the alias-expansion machinery sees exactly the heads it
 /// always has.
-pub(crate) fn nominal_head(arena: &TypeArena, sym: &Symbol) -> TypeId {
+pub(crate) fn nominal_head(lookup: &dyn SymbolLookup, arena: &TypeArena, sym: &Symbol) -> TypeId {
     if crate::indexer::resolve::engine::support::is_type_kind(&sym.kind) {
-        arena.decl(&sym.qualified_name, sym.id)
+        arena.decl(&sym.qualified_name, lookup.canonical_decl_id(sym.id))
     } else {
         arena.class(&sym.qualified_name)
     }

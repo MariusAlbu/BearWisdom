@@ -46,6 +46,7 @@ pub const LUA_PROFILE: LanguageProfile = LanguageProfile {
     compiled_name_prefixes: &[],
     id: "lua",
     qname_separator: ".",
+    declaration_merging: crate::type_checker::profile::language_profile::MergeScope::None,
     self_keywords: &["self"],
     supertype_discovery: SupertypeDiscovery::Structural,
     ancestor_order: crate::type_checker::profile::language_profile::AncestorOrder::Bfs,

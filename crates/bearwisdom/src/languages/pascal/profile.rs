@@ -56,6 +56,7 @@ pub const PASCAL_PROFILE: LanguageProfile = LanguageProfile {
     compiled_name_prefixes: &[],
     id: "pascal",
     qname_separator: ".",
+    declaration_merging: crate::type_checker::profile::language_profile::MergeScope::None,
     self_keywords: &["Self"],
     supertype_discovery: SupertypeDiscovery::Explicit,
     ancestor_order: crate::type_checker::profile::language_profile::AncestorOrder::Bfs,

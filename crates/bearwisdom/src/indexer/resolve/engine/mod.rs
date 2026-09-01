@@ -56,6 +56,7 @@ pub mod substitution;
 pub mod type_mention_demand;
 mod declared_deps;
 mod enclosing;
+mod merge_canonical;
 mod module_entry;
 mod type_slots;
 mod module_scheme;
