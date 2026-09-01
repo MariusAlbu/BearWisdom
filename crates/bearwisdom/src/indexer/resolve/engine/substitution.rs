@@ -101,6 +101,25 @@ pub(crate) fn substitute_supertype_args(
         return yielded;
     }
     let seed = receiver_env(lookup, arena, receiver, recv_id);
+    // Identity climb first: from the receiver's declaration, follow the
+    // resolved supertype ids toward the parent that DECLARES the member
+    // (containment by id), composing each edge's pair-keyed args. Immune to
+    // the qname collisions the string climb below is exposed to; falls
+    // through when the receiver carries no id or no id-path reaches the
+    // declaring type (id-less stores, incremental reload).
+    if let Some(child_id) = recv_id {
+        let mut seen_ids: FxHashSet<i64> = FxHashSet::default();
+        if let Some(map) =
+            compose_to_supertype_by_id(lookup, arena, child_id, member.id, &seed, 0, &mut seen_ids)
+        {
+            // An empty map means the id path reached the declaring parent but
+            // holds no pair-keyed edge args (id-less stores) — the string
+            // climb below still owns those.
+            if !map.is_empty() {
+                return arena.rebind_class_params(yielded, &map);
+            }
+        }
+    }
     let mut seen: FxHashSet<String> = FxHashSet::default();
     let Some(map) = compose_to_supertype(lookup, arena, &recv_head, decl_head, &seed, 0, &mut seen)
     else {
@@ -195,3 +214,75 @@ fn hop_env(
 #[cfg(test)]
 #[path = "substitution_tests.rs"]
 mod tests;
+
+/// Walk the receiver declaration's resolved supertype ids toward the parent
+/// that declares `member_id`, composing each hop's `{parameter -> argument}`
+/// map through the accumulated one — the identity twin of
+/// `compose_to_supertype`. Edge args come from the (child, parent) pair store;
+/// parameter names from the parent's own declaration.
+fn compose_to_supertype_by_id(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    child_id: i64,
+    member_id: i64,
+    acc: &FxHashMap<String, TypeId>,
+    depth: usize,
+    seen: &mut FxHashSet<i64>,
+) -> Option<FxHashMap<String, TypeId>> {
+    if depth >= MAX_SUPERTYPE_DEPTH || !seen.insert(child_id) {
+        return None;
+    }
+    for parent_id in lookup.parent_class_ids(child_id) {
+        let hop = hop_env_by_id(lookup, arena, child_id, parent_id, acc);
+        let declares_member = lookup
+            .members_of_id(parent_id)
+            .iter()
+            .any(|m| m.id == member_id);
+        if declares_member {
+            return Some(hop);
+        }
+        let next_acc = if hop.is_empty() { acc.clone() } else { hop };
+        if let Some(map) = compose_to_supertype_by_id(
+            lookup,
+            arena,
+            parent_id,
+            member_id,
+            &next_acc,
+            depth + 1,
+            seen,
+        ) {
+            return Some(map);
+        }
+    }
+    None
+}
+
+/// The `{parameter -> argument}` map one resolved `child -> parent` edge
+/// imposes, with each argument rewritten through `acc` first — the identity
+/// twin of `hop_env`.
+fn hop_env_by_id(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    child_id: i64,
+    parent_id: i64,
+    acc: &FxHashMap<String, TypeId>,
+) -> FxHashMap<String, TypeId> {
+    let arg_ids = lookup.parent_class_arg_ids_of(child_id, parent_id);
+    if arg_ids.is_empty() {
+        return FxHashMap::default();
+    }
+    let params = lookup.generic_params_of(parent_id).unwrap_or_default();
+    if params.is_empty() {
+        return FxHashMap::default();
+    }
+    params
+        .into_iter()
+        .zip(arg_ids.iter().map(|&a| {
+            if acc.is_empty() {
+                a
+            } else {
+                arena.rebind_class_params(a, acc)
+            }
+        }))
+        .collect()
+}

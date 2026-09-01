@@ -152,6 +152,9 @@ pub struct Compilation {
     /// members from the child's actual base, not the first-wins qname collision —
     /// and a multi-supertype interface reaches members on every branch.
     inherits_by_id: FxHashMap<i64, Vec<i64>>,
+    /// Generic args of an `extends`/`implements` edge, keyed by the RESOLVED
+    /// (child_id, parent_id) pair — the identity twin of `inherits_arg_ids`.
+    inherits_args_by_pair: FxHashMap<(i64, i64), Vec<TypeId>>,
     /// `(child_qname, parent_head) → import module`: the child file's import
     /// of that exact head, captured when the edge was recorded. The one
     /// signal that survives homonyms when a head binds to a declaration.
@@ -342,6 +345,7 @@ impl Compilation {
             inherits_args: FxHashMap::default(),
             inherits_arg_ids: FxHashMap::default(),
             inherits_by_id: FxHashMap::default(),
+            inherits_args_by_pair: FxHashMap::default(),
             inherits_import_evidence: FxHashMap::default(),
             enclosing_type: FxHashMap::default(),
             enclosing_type_by_id: FxHashMap::default(),
@@ -810,7 +814,14 @@ impl Compilation {
 
     /// Merge ladder-RESOLVED inheritance edges into the climb map — see `parent_resolution::apply_resolved`.
     pub(crate) fn apply_resolved_inherits(&mut self, pairs: impl IntoIterator<Item = (i64, i64)>) {
-        super::parent_resolution::apply_resolved(&mut self.inherits_by_id, pairs);
+        let pairs: Vec<(i64, i64)> = pairs.into_iter().collect();
+        super::parent_resolution::apply_resolved(&mut self.inherits_by_id, pairs.iter().copied());
+        super::parent_resolution::attach_edge_args(
+            &pairs,
+            &self.by_id,
+            &self.inherits_arg_ids,
+            &mut self.inherits_args_by_pair,
+        );
     }
 
     /// Rebuild `inherits_by_id` from the string-keyed `inherits` map, the
@@ -819,11 +830,14 @@ impl Compilation {
     /// run over the cumulative symbol set. Resolution ranking lives in
     /// `engine/parent_resolution`.
     fn rebuild_inherits_by_id(&mut self) {
-        self.inherits_by_id = super::parent_resolution::rebuild_inherits_by_id(
+        let (by_id, args_by_pair) = super::parent_resolution::rebuild_inherits_by_id(
             self,
             &self.inherits,
             &self.inherits_import_evidence,
+            &self.inherits_arg_ids,
         );
+        self.inherits_by_id = by_id;
+        self.inherits_args_by_pair.extend(args_by_pair);
     }
 
     /// Merge TypeScript module-augmentation supertypes into the augmented
@@ -2411,6 +2425,13 @@ impl SymbolLookup for Compilation {
             .get(child_head)
             .and_then(|edges| edges.iter().find(|(h, _)| h == parent_head))
             .map(|(_, args)| args.as_slice())
+            .unwrap_or(&[])
+    }
+
+    fn parent_class_arg_ids_of(&self, child_id: i64, parent_id: i64) -> &[TypeId] {
+        self.inherits_args_by_pair
+            .get(&(child_id, parent_id))
+            .map(|v| v.as_slice())
             .unwrap_or(&[])
     }
 

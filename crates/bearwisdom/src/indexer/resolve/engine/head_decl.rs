@@ -196,3 +196,80 @@ pub(crate) fn receiver_type_for_head(
 fn type_has_members(lookup: &dyn SymbolLookup, sym: &Symbol) -> bool {
     !lookup.members_of_id(sym.id).is_empty() || !lookup.members_of(&sym.qualified_name).is_empty()
 }
+
+/// Re-root a receiver whose nominal head is a BARE simple name onto its indexed
+/// (package-prefixed) type declaration. A field/return annotation captures a type by
+/// the name written in source (`theme: NbThemeService`), but the class is indexed
+/// under its package-prefixed qname (`@nebular/theme.NbThemeService`) and its members
+/// are keyed there — so a bare-headed receiver finds neither an id (no exact qname)
+/// nor members (`members_of("NbThemeService")` is empty). Resolve the bare head to
+/// its same-simple-name declaration, bind its id, and rewrite the head to the indexed
+/// qname. Mirrors the bare-type-NAME re-rooting the static-access root does.
+///
+/// No-op when the head is already qualified, an exact-qname declaration exists, no
+/// same-name type is indexed, or the pick is ambiguous.
+pub(super) fn reroot_bare_head(
+    arena: &TypeArena,
+    lookup: &dyn SymbolLookup,
+    ty: TypeId,
+    id: Option<i64>,
+    file_ctx: Option<&FileContext>,
+) -> Receiver {
+    // A bound head IS its indexed declaration — nothing to re-root.
+    if super::head_decl::head_decl_id(arena, ty).is_some() {
+        return Receiver { ty, id };
+    }
+    let Some(head) = head_qname(arena, ty) else {
+        return Receiver { ty, id };
+    };
+    if head.contains('.') || lookup.by_qualified_name(&head).is_some() {
+        return Receiver { ty, id };
+    }
+    let types = lookup.types_by_name(&head);
+    let cands: Vec<&Symbol> = types.iter().collect();
+    let decl = match cands.as_slice() {
+        [] => return Receiver { ty, id },
+        [only] => *only,
+        many => match file_ctx.and_then(|fc| pick_ranked_candidate(fc, None, lookup, many)) {
+            Some(s) => s,
+            // Several copies sharing ONE qname (a package re-exported through several
+            // disk paths, e.g. `rxjs.Observable`) are an unambiguous re-root target
+            // even when ranking can't separate them.
+            None if many.iter().all(|c| c.qualified_name == many[0].qualified_name) => many[0],
+            None => return Receiver { ty, id },
+        },
+    };
+    if decl.qualified_name == head {
+        return Receiver { ty, id: id.or(Some(decl.id)) };
+    }
+    Receiver {
+        ty: rebind_head(arena, ty, &decl.qualified_name),
+        id: Some(decl.id),
+    }
+}
+
+/// Rewrite a type's nominal head `Class` to `qname`, preserving generic application
+/// and the nullable/async/iterator wrappers `head_qname` looks through. A structural
+/// type with no nominal head is returned unchanged.
+pub(super) fn rebind_head(arena: &TypeArena, ty: TypeId, qname: &str) -> TypeId {
+    match arena.get(ty) {
+        Type::Class(_) => arena.class(qname),
+        Type::Apply { base, args } => {
+            let base = rebind_head(arena, base, qname);
+            arena.intern(Type::Apply { base, args })
+        }
+        Type::Optional(inner) => {
+            let i = rebind_head(arena, inner, qname);
+            arena.intern(Type::Optional(i))
+        }
+        Type::AsyncWrapper(inner) => {
+            let i = rebind_head(arena, inner, qname);
+            arena.intern(Type::AsyncWrapper(i))
+        }
+        Type::Iterator(inner) => {
+            let i = rebind_head(arena, inner, qname);
+            arena.intern(Type::Iterator(i))
+        }
+        _ => ty,
+    }
+}

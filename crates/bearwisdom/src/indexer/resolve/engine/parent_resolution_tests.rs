@@ -147,6 +147,6 @@ fn rebuild_threads_evidence_per_edge() {
         ("Tests.AuthTest".into(), "TestCase".into()),
         "PHPUnit\\Framework".into(),
     );
-    let map = rebuild_inherits_by_id(&l, &inherits, &evidence);
+    let (map, _args) = rebuild_inherits_by_id(&l, &inherits, &evidence, &FxHashMap::default());
     assert_eq!(map.get(&30), Some(&vec![2]));
 }

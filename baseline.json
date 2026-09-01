@@ -8614,9 +8614,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/php-laravel",
       "perf": {
-        "end_ws_mb": 236,
-        "files_per_sec": 27,
-        "index_duration_ms": 106097
+        "end_ws_mb": 99,
+        "files_per_sec": 49,
+        "index_duration_ms": 59041
       },
       "project": "php-laravel",
       "rate_by_language": {
@@ -10248,7 +10248,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 95
+        "min_resolution_rate": 94
       },
       "code_chunks": 48207,
       "drained_refs": 78,
@@ -10257,8 +10257,8 @@
         "http_call": 7
       },
       "flow_edges": 7,
-      "internal_edges": 88895,
-      "internal_unresolved": 4470,
+      "internal_edges": 88454,
+      "internal_unresolved": 4821,
       "languages": {
         "angular_template": 17,
         "astro": 2,
@@ -10275,41 +10275,41 @@
       },
       "path": "F:/Work/Projects/TestProjects/react-tanstack-query",
       "perf": {
-        "end_ws_mb": 401,
-        "files_per_sec": 16,
-        "index_duration_ms": 125477
+        "end_ws_mb": 107,
+        "files_per_sec": 15,
+        "index_duration_ms": 135591
       },
       "project": "react-tanstack-query",
       "rate_by_language": {
         "angular_template": 83.33,
         "astro": 100.0,
-        "html": 30.43,
-        "javascript": 59.54,
-        "markdown": 65.19,
+        "html": 27.27,
+        "javascript": 59.41,
+        "markdown": 67.75,
         "svelte": 91.18,
-        "typescript": 95.82,
+        "typescript": 95.46,
         "vue": 68.75
       },
-      "resolution_rate": 95.21,
+      "resolution_rate": 94.83,
       "routes": 7,
       "symbols": 28432,
       "unresolved_by_lang_kind": {
         "angular_template.calls": 2,
         "html.imports": 32,
-        "javascript.calls": 162,
+        "javascript.calls": 163,
         "javascript.imports": 76,
         "javascript.inherits": 3,
         "javascript.type_ref": 60,
-        "markdown.calls": 222,
-        "markdown.instantiates": 10,
-        "markdown.type_ref": 59,
+        "markdown.calls": 225,
+        "markdown.instantiates": 12,
+        "markdown.type_ref": 82,
         "svelte.calls": 5,
         "svelte.type_ref": 1,
-        "typescript.calls": 2431,
+        "typescript.calls": 2495,
         "typescript.imports": 39,
         "typescript.inherits": 23,
-        "typescript.instantiates": 49,
-        "typescript.type_ref": 1286,
+        "typescript.instantiates": 47,
+        "typescript.type_ref": 1546,
         "vue.calls": 10
       }
     },
@@ -13210,8 +13210,8 @@
       },
       "flow_edges": 458,
       "generated_files_reclassified": 340,
-      "internal_edges": 549424,
-      "internal_unresolved": 108956,
+      "internal_edges": 549460,
+      "internal_unresolved": 108920,
       "languages": {
         "c": 1,
         "css": 644,
@@ -13237,16 +13237,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-nextjs",
       "perf": {
-        "end_ws_mb": 263,
+        "end_ws_mb": 172,
         "files_per_sec": 14,
-        "index_duration_ms": 1698858
+        "index_duration_ms": 1671328
       },
       "project": "ts-nextjs",
       "rate_by_language": {
         "dockerfile": 73.53,
         "graphql": 84.85,
         "html": 0.0,
-        "javascript": 66.95,
+        "javascript": 66.96,
         "markdown": 79.7,
         "mdx": 46.4,
         "php": 100.0,
@@ -13255,9 +13255,9 @@
         "rust": 82.0,
         "scss": 2.14,
         "shell": 51.85,
-        "typescript": 87.88
+        "typescript": 87.89
       },
-      "resolution_rate": 83.45,
+      "resolution_rate": 83.46,
       "routes": 458,
       "symbols": 205960,
       "unresolved_by_lang_kind": {
@@ -13266,7 +13266,7 @@
         "graphql.type_ref": 5,
         "html.calls": 1,
         "html.imports": 11,
-        "javascript.calls": 6583,
+        "javascript.calls": 6581,
         "javascript.imports": 6810,
         "javascript.inherits": 32,
         "javascript.type_ref": 8986,
@@ -13286,12 +13286,12 @@
         "scss.imports": 100,
         "scss.inherits": 1,
         "shell.calls": 13,
-        "typescript.calls": 25893,
+        "typescript.calls": 25868,
         "typescript.implements": 13,
         "typescript.imports": 229,
         "typescript.inherits": 27,
         "typescript.instantiates": 208,
-        "typescript.type_ref": 15543
+        "typescript.type_ref": 15534
       },
       "vendored_files_reclassified": 673
     },

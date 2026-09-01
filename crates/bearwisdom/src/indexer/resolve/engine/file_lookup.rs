@@ -250,6 +250,10 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.parent_class_arg_ids(child_head, parent_head)
     }
 
+    fn parent_class_arg_ids_of(&self, child_id: i64, parent_id: i64) -> &[TypeId] {
+        self.tree.parent_class_arg_ids_of(child_id, parent_id)
+    }
+
     fn enclosing_type_qname(&self, source_qname: &str) -> Option<&str> {
         self.tree.enclosing_type_qname(source_qname)
     }

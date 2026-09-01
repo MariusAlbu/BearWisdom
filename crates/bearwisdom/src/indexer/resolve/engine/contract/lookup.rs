@@ -476,6 +476,12 @@ pub trait SymbolLookup: FlowCacheLookup {
 
     /// Interned-id form of `parent_class_args`. Default empty; the real store
     /// overrides it. Consumers fall back to interning `parent_class_args` on empty.
+    /// The identity twin of `parent_class_arg_ids`: edge args keyed by the
+    /// resolved (child, parent) declaration ids.
+    fn parent_class_arg_ids_of(&self, _child_id: i64, _parent_id: i64) -> &[TypeId] {
+        &[]
+    }
+
     fn parent_class_arg_ids(&self, _child_head: &str, _parent_head: &str) -> &[TypeId] {
         &[]
     }

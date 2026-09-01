@@ -153,3 +153,53 @@ fn a_supertype_cycle_terminates() {
 
     assert_eq!(arena.get(out), Type::Class("B".to_string()));
 }
+
+#[test]
+fn id_climb_binds_supertype_args_past_a_qname_decoy() {
+    // Child(id 10) --extends Base<User>--> Base(id 20) { m(): B }, with a
+    // same-qname decoy Base in another package whose edge args say Wrong.
+    // The string climb reads first-winner qname slots; the id climb follows
+    // the RESOLVED pair and must bind B -> User regardless of the decoy.
+    let lookup = Lookup::new()
+        .with_generics_of(20, &["B"])
+        .with_parent_id(10, 20)
+        .with_member_id(20, sym(77, "m", "Base.m", "method", "a.ts"))
+        // Decoy string-keyed edge: same heads, wrong arg.
+        .with_generics("Base", &["B"])
+        .with_parent("Child", "Base")
+        .with_parent_args("Child", "Base", &["Wrong"]);
+    let user = lookup.type_arena().unwrap().class("User");
+    let lookup = lookup.with_parent_arg_ids_of(10, 20, &[user]);
+    let arena = lookup.type_arena().unwrap();
+    let member = sym(77, "m", "Base.m", "method", "a.ts");
+
+    let out = substitute_supertype_args(
+        &lookup,
+        arena,
+        &member,
+        arena.class("B"),
+        arena.decl("Child", 10),
+        Some(10),
+    );
+    assert_eq!(arena.get(out), Type::Class("User".to_string()));
+}
+
+#[test]
+fn id_climb_falls_through_to_string_climb_without_an_id() {
+    let lookup = Lookup::new()
+        .with_generics("Base", &["B"])
+        .with_parent("Child", "Base")
+        .with_parent_args("Child", "Base", &["User"]);
+    let arena = lookup.type_arena().unwrap();
+    let member = sym(1, "m", "Base.m", "method", "a.ts");
+
+    let out = substitute_supertype_args(
+        &lookup,
+        arena,
+        &member,
+        arena.class("B"),
+        arena.class("Child"),
+        None,
+    );
+    assert_eq!(arena.get(out), Type::Class("User".to_string()));
+}

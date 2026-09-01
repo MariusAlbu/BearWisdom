@@ -11,6 +11,8 @@
 
 use rustc_hash::FxHashMap;
 
+use crate::type_checker::core::types::TypeId;
+
 use super::contract::util::is_type_like_kind;
 use super::contract::SymbolLookup;
 
@@ -50,8 +52,10 @@ pub(super) fn rebuild_inherits_by_id(
     tree: &dyn SymbolLookup,
     inherits: &FxHashMap<String, Vec<String>>,
     evidence: &FxHashMap<(String, String), String>,
-) -> FxHashMap<i64, Vec<i64>> {
+    arg_ids: &FxHashMap<String, Vec<(String, Vec<TypeId>)>>,
+) -> (FxHashMap<i64, Vec<i64>>, FxHashMap<(i64, i64), Vec<TypeId>>) {
     let mut out: FxHashMap<i64, Vec<i64>> = FxHashMap::default();
+    let mut args_by_pair: FxHashMap<(i64, i64), Vec<TypeId>> = FxHashMap::default();
     for (child_qname, parent_heads) in inherits {
         let Some((child_id, child_pkg)) = tree
             .by_qualified_name(child_qname)
@@ -70,10 +74,20 @@ pub(super) fn rebuild_inherits_by_id(
                 if !parents.contains(&parent_id) {
                     parents.push(parent_id);
                 }
+                // The edge's generic args, re-keyed onto the resolved id pair so
+                // the id-climb substitution binds the same `extends Base<Arg>`
+                // evidence the string climb reads.
+                if let Some(edges) = arg_ids.get(child_qname) {
+                    if let Some((_, ids)) = edges.iter().find(|(h, _)| h == parent_head) {
+                        args_by_pair
+                            .entry((child_id, parent_id))
+                            .or_insert_with(|| ids.clone());
+                    }
+                }
             }
         }
     }
-    out
+    (out, args_by_pair)
 }
 
 /// Bind one parent head to a declaration id. See the module header for the
@@ -170,3 +184,32 @@ fn qname_under_module(qname: &str, normalized_module: &str, simple: &str) -> boo
 #[cfg(test)]
 #[path = "parent_resolution_tests.rs"]
 mod tests;
+
+/// Attach `extends Base<Arg>` edge args to ladder-resolved (child, parent)
+/// pairs: the string store keys args by (child qname, parent HEAD as
+/// written); a resolved pair re-keys them by identity when the parent's
+/// declared name matches the written head or its simple name.
+pub(super) fn attach_edge_args(
+    pairs: &[(i64, i64)],
+    by_id: &FxHashMap<i64, super::contract::Symbol>,
+    arg_ids: &FxHashMap<String, Vec<(String, Vec<TypeId>)>>,
+    out: &mut FxHashMap<(i64, i64), Vec<TypeId>>,
+) {
+    for &(child_id, parent_id) in pairs {
+        if out.contains_key(&(child_id, parent_id)) {
+            continue;
+        }
+        let (Some(child), Some(parent)) = (by_id.get(&child_id), by_id.get(&parent_id)) else {
+            continue;
+        };
+        let Some(edges) = arg_ids.get(&child.qualified_name) else {
+            continue;
+        };
+        if let Some((_, ids)) = edges.iter().find(|(head, _)| {
+            head == &parent.qualified_name
+                || head.rsplit(['.', ':']).next() == Some(parent.name.as_str())
+        }) {
+            out.insert((child_id, parent_id), ids.clone());
+        }
+    }
+}

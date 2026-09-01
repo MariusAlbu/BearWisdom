@@ -113,7 +113,10 @@ pub(crate) fn expand_with_id(
         // declaration keeps the nominal receiver (see `alias_gate`).
         // Consumed after this hop (later hops resolve by name); survives a prior
         // NoInfer/utility unwrap so `NoInfer<Logger>` still keys on `Logger`'s id.
-        let by_id = recv_id.take().and_then(|id| lookup.alias_target_by_id(id));
+        let hop_id = recv_id
+            .take()
+            .or_else(|| super::head_decl::head_decl_id(arena, ty));
+        let by_id = hop_id.and_then(|id| lookup.alias_target_by_id(id));
         let target = match by_id.or_else(|| uncontested_alias_target(lookup, &head)) {
             // `ReturnType<typeof f>` / `ReturnType<F>` intrinsic — the return type
             // of the function value/type the single argument names. A captured
