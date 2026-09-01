@@ -126,6 +126,10 @@ pub(crate) fn head_symbol_id_preferring_package(
     ty: TypeId,
     preferred_pkg: Option<i64>,
 ) -> Option<i64> {
+    // A head that carries its declaration needs no recovery.
+    if let Some(id) = head_decl_id(arena, ty) {
+        return Some(id);
+    }
     let head = head_qname(arena, ty)?;
     let simple = head.rsplit('.').next().unwrap_or(&head);
     if let Some(pkg) = preferred_pkg {
@@ -251,6 +255,74 @@ pub(super) fn reroot_bare_head(
 /// Rewrite a type's nominal head `Class` to `qname`, preserving generic application
 /// and the nullable/async/iterator wrappers `head_qname` looks through. A structural
 /// type with no nominal head is returned unchanged.
+/// Rewrite a type's `Class` head to the bound `Decl` form, preserving generic
+/// application and the wrappers `head_qname` looks through — the Decl-side
+/// mirror of `rebind_head`.
+fn set_decl_head(arena: &TypeArena, ty: TypeId, qname: &str, symbol_id: i64) -> TypeId {
+    match arena.get(ty) {
+        Type::Class(_) => arena.decl(qname, symbol_id),
+        Type::Apply { base, args } => {
+            let base = set_decl_head(arena, base, qname, symbol_id);
+            arena.intern(Type::Apply { base, args })
+        }
+        Type::Optional(inner) => {
+            let i = set_decl_head(arena, inner, qname, symbol_id);
+            arena.intern(Type::Optional(i))
+        }
+        Type::AsyncWrapper(inner) => {
+            let i = set_decl_head(arena, inner, qname, symbol_id);
+            arena.intern(Type::AsyncWrapper(i))
+        }
+        Type::Iterator(inner) => {
+            let i = set_decl_head(arena, inner, qname, symbol_id);
+            arena.intern(Type::Iterator(i))
+        }
+        _ => ty,
+    }
+}
+
+/// Bind a stored type's head to its declaration when that binding is
+/// UNAMBIGUOUS: the head qname names exactly one type-like declaration in the
+/// whole index. An ambiguous or unknown head returns `None` and keeps its
+/// `Class` form — read-time recovery (package preference, import ranking)
+/// still owns those. Already-bound heads return `None` (nothing to do).
+pub(super) fn bind_head_unique(
+    arena: &TypeArena,
+    lookup: &dyn SymbolLookup,
+    ty: TypeId,
+) -> Option<TypeId> {
+    if head_decl_id(arena, ty).is_some() {
+        return None;
+    }
+    let head = head_qname(arena, ty)?;
+    // Only QUALIFIED heads bind. A bare stored head is context-sensitive: it
+    // may be the owning declaration's generic parameter (`find(): T`), which
+    // must stay a `Class` for `rebind_class_params` to substitute — binding
+    // it to a same-named declaration kills substitution for every generic
+    // yield sharing the name. A dotted head is never a parameter.
+    if !head.contains('.') && !head.contains("::") {
+        return None;
+    }
+    let set = lookup.all_by_qualified_name(&head);
+    let mut only: Option<&Symbol> = None;
+    for s in set.iter() {
+        if !is_type_like_kind(&s.kind) {
+            continue;
+        }
+        if only.is_some_and(|prev| prev.id != s.id) {
+            return None;
+        }
+        only = Some(s);
+    }
+    let decl = only?;
+    Some(set_decl_head(
+        arena,
+        ty,
+        &decl.qualified_name,
+        lookup.canonical_decl_id(decl.id),
+    ))
+}
+
 pub(super) fn rebind_head(arena: &TypeArena, ty: TypeId, qname: &str) -> TypeId {
     match arena.get(ty) {
         Type::Class(_) => arena.class(qname),

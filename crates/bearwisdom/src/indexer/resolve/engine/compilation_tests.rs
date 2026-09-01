@@ -2470,3 +2470,63 @@ fn same_file_overload_rows_keep_distinct_returns_by_row_id() {
         "second overload row keeps its own return type"
     );
 }
+
+/// End-to-end declaration merging: `interface Foo` + `namespace Foo` in ONE
+/// TypeScript file are one logical type — a receiver bound to either row
+/// walks the union of both member sets, and both rows canonicalize to one id.
+#[test]
+fn same_file_interface_namespace_merge_walks_union_of_members() {
+    let arena = Arc::new(TypeArena::new());
+    let iface = make_symbol("Foo", "Foo", SymbolKind::Interface, None, None, None);
+    let ns = make_symbol("Foo", "Foo", SymbolKind::Namespace, None, None, None);
+    let m = make_symbol("m", "Foo.m", SymbolKind::Method, Some(0), None, None);
+    let x = make_symbol("x", "Foo.x", SymbolKind::Property, Some(1), None, None);
+    let pf = make_parsed_file("src/foo.ts", vec![iface, ns, m, x], vec![]);
+
+    let mut ids = crate::indexer::write::SymbolIds::default();
+    ids.set_rows("src/foo.ts".to_string(), vec![7, 8, 70, 80]);
+    let tree = Compilation::build(&[pf], &ids, Arc::clone(&arena));
+
+    use crate::indexer::resolve::engine::contract::SymbolLookup;
+    assert_eq!(tree.canonical_decl_id(8), 7, "namespace row canonicalizes onto the interface row");
+    let names = |id: i64| -> Vec<String> {
+        tree.members_of_id(id).iter().map(|s| s.name.clone()).collect()
+    };
+    for probe in [7, 8] {
+        let got = names(probe);
+        assert!(
+            got.contains(&"m".to_string()) && got.contains(&"x".to_string()),
+            "members_of_id({probe}) must see the union; got {got:?}"
+        );
+    }
+    // The walk itself: a member declared on the OTHER half resolves by id.
+    let hit = crate::indexer::resolve::engine::chain::lookup_member_by_id(
+        &tree, 8, "m", &|_k| true,
+    );
+    assert_eq!(hit.map(|s| s.id), Some(70));
+}
+
+/// The guard that keeps merging from re-introducing the qname collapse:
+/// same-qname interfaces in DIFFERENT files are distinct module-scoped types.
+#[test]
+fn same_qname_across_files_never_merges() {
+    let arena = Arc::new(TypeArena::new());
+    let a = make_parsed_file(
+        "src/a.ts",
+        vec![make_symbol("Options", "Options", SymbolKind::Interface, None, None, None)],
+        vec![],
+    );
+    let b = make_parsed_file(
+        "src/b.ts",
+        vec![make_symbol("Options", "Options", SymbolKind::Interface, None, None, None)],
+        vec![],
+    );
+    let mut ids = crate::indexer::write::SymbolIds::default();
+    ids.set_rows("src/a.ts".to_string(), vec![1]);
+    ids.set_rows("src/b.ts".to_string(), vec![2]);
+    let tree = Compilation::build(&[a, b], &ids, Arc::clone(&arena));
+
+    use crate::indexer::resolve::engine::contract::SymbolLookup;
+    assert_eq!(tree.canonical_decl_id(1), 1);
+    assert_eq!(tree.canonical_decl_id(2), 2);
+}

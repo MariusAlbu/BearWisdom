@@ -2402,8 +2402,8 @@
       },
       "flow_edges": 510,
       "generated_files_reclassified": 2,
-      "internal_edges": 204028,
-      "internal_unresolved": 44648,
+      "internal_edges": 204025,
+      "internal_unresolved": 44651,
       "languages": {
         "angular_template": 291,
         "csharp": 2692,
@@ -2426,9 +2426,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/dotnet-squidex",
       "perf": {
-        "end_ws_mb": 19086,
-        "files_per_sec": 14,
-        "index_duration_ms": 312475
+        "end_ws_mb": 19036,
+        "files_per_sec": 16,
+        "index_duration_ms": 280268
       },
       "project": "dotnet-squidex",
       "rate_by_language": {
@@ -2442,12 +2442,12 @@
         "scss": 6.35,
         "typescript": 69.5
       },
-      "resolution_rate": 82.05,
+      "resolution_rate": 82.04,
       "routes": 512,
       "symbols": 79472,
       "unresolved_by_lang_kind": {
         "angular_template.calls": 1497,
-        "csharp.calls": 13279,
+        "csharp.calls": 13282,
         "csharp.implements": 66,
         "csharp.imports": 2021,
         "csharp.inherits": 27,
@@ -8614,9 +8614,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/php-laravel",
       "perf": {
-        "end_ws_mb": 237,
-        "files_per_sec": 22,
-        "index_duration_ms": 131786
+        "end_ws_mb": 230,
+        "files_per_sec": 28,
+        "index_duration_ms": 104421
       },
       "project": "php-laravel",
       "rate_by_language": {
@@ -10275,9 +10275,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/react-tanstack-query",
       "perf": {
-        "end_ws_mb": 222,
-        "files_per_sec": 17,
-        "index_duration_ms": 119160
+        "end_ws_mb": 213,
+        "files_per_sec": 19,
+        "index_duration_ms": 106358
       },
       "project": "react-tanstack-query",
       "rate_by_language": {
@@ -13237,9 +13237,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-nextjs",
       "perf": {
-        "end_ws_mb": 247,
-        "files_per_sec": 13,
-        "index_duration_ms": 1819890
+        "end_ws_mb": 243,
+        "files_per_sec": 12,
+        "index_duration_ms": 1974936
       },
       "project": "ts-nextjs",
       "rate_by_language": {

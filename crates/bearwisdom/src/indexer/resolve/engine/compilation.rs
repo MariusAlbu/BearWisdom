@@ -714,15 +714,7 @@ impl Compilation {
 
         // Declaration merging: fold the id-keyed structural indexes onto each
         // merge set's canonical id. Runs per batch; idempotent.
-        self.merge_canonical = super::merge_canonical::compute(&self.merge_groups);
-        super::merge_canonical::apply(
-            &self.merge_canonical,
-            &mut self.members_by_id,
-            &mut self.inherits_by_id,
-            &mut self.inherits_args_by_pair,
-            &mut self.enclosing_type_by_id,
-        );
-        super::merge_canonical::fold_type_info(&self.merge_canonical, &mut self.type_info_by_id);
+        self.finish_identity_passes();
 
         self.module_specifier.file_paths.extend(module_specifier::internal_file_paths(parsed));
 
@@ -2202,6 +2194,27 @@ impl Compilation {
 
 }
 
+impl Compilation {
+    /// The identity finishing passes every ingest path runs: canonicalize
+    /// declaration-merge sets over the id-keyed indexes, then bind
+    /// unambiguous stored type heads so member yields carry identity
+    /// instead of re-running string recovery per hop. Idempotent per batch.
+    fn finish_identity_passes(&mut self) {
+        self.merge_canonical = super::merge_canonical::compute(&self.merge_groups);
+        super::merge_canonical::apply(
+            &self.merge_canonical,
+            &mut self.members_by_id,
+            &mut self.inherits_by_id,
+            &mut self.inherits_args_by_pair,
+            &mut self.enclosing_type_by_id,
+        );
+        super::merge_canonical::fold_type_info(&self.merge_canonical, &mut self.type_info_by_id);
+        let mut slots = std::mem::take(&mut self.type_info_by_id);
+        super::bind_stored_heads::apply(&self.arena, self, &mut slots);
+        self.type_info_by_id = slots;
+    }
+}
+
 impl crate::indexer::resolve::engine::contract::FlowCacheLookup for Compilation {}
 
 impl SymbolLookup for Compilation {
@@ -2608,6 +2621,7 @@ impl Compilation {
         // (re-resolved) file's source symbols are only in the DB, not the passed
         // changed-files map.
         let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+        let profiles = super::file_context::build_profiles();
 
         // The freshly-parsed (changed) symbols, captured before DB symbols are
         // folded in. Their type_info is authoritative from this parse, so a stale
@@ -2690,6 +2704,20 @@ impl Compilation {
             // identity index Pass 1 builds for freshly-parsed symbols.
             if let Some(parent_id) = containing_id {
                 self.members_by_id.entry(parent_id).or_default().push(id);
+            }
+
+            // Declaration-merging bucket for DB-loaded rows — the incremental
+            // complement of the Pass-1 recording, so unchanged files' merge
+            // sets canonicalize on a save just like a full pass.
+            let merge_scope = profiles
+                .get(language.as_str())
+                .map(|p| p.declaration_merging)
+                .unwrap_or(crate::type_checker::profile::language_profile::MergeScope::None);
+            if let Some(sym) = self.by_id.get(&id) {
+                let file = sym.file_path.to_string();
+                let pkg = sym.package_id;
+                let sym = sym.clone();
+                super::merge_canonical::record(&mut self.merge_groups, merge_scope, &sym, &file, pkg);
             }
         }
 
@@ -2818,6 +2846,10 @@ impl Compilation {
 
         // Id-keyed inherits over the now-complete maps (parsed batch + DB rows).
         self.rebuild_inherits_by_id();
+
+        // Fold merge sets discovered from DB rows into the canonical view —
+        // idempotent over what the parsed-batch ingest already applied.
+        self.finish_identity_passes();
 
         id_map
     }
