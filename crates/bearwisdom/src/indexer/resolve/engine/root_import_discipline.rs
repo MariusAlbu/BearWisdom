@@ -127,7 +127,7 @@ fn type_candidate(
 ) -> RootImportOutcome {
     if is_type_kind(&sym.kind) {
         return RootImportOutcome::Typed(Receiver::new(
-            arena.class(&sym.qualified_name),
+            super::head_decl::nominal_head(arena, sym),
             sym.id,
         ));
     }

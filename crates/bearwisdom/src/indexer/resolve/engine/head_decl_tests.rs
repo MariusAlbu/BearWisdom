@@ -55,3 +55,18 @@ fn a_head_naming_nothing_stays_unbound() {
     let arena = TypeArena::new();
     assert_eq!(head_symbol_id(&arena, &lookup, arena.class("Missing"), None), None);
 }
+
+#[test]
+fn head_decl_id_carries_through_wrappers_and_apply() {
+    use crate::type_checker::core::types::{Type, TypeArena};
+    let arena = TypeArena::new();
+    let d = arena.decl("Repo", 42);
+    assert_eq!(super::head_decl_id(&arena, d), Some(42));
+    let applied = arena.intern(Type::Apply { base: d, args: vec![arena.class("User")] });
+    assert_eq!(super::head_decl_id(&arena, applied), Some(42));
+    let opt = arena.intern(Type::Optional(applied));
+    assert_eq!(super::head_decl_id(&arena, opt), Some(42));
+    assert_eq!(super::head_decl_id(&arena, arena.class("Repo")), None, "name-only heads carry nothing");
+    // The string bridge: name-keyed consumers see a Decl exactly like a Class.
+    assert_eq!(super::head_qname(&arena, applied).as_deref(), Some("Repo"));
+}

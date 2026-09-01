@@ -1199,6 +1199,7 @@ fn array_element_type(arena: &TypeArena, recv_ty: TypeId) -> Option<TypeId> {
 pub(crate) fn head_qname(arena: &TypeArena, id: TypeId) -> Option<String> {
     match arena.get(id) {
         Type::Class(q) => Some(q),
+        Type::Decl { qname, .. } => Some(qname),
         Type::Apply { base, .. } => head_qname(arena, base),
         Type::Optional(inner) | Type::AsyncWrapper(inner) | Type::Iterator(inner) => {
             head_qname(arena, inner)
@@ -1628,7 +1629,7 @@ fn resolve_root_impl(
             .and_then(|sid| lookup.enclosing_type_id_of(sid))
             .and_then(|eid| lookup.symbol_by_id(eid))
         {
-            let ty = arena.class(&enc.qualified_name);
+            let ty = super::head_decl::nominal_head(arena, &enc);
             return Ok(Receiver { ty, id: Some(enc.id) });
         }
         if let Some(enc_qname) =
@@ -1652,7 +1653,7 @@ fn resolve_root_impl(
                 lookup.by_qualified_name(sp).filter(|s| is_type_kind(&s.kind))
             })
             .ok_or(None)?;
-        let ty = arena.class(&enc_sym.qualified_name);
+        let ty = super::head_decl::nominal_head(arena, enc_sym);
         return Ok(Receiver { ty, id: Some(enc_sym.id) });
     }
     // An import-bound root types through its import's own candidate set —
@@ -1750,7 +1751,7 @@ fn resolve_root_impl(
         // generic "this binding itself is untyped" signal collected above.
         return Err(lookup.root_cause_hint(&seg.name).or(cause));
     };
-    let ty = with_segment_args(arena, arena.class(&s.qualified_name), &seg.type_args);
+    let ty = with_segment_args(arena, super::head_decl::nominal_head(arena, s), &seg.type_args);
     Ok(Receiver::new(ty, s.id))
 }
 
@@ -1893,7 +1894,7 @@ pub(super) fn import_scoped_external_root(
         }
     }
     let s = scoped.first()?;
-    Some(Receiver::new(arena.class(&s.qualified_name), s.id))
+    Some(Receiver::new(super::head_decl::nominal_head(arena, s), s.id))
 }
 
 /// The package that DECLARES `name` as an ambient global — read off the declaring

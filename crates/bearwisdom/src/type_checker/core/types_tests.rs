@@ -644,3 +644,43 @@ fn intern_type_str_does_not_strip_some_any_as_type_name_prefix() {
         matches!(arena.get(arena.intern_type_str("SomeType")), Type::Class(q) if q == "SomeType")
     );
 }
+
+// ---------------------------------------------------------------------------
+// Type::Decl — per-declaration nominal identity
+// ---------------------------------------------------------------------------
+
+#[test]
+fn decl_interns_per_declaration_not_per_qname() {
+    let arena = TypeArena::new();
+    let a = arena.decl("Foo", 41);
+    let b = arena.decl("Foo", 42);
+    let c = arena.decl("Foo", 41);
+    assert_ne!(a, b, "same qname, different declarations: distinct TypeIds");
+    assert_eq!(a, c, "same declaration interns once");
+    // The name-addressed arm remains a distinct concept from either binding.
+    assert_ne!(arena.class("Foo"), a);
+    assert_ne!(arena.class("Foo"), b);
+}
+
+#[test]
+fn decl_formats_as_its_qname() {
+    let arena = TypeArena::new();
+    let d = arena.decl("Ns.Repo", 7);
+    assert_eq!(arena.format_type(d), "Ns.Repo");
+    let applied = arena.intern(Type::Apply { base: d, args: vec![arena.class("User")] });
+    assert_eq!(arena.format_type(applied), "Ns.Repo<User>");
+}
+
+#[test]
+fn rebind_class_params_never_touches_a_decl() {
+    let arena = TypeArena::new();
+    let d = arena.decl("T", 9);
+    let mut params = FxHashMap::default();
+    let gp = arena.intern_generic(GenericParamData {
+        name: "T".to_string(),
+        owner_symbol_index: 0,
+        bound: None,
+    });
+    params.insert("T".to_string(), arena.intern(Type::Generic { param: gp }));
+    assert_eq!(arena.rebind_class_params(d, &params), d, "a bound nominal is not a param name");
+}

@@ -85,6 +85,9 @@ impl<'a> TypeExporter<'a> {
     pub(crate) fn export(&mut self, id: TypeId) -> CachedType {
         match self.arena.get(id) {
             Type::Class(q) => CachedType::Class(q),
+            // The parse cache is content-keyed and outlives any one index run;
+            // symbol ids do not. A bound nominal degrades to its name.
+            Type::Decl { qname, .. } => CachedType::Class(qname),
             Type::Primitive(p) => CachedType::Primitive(p),
             Type::Function { params, return_ } => CachedType::Function {
                 params: params.iter().map(|&p| self.export(p)).collect(),

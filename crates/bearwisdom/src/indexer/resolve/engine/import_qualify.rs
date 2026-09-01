@@ -147,6 +147,8 @@ fn requalify_type(
             }
             resolve.get(&name).map(|q| arena.class(q))
         }
+        // A bound nominal is not a bare name; requalification never touches it.
+        Type::Decl { .. } => None,
         Type::Apply { base, args } => {
             let new_base = requalify_type(arena, base, resolve);
             let new_args: Vec<Option<TypeId>> =

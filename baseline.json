@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-08-31T00:00:00Z",
+  "captured_at": "2026-09-01T00:00:00Z",
   "engine": "resolution-engine",
   "note": "Fresh new-engine baseline; grows as projects are added. Old baseline-all.json (pre-cutover) retired.",
   "projects": [
@@ -2367,9 +2367,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/dotnet-spectre-console",
       "perf": {
-        "end_ws_mb": 8640,
-        "files_per_sec": 16,
-        "index_duration_ms": 29319
+        "end_ws_mb": 8633,
+        "files_per_sec": 14,
+        "index_duration_ms": 32523
       },
       "project": "dotnet-spectre-console",
       "rate_by_language": {
@@ -2426,9 +2426,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/dotnet-squidex",
       "perf": {
-        "end_ws_mb": 19199,
-        "files_per_sec": 22,
-        "index_duration_ms": 196798
+        "end_ws_mb": 19249,
+        "files_per_sec": 17,
+        "index_duration_ms": 252026
       },
       "project": "dotnet-squidex",
       "rate_by_language": {
@@ -3646,14 +3646,14 @@
       },
       "path": "F:/Work/Projects/TestProjects/fsharp-saturn",
       "perf": {
-        "end_ws_mb": 7520,
-        "files_per_sec": 3,
-        "index_duration_ms": 35134
+        "end_ws_mb": 7497,
+        "files_per_sec": 4,
+        "index_duration_ms": 28678
       },
       "project": "fsharp-saturn",
       "rate_by_language": {
         "fsharp": 35.06,
-        "html": 50.0,
+        "html": 0.0,
         "javascript": 24.43,
         "markdown": 100.0,
         "shell": 0.0
@@ -8614,9 +8614,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/php-laravel",
       "perf": {
-        "end_ws_mb": 228,
-        "files_per_sec": 36,
-        "index_duration_ms": 81473
+        "end_ws_mb": 236,
+        "files_per_sec": 27,
+        "index_duration_ms": 106097
       },
       "project": "php-laravel",
       "rate_by_language": {
@@ -13210,8 +13210,8 @@
       },
       "flow_edges": 458,
       "generated_files_reclassified": 340,
-      "internal_edges": 549543,
-      "internal_unresolved": 108837,
+      "internal_edges": 549424,
+      "internal_unresolved": 108956,
       "languages": {
         "c": 1,
         "css": 644,
@@ -13237,9 +13237,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-nextjs",
       "perf": {
-        "end_ws_mb": 241,
-        "files_per_sec": 20,
-        "index_duration_ms": 1221500
+        "end_ws_mb": 263,
+        "files_per_sec": 14,
+        "index_duration_ms": 1698858
       },
       "project": "ts-nextjs",
       "rate_by_language": {
@@ -13252,12 +13252,12 @@
         "php": 100.0,
         "prisma": 100.0,
         "python": 48.28,
-        "rust": 82.05,
+        "rust": 82.0,
         "scss": 2.14,
         "shell": 51.85,
         "typescript": 87.88
       },
-      "resolution_rate": 83.47,
+      "resolution_rate": 83.45,
       "routes": 458,
       "symbols": 205960,
       "unresolved_by_lang_kind": {
@@ -13277,7 +13277,7 @@
         "python.calls": 7,
         "python.imports": 1,
         "python.type_ref": 7,
-        "rust.calls": 28529,
+        "rust.calls": 28648,
         "rust.implements": 215,
         "rust.imports": 2566,
         "rust.inherits": 3,

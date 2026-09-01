@@ -136,7 +136,7 @@ fn type_receiver(lookup: &dyn SymbolLookup, arena: &TypeArena, qname: &str) -> O
     let sym = lookup
         .by_qualified_name(qname)
         .filter(|s| is_type_kind(&s.kind))?;
-    Some(Receiver::new(arena.class(&sym.qualified_name), sym.id))
+    Some(Receiver::new(super::head_decl::nominal_head(arena, sym), sym.id))
 }
 
 /// The namespaces this file opens WITHOUT qualification: its wildcard imports,

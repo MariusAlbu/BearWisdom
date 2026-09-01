@@ -18,9 +18,36 @@
 use crate::indexer::resolve::engine::contract::{FileContext, Symbol, SymbolLookup};
 use crate::indexer::resolve::engine::contract::util::is_type_like_kind;
 use crate::indexer::resolve::engine::support::pick_ranked_candidate;
-use crate::type_checker::core::types::{TypeArena, TypeId};
+use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 
 use super::chain::{head_qname, Receiver};
+
+/// The nominal head a bound symbol produces: a `Decl` for a member-bearing
+/// TYPE declaration, a `Class` for anything else. A value binding's qname is
+/// a name-shaped proxy for its type, and alias/namespace declarations stay
+/// name-addressed so the alias-expansion machinery sees exactly the heads it
+/// always has.
+pub(crate) fn nominal_head(arena: &TypeArena, sym: &Symbol) -> TypeId {
+    if crate::indexer::resolve::engine::support::is_type_kind(&sym.kind) {
+        arena.decl(&sym.qualified_name, sym.id)
+    } else {
+        arena.class(&sym.qualified_name)
+    }
+}
+
+/// The declaration id a type's nominal head CARRIES — a `Decl` head, reached
+/// through the same wrappers `head_qname` peels. `None` for a name-only head;
+/// the recovery lookups below are the fallback for those.
+pub(crate) fn head_decl_id(arena: &TypeArena, id: TypeId) -> Option<i64> {
+    match arena.get(id) {
+        Type::Decl { symbol_id, .. } => Some(symbol_id),
+        Type::Apply { base, .. } => head_decl_id(arena, base),
+        Type::Optional(inner) | Type::AsyncWrapper(inner) | Type::Iterator(inner) => {
+            head_decl_id(arena, inner)
+        }
+        _ => None,
+    }
+}
 
 #[cfg(test)]
 #[path = "head_decl_tests.rs"]
@@ -54,6 +81,10 @@ pub(crate) fn head_symbol_id(
     ty: TypeId,
     file_ctx: Option<&FileContext>,
 ) -> Option<i64> {
+    // A head that carries its declaration needs no recovery.
+    if let Some(id) = head_decl_id(arena, ty) {
+        return Some(id);
+    }
     let head = head_qname(arena, ty)?;
     if let Some(s) = type_decl_by_qname(lookup, &head) {
         return Some(s.id);
