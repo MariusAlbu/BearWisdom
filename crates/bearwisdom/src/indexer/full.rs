@@ -178,7 +178,6 @@ fn full_index_inner(
                  DROP TABLE IF EXISTS edges;
                  DROP TABLE IF EXISTS imports;
                  DROP TABLE IF EXISTS unresolved_refs;
-                 DROP TABLE IF EXISTS external_refs;
                  DROP TABLE IF EXISTS symbol_type_info;
                  DROP TABLE IF EXISTS symbol_locations;
                  DROP TABLE IF EXISTS symbols;
@@ -729,8 +728,8 @@ fn full_index_inner(
     // `node_modules/react/`, `site-packages/fastapi/`) are parsed through
     // the exact same pipeline and written with origin='external' so
     // user-facing queries filter them out. The resolver picks them up via
-    // the SymbolIndex so that Tier 1.5 can turn `ext:github.com/foo` refs
-    // into real edges instead of opaque `external_refs` rows.
+    // the SymbolIndex so external refs resolve into real edges through the
+    // one symbol surface.
     //
     // M3: workspace packages drive per-package locator calls; roots are
     // deduplicated globally and walked exactly once.
@@ -1300,12 +1299,11 @@ pub(crate) fn read_stats(
         edge_count,
         unresolved_ref_count,
         unresolved_ref_count_external,
-        external_ref_count,
         route_count,
         db_mapping_count,
         flow_edge_count,
         package_count,
-    ): (u32, u32, u32, u32, u32, u32, u32, u32, u32, u32) = conn.query_row(
+    ): (u32, u32, u32, u32, u32, u32, u32, u32, u32) = conn.query_row(
         "SELECT
            (SELECT COUNT(*) FROM files WHERE origin = 'internal'),
            (SELECT COUNT(*) FROM symbols WHERE origin = 'internal'),
@@ -1318,7 +1316,6 @@ pub(crate) fn read_stats(
             FROM unresolved_refs ur
             JOIN symbols s ON s.id = ur.source_id
             WHERE ur.from_snippet = 0 AND s.origin = 'external'),
-           (SELECT COUNT(*) FROM external_refs),
            (SELECT COUNT(*) FROM routes),
            (SELECT COUNT(*) FROM db_mappings),
            (SELECT COUNT(*) FROM flow_edges),
@@ -1335,7 +1332,6 @@ pub(crate) fn read_stats(
                 r.get(6)?,
                 r.get(7)?,
                 r.get(8)?,
-                r.get(9)?,
             ))
         },
     )?;
@@ -1346,7 +1342,6 @@ pub(crate) fn read_stats(
         edge_count,
         unresolved_ref_count,
         unresolved_ref_count_external,
-        external_ref_count,
         route_count,
         db_mapping_count,
         flow_edge_count,

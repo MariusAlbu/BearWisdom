@@ -766,10 +766,6 @@ fn clear_outgoing_refs(tx: &rusqlite::Transaction<'_>, ids: &[i64]) -> Result<()
         [],
     )?;
     tx.execute(
-        "DELETE FROM external_refs WHERE source_id IN (SELECT id FROM _fsyms)",
-        [],
-    )?;
-    tx.execute(
         "DELETE FROM ref_resolutions WHERE source_id IN (SELECT id FROM _fsyms)",
         [],
     )?;
@@ -1516,7 +1512,7 @@ pub fn resolve_cross_file_containment_and_merge(db: &Database) -> Result<HashMap
         )
         .context("Failed to reparent contained symbols")?;
         // Delete the duplicates (cascades their symbol_locations, edges,
-        // unresolved_refs, and external_refs rows).
+        // and unresolved_refs rows).
         tx.execute(
             "DELETE FROM symbols WHERE id IN (SELECT dup_id FROM _dup_remap)",
             [],

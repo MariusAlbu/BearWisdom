@@ -175,7 +175,7 @@ fn external_go_package_is_indexed_and_resolved() {
 
     // --- Probe: does the resolver close the loop? ---
     // Does the `greeter.Greet` call from main.go become an edge targeting
-    // the external Greet symbol, or does it remain in external_refs as an
+    // the external Greet symbol, or does it stay opaque as an
     // opaque `ext:github.com/fakeext/greeter` row? This is the acid test
     // for Tier 1.5 loop closure.
     let edges_to_external: i64 = db
@@ -188,20 +188,8 @@ fn external_go_package_is_indexed_and_resolved() {
         )
         .unwrap();
 
-    let greeter_external_refs: i64 = db
-        .query_row(
-            "SELECT COUNT(*) FROM external_refs WHERE namespace LIKE 'ext:%greeter%'",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap();
-
     assert!(
         edges_to_external >= 1,
         "expected at least one internal→external edge (main.go calling greeter.Greet), got {edges_to_external}"
-    );
-    assert_eq!(
-        greeter_external_refs, 0,
-        "greeter should be resolved to real edges, not opaque external_refs rows"
     );
 }

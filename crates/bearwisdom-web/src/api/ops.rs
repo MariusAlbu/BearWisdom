@@ -52,7 +52,6 @@ fn index_project(
             "edge_count": s.edge_count,
             "unresolved_ref_count": s.unresolved_ref_count,
             "unresolved_ref_count_external": s.unresolved_ref_count_external,
-            "external_ref_count": s.external_ref_count,
             "duration_ms": 0,
             "cached": true,
         }));
@@ -81,7 +80,6 @@ fn index_project(
         "edge_count": stats.edge_count,
         "unresolved_ref_count": stats.unresolved_ref_count,
         "unresolved_ref_count_external": stats.unresolved_ref_count_external,
-        "external_ref_count": stats.external_ref_count,
         "duration_ms": stats.duration_ms,
         "cached": false,
     }))

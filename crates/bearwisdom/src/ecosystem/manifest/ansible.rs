@@ -20,7 +20,7 @@
 // (the `name:` field when present, otherwise the bare `src:` value
 // stripped of URL prefix and version suffix). These names are used by the
 // Jinja resolver to classify bare-name refs that start with a declared
-// external role's prefix as `external_refs`.
+// external role's prefix as `external refs`.
 //
 // Per the ecosystem rules this reader is locators-only: no synthetics,
 // no predicates, no builtin lists. It reads the on-disk file and returns

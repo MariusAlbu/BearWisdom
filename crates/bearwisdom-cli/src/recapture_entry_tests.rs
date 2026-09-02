@@ -18,7 +18,6 @@ fn breakdown() -> ResolutionBreakdown {
     ResolutionBreakdown {
         internal_edges: 9_000,
         internal_unresolved: 1_000,
-        external_known_unhydrated: 0,
         generated_excluded: 0,
         drained_refs: 0,
         vendored_files_reclassified: 0,
@@ -92,11 +91,10 @@ fn snapshot_drops_superseded_keys() {
         "edges": 1,
         "unresolved_refs": 2,
         "unresolved_ref_count": 3,
-        "external_ref_count": 4,
     });
     let entry = snapshot(&existing, &stats(), &breakdown(), &flow_types(), perf());
 
-    for key in ["edges", "unresolved_refs", "unresolved_ref_count", "external_ref_count"] {
+    for key in ["edges", "unresolved_refs", "unresolved_ref_count"] {
         assert!(entry.get(key).is_none(), "{key} should be dropped");
     }
 }

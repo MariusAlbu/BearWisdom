@@ -1322,7 +1322,6 @@ pub struct IndexStats {
     pub unresolved_ref_count: u32,
     /// Unresolved refs originating from externally-indexed files (informational).
     pub unresolved_ref_count_external: u32,
-    pub external_ref_count: u32,
     pub route_count: u32,
     pub db_mapping_count: u32,
     pub flow_edge_count: u32,

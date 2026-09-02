@@ -959,7 +959,6 @@ fn cmd_open(project_path: &str, no_embed: bool, force: bool) -> Result<String> {
         "edge_count": stats.edge_count,
         "unresolved_ref_count": stats.unresolved_ref_count,
         "unresolved_ref_count_external": stats.unresolved_ref_count_external,
-        "external_ref_count": stats.external_ref_count,
         "chunks_embedded": chunks_embedded,
         "duration_ms": stats.duration_ms,
     }))
@@ -1125,7 +1124,6 @@ fn cmd_status(project_path: &str) -> Result<String> {
         "edge_count": stats.edge_count,
         "unresolved_ref_count": stats.unresolved_ref_count,
         "unresolved_ref_count_external": stats.unresolved_ref_count_external,
-        "external_ref_count": stats.external_ref_count,
         "package_count": stats.package_count,
     }))
 }

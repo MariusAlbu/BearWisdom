@@ -48,9 +48,8 @@ pub enum UnresolvedCategory {
     /// `module IS NOT NULL` or the target name appears in `imports` for the
     /// same file — an import path/alias was identified but resolution failed.
     ModuleResolutionMiss,
-    /// Same `target_name` is already classified external elsewhere in the
-    /// project (`external_refs`); strong hint this row should be too. Fires
-    /// only when no stronger signal applies.
+    /// The ref's module is a bare specifier pointing into an external
+    /// dependency — an external-API ref, not a missing project symbol.
     ExternalApiUnknown,
     /// Member-access ref (`x.foo()`) whose target names a member symbol
     /// defined in external dependency code (`origin='external'`). The member
@@ -147,19 +146,6 @@ pub fn classify_unresolved(
 ) -> QueryResult<ClassificationReport> {
     let _timer = db.timer("classify_unresolved");
     let conn = db.conn();
-
-    // Names already classified external anywhere in the project — any of
-    // these popping up as unresolved internal refs is a strong signal
-    // that the same library wasn't recognized in this scope yet.
-    let external_names: HashSet<String> = {
-        let mut stmt = conn
-            .prepare("SELECT DISTINCT target_name FROM external_refs")
-            .context("classify_unresolved: prepare external_refs scan")?;
-        let rows = stmt
-            .query_map([], |r| r.get::<_, String>(0))
-            .context("classify_unresolved: execute external_refs scan")?;
-        rows.filter_map(|r| r.ok()).collect()
-    };
 
     // Member-kind symbol names defined in external dependency code. A
     // member-access unresolved ref whose target matches one of these is a
@@ -274,7 +260,6 @@ pub fn classify_unresolved(
         };
         let category = classify_row(
             &row,
-            &external_names,
             &external_member_names,
             &workspace_packages,
             imports_by_file.get(&file_id),
@@ -360,7 +345,6 @@ struct ClassifyRow<'a> {
 
 fn classify_row(
     row: &ClassifyRow<'_>,
-    external_names: &HashSet<String>,
     external_member_names: &HashSet<String>,
     workspace_packages: &HashSet<String>,
     imports_for_file: Option<&HashSet<String>>,
@@ -406,12 +390,6 @@ fn classify_row(
         return UnresolvedCategory::EmbeddedRegionIssue;
     }
 
-    // 5. External API — same name already classified external elsewhere.
-    //    Run before LocalFalsePositive so e.g. PascalCase library types
-    //    don't get demoted to "local var" by the lowercase test below.
-    if external_names.contains(row.target_name) {
-        return UnresolvedCategory::ExternalApiUnknown;
-    }
     // 5b. External member call — a member-access ref whose target names a
     //     member symbol defined in external dependency code. Run before the
     //     lowercase locals test so `x.getByText()` / `q.refetch()` attribute
@@ -711,7 +689,6 @@ pub(super) fn _test_classify_row(
     module: Option<&str>,
     file_path: &str,
     language: &str,
-    external_names: &HashSet<String>,
     imports_for_file: Option<&HashSet<String>>,
 ) -> UnresolvedCategory {
     let empty = HashSet::new();
@@ -723,7 +700,7 @@ pub(super) fn _test_classify_row(
         language,
         drained: false,
     };
-    classify_row(&row, external_names, &empty, &empty, imports_for_file)
+    classify_row(&row, &empty, &empty, imports_for_file)
 }
 
 #[cfg(test)]
@@ -734,7 +711,6 @@ pub(super) fn _test_classify_row_ext(
     module: Option<&str>,
     file_path: &str,
     language: &str,
-    external_names: &HashSet<String>,
     external_member_names: &HashSet<String>,
     workspace_packages: &HashSet<String>,
     imports_for_file: Option<&HashSet<String>>,
@@ -747,13 +723,7 @@ pub(super) fn _test_classify_row_ext(
         language,
         drained: false,
     };
-    classify_row(
-        &row,
-        external_names,
-        external_member_names,
-        workspace_packages,
-        imports_for_file,
-    )
+    classify_row(&row, external_member_names, workspace_packages, imports_for_file)
 }
 
 /// Drives `classify_row` with `drained: true` — the BuiltinSkipRule path.
@@ -768,7 +738,7 @@ pub(super) fn _test_classify_row_drained(target_name: &str, kind: &str, language
         language,
         drained: true,
     };
-    classify_row(&row, &empty, &empty, &empty, None)
+    classify_row(&row, &empty, &empty, None)
 }
 
 #[cfg(test)]

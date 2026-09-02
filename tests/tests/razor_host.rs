@@ -148,20 +148,15 @@ fn cshtml_model_directive_surfaces_type_ref() {
         .collect();
     assert!(leaked.is_empty(), "synthetic prefix leaked: {leaked:?}");
 
-    // `UserViewModel` must appear somewhere as a type reference — either
-    // an unresolved_ref (no csproj) or an external_ref. Search both.
+    // `UserViewModel` must appear as an unresolved type reference (no
+    // csproj supplies it in this fixture).
     let type_referenced: i64 = db
         .query_row(
-            "SELECT (SELECT COUNT(*) FROM unresolved_refs ur
-                 JOIN symbols s ON s.id = ur.source_id
-                 JOIN files   f ON f.id = s.file_id
-                 WHERE f.path LIKE '%User.cshtml'
-                   AND ur.target_name = 'UserViewModel')
-              + (SELECT COUNT(*) FROM external_refs er
-                 JOIN symbols s ON s.id = er.source_id
-                 JOIN files   f ON f.id = s.file_id
-                 WHERE f.path LIKE '%User.cshtml'
-                   AND er.target_name = 'UserViewModel')",
+            "SELECT COUNT(*) FROM unresolved_refs ur
+             JOIN symbols s ON s.id = ur.source_id
+             JOIN files   f ON f.id = s.file_id
+             WHERE f.path LIKE '%User.cshtml'
+               AND ur.target_name = 'UserViewModel'",
             [],
             |r| r.get(0),
         )

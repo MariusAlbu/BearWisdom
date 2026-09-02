@@ -117,7 +117,6 @@ pub fn index_stats(db: &Database) -> QueryResult<IndexStats> {
             FROM unresolved_refs ur
             JOIN symbols s ON s.id = ur.source_id
             WHERE ur.from_snippet = 0 AND s.origin = 'external'),
-           (SELECT COUNT(*) FROM external_refs),
            (SELECT COUNT(*) FROM routes),
            (SELECT COUNT(*) FROM db_mappings),
            (SELECT COUNT(*) FROM flow_edges),
@@ -129,12 +128,11 @@ pub fn index_stats(db: &Database) -> QueryResult<IndexStats> {
         edge_count,
         unresolved_ref_count,
         unresolved_ref_count_external,
-        external_ref_count,
         route_count,
         db_mapping_count,
         flow_edge_count,
         package_count,
-    ): (u32, u32, u32, u32, u32, u32, u32, u32, u32, u32) =
+    ): (u32, u32, u32, u32, u32, u32, u32, u32, u32) =
         conn.query_row(&combined_sql, [], |r| {
             Ok((
                 r.get(0)?,
@@ -146,7 +144,6 @@ pub fn index_stats(db: &Database) -> QueryResult<IndexStats> {
                 r.get(6)?,
                 r.get(7)?,
                 r.get(8)?,
-                r.get(9)?,
             ))
         })?;
 
@@ -156,7 +153,6 @@ pub fn index_stats(db: &Database) -> QueryResult<IndexStats> {
         edge_count,
         unresolved_ref_count,
         unresolved_ref_count_external,
-        external_ref_count,
         route_count,
         db_mapping_count,
         flow_edge_count,
@@ -231,11 +227,8 @@ pub struct UnresolvedTarget {
 /// to `files.origin = 'internal'` so external dependency noise
 /// (node_modules, site-packages) never inflates the resolution rate.
 ///
-/// A reference lands in one of three states, reported as separate buckets:
+/// A reference lands in one of two states, reported as separate buckets:
 ///   * `internal_edges`             — bound to a declaration (a real edge).
-///   * `external_known_unhydrated`  — scope/import names a real dependency
-///     whose source/metadata was never pulled (absent on disk). A
-///     dependency-availability gap, NOT a resolution failure.
 ///   * `internal_unresolved`        — binds to nothing AND no dependency
 ///     owns the name. The genuine gap.
 ///
@@ -243,10 +236,8 @@ pub struct UnresolvedTarget {
 /// defined per
 /// `research/ArchitectureImprovements/Codex/01-resolution-gate-plan.md`:
 ///   internal_edges / (internal_edges + internal_unresolved) * 100
-/// `external_known_unhydrated` is excluded from the denominator — a missing
-/// dep source must not be counted against the engine. `resolution_rate` is
-/// the same value retained as a back-compat alias for the older
-/// quality-check baselines.
+/// `resolution_rate` is the same value retained as a back-compat alias for
+/// the older quality-check baselines.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolutionBreakdown {
     /// Edges whose source symbol lives in a user file.
@@ -255,11 +246,6 @@ pub struct ResolutionBreakdown {
     /// which didn't come from a doc/markdown snippet). The genuine-unknown
     /// state — binds to nothing and no dependency owns the name.
     pub internal_unresolved: u32,
-    /// `external_refs` whose source symbol lives in a user file — refs the
-    /// classifier routed to a known external namespace whose source was
-    /// never hydrated. Reported apart as a dependency-availability gap, not
-    /// counted in the precision denominator.
-    pub external_known_unhydrated: u32,
     /// Refs (resolved + unresolved) excluded from the rate denominator by
     /// `GENERATED_FILE_FILTER` — Dart build_runner output (`*.g.dart`,
     /// `*.freezed.dart`, `generated/`). The files stay indexed; their refs
@@ -286,7 +272,6 @@ pub struct ResolutionBreakdown {
     pub generated_files_reclassified: u32,
     /// Primary resolution gate metric, two decimals: internal_edges /
     /// (internal_edges + internal_unresolved) * 100. 100.0 when both
-    /// sides are zero (empty project). `external_known_unhydrated` is not
     /// in the denominator.
     pub internal_resolution_rate: f64,
     /// Precision over the three-state model: resolved / (resolved +
@@ -379,21 +364,6 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
         .query_row(&internal_unresolved_sql, [], |r| r.get(0))
         .unwrap_or(0);
 
-    // The third state: refs the classifier routed to a known external
-    // namespace whose source was never pulled. Lives in `external_refs`,
-    // disjoint from `unresolved_refs`, so it never entered the precision
-    // denominator above — counted here so the gap is observable instead of
-    // hidden.
-    let external_known_unhydrated: u32 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM external_refs er
-             JOIN symbols s ON s.id = er.source_id
-             JOIN files   f ON f.id = s.file_id
-             WHERE f.origin = 'internal'",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap_or(0);
 
     // Refs (resolved edges + counted unresolved refs) excluded from the rate
     // by `GENERATED_FILE_FILTER`. Counted positively from both sides so the
@@ -692,7 +662,6 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
     Ok(ResolutionBreakdown {
         internal_edges,
         internal_unresolved,
-        external_known_unhydrated,
         generated_excluded,
         drained_refs,
         drain_audit: crate::query::drain_audit::drain_audit(db)?,

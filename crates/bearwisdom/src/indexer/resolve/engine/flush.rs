@@ -66,8 +66,6 @@ pub(super) fn flush_to_db(
             .context("Failed to clear edges")?;
         tx.execute("DELETE FROM unresolved_refs", [])
             .context("Failed to clear unresolved_refs")?;
-        tx.execute("DELETE FROM external_refs", [])
-            .context("Failed to clear external_refs")?;
         tx.execute("DELETE FROM ref_resolutions", [])
             .context("Failed to clear ref_resolutions")?;
     }

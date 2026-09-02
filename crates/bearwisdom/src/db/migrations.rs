@@ -91,23 +91,21 @@ pub(super) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_symbols_origin_language
            ON symbols(origin_language) WHERE origin_language IS NOT NULL",
     )?;
-    // v0.7 (M1): Per-package attribution on external_refs + unresolved_refs.
-    // Populated by the resolver (M2) from the source symbol's package_id so
-    // queries like "which packages in this monorepo use axios?" are answerable.
-    // NULL = ref came from a file with no package (root configs, shared scripts).
-    if !column_exists(conn, "external_refs", "package_id") {
-        conn.execute_batch(
-            "ALTER TABLE external_refs ADD COLUMN package_id INTEGER REFERENCES packages(id) ON DELETE SET NULL"
-        )?;
-    }
+    // external_refs is retired: nothing writes it since the legacy resolver's
+    // deletion — external supply resolves to real edges instead. Shed the
+    // table (and its indexes) from existing DBs.
+    conn.execute_batch("DROP TABLE IF EXISTS external_refs;")?;
+    // v0.7 (M1): Per-package attribution on unresolved_refs. Populated by the
+    // resolver from the source symbol's package_id so queries like "which
+    // packages in this monorepo use axios?" are answerable. NULL = ref came
+    // from a file with no package (root configs, shared scripts).
     if !column_exists(conn, "unresolved_refs", "package_id") {
         conn.execute_batch(
             "ALTER TABLE unresolved_refs ADD COLUMN package_id INTEGER REFERENCES packages(id) ON DELETE SET NULL"
         )?;
     }
     conn.execute_batch(
-        "CREATE INDEX IF NOT EXISTS idx_external_refs_package   ON external_refs(package_id)   WHERE package_id IS NOT NULL;
-         CREATE INDEX IF NOT EXISTS idx_unresolved_refs_package ON unresolved_refs(package_id) WHERE package_id IS NOT NULL;"
+        "CREATE INDEX IF NOT EXISTS idx_unresolved_refs_package ON unresolved_refs(package_id) WHERE package_id IS NOT NULL;"
     )?;
     // v0.8 (E3): Snippet-origin flag on unresolved_refs. Set to 1 for refs
     // that originate from symbols spliced in from a Markdown fenced code

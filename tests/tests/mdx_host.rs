@@ -270,26 +270,17 @@ import { Hero } from './hero'
     assert_eq!(heading_count, 1);
 
     // Hero JSX ref emitted. The ref surfaces either as unresolved (when
-    // no Hero symbol is indexed) or as an external_refs row tagged with
+    // no Hero symbol is indexed) or as an external ref tagged with
     // the import path — both prove the JSX was scanned and the call
     // target captured.
     let hero_ref: i64 = db
         .query_row(
-            "SELECT (
-                 SELECT COUNT(*) FROM unresolved_refs ur
-                 JOIN symbols s ON s.id = ur.source_id
-                 JOIN files   f ON f.id = s.file_id
-                 WHERE f.path LIKE '%post.mdx'
-                   AND ur.kind = 'calls'
-                   AND ur.target_name = 'Hero'
-             ) + (
-                 SELECT COUNT(*) FROM external_refs er
-                 JOIN symbols s ON s.id = er.source_id
-                 JOIN files   f ON f.id = s.file_id
-                 WHERE f.path LIKE '%post.mdx'
-                   AND er.kind = 'calls'
-                   AND er.target_name = 'Hero'
-             )",
+            "SELECT COUNT(*) FROM unresolved_refs ur
+             JOIN symbols s ON s.id = ur.source_id
+             JOIN files   f ON f.id = s.file_id
+             WHERE f.path LIKE '%post.mdx'
+               AND ur.kind = 'calls'
+               AND ur.target_name = 'Hero'",
             [],
             |r| r.get(0),
         )

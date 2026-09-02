@@ -436,15 +436,6 @@ fn run_incremental_pipeline(
             )?;
 
             db.conn().execute(
-                "DELETE FROM external_refs WHERE source_id IN (
-                    SELECT s.id FROM symbols s
-                    JOIN files f ON s.file_id = f.id
-                    JOIN _affected_paths ap ON ap.path = f.path
-                )",
-                [],
-            )?;
-
-            db.conn().execute(
                 "DELETE FROM ref_resolutions WHERE source_id IN (
                     SELECT s.id FROM symbols s
                     JOIN files f ON s.file_id = f.id

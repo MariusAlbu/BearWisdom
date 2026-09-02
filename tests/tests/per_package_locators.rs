@@ -6,7 +6,7 @@
 //!      once — no duplicate external files in the index.
 //!   3. The scoped TS locator finds hoisted deps via ancestor walk when
 //!      each package has no local node_modules.
-//!   4. Single-project layouts continue to produce external_refs rows
+//!   4. Single-project layouts continue to index external symbols
 //!      (no regression — M3 walks remain enabled when packages is empty).
 
 use std::fs;
@@ -188,9 +188,9 @@ fn hoisted_externals_reachable_from_per_package_walk() {
 }
 
 #[test]
-fn single_project_external_refs_still_work() {
+fn single_project_externals_still_work() {
     // Regression: single-project layouts (no packages detected) still
-    // produce external_refs rows. M3 must not break the legacy path.
+    // index external dependency symbols. M3 must not break the legacy path.
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
     write_file(

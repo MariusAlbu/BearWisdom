@@ -130,11 +130,6 @@ fn blade_template_extracts_section_and_include_symbols() {
             "SELECT target_name FROM unresolved_refs ur
          JOIN symbols s ON s.id = ur.source_id
          JOIN files   f ON f.id = s.file_id
-         WHERE f.path LIKE '%welcome.blade.php'
-         UNION
-         SELECT target_name FROM external_refs er
-         JOIN symbols s ON s.id = er.source_id
-         JOIN files   f ON f.id = s.file_id
          WHERE f.path LIKE '%welcome.blade.php'",
         )
         .unwrap()
@@ -261,11 +256,6 @@ fn twig_template_extracts_blocks_and_extends() {
         .prepare(
             "SELECT target_name FROM unresolved_refs ur
          JOIN symbols s ON s.id = ur.source_id
-         JOIN files   f ON f.id = s.file_id
-         WHERE f.path LIKE '%page.html.twig'
-         UNION
-         SELECT er.target_name FROM external_refs er
-         JOIN symbols s ON s.id = er.source_id
          JOIN files   f ON f.id = s.file_id
          WHERE f.path LIKE '%page.html.twig'
          UNION

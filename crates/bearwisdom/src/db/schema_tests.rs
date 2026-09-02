@@ -24,7 +24,6 @@ fn schema_creates_all_tables() {
         "symbols",
         "edges",
         "unresolved_refs",
-        "external_refs",
         "imports",
         "routes",
         "db_mappings",

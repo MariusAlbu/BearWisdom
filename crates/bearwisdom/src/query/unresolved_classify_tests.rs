@@ -15,8 +15,7 @@ fn extractor_garbage_punctuation() {
         None,
         "src/a.ts",
         "typescript",
-        &empty_externals(),
-        None,
+                None,
     );
     assert_eq!(cat, UnresolvedCategory::ExtractorBug);
 }
@@ -29,8 +28,7 @@ fn extractor_garbage_empty() {
         None,
         "src/a.ts",
         "typescript",
-        &empty_externals(),
-        None,
+                None,
     );
     assert_eq!(cat, UnresolvedCategory::ExtractorBug);
 }
@@ -52,8 +50,7 @@ fn extractor_keyword_and_literal() {
             None,
             "src/a.ts",
             lang,
-            &empty_externals(),
-            None,
+                        None,
         );
         assert_eq!(
             cat,
@@ -71,8 +68,7 @@ fn generated_path_node_modules() {
         None,
         "node_modules/some-pkg/dist/index.d.ts",
         "typescript",
-        &empty_externals(),
-        None,
+                None,
     );
     assert_eq!(cat, UnresolvedCategory::GeneratedOrVendorNoise);
 }
@@ -85,8 +81,7 @@ fn generated_filename_suffix() {
         None,
         "src/Models.designer.cs",
         "csharp",
-        &empty_externals(),
-        None,
+                None,
     );
     assert_eq!(cat, UnresolvedCategory::GeneratedOrVendorNoise);
 }
@@ -99,8 +94,7 @@ fn module_resolution_miss_via_module_column() {
         Some("./missing"),
         "src/a.ts",
         "typescript",
-        &empty_externals(),
-        None,
+                None,
     );
     assert_eq!(cat, UnresolvedCategory::ModuleResolutionMiss);
 }
@@ -115,27 +109,11 @@ fn module_resolution_miss_via_imports_table() {
         None,
         "src/a.ts",
         "typescript",
-        &empty_externals(),
-        Some(&imports),
+                Some(&imports),
     );
     assert_eq!(cat, UnresolvedCategory::ModuleResolutionMiss);
 }
 
-#[test]
-fn external_api_unknown_via_external_refs() {
-    let mut externals = HashSet::new();
-    externals.insert("Observable".to_string());
-    let cat = _test_classify_row(
-        "Observable",
-        "type_ref",
-        None,
-        "src/a.ts",
-        "typescript",
-        &externals,
-        None,
-    );
-    assert_eq!(cat, UnresolvedCategory::ExternalApiUnknown);
-}
 
 #[test]
 fn local_false_positive_lowercase_short() {
@@ -145,8 +123,7 @@ fn local_false_positive_lowercase_short() {
         None,
         "src/a.ts",
         "typescript",
-        &empty_externals(),
-        None,
+                None,
     );
     assert_eq!(cat, UnresolvedCategory::LocalFalsePositive);
 }
@@ -159,8 +136,7 @@ fn local_false_positive_lowercase_word() {
         None,
         "src/a.ts",
         "typescript",
-        &empty_externals(),
-        None,
+                None,
     );
     assert_eq!(cat, UnresolvedCategory::LocalFalsePositive);
 }
@@ -173,8 +149,7 @@ fn local_false_positive_does_not_fire_on_dotted() {
         None,
         "src/a.bzl",
         "starlark",
-        &empty_externals(),
-        None,
+                None,
     );
     // Dotted lowercase falls through past the locals check; with no other
     // signals the fallback is RealMissingSymbol.
@@ -189,8 +164,7 @@ fn local_false_positive_does_not_fire_on_inherits() {
         None,
         "src/a.ts",
         "typescript",
-        &empty_externals(),
-        None,
+                None,
     );
     // Inheritance with a lowercase target is not a local — it's a real
     // missing symbol or a module miss, but never a locals.scm leak.
@@ -218,8 +192,7 @@ fn scss_kebab_case_is_not_local() {
         None,
         "src/widget.scss",
         "scss",
-        &empty_externals(),
-        None,
+                None,
     );
     assert_ne!(cat, UnresolvedCategory::LocalFalsePositive);
     assert_eq!(cat, UnresolvedCategory::RealMissingSymbol);
@@ -234,8 +207,7 @@ fn css_less_sass_stylus_skip_locals_heuristic() {
             None,
             "src/widget.css",
             lang,
-            &empty_externals(),
-            None,
+                        None,
         );
         assert_ne!(
             cat,
@@ -270,8 +242,7 @@ fn unsupported_syntax_generic_residue() {
         None,
         "src/a.ts",
         "typescript",
-        &empty_externals(),
-        None,
+                None,
     );
     assert_eq!(cat, UnresolvedCategory::UnsupportedSyntax);
 }
@@ -284,8 +255,7 @@ fn embedded_region_capitalized_target_in_vue_host() {
         None,
         "src/Foo.vue",
         "vue",
-        &empty_externals(),
-        None,
+                None,
     );
     assert_eq!(cat, UnresolvedCategory::EmbeddedRegionIssue);
 }
@@ -298,8 +268,7 @@ fn real_missing_symbol_fallback() {
         None,
         "src/a.ts",
         "typescript",
-        &empty_externals(),
-        None,
+                None,
     );
     assert_eq!(cat, UnresolvedCategory::RealMissingSymbol);
 }
@@ -314,8 +283,7 @@ fn priority_extractor_bug_beats_module_miss() {
         Some("./bar"),
         "src/a.ts",
         "typescript",
-        &empty_externals(),
-        None,
+                None,
     );
     assert_eq!(cat, UnresolvedCategory::ExtractorBug);
 }
@@ -331,8 +299,7 @@ fn bare_external_module_is_external_api() {
         Some("rxjs"),
         "src/a.ts",
         "typescript",
-        &empty_externals(),
-        None,
+                None,
     );
     assert_eq!(cat, UnresolvedCategory::ExternalApiUnknown);
 }
@@ -350,7 +317,6 @@ fn workspace_module_is_module_miss() {
         "packages/react-query/src/a.ts",
         "typescript",
         &empty_externals(),
-        &empty_externals(),
         &workspace,
         None,
     );
@@ -366,8 +332,7 @@ fn relative_module_is_module_miss() {
         Some("../shared/util"),
         "src/a.ts",
         "typescript",
-        &empty_externals(),
-        None,
+                None,
     );
     assert_eq!(cat, UnresolvedCategory::ModuleResolutionMiss);
 }
@@ -385,7 +350,6 @@ fn external_member_call_via_member_set() {
         None,
         "src/a.test.ts",
         "typescript",
-        &empty_externals(),
         &members,
         &empty_externals(),
         None,
@@ -405,7 +369,6 @@ fn external_member_set_does_not_fire_on_type_ref() {
         None,
         "src/a.ts",
         "typescript",
-        &empty_externals(),
         &members,
         &empty_externals(),
         None,
@@ -482,14 +445,6 @@ fn report_groups_and_samples() {
     seed_unresolved(&db, s, "MyType", "type_ref", None, 12);
     seed_unresolved(&db, s, "Observable", "type_ref", None, 13);
 
-    db.conn()
-        .execute(
-            "INSERT INTO external_refs (source_id, target_name, kind, source_line, namespace)
-             VALUES (?1, 'Observable', 'type_ref', 1, 'rxjs')",
-            [s],
-        )
-        .unwrap();
-
     let report = classify_unresolved(&db, 5).unwrap();
     assert_eq!(report.total, 4);
     assert_eq!(report.by_language.get("typescript").copied(), Some(4));
@@ -498,12 +453,8 @@ fn report_groups_and_samples() {
         Some(2)
     );
     assert_eq!(
-        report.by_category.get("external_api_unknown").copied(),
-        Some(1)
-    );
-    assert_eq!(
         report.by_category.get("real_missing_symbol").copied(),
-        Some(1)
+        Some(2)
     );
 
     // Top-N samples carry per-target counts.

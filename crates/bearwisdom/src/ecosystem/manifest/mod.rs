@@ -92,8 +92,8 @@ pub enum ManifestKind {
     Terraform,
     /// Ansible `requirements.yml` at the project root. Dependency names are
     /// declared role/collection names. The Jinja resolver uses these to
-    /// classify refs that start with a declared external role prefix as
-    /// `external_refs` rather than truly unresolved.
+    /// recognize refs that start with a declared external role prefix as
+    /// external rather than truly unresolved.
     AnsibleRequirements,
     /// C/C++ `vcpkg.json` manifest. Dependency names are the `dependencies`
     /// array's package names (vcpkg port ids). Consumed by C/C++ resolvers

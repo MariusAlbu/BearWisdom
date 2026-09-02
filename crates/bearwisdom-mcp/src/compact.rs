@@ -1033,12 +1033,11 @@ pub fn quality_check(rb: &ResolutionBreakdown) -> String {
     }
 
     let mut out = start(&format!(
-        "precision:{:.2}%|resolution_rate:{:.2}%|resolved:{}|unresolved_unknown:{}|external_known_unhydrated:{}|low_conf:{}|low_conf_threshold:{:.2}|code_chunks:{}",
+        "precision:{:.2}%|resolution_rate:{:.2}%|resolved:{}|unresolved_unknown:{}|low_conf:{}|low_conf_threshold:{:.2}|code_chunks:{}",
         rb.precision,
         rb.internal_resolution_rate,
         rb.internal_edges,
         rb.internal_unresolved,
-        rb.external_known_unhydrated,
         rb.low_confidence_edges,
         rb.low_confidence_threshold,
         rb.code_chunks,

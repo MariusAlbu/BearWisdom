@@ -108,16 +108,17 @@ export default defineComponent({
         "expected TS symbols from Vue <script lang='ts'> block, got {embedded_ts_count}"
     );
 
-    // Any external_ref from an embedded TS symbol must carry package_id = web
-    // (the host file's package), proving L2's inheritance invariant.
+    // Any unresolved ref from an embedded TS symbol must carry
+    // package_id = web (the host file's package), proving L2's
+    // inheritance invariant.
     let mismatched: i64 = db
         .query_row(
-            "SELECT COUNT(*) FROM external_refs er
-             JOIN symbols s ON s.id = er.source_id
+            "SELECT COUNT(*) FROM unresolved_refs ur
+             JOIN symbols s ON s.id = ur.source_id
              JOIN files   f ON f.id = s.file_id
              WHERE f.path LIKE '%Button.vue'
                AND s.origin_language = 'typescript'
-               AND (er.package_id IS NULL OR er.package_id != ?1)",
+               AND (ur.package_id IS NULL OR ur.package_id != ?1)",
             rusqlite::params![web_id],
             |r| r.get(0),
         )

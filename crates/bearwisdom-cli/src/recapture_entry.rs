@@ -81,7 +81,6 @@ pub(crate) fn snapshot(
         "edges",
         "unresolved_refs",
         "unresolved_ref_count",
-        "external_ref_count",
     ];
     if let Some(obj) = entry.as_object_mut() {
         for k in superseded {
