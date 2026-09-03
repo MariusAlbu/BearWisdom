@@ -42,17 +42,22 @@ pub fn materialize_and_build_tree(
     loc: Arc<SymbolLocationIndex>,
 ) -> Result<(Compilation, Vec<ParsedFile>, SymbolIds)> {
     let ambient_qnames = crate::ecosystem::ambient::ambient_global_qnames(parsed);
-    let mut tree = Compilation::build_with_context(
-        parsed,
-        symbol_id_map,
-        Arc::clone(&arena),
-        project_ctx,
-        &ambient_qnames,
-    );
+    let mut tree = {
+        let _t = crate::indexer::phase_timer::scope("resolve.tree_ingest");
+        Compilation::build_with_context(
+            parsed,
+            symbol_id_map,
+            Arc::clone(&arena),
+            project_ctx,
+            &ambient_qnames,
+        )
+    };
     let profiles = build_profiles();
+    let _t = crate::indexer::phase_timer::scope("resolve.materialize_externals");
     let (ext_parsed, ext_id_map) =
         materialize_externals(db, &mut tree, parsed, &loc, &arena, &profiles)
             .context("Failed to materialize external symbols")?;
+    drop(_t);
     Ok((tree, ext_parsed, ext_id_map))
 }
 
@@ -69,5 +74,6 @@ pub fn rebuild_tree(
     arena: Arc<TypeArena>,
 ) -> Compilation {
     let ambient_qnames = crate::ecosystem::ambient::ambient_global_qnames(parsed);
+    let _t = crate::indexer::phase_timer::scope("resolve.tree_rebuild");
     Compilation::build_with_context(parsed, symbol_id_map, arena, project_ctx, &ambient_qnames)
 }

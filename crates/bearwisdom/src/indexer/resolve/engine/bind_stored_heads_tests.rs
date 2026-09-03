@@ -1,7 +1,4 @@
-use rustc_hash::FxHashMap;
-
-use super::apply;
-use crate::indexer::resolve::engine::contract::TypeInfo;
+use super::HeadBindMemo;
 use crate::indexer::resolve::engine::contract::SymbolLookup;
 use crate::indexer::resolve::engine::head_decl::head_decl_id;
 use crate::indexer::resolve::engine::testkit::{sym, Lookup};
@@ -15,19 +12,12 @@ fn unique_head_binds_and_survives_wrappers() {
         base: arena.class("pkg.User"),
         args: vec![arena.class("T")],
     })));
-    let mut slots: FxHashMap<i64, TypeInfo> = FxHashMap::default();
-    slots.insert(
-        1,
-        TypeInfo {
-            return_type_id: Some(stored),
-            ..Default::default()
-        },
-    );
 
-    apply(arena, &lookup, &mut slots);
+    let memo = HeadBindMemo::default();
+    let bound = memo.bound(arena, &lookup, stored);
 
-    let bound = slots.get(&1).unwrap().return_type_id.unwrap();
     assert_eq!(head_decl_id(arena, bound), Some(7), "head bound through Optional<Apply<..>>");
+    assert_eq!(memo.bound(arena, &lookup, stored), bound, "memoized read returns the same bind");
 }
 
 #[test]
@@ -39,15 +29,13 @@ fn ambiguous_head_stays_name_addressed() {
         .with(sym(8, "Page", "ui.Page", "class", "other/b.ts"));
     let arena = lookup.type_arena().unwrap();
     let stored = arena.class("ui.Page");
-    let mut slots: FxHashMap<i64, TypeInfo> = FxHashMap::default();
-    slots.insert(1, TypeInfo { field_type_id: Some(stored), ..Default::default() });
 
-    apply(arena, &lookup, &mut slots);
+    let memo = HeadBindMemo::default();
+    let kept = memo.bound(arena, &lookup, stored);
 
-    let kept = slots.get(&1).unwrap().field_type_id.unwrap();
+    assert_eq!(kept, stored, "ambiguous heads keep the stored id");
     assert_eq!(head_decl_id(arena, kept), None, "ambiguous heads keep Class form");
 }
-
 
 #[test]
 fn bare_head_never_binds_even_when_unique() {
@@ -57,11 +45,10 @@ fn bare_head_never_binds_even_when_unique() {
     let lookup = Lookup::new().with(sym(7, "T", "T", "class", "fixture.ts"));
     let arena = lookup.type_arena().unwrap();
     let stored = arena.class("T");
-    let mut slots: FxHashMap<i64, TypeInfo> = FxHashMap::default();
-    slots.insert(1, TypeInfo { return_type_id: Some(stored), ..Default::default() });
 
-    apply(arena, &lookup, &mut slots);
+    let memo = HeadBindMemo::default();
+    let kept = memo.bound(arena, &lookup, stored);
 
-    let kept = slots.get(&1).unwrap().return_type_id.unwrap();
+    assert_eq!(kept, stored, "bare heads keep the stored id");
     assert_eq!(head_decl_id(arena, kept), None, "bare heads keep Class form");
 }

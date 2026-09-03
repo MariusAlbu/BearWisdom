@@ -118,22 +118,7 @@ pub fn resolve_from_tree(
     let plugins = build_plugin_lookup();
     let plugin_state = project_ctx.map(|c| &c.plugin_state);
 
-    // Resolve `ReturnType<typeof fn>` declared return types now that the wrapped
-    // (possibly external) functions are materialized, so a wrapper's return type
-    // is concrete before forward inference reads it.
-    tree.resolve_wrapper_return_types(parsed);
-    // Infer a wrapper hook's return from `return <call>` — `function usePost() {
-    // return useQuery(...) }` makes usePost's return useQuery's, so a
-    // `const { data } = usePost()` destructure roots on the result type. Runs
-    // after externals materialize so a wrapper of an external call resolves too.
-    tree.infer_call_wrapper_returns(parsed);
-    // Type class fields from their call/new initializer — `m = injectMutation(...)`,
-    // `#http = inject(HttpClient)` — so `this.m.mutate()` / `this.#http.get()` root.
-    tree.infer_field_init_types(parsed, &profiles);
-    // Chain-initialized bindings (`const c = base.with(x).use(cb)`) walk their
-    // initializer chain with the full member walker; runs after the single-init
-    // pass so a fluent chain roots on the just-typed base binding.
-    tree.infer_chain_init_types(parsed, &profiles);
+    super::inference_prelude::run(&mut tree, parsed, &profiles);
 
     let solver = SemanticModel::production();
 
@@ -141,26 +126,37 @@ pub fn resolve_from_tree(
     // RESOLVED (child, parent) ids into the inheritance map, so every member
     // walk in the main sweep climbs the parents resolution actually chose —
     // identity, never string re-derivation.
-    let (pre_edges, _, _) = super::parallel_pass::run(
-        parsed, &tree, &profiles, &plugins, plugin_state, &solver, symbol_id_map,
-        Some(super::parallel_pass::INHERIT_KINDS),
-    );
+    let (pre_edges, _, _) = {
+        let _t = crate::indexer::phase_timer::scope("resolve.inherits_prepass");
+        super::parallel_pass::run(
+            parsed, &tree, &profiles, &plugins, plugin_state, &solver, symbol_id_map,
+            Some(super::parallel_pass::INHERIT_KINDS),
+        )
+    };
     tree.apply_resolved_inherits(pre_edges.iter().map(|e| (e.0, e.1)));
 
-    let (edges, unresolved, ref_log) = super::parallel_pass::run(
-        parsed, &tree, &profiles, &plugins, plugin_state, &solver, symbol_id_map, None,
-    );
+    let (edges, unresolved, ref_log) = {
+        let _t = crate::indexer::phase_timer::scope("resolve.main_sweep");
+        super::parallel_pass::run(
+            parsed, &tree, &profiles, &plugins, plugin_state, &solver, symbol_id_map, None,
+        )
+    };
 
     let mut stats = ResolutionStats::default();
     stats.resolved = edges.len() as u64;
     stats.unresolved = unresolved.len() as u64;
 
     // Write: replace all four resolution tables atomically.
-    flush_to_db(db, &edges, &unresolved, &ref_log, true)?;
+    {
+        let _t = crate::indexer::phase_timer::scope("resolve.flush");
+        flush_to_db(db, &edges, &unresolved, &ref_log, true)?;
+    }
     // Persist the resolved type metadata so an incremental pass can load it back
     // exactly, instead of re-deriving a lossier version from signatures alone.
+    let _t = crate::indexer::phase_timer::scope("resolve.persist_type_info");
     tree.persist_type_info(db.conn())
         .context("Failed to persist symbol type info")?;
+    drop(_t);
 
     Ok(stats)
 }
@@ -222,26 +218,13 @@ pub fn resolve_incremental_pass(
         full_id_map.insert_key_if_absent(path, qname, v);
     }
 
-    // Wrapped functions are now loaded from the DB; resolve `ReturnType<typeof fn>`
-    // return types before forward inference reads them.
-    tree.resolve_wrapper_return_types(parsed);
-    // Infer a wrapper hook's return from `return <call>` — `function usePost() {
-    // return useQuery(...) }` makes usePost's return useQuery's, so a
-    // `const { data } = usePost()` destructure roots on the result type. Runs
-    // after externals materialize so a wrapper of an external call resolves too.
-    tree.infer_call_wrapper_returns(parsed);
-    // Built here (rather than at its previous call site below) so
-    // `infer_field_init_types` can read each file's `async_wrappers` too.
+    // Built before the prelude so `infer_field_init_types` can read each
+    // file's `async_wrappers`. Wrapped functions are loaded from the DB at
+    // this point, so the prelude's wrapper pass reads complete state.
     let profiles = build_profiles();
     let plugins = build_plugin_lookup();
     let plugin_state = project_ctx.map(|c| &c.plugin_state);
-    // Type class fields from their call/new initializer — `m = injectMutation(...)`,
-    // `#http = inject(HttpClient)` — so `this.m.mutate()` / `this.#http.get()` root.
-    tree.infer_field_init_types(parsed, &profiles);
-    // Chain-initialized bindings (`const c = base.with(x).use(cb)`) walk their
-    // initializer chain with the full member walker; runs after the single-init
-    // pass so a fluent chain roots on the just-typed base binding.
-    tree.infer_chain_init_types(parsed, &profiles);
+    super::inference_prelude::run(&mut tree, parsed, &profiles);
 
     let solver = SemanticModel::production();
 

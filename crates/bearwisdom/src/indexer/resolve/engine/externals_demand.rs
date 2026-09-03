@@ -88,60 +88,28 @@ pub(super) fn materialize_externals(
     let mut to_parse = frontier;
     let mut depth = 0;
     while !to_parse.is_empty() && depth < MAX_CLOSURE_DEPTH {
+        tracing::info!("demand closure wave {depth}: {} candidate files", to_parse.len());
         // Pair each pulled file with its on-disk path so the closure can also
         // follow the file's RELATIVE imports (resolved against this directory) —
         // a member-declaring sibling module the package's export map never named.
         let batch: Vec<(PathBuf, ParsedFile)> = to_parse
             .iter()
-            .filter_map(|f| parse_external_file(f, arena, loc).map(|pf| (f.clone(), pf)))
+            .filter_map(|f| {
+                let _t = crate::indexer::phase_timer::scope("demand.parse_external_file");
+                parse_external_file(f, arena, loc).map(|pf| (f.clone(), pf))
+            })
             .collect();
         let mut next: Vec<PathBuf> = Vec::new();
         for (abs, pf) in &batch {
-            let veto = DemandVeto::new(&pf.language, profiles, &file_langs);
-            collect_external_files(&pf.refs, &veto, tree, loc, &mut seen, &mut next);
-            type_mention_demand::collect_return_type_files(
-                &pf.symbols,
-                &pf.language,
-                tree,
-                loc,
-                &mut seen,
-                &mut next,
-            );
-            type_mention_demand::collect_callback_param_type_files(
-                &pf.symbols,
-                &pf.language,
+            super::demand_reachability::collect(
+                abs,
+                pf,
                 profiles,
+                &file_langs,
                 tree,
                 loc,
                 &mut seen,
                 &mut next,
-            );
-            relative_imports::collect_relative_supertype_imports(
-                abs,
-                &pf.refs,
-                &mut seen,
-                &mut next,
-            );
-            // Per-language extra reachability (e.g. Angular NgModule → component
-            // .d.ts) — dispatched to the file's plugin so framework specifics stay
-            // out of the generic resolve pipeline.
-            if let Ok(content) = std::fs::read_to_string(abs) {
-                let plugin = crate::languages::default_registry().get(&pf.language);
-                if let Some(dir) = abs.parent() {
-                    for spec in plugin.external_declaration_reachables(&pf.path, &content) {
-                        if let Some(file) =
-                            relative_imports::resolve_relative_ts_module(dir, &spec)
-                        {
-                            if seen.insert(file.clone()) {
-                                next.push(file);
-                            }
-                        }
-                    }
-                }
-            }
-            super::module_augmentation::collect_module_augmentations(
-                abs,
-                &pf.path,
                 &mut augmentations,
             );
         }
@@ -167,15 +135,16 @@ pub(super) fn materialize_externals(
 
     // Persist the external symbols (origin='external') to get real DB ids, then
     // ingest them into the tree so refs bind to those ids.
-    let (_files, ext_id_map) = crate::indexer::write::write_parsed_files_with_origin(
-        db,
-        &ext_parsed,
-        "external",
-        Some(arena),
-    )
-    .context("Failed to write external symbols")?;
+    let (_files, ext_id_map) = {
+        let _t = crate::indexer::phase_timer::scope("demand.write_externals");
+        crate::indexer::write::write_parsed_files_with_origin(db, &ext_parsed, "external", Some(arena))
+            .context("Failed to write external symbols")?
+    };
     let ambient_qnames = crate::ecosystem::ambient::ambient_global_qnames(&ext_parsed);
-    tree.ingest(&ext_parsed, &ext_id_map, &ambient_qnames);
+    {
+        let _t = crate::indexer::phase_timer::scope("demand.ext_ingest");
+        tree.ingest(&ext_parsed, &ext_id_map, &ambient_qnames);
+    }
 
     // TS module augmentation: graft `declare module 'M' { interface I extends S }`
     // supertypes onto the interface module `M` exports as `I`, so a member
@@ -217,7 +186,7 @@ pub(super) fn materialize_externals(
 /// files, so a re-export chain into a sibling package is followed the same way
 /// an internal import is; `veto` carries the collecting file's language either
 /// way.
-fn collect_external_files(
+pub(super) fn collect_external_files(
     refs: &[crate::types::ExtractedRef],
     veto: &DemandVeto,
     tree: &Compilation,

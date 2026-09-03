@@ -97,6 +97,9 @@ pub struct Compilation {
     /// rather than the colliding qname winner. Same relationship as
     /// `members_by_id` ↔ `members_by_parent`.
     pub(super) type_info_by_id: FxHashMap<i64, TypeInfo>,
+    /// Read-time memo binding stored slot heads to their declarations; see
+    /// `bind_stored_heads`.
+    pub(super) head_bind: super::bind_stored_heads::HeadBindMemo,
     /// Deferred import-scoped head requalification, retained across `ingest`
     /// calls so an import whose package materializes in a LATER batch still
     /// rewrites the earlier batch's annotation heads. See `import_qualify`.
@@ -339,6 +342,7 @@ impl Compilation {
             types_by_name: FxHashMap::default(),
             type_info: FxHashMap::default(),
             type_info_by_id: FxHashMap::default(),
+            head_bind: super::bind_stored_heads::HeadBindMemo::default(),
             pending_import_requalify: Vec::new(),
             reexport_map: FxHashMap::default(),
             module_entry: FxHashMap::default(),
@@ -1893,52 +1897,10 @@ impl Compilation {
     /// when the field's own index is in that set, one async-wrapper layer is
     /// peeled per `profiles[pf.language].async_wrappers` before the field's type
     /// is recorded, mirroring the peel `resolve_one_file`'s binding seed applies.
-    /// The instance type a `new X(...)` initializer builds. `X` may be a VALUE
-    /// in an enclosing scope — a `Ctor: typeof C` parameter — whose
-    /// constructor type's instance is what `new` yields; a value typed by a
-    /// bare instance name (the `typeof C` capture shape) carries that instance
-    /// directly. Only when no in-scope value carries the name does `X`
-    /// scope-resolve as the class itself. The global by-name pool is never
-    /// consulted for the value form — an unrelated package's same-named value
-    /// must not type this binding.
+    /// See `instantiated_type` — the instance type a `new X(...)` initializer
+    /// builds, via in-scope value indirection before class scope-resolution.
     fn instantiated_type(&self, name: &str, scope_path: Option<&str>, file: &str) -> TypeId {
-        let mut scope = scope_path.unwrap_or("");
-        while !scope.is_empty() {
-            let qn = format!("{scope}.{name}");
-            // Sibling packages repeat scope qnames (`useBaseQuery.Observer` in
-            // four framework adapters) — the value in THIS file is the one the
-            // initializer names, so a same-file candidate wins over the qname
-            // slot's first-winner.
-            let cands = self.all_by_qualified_name(&qn);
-            let s = cands
-                .iter()
-                .find(|s| &*s.file_path == file)
-                .or_else(|| cands.iter().next());
-            if let Some(s) = s {
-                if matches!(
-                    s.kind.as_str(),
-                    "parameter" | "property" | "field" | "variable" | "constant"
-                ) {
-                    let ft = self
-                        .type_info_by_id
-                        .get(&s.id)
-                        .and_then(|ti| ti.field_type_id)
-                        .or_else(|| self.type_info.get(&qn).and_then(|ti| ti.field_type_id));
-                    if let Some(ft) = ft {
-                        return match self.arena.get(ft) {
-                            Type::Constructor(inner) => inner,
-                            _ => ft,
-                        };
-                    }
-                }
-            }
-            scope = match scope.rfind('.') {
-                Some(i) => &scope[..i],
-                None => "",
-            };
-        }
-        let resolved = resolve_type_name_in_scope(name, scope_path, &self.by_qname);
-        self.arena.class(&resolved)
+        super::instantiated_type::instantiated_type(self, name, scope_path, file)
     }
 
     pub(crate) fn infer_field_init_types(
@@ -2195,10 +2157,10 @@ impl Compilation {
 }
 
 impl Compilation {
-    /// The identity finishing passes every ingest path runs: canonicalize
-    /// declaration-merge sets over the id-keyed indexes, then bind
-    /// unambiguous stored type heads so member yields carry identity
-    /// instead of re-running string recovery per hop. Idempotent per batch.
+    /// The identity finishing pass every ingest path runs: canonicalize
+    /// declaration-merge sets over the id-keyed indexes. Stored-head binding
+    /// happens at read time via `head_bind` — see `bind_stored_heads`.
+    /// Idempotent per batch.
     fn finish_identity_passes(&mut self) {
         self.merge_canonical = super::merge_canonical::compute(&self.merge_groups);
         super::merge_canonical::apply(
@@ -2209,9 +2171,6 @@ impl Compilation {
             &mut self.enclosing_type_by_id,
         );
         super::merge_canonical::fold_type_info(&self.merge_canonical, &mut self.type_info_by_id);
-        let mut slots = std::mem::take(&mut self.type_info_by_id);
-        super::bind_stored_heads::apply(&self.arena, self, &mut slots);
-        self.type_info_by_id = slots;
     }
 }
 
@@ -2336,6 +2295,7 @@ impl SymbolLookup for Compilation {
         self.type_info_by_id
             .get(&symbol_id)
             .and_then(|ti| ti.return_type_id)
+            .map(|t| self.head_bind.bound(&self.arena, self, t))
     }
 
     fn generic_params_of(&self, symbol_id: i64) -> Option<Vec<String>> {
@@ -2368,6 +2328,7 @@ impl SymbolLookup for Compilation {
         self.type_info_by_id
             .get(&symbol_id)
             .and_then(|ti| ti.field_type_id)
+            .map(|t| self.head_bind.bound(&self.arena, self, t))
     }
 
     fn symbol_by_id(&self, id: i64) -> Option<&Symbol> {
