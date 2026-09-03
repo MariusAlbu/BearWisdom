@@ -1,5 +1,6 @@
 pub mod canonical_form;
 pub mod changeset;
+pub mod contract_filter;
 pub mod demand;
 pub(crate) mod demand_symbol_index;
 pub mod embedded_regions;

@@ -131,6 +131,12 @@ fn scan_pascal_file(path: &Path, dep: &ExternalDepRoot, idx: &mut SymbolLocation
                     idx.insert(module, unit_name, path);
                     let lc = unit_name.to_ascii_lowercase();
                     if lc != unit_name { idx.insert(module, &lc, path); }
+                    // A `uses X` ref is module-tagged with the unit name
+                    // itself, not the dep root's module path — register the
+                    // unit file as that module's `.` entry so the tagged
+                    // demand pull materializes the unit directly.
+                    idx.insert_module_entry(unit_name, path);
+                    if lc != unit_name { idx.insert_module_entry(&lc, path); }
                 }
                 // Consume the rest variable to avoid an unused-variable warning.
                 let _ = rest;

@@ -264,10 +264,33 @@ pub(super) fn collect_external_files(
 }
 
 /// Parse one external source file into a `ParsedFile`, consulting the persistent
-/// parse cache. Binary-format virtual paths (JAR / DLL) are skipped for now.
-/// Mirrors the source path of the old materialize-on-miss driver, but the
-/// resulting file is ingested into the new tree rather than the old store.
+/// parse cache, then reduce it to its declaration contract. External supply is
+/// consumed declaration-first — body symbols and body refs are never readable
+/// through the resolver's external surface, and dropping them here keeps the
+/// demand frontier, the symbol writes, and the tree ingest proportional to the
+/// API surface instead of the implementation.
 fn parse_external_file(
+    file: &Path,
+    arena: &Arc<TypeArena>,
+    loc: &SymbolLocationIndex,
+) -> Option<ParsedFile> {
+    let mut pf = parse_external_file_full(file, arena, loc)?;
+    // Contract reduction trusts the symbol parent chain, and error-recovered
+    // parses distort it — an include fragment's top-level functions come out
+    // nested under earlier constructs and would be dropped as body detail.
+    // Clean parses reduce fully; error-recovered ones keep every symbol and
+    // reduce only their refs, whose kinds stay trustworthy.
+    if pf.has_errors {
+        crate::indexer::contract_filter::reduce_refs_to_contract(&mut pf);
+    } else {
+        crate::indexer::contract_filter::reduce_to_contract(&mut pf);
+    }
+    Some(pf)
+}
+
+/// The unreduced parse: cache consult, virtual materialization, or a fresh
+/// tree-sitter parse. Binary-format virtual paths (JAR / DLL) are skipped.
+fn parse_external_file_full(
     file: &Path,
     arena: &Arc<TypeArena>,
     loc: &SymbolLocationIndex,
