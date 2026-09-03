@@ -75,6 +75,7 @@ pub const RMARKDOWN_PROFILE: LanguageProfile = LanguageProfile {
     doc_comment_kinds: &["<!--"],
     visibility_keywords: &[],
     function_prototype_types: &[],
+    external_contract_reduction: true,
 };
 
 pub const QUARTO_PROFILE: LanguageProfile = LanguageProfile {
@@ -150,6 +151,7 @@ pub const QUARTO_PROFILE: LanguageProfile = LanguageProfile {
     doc_comment_kinds: &["<!--"],
     visibility_keywords: &[],
     function_prototype_types: &[],
+    external_contract_reduction: true,
 };
 
 #[cfg(test)]

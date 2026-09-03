@@ -80,12 +80,30 @@ pub(super) fn materialize_externals(
     // libraries it references in turn. The same `collect_external_files` seed
     // logic runs over each newly-parsed external file's refs.
     const MAX_CLOSURE_DEPTH: usize = 8;
+    // One spelling per file across the whole closure: candidates arrive both
+    // root-relative (scan-produced) and `..`-relative (relative-import
+    // resolution), and `seen` keys on the raw spelling — normalize at the
+    // wave boundary and gate on registered root coverage so an escape from a
+    // scoped root neither materializes nor mints a second virtual identity.
+    let mut pulled: HashSet<PathBuf> = HashSet::new();
+    let mut admit_wave = |wave: Vec<PathBuf>, pulled: &mut HashSet<PathBuf>| -> Vec<PathBuf> {
+        let mut out = Vec::new();
+        for f in wave {
+            let norm = crate::ecosystem::symbol_index::normalize_lexically(&f);
+            // Scheme-prefixed virtual entries (`ext:jar:`, `ext:dotnet-type:`)
+            // are not filesystem paths; root coverage only confines real files.
+            if (!norm.has_root() || loc.covers(&norm)) && pulled.insert(norm.clone()) {
+                out.push(norm);
+            }
+        }
+        out
+    };
     let mut ext_parsed: Vec<ParsedFile> = Vec::new();
     // TS module augmentations `(augmented_module, interface, augmenting_qname)`,
     // scanned from the on-disk source in the closure — the parse cache strips
     // `content`, so the disk path is the only reliable source here.
     let mut augmentations: Vec<(String, String, String)> = Vec::new();
-    let mut to_parse = frontier;
+    let mut to_parse = admit_wave(frontier, &mut pulled);
     let mut depth = 0;
     while !to_parse.is_empty() && depth < MAX_CLOSURE_DEPTH {
         tracing::info!("demand closure wave {depth}: {} candidate files", to_parse.len());
@@ -96,7 +114,7 @@ pub(super) fn materialize_externals(
             .iter()
             .filter_map(|f| {
                 let _t = crate::indexer::phase_timer::scope("demand.parse_external_file");
-                parse_external_file(f, arena, loc).map(|pf| (f.clone(), pf))
+                parse_external_file(f, arena, loc, profiles).map(|pf| (f.clone(), pf))
             })
             .collect();
         let mut next: Vec<PathBuf> = Vec::new();
@@ -114,7 +132,7 @@ pub(super) fn materialize_externals(
             );
         }
         ext_parsed.extend(batch.into_iter().map(|(_, pf)| pf));
-        to_parse = next;
+        to_parse = admit_wave(next, &mut pulled);
         depth += 1;
     }
     if ext_parsed.is_empty() {
@@ -273,8 +291,17 @@ fn parse_external_file(
     file: &Path,
     arena: &Arc<TypeArena>,
     loc: &SymbolLocationIndex,
+    profiles: &FxHashMap<&'static str, &'static LanguageProfile>,
 ) -> Option<ParsedFile> {
     let mut pf = parse_external_file_full(file, arena, loc)?;
+    // A language whose profile opts out keeps full fidelity — its bodies
+    // define contract (macro-expansion codegen).
+    let reduce = profiles
+        .get(pf.language.as_str())
+        .is_none_or(|p| p.external_contract_reduction);
+    if !reduce {
+        return Some(pf);
+    }
     // Contract reduction trusts the symbol parent chain, and error-recovered
     // parses distort it — an include fragment's top-level functions come out
     // nested under earlier constructs and would be dropped as body detail.

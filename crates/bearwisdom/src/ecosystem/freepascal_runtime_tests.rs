@@ -73,12 +73,15 @@ fn discover_uses_explicit_dir_override() {
     // The old aggregate fpc-packages root no longer exists — packages are emitted
     // individually so module_path values are distinct per package.
     assert!(!module_paths.contains("fpc-packages"), "{module_paths:?}");
-    // Exactly one host-target RTL root, never both win32 + win64.
-    let rtl_count = module_paths
+    // The host target's RTL tree registers BEFORE any other platform tree,
+    // so the location index's first-writer-wins prefers host units for names
+    // every platform declares. Non-host trees follow for platform-only units.
+    let first_rtl = roots
         .iter()
-        .filter(|p| p.starts_with("fpc-rtl-win"))
-        .count();
-    assert_eq!(rtl_count, 1, "{module_paths:?}");
+        .find(|r| r.module_path.starts_with("fpc-rtl-win"))
+        .map(|r| r.module_path.clone());
+    assert_eq!(first_rtl.as_deref(), Some("fpc-rtl-win64"), "{module_paths:?}");
+    assert!(module_paths.contains("fpc-rtl-win32"), "{module_paths:?}");
 }
 
 #[test]
@@ -263,6 +266,14 @@ fn discover_registers_shared_platform_dir_alongside_primary_target() {
         roots.iter().map(|r| r.module_path.clone()).collect();
     assert!(module_paths.contains("fpc-rtl-win64"), "{module_paths:?}");
     assert!(module_paths.contains("fpc-rtl-win"), "{module_paths:?}");
-    // win32 was never named by win64's own Makefile.fpc — it stays absent.
-    assert!(!module_paths.contains("fpc-rtl-win32"), "{module_paths:?}");
+    // win32 registers too (non-host platform tree), but only AFTER the host
+    // target and its Makefile-declared shared family, so `win`'s sysutils.pp
+    // stays the first-writer location for shared unit names.
+    let order: Vec<&str> = roots
+        .iter()
+        .map(|r| r.module_path.as_str())
+        .filter(|p| p.starts_with("fpc-rtl-win"))
+        .collect();
+    let pos = |n: &str| order.iter().position(|p| *p == n);
+    assert!(pos("fpc-rtl-win") < pos("fpc-rtl-win32"), "{order:?}");
 }

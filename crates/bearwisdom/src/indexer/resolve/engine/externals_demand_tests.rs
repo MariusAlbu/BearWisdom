@@ -130,7 +130,7 @@ fn parse_external_file_uses_language_hint_over_extension() {
     loc.tag_language("pascal");
 
     let arena = Arc::new(TypeArena::new());
-    let pf = super::parse_external_file(&file, &arena, &loc)
+    let pf = super::parse_external_file(&file, &arena, &loc, &crate::indexer::resolve::engine::file_context::build_profiles())
         .expect("a Pascal-hinted .pp file must parse");
     assert_eq!(pf.language, "pascal", "the hint must override the puppet extension mapping");
 
@@ -148,7 +148,7 @@ fn parse_external_file_falls_back_to_extension_without_hint() {
 
     let loc = SymbolLocationIndex::new();
     let arena = Arc::new(TypeArena::new());
-    let pf = super::parse_external_file(&file, &arena, &loc)
+    let pf = super::parse_external_file(&file, &arena, &loc, &crate::indexer::resolve::engine::file_context::build_profiles())
         .expect("an unhinted .pp file must still parse via the extension fallback");
     assert_eq!(
         pf.language, "puppet",

@@ -45,6 +45,12 @@ pub struct LanguageProfile {
     /// Declaration-merging reach for this language's type declarations.
     pub declaration_merging: MergeScope,
     pub self_keywords: &'static [&'static str],
+    /// Whether demand-pulled external files of this language reduce to their
+    /// declaration contract. `false` for macro-expansion languages whose
+    /// function bodies DEFINE contract — a quoted `defmodule`/`def` inside a
+    /// macro body injects members into using code, and body call refs are how
+    /// supply chains reach the next file.
+    pub external_contract_reduction: bool,
 
     // === Type system (engine) ===
     pub supertype_discovery: SupertypeDiscovery,

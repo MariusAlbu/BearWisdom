@@ -161,6 +161,7 @@ pub const KOTLIN_PROFILE: LanguageProfile = LanguageProfile {
         ("internal", Visibility::Internal),
     ],
     function_prototype_types: &[],
+    external_contract_reduction: true,
 };
 
 #[cfg(test)]

@@ -142,6 +142,7 @@ pub const VBNET_PROFILE: LanguageProfile = LanguageProfile {
         ("Friend", Visibility::Internal),
     ],
     function_prototype_types: &[],
+    external_contract_reduction: true,
 };
 
 #[cfg(test)]

@@ -165,6 +165,7 @@ pub const PYTHON_PROFILE: LanguageProfile = LanguageProfile {
     // doesn't need keyword recognition.
     visibility_keywords: &[],
     function_prototype_types: &[],
+    external_contract_reduction: true,
 };
 
 #[cfg(test)]

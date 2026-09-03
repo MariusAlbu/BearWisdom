@@ -69,6 +69,12 @@ pub(crate) fn build_demand_symbol_index(
                 roots.len()
             );
         }
+        // Confine demand materialization to the declared root trees: a
+        // relative-import escape from a scoped root (platform-scoped stdlib
+        // reaching sibling target trees via `..`) must not materialize.
+        for dep in roots {
+            idx.register_root_prefix(&dep.root);
+        }
         symbol_index.extend(idx);
     }
     symbol_index

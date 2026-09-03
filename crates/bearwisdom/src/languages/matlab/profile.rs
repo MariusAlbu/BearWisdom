@@ -97,6 +97,7 @@ pub const MATLAB_PROFILE: LanguageProfile = LanguageProfile {
     doc_comment_kinds: &["%"],
     visibility_keywords: &[],
     function_prototype_types: &[],
+    external_contract_reduction: true,
 };
 
 #[cfg(test)]

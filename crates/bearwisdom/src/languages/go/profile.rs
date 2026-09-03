@@ -165,6 +165,7 @@ pub const GO_PROFILE: LanguageProfile = LanguageProfile {
     // extractor surfaces that as Visibility::Public on emission.
     visibility_keywords: &[],
     function_prototype_types: &[],
+    external_contract_reduction: true,
 };
 
 #[cfg(test)]

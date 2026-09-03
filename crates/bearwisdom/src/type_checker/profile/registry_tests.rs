@@ -76,6 +76,7 @@ static TS_PROFILE: LanguageProfile = LanguageProfile {
     decorator_syntax: None,
     doc_comment_kinds: &[],
     visibility_keywords: &[],
+    external_contract_reduction: true,
 };
 
 #[test]

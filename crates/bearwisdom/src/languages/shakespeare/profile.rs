@@ -75,6 +75,7 @@ const fn minimal(id: &'static str) -> LanguageProfile {
         doc_comment_kinds: &[],
         visibility_keywords: &[],
         function_prototype_types: &[],
+        external_contract_reduction: true,
     }
 }
 

@@ -136,6 +136,7 @@ pub const RUBY_PROFILE: LanguageProfile = LanguageProfile {
         ("protected", Visibility::Protected),
     ],
     function_prototype_types: &[],
+    external_contract_reduction: true,
 };
 
 #[cfg(test)]

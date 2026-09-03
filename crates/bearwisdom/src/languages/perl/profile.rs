@@ -103,6 +103,7 @@ pub const PERL_PROFILE: LanguageProfile = LanguageProfile {
     doc_comment_kinds: &["#", "=pod"],
     visibility_keywords: &[],
     function_prototype_types: &[],
+    external_contract_reduction: true,
 };
 
 #[cfg(test)]

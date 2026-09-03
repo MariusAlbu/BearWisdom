@@ -70,6 +70,11 @@ pub struct SymbolLocationIndex {
     /// language plugin (FPC `.pp` units vs Puppet `.pp` manifests) still
     /// parses with the extractor its OWNING ecosystem's tree actually holds.
     path_language: HashMap<PathBuf, &'static str>,
+    /// Lexically-normalized dep-root prefixes. When non-empty, `covers`
+    /// confines demand materialization to these trees — a relative-import
+    /// escape from a deliberately scoped root (a platform-scoped stdlib
+    /// walking into sibling target trees via `..`) stays unmaterialized.
+    root_prefixes: Vec<PathBuf>,
 }
 
 impl SymbolLocationIndex {
@@ -184,6 +189,7 @@ impl SymbolLocationIndex {
         for (name, locs) in other.by_name {
             self.by_name.entry(name).or_default().extend(locs);
         }
+        self.root_prefixes.extend(other.root_prefixes);
         for (module, entry) in other.module_entries {
             self.module_entries.entry(module).or_insert(entry);
         }
@@ -229,6 +235,39 @@ impl SymbolLocationIndex {
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
+
+    /// Register a dep root's tree as coverable demand-materialization scope.
+    pub fn register_root_prefix(&mut self, root: &Path) {
+        self.root_prefixes.push(normalize_lexically(root));
+    }
+
+    /// Whether `path` lies inside a registered dep root. An index with no
+    /// registered roots covers everything — ecosystems that never register
+    /// keep unconfined materialization.
+    pub fn covers(&self, path: &Path) -> bool {
+        if self.root_prefixes.is_empty() {
+            return true;
+        }
+        let p = normalize_lexically(path);
+        self.root_prefixes.iter().any(|r| p.starts_with(r))
+    }
+}
+
+/// Resolve `..` and `.` components lexically — no filesystem access, so a
+/// candidate and a root normalize identically regardless of verbatim-prefix
+/// or symlink state (`fs::canonicalize` mixes `\\?\` forms into comparisons).
+pub fn normalize_lexically(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in path.components() {
+        match c {
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            std::path::Component::CurDir => {}
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 #[cfg(test)]

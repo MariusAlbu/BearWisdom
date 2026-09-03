@@ -271,6 +271,7 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
         ("pub(super)", Visibility::Protected),
     ],
     function_prototype_types: &[],
+    external_contract_reduction: true,
 };
 
 #[cfg(test)]
