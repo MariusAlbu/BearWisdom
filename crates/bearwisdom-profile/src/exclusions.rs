@@ -256,6 +256,27 @@ pub fn should_exclude_in_project_path(
     false
 }
 
+/// Whether a project-relative FILE path sits under a directory the walk
+/// excludes — the filesystem-event counterpart of the walk's directory skip,
+/// so a file created under `.claude/`, `node_modules/`, or a language's build
+/// output never reaches the incremental indexer through a watcher event.
+/// Applies the same component rules as [`should_exclude_in_project_path`] to
+/// the path's directory components. Checked-in vendor/codegen copies are not
+/// admitted here: an event stream carries no gitignore layer to tell a
+/// checked-in `vendor/` from an ignored one, so both stay excluded and the
+/// next full scan reclassifies the checked-in copy.
+pub fn is_under_excluded_dir(rel_path: &Path, exclude_dirs: &[&'static str]) -> bool {
+    let components: Vec<&str> = rel_path
+        .parent()
+        .map(|dir| {
+            dir.components()
+                .filter_map(|c| c.as_os_str().to_str())
+                .collect()
+        })
+        .unwrap_or_default();
+    should_exclude_in_project_path(&components, exclude_dirs, false)
+}
+
 /// Returns true if the file name ends with a skippable extension (e.g. `.min.js`).
 pub fn should_skip_file(name: &str) -> bool {
     SKIP_EXTENSIONS.iter().any(|ext| name.ends_with(ext))

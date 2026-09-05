@@ -22,13 +22,13 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
-use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use rustc_hash::FxHashSet;
+use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use tracing::{debug, info, warn};
 
 use crate::db::{Database, DbPool};
-use crate::indexer::changeset::{self, ChangeKind, FileChangeEvent};
+use crate::indexer::changeset;
 use crate::indexer::full::full_index;
+use crate::indexer::watch_filter::WatchFilter;
 use crate::indexer::incremental::{
     git_reindex, incremental_index, reindex_files, IncrementalStats,
 };
@@ -60,41 +60,10 @@ pub fn last_indexed_at_ms(db: &Database) -> Option<i64> {
     changeset::get_meta(db, LAST_INDEXED_AT_MS_KEY).and_then(|s| s.parse().ok())
 }
 
-/// Source-file extensions the watcher considers "code" — anything else
-/// (binary assets, build artifacts, lockfiles) is ignored before triggering
-/// a reindex.
-///
-/// Sourced from `bearwisdom-profile::LANGUAGES` (the same descriptor table
-/// the file walker uses) so the allowlist mirrors the set of files that
-/// would be picked up by a full walk. The previous hardcoded 36-entry
-/// list silently dropped change events for clojure, fortran, ada, robot,
-/// vue, svelte, ocaml, fsharp, vba, pug, ejs, the elixir template
-/// dialects, and ~50 other registered languages.
-///
-/// Profile descriptors store extensions with a leading dot (`".rs"`,
-/// `".d.ts"`); `Path::extension` returns the bare suffix (`"rs"`), so we
-/// strip the dot. Compound extensions collapse to their last segment
-/// (`.d.ts` → "ts", `.component.html` → "html") — that's correct here:
-/// the watcher only decides *whether* to reindex, the indexer's
-/// longest-suffix matcher picks the right plugin.
+/// Test-only view of the watcher's source-extension set.
 #[cfg(test)]
-pub(crate) fn _test_registered_source_extensions() -> FxHashSet<String> {
-    registered_source_extensions()
-}
-
-fn registered_source_extensions() -> FxHashSet<String> {
-    bearwisdom_profile::LANGUAGES
-        .iter()
-        .flat_map(|lang| lang.file_extensions.iter())
-        .filter_map(|ext| {
-            let last = ext.rsplit('.').next()?;
-            if last.is_empty() {
-                None
-            } else {
-                Some(last.to_ascii_lowercase())
-            }
-        })
-        .collect()
+pub(crate) fn _test_registered_source_extensions() -> rustc_hash::FxHashSet<String> {
+    super::watch_filter::registered_source_extensions()
 }
 
 /// Configuration for `IndexService::open`.
@@ -350,7 +319,7 @@ fn run_watcher_loop(
     project_root: PathBuf,
     debounce: Duration,
 ) {
-    let source_exts: FxHashSet<String> = registered_source_extensions();
+    let filter = WatchFilter::new(project_root.clone());
 
     loop {
         // Block on first event. Channel disconnected = service dropped.
@@ -371,33 +340,7 @@ fn run_watcher_loop(
             }
         }
 
-        // Convert + dedupe by relative path.
-        let mut seen: FxHashSet<String> = FxHashSet::default();
-        let mut changes: Vec<FileChangeEvent> = Vec::new();
-        for event in &events {
-            let change_kind = match event.kind {
-                EventKind::Create(_) => ChangeKind::Created,
-                EventKind::Modify(_) => ChangeKind::Modified,
-                EventKind::Remove(_) => ChangeKind::Deleted,
-                _ => continue,
-            };
-            for path in &event.paths {
-                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-                if !source_exts.contains(ext) {
-                    continue;
-                }
-                let rel = match path.strip_prefix(&project_root) {
-                    Ok(r) => r.to_string_lossy().replace('\\', "/"),
-                    Err(_) => continue,
-                };
-                if seen.insert(rel.clone()) {
-                    changes.push(FileChangeEvent {
-                        relative_path: rel,
-                        change_kind,
-                    });
-                }
-            }
-        }
+        let changes = filter.changes(&events);
         if changes.is_empty() {
             continue;
         }

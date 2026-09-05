@@ -963,3 +963,36 @@ mod shell_commands_tests {
         assert_ne!(cmd.bash, cmd.powershell);
     }
 }
+
+#[cfg(test)]
+mod watcher_exclusions {
+    use crate::exclusions::is_under_excluded_dir;
+    use std::path::Path;
+
+    #[test]
+    fn claude_worktree_file_is_excluded() {
+        assert!(is_under_excluded_dir(
+            Path::new(".claude/worktrees/agent-x/crates/bw/src/lib.rs"),
+            &[]
+        ));
+    }
+
+    #[test]
+    fn project_source_file_is_not_excluded() {
+        assert!(!is_under_excluded_dir(Path::new("crates/bw/src/lib.rs"), &["target"]));
+    }
+
+    #[test]
+    fn language_build_output_is_excluded_at_any_depth() {
+        assert!(is_under_excluded_dir(
+            Path::new("crates/bw/target/debug/build/out.rs"),
+            &["target"]
+        ));
+    }
+
+    #[test]
+    fn root_only_names_pass_when_nested() {
+        assert!(is_under_excluded_dir(Path::new("vendor/lib/x.rb"), &["vendor"]));
+        assert!(!is_under_excluded_dir(Path::new("themes/a/vendor/x.scss"), &["vendor"]));
+    }
+}

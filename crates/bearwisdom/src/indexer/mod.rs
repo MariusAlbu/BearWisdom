@@ -37,6 +37,7 @@ pub mod service;
 #[path = "service_tests.rs"]
 mod service_tests;
 pub mod stage_discover;
+mod watch_filter;
 pub mod stage_link;
 pub use plugin_state::PluginStateBag;
 pub mod project_context;
