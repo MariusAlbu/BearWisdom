@@ -563,6 +563,20 @@ fn intern_type_str_strips_reference_sigil() {
 }
 
 #[test]
+fn intern_type_str_strips_pointer_sigil() {
+    let arena = TypeArena::new();
+    // A leading `*` is a pointer sigil (Go `*fiber.Ctx`, C `*T`), never part of
+    // a class name — the receiver interns as the pointee, whose members a
+    // pointer walks. A double pointer peels the same way.
+    let ctx = arena.class("fiber.Ctx");
+    assert_eq!(arena.intern_type_str("*fiber.Ctx"), ctx);
+    assert_eq!(arena.intern_type_str("* fiber.Ctx"), ctx);
+    assert_eq!(arena.intern_type_str("**fiber.Ctx"), ctx);
+    // A pointer to a generic application keeps the Apply.
+    assert_eq!(arena.intern_type_str("*Box<C>"), arena.intern_type_str("Box<C>"));
+}
+
+#[test]
 fn intern_type_str_drops_leading_lifetime_arg() {
     let arena = TypeArena::new();
     // A generic argument that is a lifetime (`'a`, `'static`) is never a type —

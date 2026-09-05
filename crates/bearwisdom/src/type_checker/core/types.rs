@@ -532,6 +532,13 @@ fn strip_reference_sigil(s: &str) -> Option<&str> {
     Some(rest)
 }
 
+/// Strip a leading pointer sigil from a type string, returning the trimmed
+/// pointee when `s` begins with `*`. Returns `None` when `s` does not start
+/// with `*` so the caller leaves non-pointer strings untouched.
+fn strip_pointer_sigil(s: &str) -> Option<&str> {
+    Some(s.strip_prefix('*')?.trim_start())
+}
+
 /// Strip a leading opaque/existential keyword (`some`/`any`) from a type
 /// string, returning the trimmed inner type when `s` begins with the keyword
 /// followed by whitespace and a non-empty type. A trailing whitespace boundary

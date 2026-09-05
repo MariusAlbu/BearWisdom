@@ -35,6 +35,13 @@ impl TypeArena {
         if let Some(referent) = strip_reference_sigil(trimmed) {
             return self.intern_type_str(referent);
         }
+        // Pointer sigil: a LEADING `*` (Go `*fiber.Ctx`, C/C++/C#/Zig `*T`)
+        // denotes a pointer whose members are the pointee's; `**T` peels the
+        // same way. A `*`-led string is never a class name, so re-interning
+        // the pointee is sound.
+        if let Some(pointee) = strip_pointer_sigil(trimmed) {
+            return self.intern_type_str(pointee);
+        }
         // Opaque/existential prefix: a LEADING `some`/`any` keyword (Swift's
         // `some P` opaque type / `any P` existential) names a value whose
         // member-lookup base is the constraint `P`, not a type literally named
