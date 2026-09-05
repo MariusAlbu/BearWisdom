@@ -20,6 +20,20 @@ pub static DART_FLOW_CONFIG: FlowConfig = FlowConfig {
             left: (assignable_expression
                 (identifier) @lhs)
             right: (_) @rhs)
+
+        (formal_parameter
+            (type_identifier) @type
+            name: (identifier) @lhs.param)
+
+        (formal_parameter
+            name: (identifier) @lhs.param)
+
+        (formal_parameter
+            (identifier) @lhs.param)
+
+        (initialized_variable_definition
+            (type_identifier) @type
+            name: (identifier) @lhs)
     "#,
 
     // `if (x is Foo) { ... }` promotes `x` to `Foo` in the then-block. The

@@ -5,7 +5,7 @@
 // struct's member-index key) over the loop body's byte range.
 // =============================================================================
 
-use crate::indexer::flow::run_flow_queries;
+use crate::indexer::flow::{run_flow_queries, BindingSymbols};
 use crate::languages::go::{extract, GoPlugin};
 use crate::languages::LanguagePlugin;
 use crate::types::{FlowMeta, Narrowing};
@@ -16,7 +16,8 @@ fn flow_for(src: &str) -> FlowMeta {
     let lang = GoPlugin.grammar("go").unwrap();
     let cfg = GoPlugin.flow_config().unwrap();
     let mut refs = result.refs;
-    run_flow_queries(src, &lang, cfg, &result.symbols, &mut refs)
+    let mut symbols = result.symbols;
+    run_flow_queries(src, &lang, cfg, &mut symbols, &mut refs, BindingSymbols::Synthesize)
 }
 
 /// The narrowings recorded for the variable named `name`.

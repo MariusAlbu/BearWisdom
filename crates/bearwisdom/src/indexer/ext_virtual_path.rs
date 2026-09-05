@@ -319,3 +319,9 @@ fn py_virtual_from_remainder(rel: &str) -> Option<String> {
 #[cfg(test)]
 #[path = "ext_virtual_path_tests.rs"]
 mod tests;
+
+/// Whether `path` is a virtual external path (the `ext:<ecosystem>:...` scheme
+/// every locator assigns to supply files) rather than a project-relative one.
+pub(crate) fn is_virtual_external(path: &str) -> bool {
+    path.starts_with("ext:")
+}

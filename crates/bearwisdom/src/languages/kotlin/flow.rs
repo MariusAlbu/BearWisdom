@@ -32,6 +32,19 @@ pub static KOTLIN_FLOW_CONFIG: FlowConfig = FlowConfig {
 
         (assignment
             left: (identifier) @lhs)
+
+        (parameter
+            (identifier) @lhs.param
+            (_) @type)
+
+        (lambda_parameters
+            (variable_declaration
+                (identifier) @lhs.param))
+
+        (property_declaration
+            (variable_declaration
+                (identifier) @lhs
+                (_) @type))
     "#,
 
     // `if (x is T) { … }` smart-casts `x` to `T` in the braced consequence.

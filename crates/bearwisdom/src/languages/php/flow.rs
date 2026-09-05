@@ -26,6 +26,17 @@ pub static PHP_FLOW_CONFIG: FlowConfig = FlowConfig {
             left: (variable_name
                 (name) @lhs)
             right: (_) @rhs)
+
+        (simple_parameter
+            type: (_) @type
+            name: (variable_name (name) @lhs.param))
+
+        (simple_parameter
+            name: (variable_name (name) @lhs.param))
+
+        (property_promotion_parameter
+            type: (_) @type
+            name: (variable_name (name) @lhs.param))
     "#,
 
     // `if ($x instanceof Foo) { ... }` — PHP narrowing form.

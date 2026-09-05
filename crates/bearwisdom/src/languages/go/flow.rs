@@ -61,6 +61,14 @@ pub static GO_FLOW_CONFIG: FlowConfig = FlowConfig {
                  (identifier)
                  (type_assertion_expression)
                  (composite_literal)] @rhs))
+
+        (parameter_declaration
+            name: (identifier) @lhs.param
+            type: (_) @type)
+
+        (var_spec
+            name: (identifier) @lhs
+            type: (_) @type)
     "#,
 
     // Two Go narrowing forms:

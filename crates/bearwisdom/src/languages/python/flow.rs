@@ -24,6 +24,20 @@ pub static PY_FLOW_CONFIG: FlowConfig = FlowConfig {
         (assignment
             left: (identifier) @lhs
             right: (_) @rhs)
+
+        (typed_parameter
+            (identifier) @lhs.param
+            type: (type) @type)
+
+        (typed_default_parameter
+            name: (identifier) @lhs.param
+            type: (type) @type)
+
+        (default_parameter
+            name: (identifier) @lhs.param)
+
+        (parameters
+            (identifier) @lhs.param)
     "#,
 
     // `if isinstance(x, Derived): ...` — the canonical Python narrowing

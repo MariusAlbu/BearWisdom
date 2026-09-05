@@ -35,6 +35,24 @@ pub static SCALA_FLOW_CONFIG: FlowConfig = FlowConfig {
         (assignment_expression
             left: (identifier) @lhs
             right: (_) @rhs)
+
+        (parameter
+            name: (identifier) @lhs.param
+            type: (_) @type)
+
+        (binding
+            name: (identifier) @lhs.param
+            type: (_) @type)
+
+        (binding
+            name: (identifier) @lhs.param)
+
+        (lambda_expression
+            parameters: (identifier) @lhs.param)
+
+        (val_definition
+            pattern: (identifier) @lhs
+            type: (_) @type)
     "#,
 
     // Pattern-match narrowing via `case Foo(_) =>` is too general to query

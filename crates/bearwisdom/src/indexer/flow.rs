@@ -42,6 +42,11 @@ use crate::types::{
     Narrowing, SymbolKind,
 };
 use std::sync::{Arc, Mutex, OnceLock};
+
+pub use super::flow_bindings::BindingSymbols;
+use super::flow_bindings::{
+    binding_symbol, correlate_lhs_symbol, correlate_rhs_ref, nested_function_ranges,
+};
 use tree_sitter::{Language, Node, Parser, Query, QueryCursor, StreamingIterator};
 
 /// Per-language flow-typing configuration. Language plugins expose a
@@ -118,8 +123,9 @@ pub fn run_flow_queries(
     source: &str,
     language: &Language,
     cfg: &FlowConfig,
-    symbols: &[ExtractedSymbol],
+    symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut [ExtractedRef],
+    bindings: BindingSymbols,
 ) -> FlowMeta {
     // Huge files (vendored .d.ts, generated code) bypass flow queries —
     // see `MAX_FLOW_SOURCE_BYTES` docstring for why.
@@ -134,7 +140,7 @@ pub fn run_flow_queries(
     let Some(tree) = parser.parse(source, None) else {
         return FlowMeta::default();
     };
-    run_flow_queries_on_root(source, cfg, symbols, refs, tree.root_node())
+    run_flow_queries_on_root(source, cfg, symbols, refs, tree.root_node(), bindings)
 }
 
 /// Like `run_flow_queries`, but reuses a tree the caller already parsed for this
@@ -144,14 +150,15 @@ pub fn run_flow_queries(
 pub fn run_flow_queries_with_tree(
     source: &str,
     cfg: &FlowConfig,
-    symbols: &[ExtractedSymbol],
+    symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut [ExtractedRef],
     tree: &tree_sitter::Tree,
+    bindings: BindingSymbols,
 ) -> FlowMeta {
     if source.len() > MAX_FLOW_SOURCE_BYTES {
         return flow_meta_offsets_only(refs);
     }
-    run_flow_queries_on_root(source, cfg, symbols, refs, tree.root_node())
+    run_flow_queries_on_root(source, cfg, symbols, refs, tree.root_node(), bindings)
 }
 
 /// FlowMeta carrying only the ref byte offsets — the result for files skipped by
@@ -167,16 +174,17 @@ fn flow_meta_offsets_only(refs: &[ExtractedRef]) -> FlowMeta {
 fn run_flow_queries_on_root(
     source: &str,
     cfg: &FlowConfig,
-    symbols: &[ExtractedSymbol],
+    symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut [ExtractedRef],
     root: Node,
+    bindings: BindingSymbols,
 ) -> FlowMeta {
     let src_bytes = source.as_bytes();
 
     let mut meta = FlowMeta::default();
     meta.ref_byte_offsets = refs.iter().map(|r| r.byte_offset).collect();
 
-    run_assignment_query(&root, src_bytes, cfg, symbols, refs, &mut meta);
+    run_assignment_query(&root, src_bytes, cfg, symbols, refs, &mut meta, bindings);
     // Go table-driven anonymous-struct slices: type a `range` value variable as
     // the slice's anonymous-struct element. The element's fields are indexed as
     // members of the enclosing function, so the binding is a structural pass
@@ -204,7 +212,7 @@ fn run_flow_queries_on_root(
     meta
 }
 
-fn cfg_node_kinds_for(
+pub(super) fn cfg_node_kinds_for(
     strategy_prefix: &str,
 ) -> Option<&'static crate::indexer::flow_cfg::CfgNodeKinds> {
     match strategy_prefix {
@@ -289,65 +297,14 @@ fn kill_narrowings_at_reassignments(meta: &mut FlowMeta, reassignments: &[(Strin
     }
 }
 
-/// Correlate an LHS binding name to its extractor symbol index: the symbol of
-/// that name whose start line is closest to (but not after) `line`. Shared by the
-/// identifier-binding and destructure-binding paths.
-fn correlate_lhs_symbol(name: &str, line: u32, symbols: &[ExtractedSymbol]) -> Option<usize> {
-    symbols
-        .iter()
-        .enumerate()
-        .filter(|(_, s)| s.name == name && s.start_line <= line)
-        .max_by_key(|(_, s)| s.start_line)
-        .map(|(i, _)| i)
-}
-
-/// Find the ref whose value is the OUTERMOST expression of `rhs` — the one whose
-/// type the binding takes. Excludes refs inside functions nested STRICTLY within
-/// `rhs` (callback bodies: `const x = render(() => <Page/>)` is typed by `render`,
-/// not by `Page`). The selection key, minimized:
-///   1. leftmost callee start — the outer expression begins at the RHS start; its
-///      arguments (`render(<App/>)`, `render(p1(), p2())`) anchor to the RIGHT.
-///   2. longest chain — at a shared start, the outermost expression carries the
-///      most segments: `a.b().field` over the inner `a.b()`, so the binding takes
-///      the field's type, not the call's return.
-///   3. value-producing kind — a bare call emits both a `Calls`/`Instantiates` ref
-///      AND a co-located equal-length `TypeRef`; the value ref wins.
-/// Shared by the identifier-binding and destructure-binding paths.
-fn correlate_rhs_ref(refs: &[ExtractedRef], rhs: &Node, strategy_prefix: &str) -> Option<usize> {
-    let r_start = rhs.start_byte() as u32;
-    let r_end = rhs.end_byte() as u32;
-    let nested_fn_ranges = cfg_node_kinds_for(strategy_prefix)
-        .map(|kinds| nested_function_ranges(rhs, kinds))
-        .unwrap_or_default();
-    let value_rank = |k: EdgeKind| -> u8 {
-        match k {
-            EdgeKind::Calls | EdgeKind::Instantiates => 0,
-            _ => 1,
-        }
-    };
-    refs.iter()
-        .enumerate()
-        .filter(|(_, r)| {
-            r.byte_offset >= r_start
-                && r.byte_offset < r_end
-                && !nested_fn_ranges
-                    .iter()
-                    .any(|(s, e)| r.byte_offset >= *s && r.byte_offset < *e)
-        })
-        .min_by_key(|(_, r)| {
-            let segments = r.chain.as_ref().map(|c| c.segments.len()).unwrap_or(0);
-            (r.byte_offset, std::cmp::Reverse(segments), value_rank(r.kind))
-        })
-        .map(|(i, _)| i)
-}
-
 fn run_assignment_query(
     root: &Node,
     src: &[u8],
     cfg: &FlowConfig,
-    symbols: &[ExtractedSymbol],
+    symbols: &mut Vec<ExtractedSymbol>,
     refs: &[ExtractedRef],
     meta: &mut FlowMeta,
+    bindings: BindingSymbols,
 ) {
     let Some(query) = cached_query(&root.language(), cfg.assignment_query) else {
         return;
@@ -355,6 +312,9 @@ fn run_assignment_query(
     let Some(lhs_cap) = query.capture_index_for_name("lhs") else {
         return;
     };
+    // `@lhs.param` is a binding declared by a parameter list rather than an
+    // assignment: correlated on its own line and synthesized as a `Parameter`.
+    let param_cap = query.capture_index_for_name("lhs.param");
     // `@rhs` (forward inference from the initializer) and `@type` (explicit
     // annotation) are both optional — a query may capture either or both. A
     // binding with only `@type` (`let x: T;`) seeds a declared type with no
@@ -377,6 +337,7 @@ fn run_assignment_query(
     let mut it = cursor.matches(&*query, *root, src);
     while let Some(m) = it.next() {
         let mut lhs_node: Option<Node> = None;
+        let mut lhs_is_param = false;
         let mut rhs_node: Option<Node> = None;
         let mut type_node: Option<Node> = None;
         let mut unwrap_node: Option<Node> = None;
@@ -385,6 +346,9 @@ fn run_assignment_query(
         for cap in m.captures {
             if cap.index == lhs_cap {
                 lhs_node = Some(cap.node);
+            } else if Some(cap.index) == param_cap {
+                lhs_node = Some(cap.node);
+                lhs_is_param = true;
             } else if Some(cap.index) == rhs_cap {
                 rhs_node = Some(cap.node);
             } else if Some(cap.index) == type_cap {
@@ -429,10 +393,10 @@ fn run_assignment_query(
             Err(_) => continue,
         };
 
-        // Correlate LHS name → symbol_idx: the same-named symbol whose start line
-        // is closest to (not after) the LHS row.
-        let lhs_line = lhs.start_position().row as u32;
-        let Some(lhs_idx) = correlate_lhs_symbol(lhs_name, lhs_line, symbols) else {
+        // The binding's symbol: the extractor's own, or one synthesized for a
+        // binding the extractor never emitted.
+        let kind = if lhs_is_param { SymbolKind::Parameter } else { SymbolKind::Variable };
+        let Some(lhs_idx) = binding_symbol(lhs_name, &lhs, kind, symbols, bindings) else {
             continue;
         };
 
@@ -721,31 +685,6 @@ fn object_property_names(object_node: &Node, src: &[u8]) -> Vec<String> {
         }
     }
     names
-}
-
-/// Byte ranges of every `function_kinds` node nested inside `expr` (lambdas /
-/// closures within a returned call). Refs inside these belong to the nested
-/// scope, not the function whose return `expr` is.
-fn nested_function_ranges(
-    expr: &Node,
-    kinds: &crate::indexer::flow_cfg::CfgNodeKinds,
-) -> Vec<(u32, u32)> {
-    let mut out = Vec::new();
-    let mut c = expr.walk();
-    let mut stack: Vec<Node> = expr.named_children(&mut c).collect();
-    while let Some(n) = stack.pop() {
-        if kinds.function_kinds.contains(&n.kind()) {
-            out.push((n.start_byte() as u32, n.end_byte() as u32));
-            // Don't descend into a nested function's own nested functions —
-            // the outer range already covers every ref inside it.
-            continue;
-        }
-        let mut cc = n.walk();
-        for ch in n.named_children(&mut cc) {
-            stack.push(ch);
-        }
-    }
-    out
 }
 
 /// Tail-of-block implicit return for expression-oriented grammars

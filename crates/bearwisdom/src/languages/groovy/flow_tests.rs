@@ -1,5 +1,5 @@
 use super::flow::GROOVY_FLOW_CONFIG;
-use crate::indexer::flow::run_flow_queries;
+use crate::indexer::flow::{run_flow_queries, BindingSymbols};
 use crate::languages::groovy::extract::extract;
 
 #[test]
@@ -12,15 +12,16 @@ class Foo {
     }
 }
 "#;
-    let result = extract(src);
+    let mut result = extract(src);
     let language: tree_sitter::Language = tree_sitter_groovy::LANGUAGE.into();
     let mut refs = result.refs;
     let meta = run_flow_queries(
         src,
         &language,
         &GROOVY_FLOW_CONFIG,
-        &result.symbols,
+        &mut result.symbols,
         &mut refs,
+        BindingSymbols::Synthesize,
     );
     // At least one flow binding must be produced for the `client =` declaration.
     assert!(
@@ -41,15 +42,16 @@ class Bar {
     }
 }
 "#;
-    let result = extract(src);
+    let mut result = extract(src);
     let language: tree_sitter::Language = tree_sitter_groovy::LANGUAGE.into();
     let mut refs = result.refs;
     let meta = run_flow_queries(
         src,
         &language,
         &GROOVY_FLOW_CONFIG,
-        &result.symbols,
+        &mut result.symbols,
         &mut refs,
+        BindingSymbols::Synthesize,
     );
     assert!(
         !meta.flow_binding_lhs.is_empty(),
@@ -70,15 +72,16 @@ class Baz {
     }
 }
 "#;
-    let result = extract(src);
+    let mut result = extract(src);
     let language: tree_sitter::Language = tree_sitter_groovy::LANGUAGE.into();
     let mut refs = result.refs;
     let meta = run_flow_queries(
         src,
         &language,
         &GROOVY_FLOW_CONFIG,
-        &result.symbols,
+        &mut result.symbols,
         &mut refs,
+        BindingSymbols::Synthesize,
     );
     assert!(
         !meta.flow_binding_lhs.is_empty(),

@@ -9,7 +9,7 @@
 
 use super::flow::JS_FLOW_CONFIG;
 use super::JavascriptPlugin;
-use crate::indexer::flow::run_flow_queries;
+use crate::indexer::flow::{run_flow_queries, BindingSymbols};
 use crate::languages::LanguagePlugin;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
 
@@ -97,10 +97,10 @@ fn js_shared_queries_compile_against_js_grammar() {
 fn js_flow_assignment_binds_lhs_to_rhs_ref() {
     let source = "const x = foo();\n";
     // 'const ' = 0..6, 'x' = 6, ' = ' = 7..10, 'foo' starts at byte 10.
-    let symbols = vec![mk_sym("x", SymbolKind::Variable, 0)];
+    let mut symbols = vec![mk_sym("x", SymbolKind::Variable, 0)];
     let mut refs = vec![mk_call_ref("foo", 0, 10)];
 
-    let meta = run_flow_queries(source, &js_grammar(), &JS_FLOW_CONFIG, &symbols, &mut refs);
+    let meta = run_flow_queries(source, &js_grammar(), &JS_FLOW_CONFIG, &mut symbols, &mut refs, BindingSymbols::Synthesize);
 
     assert_eq!(
         meta.flow_binding_lhs.get(&0),
@@ -114,10 +114,10 @@ fn js_flow_await_binding_flags_lhs() {
     let source = "const user = await getUser();\n";
     // 'const ' = 0..6, 'user' = 6..10, ' = ' = 10..13, 'await ' = 13..19,
     // 'getUser' starts at byte 19.
-    let symbols = vec![mk_sym("user", SymbolKind::Variable, 0)];
+    let mut symbols = vec![mk_sym("user", SymbolKind::Variable, 0)];
     let mut refs = vec![mk_call_ref("getUser", 0, 19)];
 
-    let meta = run_flow_queries(source, &js_grammar(), &JS_FLOW_CONFIG, &symbols, &mut refs);
+    let meta = run_flow_queries(source, &js_grammar(), &JS_FLOW_CONFIG, &mut symbols, &mut refs, BindingSymbols::Synthesize);
 
     assert_eq!(
         meta.flow_binding_lhs.get(&0),
@@ -134,13 +134,13 @@ fn js_flow_await_binding_flags_lhs() {
 fn js_flow_object_destructure_binds_each_field() {
     let source = "const { hits, total: count } = useAlgolia();\n";
     // 'hits' = 8..12, 'count' = 21..26, 'useAlgolia' starts at byte 31.
-    let symbols = vec![
+    let mut symbols = vec![
         mk_sym("hits", SymbolKind::Variable, 0),
         mk_sym("count", SymbolKind::Variable, 0),
     ];
     let mut refs = vec![mk_call_ref("useAlgolia", 0, 31)];
 
-    let meta = run_flow_queries(source, &js_grammar(), &JS_FLOW_CONFIG, &symbols, &mut refs);
+    let meta = run_flow_queries(source, &js_grammar(), &JS_FLOW_CONFIG, &mut symbols, &mut refs, BindingSymbols::Synthesize);
 
     let entries = meta
         .flow_binding_destructure
@@ -160,10 +160,10 @@ fn js_flow_object_destructure_binds_each_field() {
 fn js_flow_object_destructure_await_marks_the_ref_awaited() {
     let source = "const { handle } = await fetchStatus();\n";
     // 'handle' = 8..14, 'await' = 19..24, 'fetchStatus' starts at byte 25.
-    let symbols = vec![mk_sym("handle", SymbolKind::Variable, 0)];
+    let mut symbols = vec![mk_sym("handle", SymbolKind::Variable, 0)];
     let mut refs = vec![mk_call_ref("fetchStatus", 0, 25)];
 
-    let meta = run_flow_queries(source, &js_grammar(), &JS_FLOW_CONFIG, &symbols, &mut refs);
+    let meta = run_flow_queries(source, &js_grammar(), &JS_FLOW_CONFIG, &mut symbols, &mut refs, BindingSymbols::Synthesize);
 
     assert!(
         meta.flow_binding_destructure.contains_key(&0),
@@ -178,7 +178,7 @@ fn js_flow_object_destructure_await_marks_the_ref_awaited() {
 #[test]
 fn js_flow_instanceof_narrowing_records_scope() {
     let source = "if (x instanceof Foo) { x.run(); }\n";
-    let meta = run_flow_queries(source, &js_grammar(), &JS_FLOW_CONFIG, &[], &mut []);
+    let meta = run_flow_queries(source, &js_grammar(), &JS_FLOW_CONFIG, &mut Vec::new(), &mut [], BindingSymbols::Synthesize);
 
     assert_eq!(meta.narrowings.len(), 1, "meta={meta:?}");
     let n = &meta.narrowings[0];
@@ -190,7 +190,7 @@ fn js_flow_instanceof_narrowing_records_scope() {
 #[test]
 fn js_flow_typeof_narrowing_strips_quotes() {
     let source = "if (typeof v === \"string\") { v.trim(); }\n";
-    let meta = run_flow_queries(source, &js_grammar(), &JS_FLOW_CONFIG, &[], &mut []);
+    let meta = run_flow_queries(source, &js_grammar(), &JS_FLOW_CONFIG, &mut Vec::new(), &mut [], BindingSymbols::Synthesize);
 
     assert_eq!(meta.narrowings.len(), 1, "meta={meta:?}");
     assert_eq!(meta.narrowings[0].name, "v");
@@ -200,7 +200,7 @@ fn js_flow_typeof_narrowing_strips_quotes() {
 #[test]
 fn js_flow_discriminant_guard_narrows_receiver() {
     let source = "if (shape.kind === \"circle\") { draw(shape); }\n";
-    let meta = run_flow_queries(source, &js_grammar(), &JS_FLOW_CONFIG, &[], &mut []);
+    let meta = run_flow_queries(source, &js_grammar(), &JS_FLOW_CONFIG, &mut Vec::new(), &mut [], BindingSymbols::Synthesize);
 
     assert_eq!(meta.discriminant_narrowings.len(), 1, "meta={meta:?}");
     let d = &meta.discriminant_narrowings[0];
@@ -213,10 +213,10 @@ fn js_flow_discriminant_guard_narrows_receiver() {
 #[test]
 fn js_flow_array_literal_seeds_wrapper_type() {
     let source = "const xs = [];\n";
-    let symbols = vec![mk_sym("xs", SymbolKind::Variable, 0)];
+    let mut symbols = vec![mk_sym("xs", SymbolKind::Variable, 0)];
     let mut refs = vec![];
 
-    let meta = run_flow_queries(source, &js_grammar(), &JS_FLOW_CONFIG, &symbols, &mut refs);
+    let meta = run_flow_queries(source, &js_grammar(), &JS_FLOW_CONFIG, &mut symbols, &mut refs, BindingSymbols::Synthesize);
 
     assert_eq!(
         meta.flow_binding_decl_type.get(&0).map(String::as_str),
@@ -229,10 +229,10 @@ fn js_flow_array_literal_seeds_wrapper_type() {
 fn js_flow_return_call_binds_owner_function() {
     let source = "function make() { return build(); }\n";
     // 'function ' = 0..9, 'make' = 9..13, 'build' starts at byte 25.
-    let symbols = vec![mk_sym("make", SymbolKind::Function, 0)];
+    let mut symbols = vec![mk_sym("make", SymbolKind::Function, 0)];
     let mut refs = vec![mk_call_ref("build", 0, 25)];
 
-    let meta = run_flow_queries(source, &js_grammar(), &JS_FLOW_CONFIG, &symbols, &mut refs);
+    let meta = run_flow_queries(source, &js_grammar(), &JS_FLOW_CONFIG, &mut symbols, &mut refs, BindingSymbols::Synthesize);
 
     assert_eq!(
         meta.flow_return_lhs.get(&0),
@@ -244,10 +244,10 @@ fn js_flow_return_call_binds_owner_function() {
 #[test]
 fn js_flow_object_literal_return_records_member_names() {
     let source = "function makeLogger() { return { info, error }; }\n";
-    let symbols = vec![mk_sym("makeLogger", SymbolKind::Function, 0)];
+    let mut symbols = vec![mk_sym("makeLogger", SymbolKind::Function, 0)];
     let mut refs = vec![];
 
-    let meta = run_flow_queries(source, &js_grammar(), &JS_FLOW_CONFIG, &symbols, &mut refs);
+    let meta = run_flow_queries(source, &js_grammar(), &JS_FLOW_CONFIG, &mut symbols, &mut refs, BindingSymbols::Synthesize);
 
     assert_eq!(
         meta.flow_return_object,

@@ -48,6 +48,9 @@ pub static JS_FLOW_CONFIG: FlowConfig = FlowConfig {
                     key: (property_identifier) @destruct.key
                     value: (identifier) @destruct.bind)])
             value: (_) @rhs)
+
+        (formal_parameters
+            (identifier) @lhs.param)
     "#,
 
     type_guard_query: TS_TYPE_GUARD_QUERY,

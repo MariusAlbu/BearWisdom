@@ -6,6 +6,7 @@
 // =============================================================================
 
 use super::*;
+use crate::indexer::flow::BindingSymbols;
 
 // ---------- foundation: fact-merge math --------------------------------------
 
@@ -316,13 +317,13 @@ fn _build_cfg_via_runner<P: crate::languages::LanguagePlugin>(
     lang_name: &str,
     src: &str,
 ) -> FileCfg {
-    use crate::indexer::flow::run_flow_queries;
+    use crate::indexer::flow::{run_flow_queries, BindingSymbols};
     use crate::types::{ExtractedRef, ExtractedSymbol};
     let lang = plugin.grammar(lang_name).expect("grammar must load");
     let fc = plugin.flow_config().expect("flow config must exist");
-    let symbols: Vec<ExtractedSymbol> = Vec::new();
+    let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
-    let meta = run_flow_queries(src, &lang, fc, &symbols, &mut refs);
+    let meta = run_flow_queries(src, &lang, fc, &mut symbols, &mut refs, BindingSymbols::Synthesize);
     meta.cfg
 }
 
@@ -632,9 +633,9 @@ fn cfg_go_expression_switch_discriminant_narrowing_emitted() {
     let src = "package p\nfunc f(x Shape) {\n    switch x.kind {\n    case \"circle\":\n        x.area()\n    }\n}\n";
     let lang = GoPlugin.grammar("go").unwrap();
     let fc = GoPlugin.flow_config().unwrap();
-    let syms: Vec<ExtractedSymbol> = Vec::new();
+    let mut syms: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
-    let meta = run_flow_queries(src, &lang, fc, &syms, &mut refs);
+    let meta = run_flow_queries(src, &lang, fc, &mut syms, &mut refs, BindingSymbols::Synthesize);
     assert!(
         meta.discriminant_narrowings
             .iter()

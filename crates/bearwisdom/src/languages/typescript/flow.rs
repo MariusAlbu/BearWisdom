@@ -155,12 +155,15 @@ pub static TS_FLOW_CONFIG: FlowConfig = FlowConfig {
             value: (_) @rhs)
 
         (required_parameter
-            pattern: (identifier) @lhs
+            pattern: (identifier) @lhs.param
             (type_annotation (_) @type))
 
         (optional_parameter
-            pattern: (identifier) @lhs
+            pattern: (identifier) @lhs.param
             (type_annotation (_) @type))
+
+        (required_parameter
+            pattern: (identifier) @lhs.param)
     "#,
 
     type_guard_query: TS_TYPE_GUARD_QUERY,

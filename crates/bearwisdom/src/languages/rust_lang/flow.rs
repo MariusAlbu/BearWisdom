@@ -40,6 +40,13 @@ pub static RUST_FLOW_CONFIG: FlowConfig = FlowConfig {
         (assignment_expression
             left: (identifier) @lhs
             right: (_) @rhs)
+
+        (parameter
+            pattern: (identifier) @lhs.param
+            type: (_) @type)
+
+        (closure_parameters
+            (identifier) @lhs.param)
     "#,
 
     // Type guards in Rust are done via `if let Some(x) = ...`, `match`, and

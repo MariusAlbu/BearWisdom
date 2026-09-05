@@ -8,6 +8,7 @@ pub mod external_parse_cache;
 pub(crate) mod external_parse_payload;
 pub(crate) mod external_parse_types;
 pub mod flow;
+pub(crate) mod flow_bindings;
 pub mod flow_cfg;
 #[cfg(test)]
 #[path = "flow_config_tests.rs"]
@@ -31,6 +32,7 @@ pub mod plugin_state_phase;
 pub mod post_index;
 pub mod query_builtins;
 pub mod resolve_diff;
+mod return_object_types;
 pub mod secondary_scan;
 pub mod service;
 #[cfg(test)]

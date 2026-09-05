@@ -27,6 +27,16 @@ pub static CSHARP_FLOW_CONFIG: FlowConfig = FlowConfig {
         (assignment_expression
             left: (identifier) @lhs
             right: (_) @rhs)
+
+        (parameter
+            type: (_) @type
+            name: (identifier) @lhs.param)
+
+        ((variable_declaration
+            type: (_) @type
+            (variable_declarator
+                name: (identifier) @lhs))
+          (#not-eq? @type "var"))
     "#,
 
     // C# pattern-matching narrowing. Two forms:

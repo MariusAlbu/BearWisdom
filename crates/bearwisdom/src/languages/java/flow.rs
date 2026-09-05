@@ -28,6 +28,16 @@ pub static JAVA_FLOW_CONFIG: FlowConfig = FlowConfig {
         (assignment_expression
             left: (identifier) @lhs
             right: (_) @rhs)
+
+        (formal_parameter
+            type: (_) @type
+            name: (identifier) @lhs.param)
+
+        ((local_variable_declaration
+            type: (_) @type
+            declarator: (variable_declarator
+                name: (identifier) @lhs))
+          (#not-eq? @type "var"))
     "#,
 
     // `if (x instanceof Foo) { ... }` narrows `x`; `if (x instanceof Foo f)`
