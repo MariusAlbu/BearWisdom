@@ -39,9 +39,11 @@ first, re-census, then rank resolution work on the honest numbers.
 - [ ] `engine/semantic_model.rs:92` `chain_root_is_namespace` — only a namespace the FILE binds (import, ambient, same-package) qualifies; a same-named namespace elsewhere in the index must not re-run the chain as a bare ladder
   - [ ] failing test first: field `mapper` shadowed by package `x.mapper`; the root stays a value
 - [x] `engine/compilation.rs:2396` `is_external_name` — wire to the externals surface so `unbound_external_known` fires; stdlib names leave `name_unknown`
-- [ ] `engine/chain.rs:316` and `:2063` — `Err(None)` sites record a cause (`chain_declined` becomes rare)
+- [x] `engine/chain.rs:2063` — the untyped-root floor now records `untyped_root` / the same-file binding; `:316` is unreachable (namespace anchor always leaves one segment)
 - [ ] package-alias roots (`utilsstrings.ToLower`, `clientpkg.New`) record `import_unlinked`, not `name_unknown`
-- [ ] re-census; rewrite the census doc; re-rank M2–M6 by the honest cascade sizes
+- [x] re-census on 14 projects (addendum in the census doc): `external_known` 242k is the largest honest bucket → M3 reachability outranks M4 supply
+- [x] import discipline: external-head attestation removed (denied roots the scoped lookup could not see; superset −7.8k); re-enable only with materialized-module evidence (M6)
+- [ ] `resolution_corpus_rust` fails at baseline `281f8515` (SelfProbe nested-module import binds the crate-root twin; AliasDoc root dies `uncaptured_field`) — pre-existing, trace and fix
 
 ## M2 — Root typing (generic engine; the largest resolution lever)
 
@@ -49,7 +51,7 @@ Receiver-rooted chains whose root local/param/field has no captured type: zig 91
 lua 79%, elixir 70%, ts 63%, js 54%, rust 51%, java 47%, kotlin/fsharp 48% of their
 ROOT-family rows.
 
-- [ ] audit per language: does the extractor capture declared local/param types into flow seeds (`Specialty specialty2 = new …`, `val x: T`, Go `var x T`)? Data gap → extractor emits the type; engine unchanged
+- [x] audit: only java/python/ruby/swift emit parameter symbols; typed params surface as `Property` in ts/csharp/go; flow runner now synthesizes binding symbols and 11 languages' flow queries seed parameter + typed-local types (`132f2482`)
 - [ ] lambda / closure params typed from the callee's parameter types (call-site arg→param binding, generic)
 - [ ] `this` / `self` root fails enclosing-type lookup (scala `this.modify`) — trace, fix the id-keyed enclosing lookup
 - [ ] Go local seeded with the callee's QNAME as its type (`client → client.NewWithClient`) — return-type capture vs seed fallback, trace first

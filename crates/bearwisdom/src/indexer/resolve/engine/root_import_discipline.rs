@@ -12,9 +12,10 @@
 //
 // Denial requires positive evidence the import SHOULD have linked: a
 // scheme-prefixed specifier (`node:assert/strict` — never an internal module
-// path in any indexed language) or an externally-attested head. A specifier
-// this module cannot positively judge leaves the root unconstrained, so
-// module systems whose linking is not wired here keep their existing arms.
+// path in any indexed language). The absence of a scoped external candidate
+// is not such evidence — that lookup sees only the module's own subtree, so a
+// head the external index attests to still leaves the root unconstrained. A
+// specifier this module cannot positively judge keeps the caller's arms.
 // =============================================================================
 
 use crate::type_checker::core::types::TypeArena;
@@ -22,7 +23,7 @@ use crate::type_checker::core::types::TypeArena;
 use super::cause::{Cause, CauseKind};
 use super::chain::{import_scoped_external_root, Receiver};
 use super::contract::{FileContext, ImportEntry, Symbol, SymbolLookup};
-use super::kinds::{is_namespace_kind, is_type_kind};
+use super::kinds::is_type_kind;
 use super::support::{is_bare_module_specifier, workspace_sub_path};
 
 pub(super) enum RootImportOutcome {
@@ -99,10 +100,9 @@ pub(super) fn apply(
     }
 
     // Nothing links the specifier. Deny only on positive external evidence:
-    // a scheme prefix, or a head the external index attests to. Anything
-    // else stays unconstrained — absence of linking is not proof of death
-    // for module systems this gate cannot see.
-    if has_scheme_prefix(spec) || attested_external(lookup, spec) {
+    // a scheme prefix. Anything else stays unconstrained — absence of linking
+    // is not proof of death for module systems this gate cannot see.
+    if has_scheme_prefix(spec) {
         return RootImportOutcome::Deny(Cause::new(None, CauseKind::ImportUnlinked));
     }
     RootImportOutcome::Unconstrained
@@ -156,28 +156,6 @@ fn type_candidate(
 /// colon is a qualified-path separator, never a scheme.
 fn has_scheme_prefix(spec: &str) -> bool {
     super::module_scheme::strip_scheme_prefix(spec).is_some()
-}
-
-/// The specifier, or one of its leading path prefixes (`@scope/pkg/sub` →
-/// `@scope/pkg` → `@scope`), is externally attested: a manifest declares it
-/// as a dependency, or the external index holds a namespace or module by that
-/// name. A same-named external VALUE — a function called `bench` in some
-/// crate — says nothing about a module path and never attests.
-fn attested_external(lookup: &dyn SymbolLookup, spec: &str) -> bool {
-    let attested = |s: &str| {
-        lookup.is_declared_dependency(None, s)
-            || lookup
-                .by_name(s)
-                .iter()
-                .any(|sym| lookup.is_external_file(&sym.file_path) && is_namespace_kind(&sym.kind))
-    };
-    if attested(spec) {
-        return true;
-    }
-    let segments: Vec<&str> = spec.split('/').collect();
-    (1..segments.len().min(3))
-        .rev()
-        .any(|k| attested(&segments[..k].join("/")))
 }
 
 #[cfg(test)]

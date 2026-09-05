@@ -167,16 +167,19 @@ fn scheme_prefixed_unlinked_import_denies_with_import_unlinked() {
     }
 }
 
+/// A declared dependency the scoped lookup cannot type is NOT evidence the
+/// import is dead: the scoped candidate set sees only the module's own
+/// subtree, so the root stays unconstrained for the caller's arms.
 #[test]
-fn attested_external_head_denies_when_unlinked() {
+fn declared_dependency_without_a_scoped_candidate_stays_unconstrained() {
     let mut lookup = FakeLookup::default();
     lookup.declared_deps.push("@tryghost/logging".into());
     let arena = TypeArena::new();
     let ctx = ctx_with(vec![imp("logging", "@tryghost/logging")]);
-    match apply(&ctx, &lookup, &arena, &seg("logging", false)) {
-        RootImportOutcome::Deny(c) => assert_eq!(c.kind, CauseKind::ImportUnlinked),
-        _ => panic!("attested external must deny when unlinked"),
-    }
+    assert!(matches!(
+        apply(&ctx, &lookup, &arena, &seg("logging", false)),
+        RootImportOutcome::Unconstrained
+    ));
 }
 
 #[test]
@@ -288,20 +291,4 @@ fn external_value_named_like_the_head_does_not_attest() {
         apply(&ctx, &lookup, &arena, &seg("SelfProbe", false)),
         RootImportOutcome::Unconstrained
     ));
-}
-
-/// An external namespace by the head's name is module-level evidence.
-#[test]
-fn external_namespace_named_like_the_head_attests() {
-    let mut lookup = FakeLookup::default();
-    lookup.by_name.insert(
-        "lodash".into(),
-        vec![sym(4, "lodash", "lodash", "module", "ext:ts:lodash/index.d.ts")],
-    );
-    let arena = TypeArena::new();
-    let ctx = ctx_with(vec![imp("debounce", "lodash/debounce")]);
-    match apply(&ctx, &lookup, &arena, &seg("debounce", false)) {
-        RootImportOutcome::Deny(c) => assert_eq!(c.kind, CauseKind::ImportUnlinked),
-        _ => panic!("an external module head must attest"),
-    }
 }
