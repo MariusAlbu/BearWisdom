@@ -112,6 +112,21 @@ fn parameter_does_not_correlate_with_an_earlier_same_name_symbol() {
     assert_eq!(symbols[3].parent_index, Some(2));
 }
 
+/// A binding outside every declaration gets no symbol: in a file whose
+/// extractor emitted nothing, refs carry source index 0, and a synthesized
+/// file-level binding would become the source of all of them.
+#[test]
+fn binding_outside_every_declaration_is_not_synthesized() {
+    let src = "const x: Foo = make();
+";
+    let mut symbols: Vec<ExtractedSymbol> = Vec::new();
+    let idx = with_identifier(src, "x", |n| {
+        binding_symbol("x", n, SymbolKind::Variable, &mut symbols, BindingSymbols::Synthesize)
+    });
+    assert_eq!(idx, None);
+    assert!(symbols.is_empty());
+}
+
 #[test]
 fn correlate_only_skips_an_uncorrelated_binding() {
     let src = "function f(x: Foo) {}\n";

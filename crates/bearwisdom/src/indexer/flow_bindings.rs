@@ -48,7 +48,10 @@ pub(super) fn correlate_lhs_symbol(
 /// same-named field or an earlier function's parameter never absorbs it. A
 /// local correlates with the nearest earlier same-name symbol, the extractor's
 /// own binding for it. With no correlation and synthesis enabled, a value
-/// symbol is appended under the innermost enclosing declaration.
+/// symbol is appended under the innermost enclosing declaration. A binding
+/// outside every declaration is never synthesized: a file whose extractor
+/// emitted no symbol attributes its refs to symbol index 0, so a synthesized
+/// file-level binding would become the source of every ref in the file.
 pub(super) fn binding_symbol(
     name: &str,
     node: &Node,
@@ -66,22 +69,24 @@ pub(super) fn binding_symbol(
     match (correlated, policy) {
         (Some(idx), _) => Some(idx),
         (None, BindingSymbols::CorrelateOnly) => None,
-        (None, BindingSymbols::Synthesize) => Some(synthesize(name, node, kind, symbols)),
+        (None, BindingSymbols::Synthesize) => synthesize(name, node, kind, symbols),
     }
 }
 
 /// Append a value symbol for `name` declared at `node`, parented on the
-/// innermost extractor symbol whose line span contains it.
-fn synthesize(name: &str, node: &Node, kind: SymbolKind, symbols: &mut Vec<ExtractedSymbol>) -> usize {
+/// innermost extractor symbol whose line span contains it. `None` when no
+/// declaration encloses the binding.
+fn synthesize(
+    name: &str,
+    node: &Node,
+    kind: SymbolKind,
+    symbols: &mut Vec<ExtractedSymbol>,
+) -> Option<usize> {
     let line = node.start_position().row as u32;
-    let parent_index = enclosing_symbol(line, symbols);
-    let (qualified_name, scope_path) = match parent_index.map(|p| &symbols[p]) {
-        Some(parent) => (
-            format!("{}.{name}", parent.qualified_name),
-            Some(parent.qualified_name.clone()),
-        ),
-        None => (name.to_string(), None),
-    };
+    let parent_index = enclosing_symbol(line, symbols)?;
+    let parent = &symbols[parent_index];
+    let qualified_name = format!("{}.{name}", parent.qualified_name);
+    let scope_path = Some(parent.qualified_name.clone());
     symbols.push(ExtractedSymbol {
         name: name.to_string(),
         qualified_name,
@@ -95,13 +100,13 @@ fn synthesize(name: &str, node: &Node, kind: SymbolKind, symbols: &mut Vec<Extra
         signature: None,
         doc_comment: None,
         scope_path,
-        parent_index,
+        parent_index: Some(parent_index),
         declared_type: None,
         return_type: None,
         param_types: Vec::new(),
         generic_params: Vec::new(),
     });
-    symbols.len() - 1
+    Some(symbols.len() - 1)
 }
 
 /// The innermost extractor symbol whose `[start_line, end_line]` span contains
