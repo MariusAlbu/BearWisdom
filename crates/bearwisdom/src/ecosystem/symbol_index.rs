@@ -74,7 +74,11 @@ pub struct SymbolLocationIndex {
     /// confines demand materialization to these trees — a relative-import
     /// escape from a deliberately scoped root (a platform-scoped stdlib
     /// walking into sibling target trees via `..`) stays unmaterialized.
-    root_prefixes: Vec<PathBuf>,
+    /// A set keyed by full prefix path: `covers` walks the candidate's
+    /// ancestors, so the test is O(path depth) — package ecosystems register
+    /// one root per package, and a linear scan over thousands of prefixes
+    /// per frontier candidate dominated large node_modules closures.
+    root_prefixes: std::collections::HashSet<PathBuf>,
 }
 
 impl SymbolLocationIndex {
@@ -238,7 +242,7 @@ impl SymbolLocationIndex {
 
     /// Register a dep root's tree as coverable demand-materialization scope.
     pub fn register_root_prefix(&mut self, root: &Path) {
-        self.root_prefixes.push(normalize_lexically(root));
+        self.root_prefixes.insert(normalize_lexically(root));
     }
 
     /// Whether `path` lies inside a registered dep root. An index with no
@@ -249,7 +253,7 @@ impl SymbolLocationIndex {
             return true;
         }
         let p = normalize_lexically(path);
-        self.root_prefixes.iter().any(|r| p.starts_with(r))
+        p.ancestors().any(|a| self.root_prefixes.contains(a))
     }
 }
 
