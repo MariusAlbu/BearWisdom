@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::classify_unbound_root;
+use super::{classify_unbound_root, classify_untyped_root};
 use crate::indexer::resolve::engine::cause::CauseKind;
 use crate::indexer::resolve::engine::contract::{
     FileContext, ImportEntry, Symbol as ContractSymbol, SymbolLookup, SymbolSet,
@@ -233,4 +233,72 @@ fn nothing_anywhere_is_name_unknown() {
     let cause = classify_unbound_root("Integer", &[], &file_ctx(vec![]), &lookup, None);
     assert_eq!(cause.kind, CauseKind::NameUnknown);
     assert_eq!(cause.symbol_id, None);
+}
+
+// ---------------------------------------------------------------------------
+// Chain-root classification: an untypable root is a value expression
+// ---------------------------------------------------------------------------
+
+fn value_sym(id: i64, name: &str, qname: &str, kind: &str, file: &str) -> ContractSymbol {
+    let mut s = sym(id, name, qname);
+    s.kind = kind.to_string();
+    s.file_path = Arc::from(file);
+    s
+}
+
+#[test]
+fn untyped_root_blames_the_unique_same_file_value_binding() {
+    let mut lookup = FakeLookup::default();
+    lookup
+        .by_name
+        .insert("cfg".into(), vec![value_sym(9, "cfg", "a.run.cfg", "parameter", "src/a.pas")]);
+    let cause = classify_untyped_root("cfg", &[], &file_ctx(vec![]), &lookup, None);
+    assert_eq!(cause.kind, CauseKind::UntypedBinding);
+    assert_eq!(cause.symbol_id, Some(9));
+}
+
+#[test]
+fn untyped_root_field_binding_is_an_uncaptured_field() {
+    let mut lookup = FakeLookup::default();
+    lookup
+        .by_name
+        .insert("db".into(), vec![value_sym(4, "db", "a.Repo.db", "field", "src/a.pas")]);
+    let cause = classify_untyped_root("db", &[], &file_ctx(vec![]), &lookup, None);
+    assert_eq!(cause.kind, CauseKind::UncapturedField);
+    assert_eq!(cause.symbol_id, Some(4));
+}
+
+#[test]
+fn untyped_root_with_nothing_to_blame_is_untyped_root() {
+    let lookup = FakeLookup::default();
+    let cause = classify_untyped_root("local", &[], &file_ctx(vec![]), &lookup, None);
+    assert_eq!(cause.kind, CauseKind::UntypedRoot);
+    assert_eq!(cause.symbol_id, None);
+}
+
+/// Same-name declarations that are not same-file value bindings — a method in
+/// this file, a variable elsewhere — do not turn a root into a name death.
+#[test]
+fn untyped_root_ignores_non_binding_and_foreign_candidates() {
+    let mut lookup = FakeLookup::default();
+    lookup.by_name.insert(
+        "cfg".into(),
+        vec![
+            value_sym(1, "cfg", "a.cfg", "method", "src/a.pas"),
+            value_sym(2, "cfg", "b.cfg", "variable", "src/b.pas"),
+        ],
+    );
+    let cause = classify_untyped_root("cfg", &[], &file_ctx(vec![]), &lookup, None);
+    assert_eq!(cause.kind, CauseKind::UntypedRoot);
+    assert_eq!(cause.symbol_id, None);
+}
+
+/// The evidence probes precede the value floor for a chain root as for a bare
+/// name: an import binding the root explains it better than "untyped".
+#[test]
+fn untyped_root_bound_by_an_import_is_import_unlinked() {
+    let lookup = FakeLookup::default();
+    let cause =
+        classify_untyped_root("client", &[], &file_ctx(vec![named_import("client")]), &lookup, None);
+    assert_eq!(cause.kind, CauseKind::ImportUnlinked);
 }

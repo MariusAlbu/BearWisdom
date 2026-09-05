@@ -10,7 +10,7 @@ use crate::indexer::resolve::engine::cause::{Cause, CauseKind};
 use crate::indexer::resolve::engine::chain::bind_member_access;
 use crate::indexer::resolve::engine::contract::{FileContext, ImportEntry};
 use crate::indexer::resolve::engine::testkit::{
-    call_ref, file_ctx, ref_ctx, source_symbol, sym, Lookup,
+    call_ref, file_ctx, import, ref_ctx, source_symbol, sym, Lookup,
 };
 use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
 use crate::types::{ChainSegment, MemberChain, SegmentKind};
@@ -120,18 +120,50 @@ fn open_namespace_qualifies_a_single_segment_root() {
 }
 
 /// A leading run that names nothing the index holds stays unresolved — but it
-/// carries a classified unbound cause rather than dying causeless, so the ref
-/// stays attributable. A root name absent from imports, enclosing scopes, the
-/// external index, and the project classifies as `NameUnknown`.
+/// carries a classified cause rather than dying causeless, so the ref stays
+/// attributable. A plain-identifier root absent from imports, enclosing
+/// scopes, the external index, and the project is a value expression whose
+/// type never reached the walk: `UntypedRoot`, not a missing name.
 #[test]
-fn unanchorable_root_carries_a_classified_unbound_cause() {
+fn unanchorable_identifier_root_is_an_untyped_root() {
     let lookup = Lookup::new().with(sym(1, "Widget", "Alpha.Widget", "class", "src/widget.cs"));
-    let segs = vec![seg("Nowhere"), seg("Missing"), member("Call")];
+    let segs = vec![seg("nowhere"), seg("missing"), member("call")];
+    let fc = file_ctx(vec![], None);
+
+    assert_eq!(bind(&lookup, segs.clone(), &fc), None);
+    let cause = bind_cause(&lookup, segs, &fc).expect("an unanchorable root must carry a cause");
+    assert_eq!(cause.kind, CauseKind::UntypedRoot);
+    assert_eq!(cause.symbol_id, None);
+}
+
+/// The same run rooted on a segment the extractor marked as a namespace
+/// qualifier names a declaration path, so its death is a bare-name death:
+/// nothing by that name anywhere is `NameUnknown`.
+#[test]
+fn unanchorable_namespace_root_is_a_name_death() {
+    let lookup = Lookup::new().with(sym(1, "Widget", "Alpha.Widget", "class", "src/widget.cs"));
+    let segs = vec![
+        segment("Nowhere", SegmentKind::NamespaceAccess, false),
+        segment("Missing", SegmentKind::NamespaceAccess, false),
+        member("Call"),
+    ];
     let fc = file_ctx(vec![], None);
 
     assert_eq!(bind(&lookup, segs.clone(), &fc), None);
     let cause = bind_cause(&lookup, segs, &fc).expect("an unanchorable root must carry a cause");
     assert_eq!(cause.kind, CauseKind::NameUnknown);
+}
+
+/// An untyped root whose name IS imported dies with the import: the evidence
+/// probes run for a chain root exactly as they do for a bare name.
+#[test]
+fn untyped_root_bound_by_an_import_blames_the_import() {
+    let lookup = Lookup::new();
+    let segs = vec![seg("client"), member("get")];
+    let fc = file_ctx(vec![import("client", Some("./client"))], None);
+
+    let cause = bind_cause(&lookup, segs, &fc).expect("an unanchorable root must carry a cause");
+    assert_eq!(cause.kind, CauseKind::ImportUnlinked);
 }
 
 /// A bare type name still roots on segment 0 and steps to segment 1 — the

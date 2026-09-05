@@ -185,7 +185,7 @@ pub(super) fn fold_type_info(
 /// with `namespace Foo`). Aliases never merge — an alias row carries
 /// expansion semantics, not a member surface.
 pub(super) fn merge_eligible_kind(sym: &Symbol) -> bool {
-    super::support::is_type_kind(&sym.kind) || matches!(sym.kind.as_str(), "namespace" | "module")
+    super::kinds::is_type_kind(&sym.kind) || matches!(sym.kind.as_str(), "namespace" | "module")
 }
 
 #[cfg(test)]

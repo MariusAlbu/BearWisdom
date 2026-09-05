@@ -9,6 +9,8 @@
 // from state already in hand, never by re-deriving a resolution.
 // =============================================================================
 
+use super::contract::Symbol;
+
 /// Why a death site failed to bind, independent of which symbol (if any) it
 /// names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,6 +24,12 @@ pub enum CauseKind {
     /// A parameter or local binding carries no captured declared type and no
     /// initializer this engine can attribute to another symbol.
     UntypedBinding,
+    /// A member chain's root segment could not be typed: no captured local or
+    /// declared type, no import binds the name, no enclosing scope declares
+    /// it, and no same-file value declaration of the name exists to blame.
+    /// The root is a value expression — a local, a parameter, `this` — whose
+    /// type never reached the walk.
+    UntypedRoot,
     /// The receiver's type declaration is external and carries zero
     /// materialized members — the member lookup miss traces to the externals
     /// pipeline never having exposed this type's surface, not to a genuinely
@@ -77,6 +85,7 @@ impl CauseKind {
             Self::UncapturedReturn => "uncaptured_return",
             Self::UncapturedField => "uncaptured_field",
             Self::UntypedBinding => "untyped_binding",
+            Self::UntypedRoot => "untyped_root",
             Self::ExternalUnmaterialized => "external_unmaterialized",
             Self::MemberMissing => "member_missing",
             Self::AliasOpaque => "alias_opaque",
@@ -95,7 +104,7 @@ impl CauseKind {
 /// The first-uncaptured-type cause recorded when a ref fails to resolve.
 ///
 /// `symbol_id` names the symbol whose own type was never captured — `None`
-/// only for `UnboundRoot`, where there is no symbol to blame.
+/// when no single symbol is to blame.
 #[derive(Debug, Clone, Copy)]
 pub struct Cause {
     pub symbol_id: Option<i64>,
@@ -106,4 +115,15 @@ impl Cause {
     pub fn new(symbol_id: Option<i64>, kind: CauseKind) -> Self {
         Self { symbol_id, kind }
     }
+}
+
+/// The cause for a value binding found by name but carrying no captured type:
+/// a field/property is `UncapturedField`, anything else value-kind (variable,
+/// constant, parameter) is `UntypedBinding`. Blames the binding.
+pub(super) fn value_binding_cause(sym: &Symbol) -> Cause {
+    let kind = match sym.kind.as_str() {
+        "field" | "property" => CauseKind::UncapturedField,
+        _ => CauseKind::UntypedBinding,
+    };
+    Cause::new(Some(sym.id), kind)
 }

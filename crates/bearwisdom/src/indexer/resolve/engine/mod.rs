@@ -44,6 +44,7 @@ mod flush;
 pub mod generic_shadow;
 pub mod generics;
 pub mod head_decl;
+pub(crate) mod kinds;
 pub mod implicit_root;
 mod demand_reachability;
 pub mod import_qualify;

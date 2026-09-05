@@ -30,7 +30,7 @@ use super::{alias, chain_root, implicit_root};
 use super::composite_members;
 use super::mapped_members;
 use super::arg_types::resolve_arg_types;
-use super::cause::{Cause, CauseKind};
+use super::cause::{value_binding_cause, Cause, CauseKind};
 use super::root_import_discipline::RootImportOutcome;
 use super::generics::{param_patterns, bind_arg_generics, fill_yield_from_args, substitute_env};
 use super::head_decl::{
@@ -39,7 +39,8 @@ use super::head_decl::{
 use super::lambda_seed::seed_lambda_params;
 use super::segment_args::{bind_explicit_type_args, with_segment_args};
 use super::substitution::{substitute_supertype_args, substitute_through};
-use super::support::{import_scoped_package_id, is_type_kind, pick_ranked_candidate};
+use super::kinds::{is_type_kind, is_value_kind};
+use super::support::{import_scoped_package_id, pick_ranked_candidate};
 
 /// Strategy tag for a member-chain bind produced by the new engine.
 const STRATEGY: &str = "rule_chain";
@@ -2008,7 +2009,7 @@ fn value_root_type(
                         return Ok(id);
                     }
                     owned_seen = true;
-                    owned_cause.get_or_insert_with(|| root_binding_cause(s));
+                    owned_cause.get_or_insert_with(|| value_binding_cause(s));
                 } else if let Some(id) = ft {
                     if is_primitive_head(arena, id) {
                         primitive_fallback.get_or_insert(id);
@@ -2050,7 +2051,7 @@ fn value_root_type(
             }
             None if owned => {
                 owned_seen = true;
-                owned_cause.get_or_insert_with(|| root_binding_cause(cand));
+                owned_cause.get_or_insert_with(|| value_binding_cause(cand));
             }
             None => {}
         }
@@ -2061,17 +2062,6 @@ fn value_root_type(
         return primitive_fallback.ok_or(owned_cause);
     }
     foreign_fallback.or(primitive_fallback).ok_or(None)
-}
-
-/// The cause for an owned root binding found by name but carrying no captured
-/// type: a field/property is `UncapturedField`, anything else value-kind
-/// (variable, constant, parameter) is `UntypedBinding`.
-fn root_binding_cause(sym: &Symbol) -> Cause {
-    let kind = match sym.kind.as_str() {
-        "field" | "property" => CauseKind::UncapturedField,
-        _ => CauseKind::UntypedBinding,
-    };
-    Cause::new(Some(sym.id), kind)
 }
 
 /// `true` when the type's nominal head is a language primitive — a value typed by
@@ -2209,14 +2199,6 @@ fn deref_value_typed(
         seen_qname = value.qualified_name.clone();
     }
     current
-}
-
-/// `true` when `kind` names a value whose declared type can root a chain.
-fn is_value_kind(kind: &str) -> bool {
-    matches!(
-        kind,
-        "variable" | "constant" | "const" | "field" | "property" | "parameter"
-    )
 }
 
 /// Type a call root whose callee is a VALUE of a callable-interface type, by the

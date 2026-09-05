@@ -69,10 +69,17 @@ impl SemanticModel {
         lookup: &dyn SymbolLookup,
         profile: &LanguageProfile,
     ) -> SolveOutcome {
+        // The walk's own diagnosis of a declined chain. When a namespace or
+        // wildcard-import root sends the chain through the bare ladder below and
+        // that ladder also comes up empty, this outranks a bare-name
+        // classification of the last segment: the root that never linked or
+        // the member the receiver lacks is the cause, not the leaf's name.
+        let mut chain_cause: Option<Cause> = None;
         if let Some(chain) = ref_ctx.extracted_ref.chain.as_ref() {
             match super::chain::bind_member_access(ref_ctx, file_ctx, lookup, profile) {
                 Ok(res) => return SolveOutcome::Resolved(res),
                 Err(cause) => {
+                    chain_cause = cause;
                     // A multi-segment chain the walk declined is normally a genuine
                     // miss: a same-named sibling must not hijack `a.b.c`. Three
                     // exceptions all root on a MODULE the chain walker can't type
@@ -118,15 +125,15 @@ impl SemanticModel {
         }
         match self.resolve_chain_less(ref_ctx, file_ctx, lookup, profile) {
             BindOutcome::Resolved(res, _rule) => SolveOutcome::Resolved(res),
-            BindOutcome::Unresolved => {
-                SolveOutcome::Unresolved(Some(super::unbound_cause::classify_unbound_root(
+            BindOutcome::Unresolved => SolveOutcome::Unresolved(chain_cause.or_else(|| {
+                Some(super::unbound_cause::classify_unbound_root(
                     &ref_ctx.extracted_ref.target_name,
                     &ref_ctx.scope_chain,
                     file_ctx,
                     lookup,
                     ref_ctx.file_package_id,
-                )))
-            }
+                ))
+            })),
             BindOutcome::Drained => SolveOutcome::Drained,
         }
     }

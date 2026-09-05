@@ -18,11 +18,11 @@
 use crate::indexer::resolve::engine::contract::{FileContext, RefContext, SymbolLookup};
 use crate::type_checker::core::types::TypeArena;
 use crate::type_checker::profile::language_profile::LanguageProfile;
-use crate::types::{ChainSegment, MemberChain};
+use crate::types::{ChainSegment, MemberChain, SegmentKind};
 
 use super::cause::Cause;
 use super::chain::{resolve_root, Receiver};
-use super::support::is_type_kind;
+use super::kinds::is_type_kind;
 
 /// Upper bound on how many leading segments a single anchor may consume. Caps
 /// the probe count per chain; a namespace path deeper than this carries no
@@ -33,10 +33,10 @@ const MAX_ANCHOR_SEGMENTS: usize = 4;
 /// at. The ordinary root consumes segment 0 and hands back `1`; a namespace-
 /// anchored root consumes the leading segments its type prefix spans.
 ///
-/// `Err` carries the root's own diagnosable cause when it had one, and an
-/// `UnboundRoot` cause otherwise — a chain whose leading segments name nothing
-/// the index holds has exhausted every way to be typed, which is a cause, not
-/// an absence of one.
+/// `Err` carries the root's own diagnosable cause when it had one, and a
+/// classified root cause otherwise (see `root_cause`) — a chain whose leading
+/// segments name nothing the index holds has exhausted every way to be typed,
+/// which is a cause, not an absence of one.
 pub(super) fn anchor(
     ref_ctx: &RefContext,
     file_ctx: &FileContext,
@@ -66,15 +66,39 @@ pub(super) fn anchor(
             );
             Ok((recv, consumed))
         }
-        None => Err(cause.or_else(|| {
-            Some(super::unbound_cause::classify_unbound_root(
-                &chain.segments[0].name,
+        None => Err(cause.or_else(|| Some(root_cause(ref_ctx, file_ctx, lookup, &chain.segments[0])))),
+    }
+}
+
+/// The cause recorded for a root no arm could type. A root the extractor
+/// marked as a declaration path — a namespace qualifier, a type's static
+/// access, a construction — dies as a bare name does: an unlinked import, an
+/// unreachable or absent declaration. Any other root is a value expression
+/// whose type was never captured, and is classified as such rather than as a
+/// name the project lacks.
+fn root_cause(
+    ref_ctx: &RefContext,
+    file_ctx: &FileContext,
+    lookup: &dyn SymbolLookup,
+    root: &ChainSegment,
+) -> Cause {
+    match root.kind {
+        SegmentKind::NamespaceAccess | SegmentKind::TypeAccess | SegmentKind::Construction => {
+            super::unbound_cause::classify_unbound_root(
+                &root.name,
                 &ref_ctx.scope_chain,
                 file_ctx,
                 lookup,
                 ref_ctx.file_package_id,
-            ))
-        })),
+            )
+        }
+        _ => super::unbound_cause::classify_untyped_root(
+            &root.name,
+            &ref_ctx.scope_chain,
+            file_ctx,
+            lookup,
+            ref_ctx.file_package_id,
+        ),
     }
 }
 

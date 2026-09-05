@@ -2393,9 +2393,13 @@ impl SymbolLookup for Compilation {
         self.selector_to_qname.get(raw_selector).map(String::as_str)
     }
 
-    fn is_external_name(&self, _name: &str, _language: &str) -> bool {
-        // External classification is a later phase; conservative false here.
-        false
+    fn is_external_name(&self, name: &str, _language: &str) -> bool {
+        // Supply exists under this name outside the project: an external
+        // declaration or an ambient global. Cause-attribution evidence only.
+        self.by_name(name)
+            .iter()
+            .any(|s| self.is_external_file(&s.file_path))
+            || !self.ambient_symbols(name).is_empty()
     }
 
     fn is_declared_dependency(&self, package_id: Option<i64>, spec: &str) -> bool {

@@ -1024,11 +1024,20 @@ fn selector_qname_resolves_component_selector_from_parsed_file() {
     assert_eq!(tree.selector_qname("nb-card"), None);
 }
 
+/// External supply by name: a declaration in an `ext:` file makes the name
+/// externally known; a project-internal declaration or an absent name does not.
 #[test]
-fn is_external_name_returns_false() {
-    let (tree, _) = build_fixture();
-    // External classification is deferred; conservative false.
+fn is_external_name_reflects_external_supply() {
+    let (tree, arena) = build_fixture();
     assert!(!tree.is_external_name("Repo", "typescript"));
+    assert!(!tree.is_external_name("Nowhere", "typescript"));
+
+    let symbols = vec![make_symbol("Ext", "Ext", SymbolKind::Class, None, None, None)];
+    let pf = make_parsed_file("ext:ts:lib/x.d.ts", symbols, vec![]);
+    let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+    id_map.insert(("ext:ts:lib/x.d.ts".to_string(), "Ext".to_string()), 1);
+    let ext_tree = Compilation::build(&[pf], &id_map.into(), arena);
+    assert!(ext_tree.is_external_name("Ext", "typescript"));
 }
 
 #[test]

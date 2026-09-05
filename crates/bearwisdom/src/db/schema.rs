@@ -316,9 +316,12 @@ CREATE TABLE IF NOT EXISTS unresolved_refs (
     drained     INTEGER NOT NULL DEFAULT 0,                          -- 1 if a rule drained the ref as a language builtin / non-project construct
     -- First-uncaptured-type cause, recorded only on the resolve-failure path.
     -- cause_symbol_id names the symbol whose own return/field/declared type
-    -- was never captured (NULL only for cause_kind='unbound_root'); cause_kind
-    -- is one of: uncaptured_return, uncaptured_field, untyped_binding,
-    -- external_unmaterialized, member_missing, alias_opaque, unbound_root.
+    -- was never captured (NULL when no symbol is to blame); cause_kind is one
+    -- of the strings `CauseKind::as_db_str` emits: uncaptured_return,
+    -- uncaptured_field, untyped_binding, untyped_root, external_unmaterialized,
+    -- member_missing, alias_opaque, chain_declined, unbound_import_unlinked,
+    -- unbound_import_declared_unsupplied, unbound_scope_member,
+    -- unbound_external_known, unbound_defined_unimported, unbound_name_unknown.
     cause_symbol_id INTEGER REFERENCES symbols(id) ON DELETE SET NULL,
     cause_kind      TEXT
 );

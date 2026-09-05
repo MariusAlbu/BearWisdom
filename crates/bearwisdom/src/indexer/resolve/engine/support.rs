@@ -158,26 +158,6 @@ pub(crate) fn self_package_sub_path(
         .map(|sub| Some(sub.to_string()))
 }
 
-/// `true` when `kind` names a type a `this`/`self` keyword or an inherited
-/// member can attach to — a class-like declaration, not a namespace, function,
-/// or value.
-pub(crate) fn is_type_kind(kind: &str) -> bool {
-    matches!(
-        kind,
-        "class"
-            | "struct"
-            | "interface"
-            | "enum"
-            | "trait"
-            | "object"
-            | "record"
-            | "protocol"
-            | "actor"
-            | "mixin"
-            | "annotation"
-    )
-}
-
 /// `true` when `qualified_name` reads as `module_path` (slash / colon /
 /// dot-separated) prefix followed by `.` and one or more segments.
 pub(crate) fn qname_under_module(qualified_name: &str, module_path: &str) -> bool {

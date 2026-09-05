@@ -22,7 +22,8 @@ use crate::type_checker::core::types::TypeArena;
 use super::cause::{Cause, CauseKind};
 use super::chain::{import_scoped_external_root, Receiver};
 use super::contract::{FileContext, ImportEntry, Symbol, SymbolLookup};
-use super::support::{is_bare_module_specifier, is_type_kind, workspace_sub_path};
+use super::kinds::is_type_kind;
+use super::support::{is_bare_module_specifier, workspace_sub_path};
 
 pub(super) enum RootImportOutcome {
     /// No non-wildcard import binds this name, or the import cannot be

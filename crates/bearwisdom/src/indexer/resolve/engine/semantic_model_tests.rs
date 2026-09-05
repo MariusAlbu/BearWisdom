@@ -2,6 +2,7 @@ use super::{
     chain_root_is_namespace, chain_root_is_wildcard_import, kind_ok_table_for_test, SemanticModel,
     SolveOutcome,
 };
+use crate::indexer::resolve::engine::cause::CauseKind;
 use crate::indexer::resolve::engine::testkit::{file_ctx, import, ref_ctx, source_symbol, sym, Lookup};
 use crate::languages::javascript::profile::JAVASCRIPT_PROFILE;
 use crate::languages::rust_lang::profile::RUST_PROFILE;
@@ -35,6 +36,48 @@ fn namespace_rooted_chain_is_detected() {
         segments: vec![nseg("React"), nseg("useState")],
     };
     assert!(chain_root_is_namespace(&chain, &lookup));
+}
+
+/// `React.useState()` where nothing types or anchors the `React` root and the
+/// bare ladder finds no `useState` either: the walk's own diagnosis — `React`
+/// is declared but no rung reaches it, blamed on that declaration — is the
+/// recorded cause, not a bare-name classification of the leaf (`useState`:
+/// declared nowhere, `NameUnknown`, nothing to blame).
+#[test]
+fn namespace_root_fallthrough_keeps_the_walks_cause() {
+    let lookup =
+        Lookup::new().with(sym(1, "React", "@types/react.React", "module", "react/index.d.ts"));
+    let mut r = ExtractedRef {
+        is_include: false,
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: 0,
+        target_name: "useState".to_string(),
+        kind: EdgeKind::Calls,
+        line: 0,
+        col: 0,
+        module: None,
+        namespace_segments: Vec::new(),
+        chain: Some(MemberChain {
+            segments: vec![nseg("React"), nseg("useState")],
+        }),
+        byte_offset: 0,
+        call_args: Vec::new(),
+    };
+    r.chain.as_mut().unwrap().segments[1].is_call = true;
+    let src = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let solver = SemanticModel::production();
+
+    let rc = ref_ctx(&r, &src, vec![]);
+    match solver.get_symbol_info(&rc, &fc, &lookup, &TYPESCRIPT_PROFILE) {
+        SolveOutcome::Unresolved(Some(cause)) => {
+            assert_eq!(cause.kind, CauseKind::DefinedUnimported);
+            assert_eq!(cause.symbol_id, Some(1));
+        }
+        SolveOutcome::Unresolved(None) => panic!("the fallthrough dropped the walk's cause"),
+        _ => panic!("expected the walk's member-missing cause"),
+    }
 }
 
 /// A qualified call chain the walker can't root (`m::f(v)` — the root names a

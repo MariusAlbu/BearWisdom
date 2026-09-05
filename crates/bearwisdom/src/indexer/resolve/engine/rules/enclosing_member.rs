@@ -12,7 +12,7 @@
 // candidates.
 // =============================================================================
 
-use crate::indexer::resolve::engine::support::is_type_kind;
+use crate::indexer::resolve::engine::kinds::is_type_kind;
 use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
 use crate::indexer::resolve::engine::contract::Symbol;
 

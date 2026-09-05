@@ -1,16 +1,6 @@
 use super::*;
 
 #[test]
-fn is_type_kind_accepts_class_like_only() {
-    assert!(is_type_kind("class"));
-    assert!(is_type_kind("interface"));
-    assert!(is_type_kind("trait"));
-    assert!(!is_type_kind("function"));
-    assert!(!is_type_kind("namespace"));
-    assert!(!is_type_kind("variable"));
-}
-
-#[test]
 fn qname_under_module_matches_prefix_and_exact() {
     assert!(qname_under_module("Catalog.Service.List", "Catalog.Service"));
     assert!(qname_under_module("Catalog.Service", "Catalog.Service"));
