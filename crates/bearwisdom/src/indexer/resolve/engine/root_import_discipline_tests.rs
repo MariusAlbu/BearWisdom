@@ -18,6 +18,7 @@ struct FakeLookup {
     package_symbols: HashMap<i64, Vec<ContractSymbol>>,
     return_types: HashMap<i64, TypeId>,
     external_names: Vec<String>,
+    declared_deps: Vec<String>,
     empty: Vec<ContractSymbol>,
     empty_pairs: Vec<(String, String)>,
 }
@@ -83,6 +84,9 @@ impl SymbolLookup for FakeLookup {
     }
     fn is_external_name(&self, name: &str, _: &str) -> bool {
         self.external_names.iter().any(|n| n == name)
+    }
+    fn is_declared_dependency(&self, _: Option<i64>, spec: &str) -> bool {
+        self.declared_deps.iter().any(|d| d == spec)
     }
     fn workspace_package_id(&self, spec: &str) -> Option<i64> {
         let normalized = spec.replace("::", "/");
@@ -166,7 +170,7 @@ fn scheme_prefixed_unlinked_import_denies_with_import_unlinked() {
 #[test]
 fn attested_external_head_denies_when_unlinked() {
     let mut lookup = FakeLookup::default();
-    lookup.external_names.push("@tryghost/logging".into());
+    lookup.declared_deps.push("@tryghost/logging".into());
     let arena = TypeArena::new();
     let ctx = ctx_with(vec![imp("logging", "@tryghost/logging")]);
     match apply(&ctx, &lookup, &arena, &seg("logging", false)) {
@@ -259,10 +263,45 @@ fn uncaptured_return_on_scoped_callable_blames_the_callee() {
 #[test]
 fn wildcard_import_never_disciplines() {
     let mut lookup = FakeLookup::default();
-    lookup.external_names.push("System".into());
+    lookup.declared_deps.push("System".into());
     let mut entry = imp("System", "System");
     entry.is_wildcard = true;
     let arena = TypeArena::new();
     let out = apply(&ctx_with(vec![entry]), &lookup, &arena, &seg("System", false));
     assert!(matches!(out, RootImportOutcome::Unconstrained));
+}
+
+/// An external VALUE that happens to share the specifier head's name (a
+/// `bench` function in some crate) is no evidence about the module path: a
+/// self-crate import through `bench/selfmod` stays unconstrained, so the
+/// ordinary root arms can still type it.
+#[test]
+fn external_value_named_like_the_head_does_not_attest() {
+    let mut lookup = FakeLookup::default();
+    lookup.by_name.insert(
+        "bench".into(),
+        vec![sym(3, "bench", "criterion.bench", "function", "ext:rust:criterion/src/lib.rs")],
+    );
+    let arena = TypeArena::new();
+    let ctx = ctx_with(vec![imp("SelfProbe", "bench/selfmod")]);
+    assert!(matches!(
+        apply(&ctx, &lookup, &arena, &seg("SelfProbe", false)),
+        RootImportOutcome::Unconstrained
+    ));
+}
+
+/// An external namespace by the head's name is module-level evidence.
+#[test]
+fn external_namespace_named_like_the_head_attests() {
+    let mut lookup = FakeLookup::default();
+    lookup.by_name.insert(
+        "lodash".into(),
+        vec![sym(4, "lodash", "lodash", "module", "ext:ts:lodash/index.d.ts")],
+    );
+    let arena = TypeArena::new();
+    let ctx = ctx_with(vec![imp("debounce", "lodash/debounce")]);
+    match apply(&ctx, &lookup, &arena, &seg("debounce", false)) {
+        RootImportOutcome::Deny(c) => assert_eq!(c.kind, CauseKind::ImportUnlinked),
+        _ => panic!("an external module head must attest"),
+    }
 }

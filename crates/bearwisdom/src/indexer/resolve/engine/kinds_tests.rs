@@ -1,4 +1,4 @@
-use super::{is_type_kind, is_value_kind};
+use super::{is_namespace_kind, is_type_kind, is_value_kind};
 
 #[test]
 fn type_kinds_are_class_like_declarations() {
@@ -31,4 +31,13 @@ fn type_and_value_kinds_are_disjoint() {
     for kind in ["variable", "constant", "const", "field", "property", "parameter"] {
         assert!(!is_type_kind(kind), "{kind} is a value kind");
     }
+}
+
+#[test]
+fn namespace_kinds_are_declaration_containers() {
+    assert!(is_namespace_kind("namespace"));
+    assert!(is_namespace_kind("module"));
+    assert!(!is_namespace_kind("class"));
+    assert!(!is_namespace_kind("function"));
+    assert!(!is_namespace_kind("variable"));
 }

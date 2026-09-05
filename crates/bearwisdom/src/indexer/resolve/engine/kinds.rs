@@ -37,6 +37,12 @@ pub(crate) fn is_value_kind(kind: &str) -> bool {
     )
 }
 
+/// `true` when `kind` names a namespace-like declaration: a container of
+/// declarations that is itself neither a type nor a value.
+pub(crate) fn is_namespace_kind(kind: &str) -> bool {
+    matches!(kind, "namespace" | "module" | "package")
+}
+
 #[cfg(test)]
 #[path = "kinds_tests.rs"]
 mod tests;

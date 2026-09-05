@@ -22,7 +22,7 @@ use crate::type_checker::core::types::TypeArena;
 use super::cause::{Cause, CauseKind};
 use super::chain::{import_scoped_external_root, Receiver};
 use super::contract::{FileContext, ImportEntry, Symbol, SymbolLookup};
-use super::kinds::is_type_kind;
+use super::kinds::{is_namespace_kind, is_type_kind};
 use super::support::{is_bare_module_specifier, workspace_sub_path};
 
 pub(super) enum RootImportOutcome {
@@ -102,7 +102,7 @@ pub(super) fn apply(
     // a scheme prefix, or a head the external index attests to. Anything
     // else stays unconstrained — absence of linking is not proof of death
     // for module systems this gate cannot see.
-    if has_scheme_prefix(spec) || attested_external(lookup, spec, &file_ctx.language) {
+    if has_scheme_prefix(spec) || attested_external(lookup, spec) {
         return RootImportOutcome::Deny(Cause::new(None, CauseKind::ImportUnlinked));
     }
     RootImportOutcome::Unconstrained
@@ -158,16 +158,26 @@ fn has_scheme_prefix(spec: &str) -> bool {
     super::module_scheme::strip_scheme_prefix(spec).is_some()
 }
 
-/// The external index attests to the specifier or one of its leading path
-/// prefixes (`@scope/pkg/sub` → `@scope/pkg` → `@scope`).
-fn attested_external(lookup: &dyn SymbolLookup, spec: &str, language: &str) -> bool {
-    if lookup.is_external_name(spec, language) {
+/// The specifier, or one of its leading path prefixes (`@scope/pkg/sub` →
+/// `@scope/pkg` → `@scope`), is externally attested: a manifest declares it
+/// as a dependency, or the external index holds a namespace or module by that
+/// name. A same-named external VALUE — a function called `bench` in some
+/// crate — says nothing about a module path and never attests.
+fn attested_external(lookup: &dyn SymbolLookup, spec: &str) -> bool {
+    let attested = |s: &str| {
+        lookup.is_declared_dependency(None, s)
+            || lookup
+                .by_name(s)
+                .iter()
+                .any(|sym| lookup.is_external_file(&sym.file_path) && is_namespace_kind(&sym.kind))
+    };
+    if attested(spec) {
         return true;
     }
     let segments: Vec<&str> = spec.split('/').collect();
     (1..segments.len().min(3))
         .rev()
-        .any(|k| lookup.is_external_name(&segments[..k].join("/"), language))
+        .any(|k| attested(&segments[..k].join("/")))
 }
 
 #[cfg(test)]
