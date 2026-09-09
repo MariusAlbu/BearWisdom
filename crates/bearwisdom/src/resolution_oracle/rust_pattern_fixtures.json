@@ -1,0 +1,37 @@
+[
+  {
+    "name":"owned_variant_payload_return_and_local_cascades", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct A; impl A { /*@decl:1:method*/pub fn next(&self) -> &Self { self } /*@decl:2:method*/pub fn save(&self) {} }\npub struct B; impl B { /*@decl:3:method*/pub fn next(&self) -> &Self { self } /*@decl:4:method*/pub fn save(&self) {} }\npub enum E { Left(A), Right(B) }\npub fn f(x:E) { match x { E::Left(value) => { let y=value./*@ref:11*/next(); y./*@ref:12*/save(); }, E::Right(value) => { value./*@ref:13*/next()./*@ref:14*/save(); } } }\n"}],
+    "labels":[[11,1],[12,2],[13,3],[14,4]]
+  },
+  {
+    "name":"generic_variant_positions_and_nested_patterns", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct A; impl A { /*@decl:1:method*/pub fn save(&self) {} } pub struct B; impl B { /*@decl:2:method*/pub fn save(&self) {} }\npub enum Pair<T,U> { Both(T,U) } pub enum Outer<T> { Wrap(T) }\npub fn f(x:Outer<Pair<A,B>>) { match x { Outer::Wrap(Pair::Both(a,b)) => { a./*@ref:11*/save(); b./*@ref:12*/save(); } } }\n"}],
+    "labels":[[11,1],[12,2]]
+  },
+  {
+    "name":"named_variant_payload_fields_use_declaration_ids", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct A; impl A { /*@decl:1:method*/pub fn save(&self) {} } pub struct B; impl B { /*@decl:2:method*/pub fn save(&self) {} }\npub enum E<T,U> { Both { first:T, r#type:U } }\npub fn f(x:E<A,B>) { match x { E::Both { first, r#type: second } => { first./*@ref:11*/save(); second./*@ref:12*/save(); } } }\n"}],
+    "labels":[[11,1],[12,2]]
+  },
+  {
+    "name":"cross_file_renamed_enum_and_sibling_namesake_payloads", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub mod a; pub mod b; use a::E as Choice;\npub fn f(x:Choice, y:b::E) { match x { Choice::Item(value) => value./*@ref:11*/save() } match y { b::E::Item(value) => value./*@ref:12*/save() } }\n"},{"path":"a.rs","source":"pub struct Doc; impl Doc { /*@decl:1:method*/pub fn save(&self) {} } pub enum E { Item(Doc) }\n"},{"path":"b.rs","source":"pub struct Doc; impl Doc { /*@decl:2:method*/pub fn save(&self) {} } pub enum E { Item(Doc) }\n"}],
+    "labels":[[11,1],[12,2]]
+  },
+  {
+    "name":"arm_payload_binding_does_not_replace_outer_or_other_arm", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct A; impl A { /*@decl:1:method*/pub fn save(&self) {} } pub struct B; impl B { /*@decl:2:method*/pub fn save(&self) {} }\npub enum E { Item(A), Empty }\npub fn f(x:E, value:B) { match x { E::Item(value) => value./*@ref:11*/save(), E::Empty => value./*@ref:12*/save() } value./*@ref:13*/save(); }\n"}],
+    "labels":[[11,1],[12,2],[13,2]]
+  },
+  {
+    "name":"payload_bindings_are_available_in_guards_without_leaking_to_fallback_arms", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct A; impl A { /*@decl:1:method*/pub fn ok(&self)->bool {true} /*@decl:2:method*/pub fn save(&self) {} } pub struct B; impl B { /*@decl:3:method*/pub fn save(&self) {} }\npub enum E { Item(A), Empty }\npub fn f(x:E, value:B) { match x { E::Item(value) if value./*@ref:11*/ok() => value./*@ref:12*/save(), _ => value./*@ref:13*/save() } }\n"}],
+    "labels":[[11,1],[12,2],[13,3]]
+  },
+  {
+    "name":"unsupported_payload_member_cannot_borrow_outer_namesake_type", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct A; pub struct B; impl B { pub fn save(&self) {} } pub enum E { Item(A) }\npub fn f(x:E, value:B) { match x { E::Item(value) => value./*@ref:11*/save() } }\n"}],
+    "labels":[[11,null]], "diagnostics":[[11,"E0599"]]
+  }
+]

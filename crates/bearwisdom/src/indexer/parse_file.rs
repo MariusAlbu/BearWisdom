@@ -247,15 +247,13 @@ fn parse_file_internal(
     // The extractor parses internally and doesn't expose its tree, so this is a
     // separate parse, made once and handed to both stages, for any language that
     // has both a locals.scm and a FlowConfig (TS/JS/Python/Java/C#/Go/Rust).
-    // Parsed only when a consumer needs it: locals.scm filtering parses at any
-    // size, but flow skips files over MAX_FLOW_SOURCE_BYTES without parsing — so
-    // a flow-only language over that size produces no shared tree.
+    // Identity capture needs the tree even when optional flow query matching is
+    // skipped for large files. Locals and identity consumers share this parse.
     let shared_grammar = plugin.grammar(walked.language);
     let shared_tree = {
         let want_for_locals =
             crate::indexer::query_builtins::locals_scm_for_language(walked.language).is_some();
-        let want_for_flow = plugin.flow_config().is_some()
-            && content.len() <= crate::indexer::flow::MAX_FLOW_SOURCE_BYTES;
+        let want_for_flow = plugin.flow_config().is_some();
         if want_for_locals || want_for_flow {
             shared_grammar.as_ref().and_then(|g| {
                 let mut parser = tree_sitter::Parser::new();

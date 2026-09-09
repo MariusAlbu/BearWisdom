@@ -1,0 +1,32 @@
+[
+  {
+    "name": "sibling and nested signature generic owners",
+    "source": "interface Catalog</*@decl:1*/T> { </*@decl:2*/T>(value: /*@ref:1*/T): /*@ref:2*/T; new</*@decl:3*/U extends /*@ref:3*/T = /*@ref:4*/T>(value: /*@ref:5*/U): Catalog</*@ref:6*/U>; read</*@decl:4*/T>(callback: </*@decl:5*/T>(v: /*@ref:7*/T) => /*@ref:8*/T): /*@ref:9*/T; }",
+    "diagnosticCodes": [],
+    "labels": [[1,2],[2,2],[3,1],[4,1],[5,3],[6,3],[7,5],[8,5],[9,4]]
+  },
+  {
+    "name": "signature generic cannot leak to another signature or outer declaration",
+    "source": "interface Factory { </*@decl:1*/T>(value: /*@ref:1*/T): /*@ref:2*/T; new(value: /*@ref:3*/T): object; field: /*@ref:4*/T; } type Outside = /*@ref:5*/T;",
+    "diagnosticCodes": [2304,2304,2304],
+    "labels": [[1,1],[2,1],[3,null],[4,null],[5,null]]
+  },
+  {
+    "name": "abstract and concrete method generic owners with Unicode source",
+    "source": "// λ signature ownership\nabstract class Factory</*@decl:1*/T> { abstract create</*@decl:2*/U extends /*@ref:1*/T>(value: /*@ref:2*/U): /*@ref:3*/U; keep</*@decl:3*/U>(value: /*@ref:4*/U): /*@ref:5*/U { return value; } }",
+    "diagnosticCodes": [],
+    "labels": [[1,1],[2,2],[3,2],[4,3],[5,3]]
+  },
+  {
+    "name": "infer declarations shadow only the true branch and retain outer constraints",
+    "source": "type Choice</*@decl:1*/U, /*@decl:2*/T> = T extends { value: infer /*@decl:3*/U extends /*@ref:1*/T } ? /*@ref:2*/U : /*@ref:3*/U;",
+    "diagnosticCodes": [],
+    "labels": [[1,2],[2,3],[3,1]]
+  },
+  {
+    "name": "nested infer true and false branches retain distinct source owners",
+    "source": "type Choice<T> = T extends { a: infer /*@decl:1*/U } ? /*@ref:1*/U extends { b: infer /*@decl:2*/U } ? /*@ref:2*/U : /*@ref:3*/U : /*@ref:4*/U;",
+    "diagnosticCodes": [2304],
+    "labels": [[1,1],[2,2],[3,1],[4,null]]
+  }
+]

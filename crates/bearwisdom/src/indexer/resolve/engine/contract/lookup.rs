@@ -21,6 +21,31 @@ use super::{Symbol, SymbolSet};
 /// cache surface lives on the `FlowCacheLookup` supertrait (`flow_cache.rs`);
 /// every `SymbolLookup` carries it, defaults are no-ops.
 pub trait SymbolLookup: FlowCacheLookup {
+    /// File-environment ingestion: a captured import BindingId's exported declaration.
+    /// Missing or ambiguous module evidence never enables a spelling fallback.
+    fn bound_import(
+        &self,
+        _file: &str,
+        _binding: crate::indexer::lexical::BindingId,
+        _type_space: bool,
+    ) -> Option<i64> {
+        None
+    }
+    /// Source-declared overload group; no member is a selected call target yet.
+    fn bound_import_overloads(
+        &self,
+        _file: &str,
+        _binding: crate::indexer::lexical::BindingId,
+    ) -> &[i64] {
+        &[]
+    }
+    fn bound_import_namespace(
+        &self,
+        _file: &str,
+        _binding: crate::indexer::lexical::BindingId,
+    ) -> bool {
+        false
+    }
     /// Find all symbols with the given simple name.
     fn by_name(&self, name: &str) -> SymbolSet<'_>;
 
@@ -38,10 +63,7 @@ pub trait SymbolLookup: FlowCacheLookup {
     /// the interface overload is useless. This lookup exposes all
     /// overloads so the caller can scan for a kind-compatible target.
     fn all_by_qualified_name(&self, qname: &str) -> SymbolSet<'_> {
-        match self.by_qualified_name(qname) {
-            Some(s) => SymbolSet::Borrowed(std::slice::from_ref(s)),
-            None => SymbolSet::empty(),
-        }
+        self.by_qualified_name(qname).into()
     }
 
     /// Find the direct children of a type/namespace by exact parent qualified name.
@@ -59,6 +81,11 @@ pub trait SymbolLookup: FlowCacheLookup {
     /// strings. Default returns empty; the real store overrides it.
     fn members_of_id(&self, _parent_id: i64) -> SymbolSet<'_> {
         SymbolSet::empty()
+    }
+
+    /// Frozen name/owner index; candidates are declaration IDs, not selected targets.
+    fn member_index(&self) -> Option<&super::super::member_index::MemberIndex> {
+        None
     }
 
     /// Find all type-kind symbols (class, struct, interface, enum, ...) with
@@ -102,8 +129,13 @@ pub trait SymbolLookup: FlowCacheLookup {
 
     /// `ModuleResolver` fallback for `resolve_module_from` and the relative-specifier walk.
     fn resolve_module_via_language_resolver(
-        &self, _language: &str, _source_file: &str, _spec: &str,
-    ) -> Option<String> { None }
+        &self,
+        _language: &str,
+        _source_file: &str,
+        _spec: &str,
+    ) -> Option<String> {
+        None
+    }
 
     /// Get the annotated type name for a property/field symbol.
     /// e.g., "AlbumService.db" → Some("DatabaseRepository").
@@ -131,13 +163,12 @@ pub trait SymbolLookup: FlowCacheLookup {
         None
     }
 
-    /// Return type keyed by the callable's SYMBOL ID rather than its qualified
-    /// name. A public API duplicated across packages shares one qname, so
-    /// `return_type_id` (qname-keyed) returns the first-winner's type for every
-    /// copy; this id-keyed form lets a caller that has resolved the import-scoped
-    /// callee read THAT declaration's return. Default `None` so synthetic test
-    /// lookups need not opt in.
+    /// This callable's return, immune to collisions in the qualified-name slot.
     fn return_type_id_of(&self, _symbol_id: i64) -> Option<TypeId> {
+        None
+    }
+    /// Explicit generic returns are bound to their owner's parameter IDs at ingestion.
+    fn generic_return_of(&self, _id: i64) -> Option<&super::generic_return::GenericReturn> {
         None
     }
 
@@ -149,6 +180,11 @@ pub trait SymbolLookup: FlowCacheLookup {
     /// that has resolved the import-scoped symbol. Default `None` so synthetic test
     /// lookups need not opt in.
     fn field_type_id_of(&self, _symbol_id: i64) -> Option<TypeId> {
+        None
+    }
+
+    /// Canonical declaration metadata; consumers borrow IDs without spelling adapters.
+    fn canonical_type_info(&self, _symbol_id: i64) -> Option<&super::TypeInfo> {
         None
     }
 
@@ -190,18 +226,16 @@ pub trait SymbolLookup: FlowCacheLookup {
     /// chain walks through the TypeId surface. Falls back to the legacy
     /// string accessor for synthetic lookups that haven't bound an arena.
     fn field_type_str(&self, qname: &str) -> Option<String> {
-        if let (Some(id), Some(arena)) = (self.field_type_id(qname), self.type_arena()) {
-            return Some(arena.format_type(id));
-        }
-        self.field_type_name(qname).map(|s| s.to_string())
+        super::lookup_display::render(self.field_type_id(qname), self.type_arena(), || {
+            self.field_type_name(qname)
+        })
     }
 
     /// Render the return type for `qname` from the canonical TypeArena.
     fn return_type_str(&self, qname: &str) -> Option<String> {
-        if let (Some(id), Some(arena)) = (self.return_type_id(qname), self.type_arena()) {
-            return Some(arena.format_type(id));
-        }
-        self.return_type_name(qname).map(|s| s.to_string())
+        super::lookup_display::render(self.return_type_id(qname), self.type_arena(), || {
+            self.return_type_name(qname)
+        })
     }
 
     /// Look up the structural shape of a type alias.

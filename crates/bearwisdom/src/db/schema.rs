@@ -91,11 +91,12 @@ END;
 /// Also runs lightweight migrations for columns added after initial release.
 pub fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(SCHEMA_SQL)?;
+    super::resolution_schema::create(conn)?;
+    super::lexical_visibility::create(conn)?;
     conn.execute_batch(FTS_TRIGGER_DDL)?;
     super::migrations::migrate(conn)?;
     Ok(())
 }
-
 
 const SCHEMA_SQL: &str = "
 -- ============================================================
@@ -333,37 +334,6 @@ CREATE INDEX IF NOT EXISTS idx_unresolved_name       ON unresolved_refs(target_n
 CREATE INDEX IF NOT EXISTS idx_unresolved_source_cov
     ON unresolved_refs(source_id, target_name, kind, source_line);
 
--- ============================================================
--- PER-REF RESOLUTION LOG  (resolution snapshot instrument)
--- ============================================================
-
--- One row per ref SITE the resolve pipeline processes, written alongside
--- `edges` / `unresolved_refs` at flush time. Unlike `edges` — keyed on
--- (source_id, target_id, kind, source_line), which collapses distinct ref
--- sites that happen to resolve to the same target on the same line — and
--- `unresolved_refs` — which never carries the literal referenced name for a
--- RESOLVED outcome — this table preserves the (file, line, col, target_name,
--- kind) identity of every ref alongside its outcome, so two index runs of
--- the same project can be diffed at ref-site granularity (see
--- `query::ref_snapshot` / `query::resolve_diff`).
---
--- `outcome` is 'resolved' | 'unresolved' | 'drained'. `target_id`,
--- `confidence`, and `strategy` are populated only for 'resolved' rows.
-CREATE TABLE IF NOT EXISTS ref_resolutions (
-    id          INTEGER PRIMARY KEY,
-    source_id   INTEGER NOT NULL REFERENCES symbols(id) ON DELETE CASCADE,
-    target_name TEXT    NOT NULL,
-    kind        TEXT    NOT NULL,
-    source_line INTEGER NOT NULL,
-    source_col  INTEGER NOT NULL,
-    outcome     TEXT    NOT NULL,
-    target_id   INTEGER REFERENCES symbols(id) ON DELETE SET NULL,
-    confidence  REAL,
-    strategy    TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_ref_resolutions_source ON ref_resolutions(source_id);
-CREATE INDEX IF NOT EXISTS idx_ref_resolutions_target ON ref_resolutions(target_id);
 -- idx_unresolved_refs_package is created by migrate() to cover both new DBs
 -- (column from CREATE TABLE above) and migrated DBs (column from ALTER).
 

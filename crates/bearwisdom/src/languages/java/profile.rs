@@ -69,6 +69,7 @@ pub const JAVA_PROFILE: LanguageProfile = LanguageProfile {
     // this true would cause method lookups on Optional<T> to fall
     // through to T's members, missing Optional's own surface.
     look_through_optional: false,
+    reference_member_projection: false,
     literal_narrowing: false,
     async_wrappers: &["CompletableFuture", "Future"],
     container_accessors: &[],

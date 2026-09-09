@@ -22,7 +22,7 @@
 use rustc_hash::FxHashMap;
 
 use crate::indexer::resolve::engine::contract::{Symbol, SymbolLookup};
-use crate::type_checker::core::types::{GenericParamData, Type, TypeArena, TypeId};
+use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 use crate::types::EdgeKind;
 
 use super::{BinderContext, LookupResult, LookupRule};
@@ -128,11 +128,7 @@ pub(crate) fn mark_unbound_member_params(
     let map: FxHashMap<String, TypeId> = names
         .into_iter()
         .map(|n| {
-            let param = arena.intern_generic(GenericParamData {
-                name: n.clone(),
-                owner_symbol_index: 0,
-                bound: None,
-            });
+            let param = arena.intern_type_parameter(n.clone(), 0, None);
             (n, arena.intern(Type::Generic { param }))
         })
         .collect();

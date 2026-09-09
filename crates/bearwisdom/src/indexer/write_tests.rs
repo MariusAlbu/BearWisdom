@@ -185,6 +185,60 @@ fn pfile(path: &str, lang: &str, symbols: Vec<ExtractedSymbol>) -> crate::types:
     p
 }
 
+#[test]
+fn lexical_visibility_is_replaced_on_full_and_survivor_writes() {
+    use crate::indexer::lexical::LexicalBindings;
+    let db = Database::open_in_memory().unwrap();
+    let arena = TypeArena::new();
+    let mut file = pfile(
+        "a.ts",
+        "typescript",
+        vec![esym(
+            "Hidden",
+            SymbolKind::Function,
+            Some("function Hidden() {}"),
+            1,
+        )],
+    );
+    let mut graph = LexicalBindings::default();
+    let scope = graph.add_scope(None, 0, 100, true);
+    let name = graph.intern("Hidden");
+    let private = graph.declare(scope, name, 0, None);
+    graph.attach_symbol(0, private);
+    graph.lexical_only.insert(private);
+    file.flow.lexical = Some(graph);
+    let (_, ids) =
+        write_parsed_files_with_origin(&db, std::slice::from_ref(&file), "internal", Some(&arena))
+            .unwrap();
+    let original = ids.row_id("a.ts", 0).unwrap();
+    assert_eq!(
+        crate::db::lexical_visibility::read(db.conn()).unwrap(),
+        [original]
+    );
+    file.flow.lexical.as_mut().unwrap().lexical_only.clear();
+    write_parsed_files_incremental(&db, std::slice::from_ref(&file), Some(&arena)).unwrap();
+    assert_eq!(sym_id(&db, "Hidden"), Some(original));
+    assert!(crate::db::lexical_visibility::read(db.conn())
+        .unwrap()
+        .is_empty());
+    file.flow
+        .lexical
+        .as_mut()
+        .unwrap()
+        .lexical_only
+        .insert(private);
+    write_parsed_files_incremental(&db, std::slice::from_ref(&file), Some(&arena)).unwrap();
+    assert_eq!(
+        crate::db::lexical_visibility::read(db.conn()).unwrap(),
+        [original]
+    );
+    file.flow.lexical.as_mut().unwrap().lexical_only.clear();
+    write_parsed_files_with_origin(&db, &[file], "internal", Some(&arena)).unwrap();
+    assert!(crate::db::lexical_visibility::read(db.conn())
+        .unwrap()
+        .is_empty());
+}
+
 fn sym_id(db: &Database, qname: &str) -> Option<i64> {
     db.conn()
         .query_row(
@@ -516,8 +570,8 @@ fn write_full(
     let tx = conn.unchecked_transaction().unwrap();
     let mut map = SymbolIds::default();
     let now = 0i64;
-    let fid = write_one_parsed_file(&tx, &pf, "internal", now, &mut map, true, Some(arena))
-        .unwrap();
+    let fid =
+        write_one_parsed_file(&tx, &pf, "internal", now, &mut map, true, Some(arena)).unwrap();
     tx.commit().unwrap();
     fid
 }
@@ -537,7 +591,13 @@ fn full_index_cross_file_containment_resolved_by_post_write_pass() {
     let arena = TypeArena::new();
 
     // File A declares the struct.
-    write_full(&db, "a.rs", "rust", vec![esym("MyStruct", SymbolKind::Class, None, 1)], &arena);
+    write_full(
+        &db,
+        "a.rs",
+        "rust",
+        vec![esym("MyStruct", SymbolKind::Class, None, 1)],
+        &arena,
+    );
 
     // File B declares an impl method — cross-file: parent_index is None,
     // scope_path = "MyStruct" (the parent's qualified_name in file A).
@@ -545,7 +605,12 @@ fn full_index_cross_file_containment_resolved_by_post_write_pass() {
         &db,
         "b.rs",
         "rust",
-        vec![esym_with_scope("MyStruct.new", SymbolKind::Method, Some("MyStruct"), 1)],
+        vec![esym_with_scope(
+            "MyStruct.new",
+            SymbolKind::Method,
+            Some("MyStruct"),
+            1,
+        )],
         &arena,
     );
 
@@ -621,15 +686,32 @@ fn full_index_ambiguous_cross_file_parent_left_null() {
     let arena = TypeArena::new();
 
     // Two files each declare a non-mergeable `Dup` sharing one qualified name.
-    write_full(&db, "a.rs", "rust", vec![esym("Dup", SymbolKind::Class, None, 1)], &arena);
-    write_full(&db, "b.rs", "rust", vec![esym("Dup", SymbolKind::Class, None, 1)], &arena);
+    write_full(
+        &db,
+        "a.rs",
+        "rust",
+        vec![esym("Dup", SymbolKind::Class, None, 1)],
+        &arena,
+    );
+    write_full(
+        &db,
+        "b.rs",
+        "rust",
+        vec![esym("Dup", SymbolKind::Class, None, 1)],
+        &arena,
+    );
 
     // A third file declares a method whose scope_path = "Dup" — ambiguous parent.
     write_full(
         &db,
         "c.rs",
         "rust",
-        vec![esym_with_scope("Dup.run", SymbolKind::Method, Some("Dup"), 1)],
+        vec![esym_with_scope(
+            "Dup.run",
+            SymbolKind::Method,
+            Some("Dup"),
+            1,
+        )],
         &arena,
     );
 
@@ -728,8 +810,20 @@ fn mergeable_collapse_canonical_pick_is_path_ordered_not_id_ordered() {
     let arena = TypeArena::new();
 
     // "b.cs" written FIRST, so it gets the smaller auto-increment id.
-    write_full(&db, "b.cs", "csharp", vec![esym("App.Models", SymbolKind::Namespace, None, 1)], &arena);
-    write_full(&db, "a.cs", "csharp", vec![esym("App.Models", SymbolKind::Namespace, None, 1)], &arena);
+    write_full(
+        &db,
+        "b.cs",
+        "csharp",
+        vec![esym("App.Models", SymbolKind::Namespace, None, 1)],
+        &arena,
+    );
+    write_full(
+        &db,
+        "a.cs",
+        "csharp",
+        vec![esym("App.Models", SymbolKind::Namespace, None, 1)],
+        &arena,
+    );
 
     let remapped = resolve_cross_file_containment_and_merge(&db).unwrap();
 
@@ -771,15 +865,32 @@ fn full_index_cross_file_member_of_mergeable_parent_binds() {
     let arena = TypeArena::new();
 
     // Two files declare the same mergeable namespace `App.Models`.
-    write_full(&db, "a.cs", "csharp", vec![esym("App.Models", SymbolKind::Namespace, None, 1)], &arena);
-    write_full(&db, "b.cs", "csharp", vec![esym("App.Models", SymbolKind::Namespace, None, 1)], &arena);
+    write_full(
+        &db,
+        "a.cs",
+        "csharp",
+        vec![esym("App.Models", SymbolKind::Namespace, None, 1)],
+        &arena,
+    );
+    write_full(
+        &db,
+        "b.cs",
+        "csharp",
+        vec![esym("App.Models", SymbolKind::Namespace, None, 1)],
+        &arena,
+    );
 
     // A third file declares a member whose scope_path = "App.Models".
     write_full(
         &db,
         "c.cs",
         "csharp",
-        vec![esym_with_scope("App.Models.User", SymbolKind::Class, Some("App.Models"), 1)],
+        vec![esym_with_scope(
+            "App.Models.User",
+            SymbolKind::Class,
+            Some("App.Models"),
+            1,
+        )],
         &arena,
     );
 
@@ -787,7 +898,11 @@ fn full_index_cross_file_member_of_mergeable_parent_binds() {
 
     let ns_id: i64 = db
         .conn()
-        .query_row("SELECT id FROM symbols WHERE qualified_name = 'App.Models'", [], |r| r.get(0))
+        .query_row(
+            "SELECT id FROM symbols WHERE qualified_name = 'App.Models'",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
     let after: Option<i64> = db
         .conn()
@@ -834,7 +949,8 @@ fn overload_rows_keep_distinct_ids_from_the_writer() {
     assert_ne!(a, b, "overload rows must carry distinct ids");
     // The key view holds exactly one of them (last writer) — collapsed.
     assert_eq!(
-        map.by_key().get(&("src/over.cs".to_string(), "Svc.Run".to_string())),
+        map.by_key()
+            .get(&("src/over.cs".to_string(), "Svc.Run".to_string())),
         Some(&b)
     );
 }
@@ -851,7 +967,10 @@ fn remap_ids_rewrites_key_and_row_views() {
     remapped.insert(5i64, 9i64);
     map.remap_ids(&remapped);
 
-    assert_eq!(map.by_key().get(&("f.rs".to_string(), "T.m".to_string())), Some(&9));
+    assert_eq!(
+        map.by_key().get(&("f.rs".to_string(), "T.m".to_string())),
+        Some(&9)
+    );
     assert_eq!(map.id_of("f.rs", 1, "T.m"), Some(9));
     assert_eq!(map.id_of("f.rs", 0, "T.m"), Some(4));
 }

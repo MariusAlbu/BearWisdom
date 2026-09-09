@@ -10,7 +10,7 @@
 // Roslyn folding partial declarations into one symbol.
 // =============================================================================
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::type_checker::core::types::TypeId;
 
@@ -18,26 +18,39 @@ use crate::type_checker::profile::language_profile::MergeScope;
 
 use super::contract::{Symbol, TypeInfo};
 
-/// Grouping buckets recorded during ingest: merge-set key → the row ids that
-/// share it. Only type-like declarations from languages with a non-`None`
-/// merge scope enter.
+/// Scoped row-ID evidence overrides the legacy spelling-based bootstrap groups.
+/// A singleton attestation also forbids accidental same-qname merging.
 #[derive(Debug, Default)]
 pub(super) struct MergeGroups {
     /// `SameFile` scope: (qualified name, file path) → rows.
     pub(super) by_file: FxHashMap<(String, String), Vec<i64>>,
     /// `SamePackage` scope: (qualified name, package id) → rows.
     pub(super) by_pkg: FxHashMap<(String, Option<i64>), Vec<i64>>,
+    pub(super) scoped: FxHashMap<i64, Vec<i64>>,
+    pub(super) attested: FxHashSet<i64>,
 }
 
-/// The canonical map: every non-canonical member of a 2+-row merge set →
-/// the set's smallest id. Deterministic: min-id wins.
+/// Explicit scoped groups choose their representative at ingestion. Legacy
+/// groups keep min-ID canonicalization only for rows without scoped evidence.
 pub(super) fn compute(groups: &MergeGroups) -> FxHashMap<i64, i64> {
     let mut out = FxHashMap::default();
     for ids in groups.by_file.values().chain(groups.by_pkg.values()) {
+        let ids: Vec<_> = ids
+            .iter()
+            .copied()
+            .filter(|id| !groups.attested.contains(id))
+            .collect();
         if ids.len() < 2 {
             continue;
         }
         let canonical = *ids.iter().min().expect("non-empty merge set");
+        for id in ids {
+            if id != canonical {
+                out.insert(id, canonical);
+            }
+        }
+    }
+    for (&canonical, ids) in &groups.scoped {
         for &id in ids {
             if id != canonical {
                 out.insert(id, canonical);

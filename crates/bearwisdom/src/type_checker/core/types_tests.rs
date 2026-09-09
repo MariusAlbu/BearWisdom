@@ -111,7 +111,9 @@ fn intern_type_str_parses_union() {
         other => panic!("expected Union, got {other:?}"),
     }
     // The arms keep their own structure — a generic arm is an Apply, not a Class.
-    match arena.get(arena.intern_type_str("UseQueryReturnType<TData, TError> | UseQueryDefinedReturnType<TData, TError>")) {
+    match arena.get(arena.intern_type_str(
+        "UseQueryReturnType<TData, TError> | UseQueryDefinedReturnType<TData, TError>",
+    )) {
         Type::Union(arms) => {
             assert_eq!(arms.len(), 2);
             assert!(matches!(arena.get(arms[0]), Type::Apply { .. }));
@@ -155,7 +157,10 @@ fn intern_type_str_parses_rust_fixed_array_and_slice() {
     // decomposes the same canonical `Array<T>` shape a `T[]` suffix does.
     let array_ty = arena.intern_type_str("[Item; 2]");
     let array_suffix_ty = arena.intern_type_str("Item[]");
-    assert_eq!(array_ty, array_suffix_ty, "[T; N] must intern to the same Array<T> as T[]");
+    assert_eq!(
+        array_ty, array_suffix_ty,
+        "[T; N] must intern to the same Array<T> as T[]"
+    );
     match arena.get(array_ty) {
         Type::Apply { base, args } => {
             assert!(matches!(arena.get(base), Type::Class(q) if q == "Array"));
@@ -217,7 +222,10 @@ fn intern_type_str_union_intersection_respect_nesting_and_precedence() {
         Type::Class(q) if q == "User"
     ));
     // A single nominal type with no top-level operator is untouched.
-    assert!(matches!(arena.get(arena.intern_type_str("User")), Type::Class(_)));
+    assert!(matches!(
+        arena.get(arena.intern_type_str("User")),
+        Type::Class(_)
+    ));
 }
 
 #[test]
@@ -227,11 +235,13 @@ fn rebind_canonicalizes_higher_kinded_base() {
     // canonical generic params, so a higher-kinded return type substitutes.
     let mut arena = TypeArena::new();
     let f_param = arena.intern_generic(GenericParamData {
+        kind: Default::default(),
         name: "F".into(),
         owner_symbol_index: 0,
         bound: None,
     });
     let a_param = arena.intern_generic(GenericParamData {
+        kind: Default::default(),
         name: "A".into(),
         owner_symbol_index: 0,
         bound: None,
@@ -318,11 +328,13 @@ fn function_type_intern_dedups_on_identical_signatures() {
 fn generic_param_allocation_yields_unique_ids() {
     let mut arena = TypeArena::new();
     let t = arena.intern_generic(GenericParamData {
+        kind: Default::default(),
         name: "T".to_string(),
         owner_symbol_index: 5,
         bound: None,
     });
     let u = arena.intern_generic(GenericParamData {
+        kind: Default::default(),
         name: "U".to_string(),
         owner_symbol_index: 5,
         bound: None,
@@ -343,6 +355,7 @@ fn snapshot_round_trips_every_variant_preserving_ids() {
     let opt = a.intern(Type::Optional(vec_user));
     let _prim = a.primitive(PrimKind::Int);
     let gp = a.intern_generic(GenericParamData {
+        kind: Default::default(),
         name: "T".to_string(),
         owner_symbol_index: 3,
         bound: Some(user),
@@ -573,7 +586,10 @@ fn intern_type_str_strips_pointer_sigil() {
     assert_eq!(arena.intern_type_str("* fiber.Ctx"), ctx);
     assert_eq!(arena.intern_type_str("**fiber.Ctx"), ctx);
     // A pointer to a generic application keeps the Apply.
-    assert_eq!(arena.intern_type_str("*Box<C>"), arena.intern_type_str("Box<C>"));
+    assert_eq!(
+        arena.intern_type_str("*Box<C>"),
+        arena.intern_type_str("Box<C>")
+    );
 }
 
 #[test]
@@ -677,11 +693,42 @@ fn decl_interns_per_declaration_not_per_qname() {
 }
 
 #[test]
+fn declaration_intern_and_lookup_ignore_display_spelling() {
+    let arena = TypeArena::new();
+    let original = arena.decl("Original", 73);
+    let mut renamed = arena.get(original);
+    if let Type::Decl { qname, .. } = &mut renamed {
+        *qname = "poisoned display".into();
+    }
+    assert_eq!(arena.lookup(&renamed), Some(original));
+    assert_eq!(arena.intern(renamed), original);
+}
+
+#[test]
+fn restore_rebuilds_declaration_index_without_reusing_previous_rows() {
+    let source = TypeArena::new();
+    let expected = source.decl("Snapshot", 73);
+    let destination = TypeArena::new();
+    destination.class("PreviousFirstSlot");
+    let obsolete = destination.decl("Previous", 73);
+    assert_ne!(obsolete, expected);
+    destination.restore_snapshot(&source.serialize_snapshot());
+    assert_eq!(destination.decl("new display", 73), expected);
+    assert!(matches!(
+        destination.get(expected),
+        Type::Decl { symbol_id: 73, .. }
+    ));
+}
+
+#[test]
 fn decl_formats_as_its_qname() {
     let arena = TypeArena::new();
     let d = arena.decl("Ns.Repo", 7);
     assert_eq!(arena.format_type(d), "Ns.Repo");
-    let applied = arena.intern(Type::Apply { base: d, args: vec![arena.class("User")] });
+    let applied = arena.intern(Type::Apply {
+        base: d,
+        args: vec![arena.class("User")],
+    });
     assert_eq!(arena.format_type(applied), "Ns.Repo<User>");
 }
 
@@ -691,10 +738,15 @@ fn rebind_class_params_never_touches_a_decl() {
     let d = arena.decl("T", 9);
     let mut params = FxHashMap::default();
     let gp = arena.intern_generic(GenericParamData {
+        kind: Default::default(),
         name: "T".to_string(),
         owner_symbol_index: 0,
         bound: None,
     });
     params.insert("T".to_string(), arena.intern(Type::Generic { param: gp }));
-    assert_eq!(arena.rebind_class_params(d, &params), d, "a bound nominal is not a param name");
+    assert_eq!(
+        arena.rebind_class_params(d, &params),
+        d,
+        "a bound nominal is not a param name"
+    );
 }

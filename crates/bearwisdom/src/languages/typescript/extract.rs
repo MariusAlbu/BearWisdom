@@ -198,11 +198,14 @@ fn extract_inner(source: &str, is_tsx: bool, demand: Option<&HashSet<String>>) -
             let mut i = 0;
             while i < refs.len() {
                 let matched = if refs[i].kind == EdgeKind::TypeRef {
-                    scopes.iter().find(|(name, start, end)| {
-                        &refs[i].target_name == name
-                            && refs[i].line >= *start
-                            && refs[i].line <= *end
-                    }).map(|(name, _, _)| (refs[i].source_symbol_index, name.clone()))
+                    scopes
+                        .iter()
+                        .find(|(name, start, end)| {
+                            &refs[i].target_name == name
+                                && refs[i].line >= *start
+                                && refs[i].line <= *end
+                        })
+                        .map(|(name, _, _)| (refs[i].source_symbol_index, name.clone()))
                 } else {
                     None
                 };
@@ -369,7 +372,7 @@ fn extract_node(
         {
             continue;
         }
-        match child.kind() {
+        match super::expressions::declaration_kind(child) {
             "class_declaration" | "abstract_class_declaration" => {
                 let idx = symbols::push_class(&child, src, scope_tree, symbols, parent_index);
                 let sym_idx = idx.unwrap_or(0);

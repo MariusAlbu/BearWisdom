@@ -1,0 +1,133 @@
+[
+  {
+    "name": "same_named_module_functions",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"mod a { /*@decl:1:function*/pub fn save() {} }\nmod b { /*@decl:2:function*/pub fn save() {} }\nuse a::save as first; use b::save as second;\npub fn f() { a::/*@ref:11*/save(); b::/*@ref:12*/save(); /*@ref:13*/first(); /*@ref:14*/second(); }\n"}],
+    "labels": [[11,1],[12,2],[13,1],[14,2]]
+  },
+  {
+    "name": "nested_same_line_call_selectors",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"/*@decl:1:function*/fn id(x: u32) -> u32 { x }\npub fn f() { /*@ref:11*/id(/*@ref:12*/id(1)); /*@ref:13*/id(2); }\n"}],
+    "labels": [[11,1],[12,1],[13,1]]
+  },
+  {
+    "name": "unicode_source_coordinates",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub struct Café; impl Café { /*@decl:1:method*/pub fn déjà(&self) {} }\npub fn f(été: &Café) { let _emoji = \"🦀\"; été./*@ref:11*/déjà(); été./*@ref:12*/déjà(); }\n"}],
+    "labels": [[11,1],[12,1]]
+  },
+  {
+    "name": "sibling_parameter_type_identity",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub struct A; impl A { /*@decl:1:method*/pub fn save(&self) {} }\npub struct B; impl B { /*@decl:2:method*/pub fn save(&self) {} }\npub fn first(value: &A) { value./*@ref:11*/save(); }\npub fn second(value: &B) { value./*@ref:12*/save(); }\n"}],
+    "labels": [[11,1],[12,2]]
+  },
+  {
+    "name": "ordered_and_block_local_shadowing",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub struct A; impl A { /*@decl:1:method*/pub fn save(&self) {} }\npub struct B; impl B { /*@decl:2:method*/pub fn save(&self) {} }\npub fn f(a: &A, b: &B) { let value = a; value./*@ref:11*/save(); { let value = b; value./*@ref:12*/save(); } value./*@ref:13*/save(); let value = b; value./*@ref:14*/save(); }\n"}],
+    "labels": [[11,1],[12,2],[13,1],[14,2]]
+  },
+  {
+    "name": "cross_file_renamed_export_cascade",
+    "entry": "lib.rs",
+    "files": [
+      {"path":"lib.rs","source":"mod a; mod b; mod api; use api::create;\npub fn f() { /*@ref:11*/create()./*@ref:12*/save(); b::/*@ref:13*/make()./*@ref:14*/save(); }\n"},
+      {"path":"a.rs","source":"pub struct Doc; impl Doc { /*@decl:1:method*/pub fn save(&self) {} }\n/*@decl:2:function*/pub fn make() -> Doc { loop {} }\n"},
+      {"path":"b.rs","source":"pub struct Doc; impl Doc { /*@decl:3:method*/pub fn save(&self) {} }\n/*@decl:4:function*/pub fn make() -> Doc { loop {} }\n"},
+      {"path":"api.rs","source":"pub use crate::a::make as create;\n"}
+    ],
+    "labels": [[11,2],[12,1],[13,4],[14,3]]
+  },
+  {
+    "name": "generic_alias_factory_cascade",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub struct Doc; pub struct Item<T> { inner: T }\ntype Alias<T> = Item<T>;\nimpl<T> Item<T> { /*@decl:1:method*/pub fn get(&self) -> &T { &self.inner } }\nimpl Doc { /*@decl:2:method*/pub fn save(&self) {} }\n/*@decl:3:function*/pub fn make<T>(x: T) -> Alias<T> { loop {} }\npub fn f(x: Doc) { /*@ref:11*/make(x)./*@ref:12*/get()./*@ref:13*/save(); }\n"}],
+    "labels": [[11,3],[12,1],[13,2]]
+  },
+  {
+    "name": "borrowed_receiver_output_region",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub struct Doc; pub struct Item<T> { inner: T }\ntype Alias<'a> = Item<&'a Doc>;\nimpl<'a> Alias<'a> { /*@decl:1:method*/pub fn touch(&self) {} }\npub struct C; impl C { /*@decl:2:method*/pub fn make(&self, other: &Doc) -> Alias<'_> { loop {} } }\npub fn f(p: &C, other: &Doc) { p./*@ref:11*/make(other)./*@ref:12*/touch(); }\n"}],
+    "labels": [[11,2],[12,1]]
+  },
+  {
+    "name": "owned_receiver_auto_borrow_region",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub struct Doc; pub struct Item<T> { inner: T }\ntype Alias<'a> = Item<&'a Doc>;\nimpl<'a> Alias<'a> { /*@decl:1:method*/pub fn touch(&self) {} }\npub struct C; impl C { /*@decl:2:method*/pub fn make(&self, other: &Doc) -> Alias<'_> { loop {} } }\npub fn f(p: C, other: &Doc) { p./*@ref:11*/make(other)./*@ref:12*/touch(); }\n"}],
+    "labels": [[11,2],[12,1]]
+  },
+  {
+    "name": "trait_default_and_generic_dispatch",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub trait Save { /*@decl:1:method*/fn save(&self) {} }\npub struct Doc; impl Save for Doc {}\npub fn concrete(p: &Doc) { p./*@ref:11*/save(); }\npub fn generic<T: Save>(p: &T) { p./*@ref:12*/save(); }\npub fn qualified(p: &Doc) { <Doc as Save>::/*@ref:13*/save(p); }\n"}],
+    "labels": [[11,1],[12,1],[13,1]]
+  },
+  {
+    "name": "inherent_ufcs_receiver_argument",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:1:method*/pub fn save(&self) {} }\npub fn f(p: &Doc) { Doc::/*@ref:11*/save(p); p./*@ref:12*/save(); }\n"}],
+    "labels": [[11,1],[12,1]]
+  },
+  {
+    "name": "match_pattern_payload_provenance",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub struct A; impl A { /*@decl:1:method*/pub fn save(&self) {} }\npub struct B; impl B { /*@decl:2:method*/pub fn save(&self) {} }\npub enum Either { Left(A), Right(B) }\npub fn f(x: Either) { match x { Either::Left(value) => value./*@ref:11*/save(), Either::Right(value) => value./*@ref:12*/save() } }\n"}],
+    "labels": [[11,1],[12,2]]
+  },
+  {
+    "name": "closure_captured_binding_shadowing",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub struct A; impl A { /*@decl:1:method*/pub fn save(&self) {} }\npub struct B; impl B { /*@decl:2:method*/pub fn save(&self) {} }\npub fn f(value: &A, other: &B) { let _one = || value./*@ref:11*/save(); let value = other; let _two = || value./*@ref:12*/save(); }\n"}],
+    "labels": [[11,1],[12,2]]
+  },
+  {
+    "name": "local_function_item_hoisting",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"/*@decl:1:function*/fn save() {}\npub fn f() { /*@ref:11*/save(); /*@decl:2:function*/fn save() {} /*@ref:12*/save(); }\npub fn g() { /*@ref:13*/save(); }\n"}],
+    "labels": [[11,2],[12,2],[13,1]]
+  },
+  {
+    "name": "missing_bare_function_is_not_a_namesake",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"mod unrelated { pub fn absent() {} }\npub fn f() { /*@ref:11*/absent(); }\n"}],
+    "labels": [[11,null]], "diagnostics": [[11,"E0425"]]
+  },
+  {
+    "name": "wrong_receiver_cannot_borrow_a_member",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub struct A; impl A { pub fn save(&self) {} }\npub struct B; pub fn f(p: &B) { p./*@ref:11*/save(); }\n"}],
+    "labels": [[11,null]], "diagnostics": [[11,"E0599"]]
+  },
+  {
+    "name": "private_import_target_is_not_public",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"mod a { fn save() {} }\npub fn f() { a::/*@ref:11*/save(); }\n"}],
+    "labels": [[11,null]], "diagnostics": [[11,"E0603"]]
+  },
+  {
+    "name": "wildcard_provider_ambiguity",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"mod a { pub fn save() {} } mod b { pub fn save() {} }\nuse a::*; use b::*;\npub fn f() { /*@ref:11*/save(); }\n"}],
+    "labels": [[11,null]], "diagnostics": [[11,"E0659"]]
+  },
+  {
+    "name": "missing_generic_bare_function_is_not_a_namesake",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"mod unrelated { pub fn absent<T>() {} }\npub fn f() { /*@ref:11*/absent::<u32>(); }\n"}],
+    "labels": [[11,null]], "diagnostics": [[11,"E0425"]]
+  },
+  {
+    "name": "explicit_generic_factory_cascade",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub struct Doc; pub struct Item<T> { inner: T }\ntype Alias<T> = Item<T>;\nimpl<T> Item<T> { /*@decl:1:method*/pub fn get(&self) -> &T { &self.inner } }\nimpl Doc { /*@decl:2:method*/pub fn save(&self) {} }\n/*@decl:3:function*/pub fn make<T>(x: T) -> Alias<T> { loop {} }\npub fn f(x: Doc) { /*@ref:11*/make::<Doc>(x)./*@ref:12*/get()./*@ref:13*/save(); }\n"}],
+    "labels": [[11,3],[12,1],[13,2]]
+  },
+  {
+    "name": "zero_argument_generic_calls_use_source_type_ids",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"mod a { pub struct Doc; impl Doc { /*@decl:1:method*/pub fn save(&self) {} } }\nmod b { pub struct Doc; impl Doc { /*@decl:2:method*/pub fn save(&self) {} } }\nmod api { /*@decl:3:function*/pub fn make<T>() -> T { loop {} } }\nuse api::make; pub struct C; impl C { /*@decl:4:method*/pub fn make<T>(&self) -> T { loop {} } }\npub fn f(p: &C) { /*@ref:11*/make::<a::Doc>()./*@ref:12*/save(); api::/*@ref:13*/make::<b::Doc>()./*@ref:14*/save(); p./*@ref:15*/make::<a::Doc>()./*@ref:16*/save(); }\n"}],
+    "labels": [[11,3],[12,1],[13,3],[14,2],[15,4],[16,1]]
+  }
+]

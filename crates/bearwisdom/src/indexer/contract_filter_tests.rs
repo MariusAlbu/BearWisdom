@@ -86,8 +86,101 @@ fn body_locals_drop_and_contract_symbols_survive() {
 
     let names: Vec<&str> = pf.symbols.iter().map(|s| s.name.as_str()).collect();
     assert_eq!(names, ["TFoo", "DoWork", "FCount"]);
-    assert_eq!(pf.symbols[1].parent_index, Some(0), "method's parent remapped");
-    assert_eq!(pf.symbols[2].parent_index, Some(0), "field's parent remapped past the dropped local");
+    assert_eq!(
+        pf.symbols[1].parent_index,
+        Some(0),
+        "method's parent remapped"
+    );
+    assert_eq!(
+        pf.symbols[2].parent_index,
+        Some(0),
+        "field's parent remapped past the dropped local"
+    );
+}
+
+#[test]
+fn forward_impl_owners_cannot_leak_function_body_members_into_contracts() {
+    let mut pf = make_pf(
+        vec![
+            sym("outer", SymbolKind::Function, None),
+            sym("save", SymbolKind::Method, Some(3)),
+            sym("arg", SymbolKind::Parameter, Some(1)),
+            sym("Model", SymbolKind::Struct, Some(0)),
+        ],
+        vec![make_ref(1, "Other", EdgeKind::TypeRef)],
+    );
+    reduce_to_contract(&mut pf);
+    assert_eq!(
+        pf.symbols
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect::<Vec<_>>(),
+        ["outer"]
+    );
+    assert!(pf.refs.is_empty());
+}
+
+#[test]
+fn forward_external_type_owners_keep_their_contract_members_and_parameters() {
+    let mut pf = make_pf(
+        vec![
+            sym("save", SymbolKind::Method, Some(2)),
+            sym("arg", SymbolKind::Parameter, Some(0)),
+            sym("Model", SymbolKind::Struct, None),
+            sym("local", SymbolKind::Variable, Some(0)),
+        ],
+        vec![],
+    );
+    reduce_to_contract(&mut pf);
+    assert_eq!(pf.symbols.len(), 3);
+    assert_eq!(pf.symbols[0].parent_index, Some(2));
+    assert_eq!(pf.symbols[1].parent_index, Some(0));
+}
+
+#[test]
+fn cyclic_and_dangling_parent_rows_do_not_panic_or_attest_contracts() {
+    let mut pf = make_pf(
+        vec![
+            sym("CycleA", SymbolKind::Class, Some(1)),
+            sym("CycleB", SymbolKind::Class, Some(0)),
+            sym("Dangling", SymbolKind::Parameter, Some(99)),
+            sym("Valid", SymbolKind::Class, None),
+        ],
+        vec![],
+    );
+    reduce_to_contract(&mut pf);
+    assert_eq!(
+        pf.symbols
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Valid"]
+    );
+}
+
+#[test]
+fn rust_forward_local_impls_are_removed_before_cache_hydration() {
+    let source = "fn outer() { use foreign::Other; impl Model { fn save() {} } struct Model; } pub struct Public; impl Public { pub fn run() {} }";
+    let extracted = crate::languages::rust_lang::extract::extract(source);
+    let mut pf = make_pf(extracted.symbols, extracted.refs);
+    pf.language = "rust".into();
+    pf.content = Some(source.into());
+    reduce_to_contract(&mut pf);
+    assert!(!pf
+        .symbols
+        .iter()
+        .any(|s| s.name == "Model" || s.name == "save"));
+    let owner = pf.symbols.iter().position(|s| s.name == "Public").unwrap();
+    let member = pf.symbols.iter().position(|s| s.name == "run").unwrap();
+    assert_eq!(pf.symbols[member].parent_index, Some(owner));
+    let arena = crate::type_checker::core::types::TypeArena::new();
+    let payload = super::super::external_parse_payload::CachedParse::from_parsed(&pf, &arena);
+    let payload = serde_json::to_string(&payload).unwrap();
+    let payload: super::super::external_parse_payload::CachedParse =
+        serde_json::from_str(&payload).unwrap();
+    let hydrated = payload.into_parsed(&arena, &pf.path, &pf.content_hash, pf.size, None);
+    assert_eq!(hydrated.symbols.len(), pf.symbols.len());
+    assert_eq!(hydrated.symbols[member].parent_index, Some(owner));
 }
 
 #[test]
@@ -105,7 +198,11 @@ fn parameters_survive_on_contract_callables_but_not_nested_closures() {
     reduce_to_contract(&mut pf);
 
     let names: Vec<&str> = pf.symbols.iter().map(|s| s.name.as_str()).collect();
-    assert_eq!(names, ["Top", "arg"], "closure and its parameter are body detail");
+    assert_eq!(
+        names,
+        ["Top", "arg"],
+        "closure and its parameter are body detail"
+    );
 }
 
 #[test]
@@ -127,11 +224,27 @@ fn refs_keep_contract_kinds_from_surviving_sources_and_remap_indices() {
     pf.ref_origin_languages = vec![None, None, Some("x".into()), None];
     reduce_to_contract(&mut pf);
 
-    let kept: Vec<(&str, EdgeKind)> =
-        pf.refs.iter().map(|r| (r.target_name.as_str(), r.kind)).collect();
-    assert_eq!(kept, [("TBase", EdgeKind::Inherits), ("TResult", EdgeKind::TypeRef)]);
-    assert_eq!(pf.refs[1].source_symbol_index, 1, "method index unchanged here");
-    assert_eq!(pf.ref_origin_languages.len(), 2, "parallel ref vec sliced in step");
+    let kept: Vec<(&str, EdgeKind)> = pf
+        .refs
+        .iter()
+        .map(|r| (r.target_name.as_str(), r.kind))
+        .collect();
+    assert_eq!(
+        kept,
+        [
+            ("TBase", EdgeKind::Inherits),
+            ("TResult", EdgeKind::TypeRef)
+        ]
+    );
+    assert_eq!(
+        pf.refs[1].source_symbol_index, 1,
+        "method index unchanged here"
+    );
+    assert_eq!(
+        pf.ref_origin_languages.len(),
+        2,
+        "parallel ref vec sliced in step"
+    );
 }
 
 #[test]
@@ -144,6 +257,10 @@ fn body_extras_clear_and_import_refs_survive() {
     reduce_to_contract(&mut pf);
 
     assert_eq!(pf.refs.len(), 1, "imports/re-exports are contract");
-    assert_eq!(pf.content.as_deref(), Some("raw"), "content lifecycle belongs to the caller");
+    assert_eq!(
+        pf.content.as_deref(),
+        Some("raw"),
+        "content lifecycle belongs to the caller"
+    );
     assert!(pf.routes.is_empty() && pf.db_sets.is_empty());
 }

@@ -12,6 +12,7 @@ members = [
     "crates/code-highlight",
     "crates/tree-sitter-dockerfile-0-25",
     "crates/tree-sitter-scss-local",
+    "crates/tree-sitter-typescript-local",
     "tests",
 ]
 
@@ -30,7 +31,7 @@ categories   = ["development-tools", "command-line-utilities", "text-processing"
 cargo_metadata         = "0.19"
 tree-sitter            = "0.25"
 tree-sitter-c-sharp    = "0.23"
-tree-sitter-typescript = "0.23"
+tree-sitter-typescript = { package = "tree-sitter-typescript-local", path = "crates/tree-sitter-typescript-local" }
 # Additional grammars — 30-language support
 tree-sitter-javascript = "0.25"
 tree-sitter-python     = "0.25"
@@ -106,6 +107,8 @@ anyhow                = "1"
 clap                  = { version = "4", features = ["derive"] }
 serde                 = { version = "1", features = ["derive"] }
 serde_json            = "1"
+toml                  = { version = "0.8.23", default-features = false, features = ["parse"] }
+semver                = "1.0.27"
 serde_yaml            = "0.9"
 tracing               = "0.1"
 tracing-subscriber    = { version = "0.3", features = ["env-filter"] }

@@ -162,94 +162,9 @@ pub(super) fn extract_enum(
     })
 }
 
-/// Extract `enum_variant` children from an enum body into the symbol list.
-/// Also emits TypeRef edges for any named types in variant field declarations.
-pub(super) fn extract_enum_variants(
-    body: &Node,
-    source: &str,
-    parent_index: Option<usize>,
-    qualified_prefix: &str,
-    symbols: &mut Vec<ExtractedSymbol>,
-    refs: &mut Vec<ExtractedRef>,
-) {
-    let mut cursor = body.walk();
-    for child in body.children(&mut cursor) {
-        if child.kind() == "enum_variant" {
-            // tree-sitter-rust uses `name` field on enum_variant nodes.
-            // Fall back to the first named identifier child if the field is missing.
-            let field_name_node = child.child_by_field_name("name");
-            let name_node = if field_name_node.is_some() {
-                field_name_node
-            } else {
-                let mut variant_cursor = child.walk();
-                let found = child
-                    .children(&mut variant_cursor)
-                    .find(|n| n.is_named() && n.kind() == "identifier");
-                found
-            };
-
-            if let Some(name_node) = name_node {
-                let name = node_text(&name_node, source);
-                let qualified_name = qualify(&name, qualified_prefix);
-                let sym_idx = symbols.len();
-                symbols.push(ExtractedSymbol {
-                    name,
-                    qualified_name,
-                    kind: SymbolKind::EnumMember,
-                    visibility: None,
-                    start_line: child.start_position().row as u32,
-                    end_line: child.end_position().row as u32,
-                    start_col: child.start_position().column as u32,
-                    end_col: child.end_position().column as u32,
-                    signature: None,
-                    doc_comment: extract_doc_comment(&child, source),
-                    scope_path: scope_from_prefix(qualified_prefix),
-                    parent_index,
-                    byte_offset: 0,
-                    declared_type: None,
-                    return_type: None,
-                    param_types: Vec::new(),
-                    generic_params: Vec::new(),
-                });
-
-                // Extract attributes on the enum variant (e.g. #[default], #[serde(rename="...")]).
-                super::decorators::extract_decorators(&child, source, sym_idx, refs);
-
-                // Emit TypeRefs for any typed fields in the variant body.
-                // Covers tuple variants `Error(ErrorKind)` and struct variants
-                // `Point { x: f32, y: f32 }` whose field types are type_identifiers.
-                let mut vc = child.walk();
-                for variant_child in child.children(&mut vc) {
-                    match variant_child.kind() {
-                        // Tuple variant: `Error(ErrorKind, String)`
-                        "ordered_field_declaration_list" => {
-                            let mut fc = variant_child.walk();
-                            for field in variant_child.children(&mut fc) {
-                                if field.kind() == "type" || field.is_named() {
-                                    extract_type_refs_from_type_node(&field, source, sym_idx, refs);
-                                }
-                            }
-                        }
-                        // Struct variant: `Point { x: f32, y: f32 }`
-                        "field_declaration_list" => {
-                            let mut fc = variant_child.walk();
-                            for field in variant_child.children(&mut fc) {
-                                if field.kind() == "field_declaration" {
-                                    if let Some(type_node) = field.child_by_field_name("type") {
-                                        extract_type_refs_from_type_node(
-                                            &type_node, source, sym_idx, refs,
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-    }
-}
+#[path = "variant_declarations.rs"]
+mod variants;
+pub(super) use variants::extract_enum_variants;
 
 pub(super) fn extract_trait(
     node: &Node,
@@ -503,75 +418,9 @@ pub(super) fn extract_mod(
 ///       name: field_identifier  "field_name"
 ///       type: _type             SomeType
 /// ```
-pub(super) fn extract_struct_fields(
-    struct_node: &Node,
-    source: &str,
-    struct_sym_index: usize,
-    qualified_prefix: &str,
-    symbols: &mut Vec<ExtractedSymbol>,
-    refs: &mut Vec<ExtractedRef>,
-) {
-    let body = match struct_node.child_by_field_name("body") {
-        Some(b) => b,
-        None => return,
-    };
-
-    let mut cursor = body.walk();
-    for child in body.children(&mut cursor) {
-        if child.kind() != "field_declaration" {
-            continue;
-        }
-
-        let name_node = match child.child_by_field_name("name") {
-            Some(n) => n,
-            None => continue,
-        };
-        let field_name = node_text(&name_node, source);
-        if field_name.is_empty() {
-            continue;
-        }
-
-        let qualified_name = qualify(&field_name, qualified_prefix);
-        let visibility = detect_visibility(&child);
-
-        // Build a concise signature: `field_name: TypeText`
-        let sig = if let Some(type_node) = child.child_by_field_name("type") {
-            let type_text = node_text(&type_node, source);
-            Some(format!("{field_name}: {type_text}"))
-        } else {
-            Some(field_name.clone())
-        };
-
-        let field_sym_index = symbols.len();
-        symbols.push(ExtractedSymbol {
-            name: field_name.clone(),
-            qualified_name,
-            kind: SymbolKind::Field,
-            visibility,
-            start_line: child.start_position().row as u32,
-            end_line: child.end_position().row as u32,
-            start_col: child.start_position().column as u32,
-            end_col: child.end_position().column as u32,
-            signature: sig,
-            doc_comment: extract_doc_comment(&child, source),
-            scope_path: scope_from_prefix(qualified_prefix),
-            parent_index: Some(struct_sym_index),
-            byte_offset: 0,
-            declared_type: None,
-            return_type: None,
-            param_types: Vec::new(),
-            generic_params: Vec::new(),
-        });
-
-        // Emit TypeRef for non-primitive field types, attributed to the
-        // FIELD's own symbol index (not the struct's) so the field's
-        // declared type — not the struct's — is what the ref graph records
-        // and what the resolver's TypeRef-derived `field_type_id` sees.
-        if let Some(type_node) = child.child_by_field_name("type") {
-            extract_type_refs_from_type_node(&type_node, source, field_sym_index, refs);
-        }
-    }
-}
+#[path = "field_declarations.rs"]
+mod fields;
+pub(super) use fields::extract_struct_fields;
 
 // ---------------------------------------------------------------------------
 // Function/method signature type extraction

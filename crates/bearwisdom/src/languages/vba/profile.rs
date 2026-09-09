@@ -18,6 +18,7 @@ pub const VBA_PROFILE: LanguageProfile = LanguageProfile {
     has_generics: false,
     has_sum_types: false,
     look_through_optional: false,
+    reference_member_projection: false,
     literal_narrowing: false,
     async_wrappers: &[],
     container_accessors: &[],

@@ -27,28 +27,70 @@ pub(super) type Unresolved = (
     Option<i64>,
     Option<&'static str>,
 );
-/// A per-ref resolution log row: (source_id, target_name, kind, source_line,
-/// source_col, outcome, target_id, confidence, strategy). One row per ref site
-/// processed, regardless of how `edges` / `unresolved_refs` dedup — the
-/// resolution-snapshot instrument's write side (see `db/schema.rs`'s
-/// `ref_resolutions` table).
-pub(super) type RefLog = (
-    i64,
-    String,
-    &'static str,
-    u32,
-    u32,
-    &'static str,
-    Option<i64>,
-    Option<f64>,
-    Option<&'static str>,
-);
+/// Per-reference evidence. Byte offsets survive independently of the legacy
+/// line/column fields (some extractors still emit column zero).
+#[derive(Debug)]
+pub(super) struct RefLog {
+    source_id: i64,
+    target_name: String,
+    kind: &'static str,
+    line: u32,
+    col: u32,
+    byte_offset: u32,
+    selector_byte: u32,
+    outcome: &'static str,
+    target_id: Option<i64>,
+    confidence: Option<f64>,
+    strategy: Option<&'static str>,
+}
+
+impl RefLog {
+    pub(super) fn resolved(
+        source_id: i64,
+        r: &crate::types::ExtractedRef,
+        info: &super::contract::SymbolInfo,
+    ) -> Self {
+        Self {
+            outcome: "resolved",
+            target_id: Some(info.target_symbol_id),
+            confidence: Some(info.confidence),
+            strategy: Some(info.strategy),
+            ..Self::unresolved(source_id, r, false)
+        }
+    }
+
+    pub(super) fn unresolved(
+        source_id: i64,
+        r: &crate::types::ExtractedRef,
+        drained: bool,
+    ) -> Self {
+        Self {
+            source_id,
+            target_name: r.target_name.clone(),
+            kind: r.kind.into(),
+            line: r.line,
+            col: r.col,
+            byte_offset: r.byte_offset,
+            selector_byte: r
+                .chain
+                .as_ref()
+                .and_then(|c| c.segments.last())
+                .map(|s| s.byte_offset)
+                .unwrap_or(r.byte_offset),
+            outcome: if drained { "drained" } else { "unresolved" },
+            target_id: None,
+            confidence: None,
+            strategy: None,
+        }
+    }
+}
 
 pub(super) fn flush_to_db(
     db: &mut Database,
     edges: &[(i64, i64, &'static str, u32, f64, &'static str)],
     unresolved: &[Unresolved],
     ref_log: &[RefLog],
+    censuses: &[super::occurrence_census::FileCensus<'_>],
     clear_existing: bool,
 ) -> Result<()> {
     use rusqlite::types::Value;
@@ -136,8 +178,18 @@ pub(super) fn flush_to_db(
                 placeholders(rows, 10),
             );
             let mut params: Vec<Value> = Vec::with_capacity(rows * 10);
-            for (sid, name, kind, line, module, pkg, from_snippet, drained, cause_symbol_id, cause_kind) in
-                &unresolved[start..end]
+            for (
+                sid,
+                name,
+                kind,
+                line,
+                module,
+                pkg,
+                from_snippet,
+                drained,
+                cause_symbol_id,
+                cause_kind,
+            ) in &unresolved[start..end]
             {
                 params.push(Value::Integer(*sid));
                 params.push(Value::Text(name.clone()));
@@ -171,7 +223,7 @@ pub(super) fn flush_to_db(
     }
 
     // Ref resolution log: (source_id, target_name, kind, source_line,
-    // source_col, outcome, target_id, confidence, strategy)
+    // source_col, outcome, target_id, confidence, strategy, source_byte)
     if !ref_log.is_empty() {
         let mut start = 0;
         while start < ref_log.len() {
@@ -179,32 +231,32 @@ pub(super) fn flush_to_db(
             let rows = end - start;
             let sql = format!(
                 "INSERT INTO ref_resolutions \
-                 (source_id, target_name, kind, source_line, source_col, outcome, target_id, confidence, strategy) \
+                 (source_id, target_name, kind, source_line, source_col, outcome, target_id, confidence, strategy, source_byte, source_selector_byte) \
                  VALUES {}",
-                placeholders(rows, 9),
+                placeholders(rows, 11),
             );
-            let mut params: Vec<Value> = Vec::with_capacity(rows * 9);
-            for (sid, name, kind, line, col, outcome, target_id, confidence, strategy) in
-                &ref_log[start..end]
-            {
-                params.push(Value::Integer(*sid));
-                params.push(Value::Text(name.clone()));
-                params.push(Value::Text((*kind).to_string()));
-                params.push(Value::Integer(*line as i64));
-                params.push(Value::Integer(*col as i64));
-                params.push(Value::Text((*outcome).to_string()));
-                params.push(match target_id {
-                    Some(v) => Value::Integer(*v),
+            let mut params: Vec<Value> = Vec::with_capacity(rows * 11);
+            for row in &ref_log[start..end] {
+                params.push(Value::Integer(row.source_id));
+                params.push(Value::Text(row.target_name.clone()));
+                params.push(Value::Text(row.kind.to_string()));
+                params.push(Value::Integer(row.line as i64));
+                params.push(Value::Integer(row.col as i64));
+                params.push(Value::Text(row.outcome.to_string()));
+                params.push(match row.target_id {
+                    Some(v) => Value::Integer(v),
                     None => Value::Null,
                 });
-                params.push(match confidence {
-                    Some(v) => Value::Real(*v),
+                params.push(match row.confidence {
+                    Some(v) => Value::Real(v),
                     None => Value::Null,
                 });
-                params.push(match strategy {
-                    Some(s) => Value::Text((*s).to_string()),
+                params.push(match row.strategy {
+                    Some(s) => Value::Text(s.to_string()),
                     None => Value::Null,
                 });
+                params.push(Value::Integer(row.byte_offset as i64));
+                params.push(Value::Integer(row.selector_byte as i64));
             }
             tx.prepare_cached(&sql)
                 .context("Failed to prepare ref_resolutions insert")?
@@ -214,6 +266,7 @@ pub(super) fn flush_to_db(
         }
     }
 
+    super::occurrence_census::persist(&tx, censuses, clear_existing)?;
     tx.commit()
         .context("Failed to commit single-pass resolution transaction")?;
     Ok(())

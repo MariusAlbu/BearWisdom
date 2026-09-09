@@ -22,6 +22,15 @@ pub struct SymbolIds {
 }
 
 impl SymbolIds {
+    /// Exact persisted identity only. Missing/skipped slots must never borrow
+    /// a same-qualified-name row (including overloads and sibling bindings).
+    pub fn row_id(&self, path: &str, idx: usize) -> Option<i64> {
+        self.by_row
+            .get(path)?
+            .get(idx)
+            .copied()
+            .filter(|&id| id != 0)
+    }
     /// The db id of `pf.symbols[idx]` — positional when the file's row vector
     /// exists, `(path, qname)` fallback otherwise (synthetic/test inputs).
     pub fn id_of(&self, path: &str, idx: usize, qname: &str) -> Option<i64> {
@@ -33,7 +42,9 @@ impl SymbolIds {
                 }
             }
         }
-        self.by_key.get(&(path.to_string(), qname.to_string())).copied()
+        self.by_key
+            .get(&(path.to_string(), qname.to_string()))
+            .copied()
     }
 
     /// The qname-keyed view, for lookups that have no row index.
@@ -96,6 +107,13 @@ impl SymbolIds {
 
 impl From<SymbolIdMap> for SymbolIds {
     fn from(by_key: SymbolIdMap) -> Self {
-        Self { by_key, by_row: HashMap::new() }
+        Self {
+            by_key,
+            by_row: HashMap::new(),
+        }
     }
 }
+
+#[cfg(test)]
+#[path = "symbol_ids_tests.rs"]
+mod tests;

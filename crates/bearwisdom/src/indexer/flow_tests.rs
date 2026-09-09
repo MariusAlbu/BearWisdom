@@ -107,6 +107,18 @@ fn mk_sym(name: &str, kind: SymbolKind, start_line: u32) -> ExtractedSymbol {
     }
 }
 
+/// Identity-bearing fixtures need actual spans, not name-correlated placeholders.
+fn mk_binding(source: &str, name: &str, kind: SymbolKind, byte: usize) -> ExtractedSymbol {
+    assert_eq!(&source[byte..byte + name.len()], name);
+    let prefix = &source[..byte];
+    let line = prefix.bytes().filter(|&b| b == b'\n').count() as u32;
+    let mut symbol = mk_sym(name, kind, line);
+    symbol.start_col = prefix.rsplit('\n').next().unwrap().len() as u32;
+    symbol.end_col = symbol.start_col + name.len() as u32;
+    symbol.byte_offset = byte as u32;
+    symbol
+}
+
 fn mk_call_ref(target: &str, line: u32, byte_offset: u32) -> ExtractedRef {
     ExtractedRef {
         is_include: false,
@@ -137,13 +149,20 @@ fn flow_assignment_binds_lhs_to_rhs_ref() {
     let source = "const x = foo();\n";
     // "const x = foo();" byte positions:
     //   'const ' = 0..6, 'x' = 6, ' = ' = 7..10, 'foo' = 10..13, '()' = 13..15
-    let mut symbols = vec![mk_sym("x", SymbolKind::Variable, 0)];
+    let mut symbols = vec![mk_binding(source, "x", SymbolKind::Variable, 6)];
     let mut refs = vec![
         // Ref for `foo()` call at byte offset 10 (start of `foo`).
         mk_call_ref("foo", 0, 10),
     ];
 
-    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &ts_grammar(),
+        &TS_TEST_FLOW,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     assert_eq!(
         meta.flow_binding_lhs.get(&0),
@@ -160,12 +179,19 @@ fn flow_object_destructure_binds_each_field() {
     let source = "const { hits, total: count } = useAlgolia();\n";
     // byte positions: 'hits' = 8, 'count' = 21, 'useAlgolia' = 31, '()' = 41..43
     let mut symbols = vec![
-        mk_sym("hits", SymbolKind::Variable, 0),
-        mk_sym("count", SymbolKind::Variable, 0),
+        mk_binding(source, "hits", SymbolKind::Variable, 8),
+        mk_binding(source, "count", SymbolKind::Variable, 21),
     ];
     let mut refs = vec![mk_call_ref("useAlgolia", 0, 31)];
 
-    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &ts_grammar(),
+        &TS_TEST_FLOW,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     let entries = meta
         .flow_binding_destructure
@@ -189,10 +215,17 @@ fn flow_object_destructure_await_marks_the_ref_awaited() {
     // `handle`.
     let source = "const { handle } = await fetchStatus();\n";
     // byte positions: 'handle' = 8, 'await' = 19, 'fetchStatus' = 25
-    let mut symbols = vec![mk_sym("handle", SymbolKind::Variable, 0)];
+    let mut symbols = vec![mk_binding(source, "handle", SymbolKind::Variable, 8)];
     let mut refs = vec![mk_call_ref("fetchStatus", 0, 25)];
 
-    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &ts_grammar(),
+        &TS_TEST_FLOW,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     assert!(
         meta.flow_binding_destructure.contains_key(&0),
@@ -212,13 +245,20 @@ fn flow_nested_construction_binds_outer_constructor() {
     let source = "const x = new Outer(new Inner());\n";
     //   'const x = ' = 0..10, 'new ' = 10..14, 'Outer' = 14..19,
     //   '(new ' = 19..24, 'Inner' = 24..29
-    let mut symbols = vec![mk_sym("x", SymbolKind::Variable, 0)];
+    let mut symbols = vec![mk_binding(source, "x", SymbolKind::Variable, 6)];
     let mut refs = vec![
         mk_instantiates_ref("Outer", 0, 14),
         mk_instantiates_ref("Inner", 0, 24),
     ];
 
-    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &ts_grammar(),
+        &TS_TEST_FLOW,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     assert_eq!(
         meta.flow_binding_lhs.get(&0),
@@ -238,13 +278,20 @@ fn flow_reassignment_also_binds() {
     //   'let x = 1;' = 0..10
     //   '\n' = 10
     //   'x = foo();' = 11..21  (x at 11, foo at 15)
-    let mut symbols = vec![mk_sym("x", SymbolKind::Variable, 0)];
+    let mut symbols = vec![mk_binding(source, "x", SymbolKind::Variable, 4)];
     let mut refs = vec![
         // foo() at byte 15
         mk_call_ref("foo", 1, 15),
     ];
 
-    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &ts_grammar(),
+        &TS_TEST_FLOW,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     assert_eq!(
         meta.flow_binding_lhs.get(&0),
@@ -261,7 +308,14 @@ fn flow_return_binds_call_to_function() {
     let mut symbols = vec![mk_sym("makeUser", SymbolKind::Function, 0)];
     let mut refs = vec![mk_call_ref("build", 1, 31)];
 
-    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &ts_grammar(),
+        &TS_TEST_FLOW,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     assert_eq!(
         meta.flow_return_lhs.get(&0),
@@ -279,7 +333,14 @@ fn flow_return_bare_identifier_records_ident() {
     let mut symbols = vec![mk_sym("f", SymbolKind::Function, 0)];
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &ts_grammar(),
+        &TS_TEST_FLOW,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     assert!(
         meta.flow_return_lhs.is_empty(),
@@ -302,7 +363,14 @@ fn flow_return_ignores_nested_callback_return() {
     let mut symbols = vec![mk_sym("f", SymbolKind::Function, 0)];
     let mut refs = vec![mk_call_ref("g", 1, 45)];
 
-    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &ts_grammar(),
+        &TS_TEST_FLOW,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     assert!(
         meta.flow_return_lhs.is_empty(),
@@ -321,7 +389,14 @@ fn flow_return_captures_nested_if_return() {
     let mut symbols = vec![mk_sym("makeUser", SymbolKind::Function, 0)];
     let mut refs = vec![mk_call_ref("build", 2, build_off)];
 
-    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &ts_grammar(),
+        &TS_TEST_FLOW,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     assert_eq!(
         meta.flow_return_lhs.get(&0),
@@ -340,7 +415,14 @@ fn flow_return_captures_arrow_const_body() {
     let mut symbols = vec![mk_sym("makeUser", SymbolKind::Function, 0)];
     let mut refs = vec![mk_call_ref("build", 1, build_off)];
 
-    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &ts_grammar(),
+        &TS_TEST_FLOW,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     assert_eq!(
         meta.flow_return_lhs.get(&0),
@@ -361,7 +443,14 @@ fn flow_return_nested_callback_still_ignored() {
     let mut symbols = vec![mk_sym("f", SymbolKind::Function, 0)];
     let mut refs = vec![mk_call_ref("g", 2, g_off)];
 
-    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &ts_grammar(),
+        &TS_TEST_FLOW,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     assert!(
         meta.flow_return_lhs.is_empty(),
@@ -375,7 +464,14 @@ fn flow_narrowing_captures_instanceof_body() {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &ts_grammar(),
+        &TS_TEST_FLOW,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     assert!(
         !meta.narrowings.is_empty(),
@@ -397,7 +493,14 @@ fn flow_reassignment_kills_narrowing_for_rest_of_scope() {
     let mut symbols = vec![mk_sym("x", SymbolKind::Variable, 0)];
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &ts_grammar(),
+        &TS_TEST_FLOW,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     let n = meta
         .narrowings
@@ -432,7 +535,14 @@ fn flow_discriminant_guard_captures_prop_and_literal() {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &ts_grammar(),
+        &TS_TEST_FLOW,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     assert_eq!(
         meta.discriminant_narrowings.len(),
@@ -452,7 +562,14 @@ fn flow_inequality_guard_is_not_a_discriminant() {
     let source = "function f(s: Shape) {\n  if (s.kind !== \"circle\") {\n    return;\n  }\n}\n";
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
-    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &ts_grammar(),
+        &TS_TEST_FLOW,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
     assert!(meta.discriminant_narrowings.is_empty());
 }
 
@@ -461,7 +578,14 @@ fn flow_discriminant_switch_captures_each_case() {
     let source = "function f(s: Shape) {\n  switch (s.kind) {\n    case \"circle\": s.radius; break;\n    case \"square\": s.side; break;\n  }\n}\n";
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
-    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &ts_grammar(),
+        &TS_TEST_FLOW,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
     assert_eq!(
         meta.discriminant_narrowings.len(),
         2,
@@ -535,7 +659,14 @@ fn flow_type_args_populate_chain_segment() {
         call_args: Vec::new(),
     }];
 
-    let _ = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let _ = run_flow_queries(
+        source,
+        &ts_grammar(),
+        &TS_TEST_FLOW,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     let segs = &refs[0].chain.as_ref().unwrap().segments;
     let last = segs.last().unwrap();
@@ -586,7 +717,14 @@ fn flow_bare_call_type_args_populate_segment() {
         call_args: Vec::new(),
     }];
 
-    let _ = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let _ = run_flow_queries(
+        source,
+        &ts_grammar(),
+        &TS_TEST_FLOW,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     let last = refs[0].chain.as_ref().unwrap().segments.last().unwrap();
     assert_eq!(
@@ -608,10 +746,22 @@ fn rust_let_mut_annotation_records_declared_type() {
     let grammar = RustLangPlugin
         .grammar("rust")
         .expect("rust grammar must load");
-    let mut symbols = vec![mk_sym("index_writer", SymbolKind::Variable, 1)];
+    let mut symbols = vec![mk_binding(
+        source,
+        "index_writer",
+        SymbolKind::Variable,
+        source.find("index_writer").unwrap(),
+    )];
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    let meta = run_flow_queries(source, &grammar, &RUST_FLOW_CONFIG, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &grammar,
+        &RUST_FLOW_CONFIG,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     assert_eq!(
         meta.flow_binding_decl_type.get(&0),
@@ -633,10 +783,22 @@ fn rust_generic_annotation_records_full_type() {
     let grammar = RustLangPlugin
         .grammar("rust")
         .expect("rust grammar must load");
-    let mut symbols = vec![mk_sym("names", SymbolKind::Variable, 1)];
+    let mut symbols = vec![mk_binding(
+        source,
+        "names",
+        SymbolKind::Variable,
+        source.find("names").unwrap(),
+    )];
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    let meta = run_flow_queries(source, &grammar, &RUST_FLOW_CONFIG, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &grammar,
+        &RUST_FLOW_CONFIG,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     assert_eq!(
         meta.flow_binding_decl_type.get(&0),
@@ -659,10 +821,17 @@ fn ts_function_parameter_annotation_records_declared_type() {
     let grammar = TypeScriptPlugin
         .grammar("typescript")
         .expect("typescript grammar must load");
-    let mut symbols = vec![mk_sym("text", SymbolKind::Property, 0)];
+    let mut symbols = vec![mk_binding(source, "text", SymbolKind::Parameter, 21)];
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    let meta = run_flow_queries(source, &grammar, &TS_FLOW_CONFIG, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &grammar,
+        &TS_FLOW_CONFIG,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     assert_eq!(
         meta.flow_binding_decl_type.get(&0),
@@ -685,7 +854,14 @@ fn csharp_declaration_pattern_narrows_binding() {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    let meta = run_flow_queries(source, &grammar, cfg, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &grammar,
+        cfg,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     let n = meta
         .narrowings
@@ -708,13 +884,25 @@ fn rust_try_operator_marks_binding_for_unwrap() {
     let grammar = RustLangPlugin
         .grammar("rust")
         .expect("rust grammar must load");
-    let mut symbols = vec![mk_sym("reader", SymbolKind::Variable, 1)];
+    let mut symbols = vec![mk_binding(
+        source,
+        "reader",
+        SymbolKind::Variable,
+        source.find("reader").unwrap(),
+    )];
     // A Calls ref for `index.reader()` — byte offset inside the try_expression.
     // "fn f() {\n    let reader = " is 26 bytes; `index.reader()?` starts at 26,
     // the `reader` call segment lands a few bytes in.
     let mut refs = vec![mk_call_ref("reader", 1, 32)];
 
-    let meta = run_flow_queries(source, &grammar, &RUST_FLOW_CONFIG, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &grammar,
+        &RUST_FLOW_CONFIG,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     assert_eq!(
         meta.flow_binding_lhs.get(&0),
@@ -739,7 +927,14 @@ fn java_instanceof_pattern_binding_narrows() {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    let meta = run_flow_queries(source, &grammar, cfg, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &grammar,
+        cfg,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     assert!(
         meta.narrowings
@@ -767,7 +962,14 @@ fn ruby_kind_of_narrows_like_is_a() {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    let meta = run_flow_queries(source, &grammar, cfg, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &grammar,
+        cfg,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     assert!(
         meta.narrowings
@@ -793,7 +995,14 @@ fn go_type_switch_narrows_alias_per_case() {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    let meta = run_flow_queries(source, &grammar, cfg, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &grammar,
+        cfg,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     assert!(
         meta.narrowings
@@ -813,7 +1022,14 @@ fn ts_typeof_string_guard_narrows() {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    let meta = run_flow_queries(source, &ts_grammar(), &TS_FLOW_CONFIG, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &ts_grammar(),
+        &TS_FLOW_CONFIG,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     assert!(
         meta.narrowings
@@ -832,7 +1048,14 @@ fn flow_early_return_guard_negates_and_scopes_after_block() {
     let source = "function f(s: Shape) {\n  if (s.kind !== \"circle\") return;\n  s.radius;\n}\n";
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
-    let meta = run_flow_queries(source, &ts_grammar(), &TS_FLOW_CONFIG, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &ts_grammar(),
+        &TS_FLOW_CONFIG,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     let d = meta
         .discriminant_narrowings
@@ -878,7 +1101,14 @@ fn assert_nested_if_return_binds(
     let mut symbols = vec![mk_sym(fn_name, fn_kind, fn_line)];
     let mut refs = vec![mk_call_ref("build", build_line, build_off)];
 
-    let meta = run_flow_queries(src, grammar, &cfg, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        src,
+        grammar,
+        &cfg,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     assert_eq!(
         meta.flow_return_lhs.get(&0),
@@ -1038,7 +1268,14 @@ fn assert_concise_body_return_binds(
     let mut symbols = vec![mk_sym(fn_name, fn_kind, fn_line)];
     let mut refs = vec![mk_call_ref("build", build_line, build_off)];
 
-    let meta = run_flow_queries(src, grammar, &cfg, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        src,
+        grammar,
+        &cfg,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     assert_eq!(
         meta.flow_return_lhs.get(&0),
@@ -1109,7 +1346,14 @@ fn flow_return_ts_block_body_tail_is_not_captured() {
     let build_off = src.find("build").unwrap() as u32;
     let mut symbols = vec![mk_sym("f", SymbolKind::Function, 0)];
     let mut refs = vec![mk_call_ref("build", 1, build_off)];
-    let meta = run_flow_queries(src, &ts_grammar(), &cfg, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        src,
+        &ts_grammar(),
+        &cfg,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
     assert_eq!(
         meta.flow_return_lhs.get(&0),
         Some(&0),
@@ -1141,7 +1385,14 @@ fn flow_return_nested_lambda_not_attributed_cross_lang() {
         let g_line = src[..g_off as usize].matches('\n').count() as u32;
         let mut symbols = vec![mk_sym(fn_name, SymbolKind::Method, 0)];
         let mut refs = vec![mk_call_ref("inner", g_line, g_off)];
-        let meta = run_flow_queries(src, grammar, &cfg, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+        let meta = run_flow_queries(
+            src,
+            grammar,
+            &cfg,
+            &mut symbols,
+            &mut refs,
+            BindingSymbols::Synthesize,
+        );
         assert!(
             meta.flow_return_lhs.is_empty(),
             "{prefix}: a return inside a nested lambda must not bind to {fn_name}; got {:?}",
@@ -1230,7 +1481,14 @@ fn assert_tail_block_return_binds(
     let mut symbols = vec![mk_sym(fn_name, fn_kind, fn_line)];
     let mut refs = vec![mk_call_ref("build", build_line, build_off)];
 
-    let meta = run_flow_queries(src, grammar, &cfg, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        src,
+        grammar,
+        &cfg,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     assert_eq!(
         meta.flow_return_lhs.get(&0),
@@ -1318,7 +1576,14 @@ fn flow_return_rust_trailing_semicolon_not_a_return() {
     let build_off = src.find("build").unwrap() as u32;
     let mut symbols = vec![mk_sym("make_user", SymbolKind::Function, 0)];
     let mut refs = vec![mk_call_ref("build", 1, build_off)];
-    let meta = run_flow_queries(src, &g, &cfg, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        src,
+        &g,
+        &cfg,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
     assert!(
         meta.flow_return_lhs.is_empty(),
         "a semicolon-terminated trailing expression returns unit, not the call type"
@@ -1344,7 +1609,14 @@ fn flow_return_rust_trailing_let_not_a_return() {
     let build_off = src.find("build").unwrap() as u32;
     let mut symbols = vec![mk_sym("make_user", SymbolKind::Function, 0)];
     let mut refs = vec![mk_call_ref("build", 1, build_off)];
-    let meta = run_flow_queries(src, &g, &cfg, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        src,
+        &g,
+        &cfg,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
     assert!(
         meta.flow_return_lhs.is_empty(),
         "a block ending in a `let` binding returns unit, not the bound call's type"
@@ -1368,7 +1640,14 @@ fn flow_return_ts_block_tail_not_a_return() {
     let build_off = src.find("build").unwrap() as u32;
     let mut symbols = vec![mk_sym("f", SymbolKind::Function, 0)];
     let mut refs = vec![mk_call_ref("build", 1, build_off)];
-    let meta = run_flow_queries(src, &ts_grammar(), &cfg, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        src,
+        &ts_grammar(),
+        &cfg,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
     assert!(
         meta.flow_return_lhs.is_empty(),
         "TS is not block_tail_returns — a trailing statement must not bind as a return"
@@ -1388,7 +1667,14 @@ fn kotlin_is_smartcast_narrows_in_if_block() {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    let meta = run_flow_queries(source, &grammar, cfg, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &grammar,
+        cfg,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     let n = meta
         .narrowings
@@ -1419,7 +1705,14 @@ fn kotlin_smartcast_dropped_on_reassignment() {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    let meta = run_flow_queries(source, &grammar, cfg, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &grammar,
+        cfg,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     let n = meta
         .narrowings
@@ -1481,13 +1774,20 @@ fn flow_assignment_skips_refs_inside_callback_argument() {
     let source = "const rendered = render(() => f());\n";
     let render_off = source.find("render(").unwrap() as u32;
     let f_off = source.find("f()").unwrap() as u32;
-    let mut symbols = vec![mk_sym("rendered", SymbolKind::Variable, 0)];
+    let mut symbols = vec![mk_binding(source, "rendered", SymbolKind::Variable, 6)];
     let mut refs = vec![
         mk_chain_call_ref("render", 0, render_off),
         mk_chain_call_ref("f", 0, f_off),
     ];
 
-    let meta = run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        source,
+        &ts_grammar(),
+        &TS_TEST_FLOW,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
 
     assert_eq!(
         meta.flow_binding_lhs.get(&0),
@@ -1516,9 +1816,21 @@ fn run_ts_assignment(source: &str) -> crate::types::FlowMeta {
         .next()
         .unwrap_or("x")
         .trim_end_matches(':');
-    let mut symbols = vec![mk_sym(var_name, SymbolKind::Variable, 0)];
+    let mut symbols = vec![mk_binding(
+        source,
+        var_name,
+        SymbolKind::Variable,
+        source.find(' ').unwrap() + 1,
+    )];
     let mut refs: Vec<ExtractedRef> = Vec::new();
-    run_flow_queries(source, &ts_grammar(), &TS_TEST_FLOW, &mut symbols, &mut refs, BindingSymbols::Synthesize)
+    run_flow_queries(
+        source,
+        &ts_grammar(),
+        &TS_TEST_FLOW,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    )
 }
 
 #[test]

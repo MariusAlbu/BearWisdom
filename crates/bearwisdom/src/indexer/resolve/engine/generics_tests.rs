@@ -95,7 +95,14 @@ fn an_argument_that_is_itself_a_type_parameter_does_not_bind() {
     let p = params(&["T", "U"]);
     let mut env: FxHashMap<String, TypeId> = FxHashMap::default();
 
-    unify_into(&lookup, &arena, arena.class("T"), arena.class("U"), &p, &mut env);
+    unify_into(
+        &lookup,
+        &arena,
+        arena.class("T"),
+        arena.class("U"),
+        &p,
+        &mut env,
+    );
 
     assert!(env.is_empty());
 }
@@ -181,7 +188,7 @@ fn parameter_patterns_come_from_the_stored_signature() {
     let arena = TypeArena::new();
     let lookup = Lookup::new();
 
-    let patterns = param_patterns(&arena, &find_method());
+    let patterns = param_patterns(&lookup, &arena, &find_method());
 
     assert_eq!(patterns.len(), 1);
     assert_eq!(arena.get(patterns[0]), Type::Class("T".to_string()));

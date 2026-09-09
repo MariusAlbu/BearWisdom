@@ -100,7 +100,7 @@ pub fn extract(source: &str) -> ExtractionResult {
 
     let root = tree.root_node();
 
-    extract_from_node(root, source, &mut syms, &mut refs, None, "", &mut alias_targets);
+    super::owners::extract_bound(root, source, &mut syms, &mut refs, &mut alias_targets);
 
     // Second pass: scan the full CST for type_identifier and scoped_type_identifier
     // nodes, emitting TypeRef for each non-primitive type found anywhere in the file.
@@ -413,7 +413,11 @@ fn skip_balanced(bytes: &[u8], open_idx: usize, open: u8, close: u8) -> Option<u
             b'"' => {
                 i += 1;
                 while i < bytes.len() && bytes[i] != b'"' {
-                    i += if bytes[i] == b'\\' && i + 1 < bytes.len() { 2 } else { 1 };
+                    i += if bytes[i] == b'\\' && i + 1 < bytes.len() {
+                        2
+                    } else {
+                        1
+                    };
                 }
                 i += 1;
             }
@@ -476,7 +480,7 @@ fn is_valid_rust_target_name(name: &str) -> bool {
 // Core traversal
 // ---------------------------------------------------------------------------
 
-fn extract_from_node(
+pub(super) fn extract_from_node(
     node: Node,
     source: &str,
     symbols: &mut Vec<ExtractedSymbol>,

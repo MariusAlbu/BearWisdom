@@ -77,11 +77,7 @@ pub(crate) fn snapshot(
 
     // Keys superseded by the consolidated schema. Removal is unconditional so
     // an entry captured under the older shape converges on the current one.
-    let superseded = [
-        "edges",
-        "unresolved_refs",
-        "unresolved_ref_count",
-    ];
+    let superseded = ["edges", "unresolved_refs", "unresolved_ref_count"];
     if let Some(obj) = entry.as_object_mut() {
         for k in superseded {
             obj.remove(k);
@@ -184,7 +180,10 @@ fn assertion_value(
         // regression against a threshold nothing can reach.
         _ => {
             let ty = key.strip_prefix("min_")?.strip_suffix("_edges")?;
-            Some(serde_json::json!(flow_edge_types.get(ty).copied().unwrap_or(0)))
+            Some(serde_json::json!(flow_edge_types
+                .get(ty)
+                .copied()
+                .unwrap_or(0)))
         }
     }
 }

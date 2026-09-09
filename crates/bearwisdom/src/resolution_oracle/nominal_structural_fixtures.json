@@ -1,0 +1,14 @@
+[
+  {"name":"interface_key_inventory","preamble":"interface Model { a: string; b: number }","from":"keyof Model","to":"'a' | 'b'","assignable":true,"diagnosticCodes":[]},
+  {"name":"interface_selected_property","preamble":"interface Model { a: string; b: number }","from":"Model['b']","to":"number","assignable":true,"diagnosticCodes":[]},
+  {"name":"generic_selected_property","preamble":"interface Model<T> { value: T }","from":"Model<string>['value']","to":"string","assignable":true,"diagnosticCodes":[]},
+  {"name":"generic_default_property","preamble":"interface Model<T = string> { value: T }","from":"Model['value']","to":"string","assignable":true,"diagnosticCodes":[]},
+  {"name":"interface_finite_mapped_projection","preamble":"interface Model { readonly a?: string; b: number } type Copy<T> = { [P in keyof T]: T[P] };","from":"Copy<Model>","to":"{ readonly a?: string; b: number }","assignable":true,"diagnosticCodes":[]},
+  {"name":"inherited_generic_property","preamble":"interface Parent<T> { value: T } interface Model<U> extends Parent<U> { own: number }","from":"Model<string>['value']","to":"string","assignable":true,"diagnosticCodes":[]},
+  {"name":"multiple_base_key_inventory","preamble":"interface A { a: string } interface B { b: number } interface Model extends A, B { own: boolean }","from":"keyof Model","to":"'a' | 'b' | 'own'","assignable":true,"diagnosticCodes":[]},
+  {"name":"merged_interface_key_inventory","preamble":"interface Model { a: string } interface Model { b: number }","from":"keyof Model","to":"'a' | 'b'","assignable":true,"diagnosticCodes":[]},
+  {"name":"nominal_selected_property_does_not_borrow_namesake","preamble":"interface Model { value: number } interface Other { value: string }","from":"Model['value']","to":"string","assignable":false,"diagnosticCodes":[2322]},
+  {"name":"optional_nominal_read_includes_undefined","preamble":"interface Model { value?: string }","from":"Model['value']","to":"string","assignable":false,"diagnosticCodes":[2322]},
+  {"name":"nominal_keys_do_not_evaluate_unselected_conditional_values","preamble":"interface Model<T> { value: T extends string ? number : boolean; other: string }","from":"keyof Model<string>","to":"'value' | 'other'","assignable":true,"diagnosticCodes":[]},
+  {"name":"selected_member_does_not_evaluate_unselected_conditional_values","preamble":"interface Model<T> { value: T extends string ? number : boolean; other: string }","from":"Model<string>['other']","to":"string","assignable":true,"diagnosticCodes":[]}
+]

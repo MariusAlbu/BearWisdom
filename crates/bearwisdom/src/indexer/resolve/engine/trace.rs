@@ -53,7 +53,9 @@ pub fn trace(args: fmt::Arguments<'_>) {
 #[macro_export]
 macro_rules! tracef {
     ($($arg:tt)*) => {
-        $crate::indexer::resolve::engine::trace::trace(format_args!($($arg)*))
+        if $crate::indexer::resolve::engine::trace::TRACE_ACTIVE.load(::std::sync::atomic::Ordering::Relaxed) {
+            $crate::indexer::resolve::engine::trace::trace(format_args!($($arg)*))
+        }
     };
 }
 
@@ -77,7 +79,11 @@ pub fn set_filters(filters: Vec<(String, u32, String)>) {
     if let Ok(mut f) = TRACE_FILTERS.lock() {
         *f = filters
             .into_iter()
-            .map(|(file_suffix, line, target)| TraceFilter { file_suffix, line, target })
+            .map(|(file_suffix, line, target)| TraceFilter {
+                file_suffix,
+                line,
+                target,
+            })
             .collect();
     }
 }

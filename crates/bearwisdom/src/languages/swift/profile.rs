@@ -77,6 +77,7 @@ pub const SWIFT_PROFILE: LanguageProfile = LanguageProfile {
     has_generics: true,
     has_sum_types: true,
     look_through_optional: true,
+    reference_member_projection: false,
     literal_narrowing: false,
     async_wrappers: &["Task", "AsyncSequence"],
     container_accessors: &[],
@@ -98,7 +99,8 @@ pub const SWIFT_PROFILE: LanguageProfile = LanguageProfile {
         module_anchor_terminal: false,
         relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
         external_by_import: None,
-        module_scope: crate::type_checker::profile::language_profile::ModuleScope::SourcesTargetSubtree,
+        module_scope:
+            crate::type_checker::profile::language_profile::ModuleScope::SourcesTargetSubtree,
         // Swift has no `namespace` node — a declaration's qname never carries its
         // module as a prefix, so `QnameUnder` can never match a whole-module
         // import. `Foundation`/`UIKit` externals are indexed one file per module

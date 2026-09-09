@@ -20,7 +20,9 @@ use std::sync::RwLock;
 
 /// Interned-type identifier. Nonzero so `Option<TypeId>` is one word.
 /// Stable within a workspace build; not durable across indexing runs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub struct TypeId(pub NonZeroU32);
 
 impl TypeId {
@@ -30,7 +32,9 @@ impl TypeId {
 }
 
 /// Generic-parameter identifier. Bound names live in TypeArena::generic_params.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub struct GenericParamId(pub NonZeroU32);
 
 impl GenericParamId {
@@ -39,35 +43,58 @@ impl GenericParamId {
     }
 }
 
-/// Canonical primitive categories. Width-specific integer / float variants
-/// collapse to Int / Float; the engine does not type-check numeric precision.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
-pub enum PrimKind {
-    Int,
-    Float,
-    Str,
-    Char,
-    Bytes,
-    Bool,
-    Unit,
-    Never,
-    Symbol,
-    Unknown,
-}
+#[path = "primitives.rs"]
+mod primitives;
+pub use primitives::PrimKind;
+#[path = "intrinsics.rs"]
+mod intrinsics;
+pub use intrinsics::Intrinsic;
+#[path = "unique_symbols.rs"]
+mod unique_symbols;
+pub use unique_symbols::UniqueSymbol;
+#[path = "type_operators.rs"]
+mod type_operators;
+pub use type_operators::{MappedModifier, TypeOperator, TypeProperty};
+#[path = "indirection.rs"]
+mod indirection;
+pub use indirection::{GenericParamKind, Indirection, Lifetime, Mutability};
+#[path = "nominal_types.rs"]
+mod nominal_types;
+#[path = "type_rebind.rs"]
+mod type_rebind;
+pub use nominal_types::NominalContextId;
+#[path = "callable_types.rs"]
+mod callable_types;
+pub use callable_types::{
+    Callable, CallableGeneric, CallableOrigin, CallableParameter, CallablePredicate,
+};
 
 /// Singleton-type value carrier. `Type::Literal(LitValue::Str("foo"))` is the
 /// type whose only inhabitant is the string `"foo"`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub enum LitValue {
     Str(String),
     Int(i64),
     Bool(bool),
+    /// IEEE-754 bits, canonicalized at ingestion (not a source spelling).
+    Number(u64),
+    /// Little-endian base-2^32 words; zero has no words and no negative sign.
+    BigInt {
+        negative: bool,
+        words: Vec<u32>,
+    },
+    /// Used only when the string contains unpaired UTF-16 surrogates.
+    Utf16(Vec<u16>),
 }
 
 /// Bound info for a generic parameter — captured at extraction time so the
 /// engine can resolve `T` back to the declaration that introduced it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct GenericParamData {
+    #[serde(default)]
+    pub kind: GenericParamKind,
     /// Source name of the parameter (e.g. `T`, `K`, `V`).
     pub name: String,
     /// Index of the symbol that introduces this parameter (function, type,
@@ -77,66 +104,19 @@ pub struct GenericParamData {
     pub bound: Option<TypeId>,
 }
 
-/// The structured form every value, parameter, return, and field receives once
-/// the engine has interned it. Strings appear only inside the nominal arms
-/// (`Class`, `Decl`) and `Literal(LitValue::Str)`; every other type
-/// relationship is by TypeId.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub enum Type {
-    /// Nominal reference identified by fully qualified name. The bootstrap
-    /// nominal: extraction interns these before declaration rows exist, and
-    /// ambient/external/synthesized names never get a row.
-    Class(String),
-    /// Nominal reference bound to a specific declaration row. Identity is
-    /// `symbol_id` — two same-qname declarations intern to distinct TypeIds.
-    /// `qname` rides along for display and the string bridge: `head_qname`
-    /// answers it exactly like a `Class`, so name-keyed consumers see no
-    /// difference. Nominal sameness across the two arms is decided by head
-    /// probes, never by TypeId equality.
-    Decl { symbol_id: i64, qname: String },
-    /// Built-in scalar.
-    Primitive(PrimKind),
-    /// Callable signature.
-    Function {
-        params: Vec<TypeId>,
-        return_: TypeId,
-    },
-    /// Positional fixed-length aggregate.
-    Tuple(Vec<TypeId>),
-    /// Sum of disjoint types. Member lookup returns the intersection of
-    /// members across branches.
-    Union(Vec<TypeId>),
-    /// Combined member set. Member lookup returns the union of members
-    /// across branches.
-    Intersection(Vec<TypeId>),
-    /// Generic application: `List<User>`, `Map<K, V>`, `Promise<Result>`.
-    /// `base` resolves to a Class or TypeAlias.
-    Apply { base: TypeId, args: Vec<TypeId> },
-    /// In-scope generic parameter.
-    Generic { param: GenericParamId },
-    /// Nullable wrapper. Engine looks through it for member resolution when
-    /// `LanguageProfile::look_through_optional` is true.
-    Optional(TypeId),
-    /// Async wrapper. `await` unwraps to the inner type.
-    AsyncWrapper(TypeId),
-    /// Iterable wrapper. `for x in collection` binds `x` to the inner type.
-    Iterator(TypeId),
-    /// The type of a CLASS VALUE (`typeof C`) — the constructor, not an
-    /// instance. Member lookup on it sees statics; a token-shaped parameter
-    /// (`Type<T>`) unifies its instance out of `inner`.
-    Constructor(TypeId),
-    /// Singleton type (literal types).
-    Literal(LitValue),
-    /// Engine bailout — member lookup fails closed rather than guessing.
-    Unknown,
-}
-
+#[path = "type_forms.rs"]
+mod type_forms;
+pub use type_forms::Type;
+#[path = "object_types.rs"]
+mod object_types;
+pub use object_types::{ObjectOrigin, SourceObject};
 #[derive(Default)]
 struct TypeArenaInner {
     types: Vec<Type>,
     intern: FxHashMap<Type, TypeId>,
     qname_to_class: FxHashMap<String, TypeId>,
-    decl_by_symbol: FxHashMap<i64, TypeId>,
+    decl_by_symbol: FxHashMap<(Option<NominalContextId>, i64), TypeId>,
+    nominal_scopes: Vec<nominal_types::Scope>,
     generic_params: Vec<GenericParamData>,
 }
 
@@ -179,6 +159,14 @@ impl TypeArena {
     /// Reads first for the common dedup case; upgrades to write only when
     /// a new entry is needed. Safe to call concurrently.
     pub fn intern(&self, ty: Type) -> TypeId {
+        if let Type::Decl {
+            symbol_id,
+            qname,
+            context,
+        } = ty
+        {
+            return self.intern_decl(&qname, symbol_id, context);
+        }
         if let Some(&id) = self.inner.read().unwrap().intern.get(&ty) {
             return id;
         }
@@ -190,6 +178,8 @@ impl TypeArena {
         }
         let idx = inner.types.len();
         let id = TypeId(NonZeroU32::new((idx + 1) as u32).expect("arena index overflow"));
+        let scope = nominal_types::Scope::capture(&ty, &inner.nominal_scopes);
+        inner.nominal_scopes.push(scope);
         inner.types.push(ty.clone());
         inner.intern.insert(ty, id);
         id
@@ -197,27 +187,19 @@ impl TypeArena {
 
     /// Look up an existing TypeId for a `Type` without inserting.
     pub fn lookup(&self, ty: &Type) -> Option<TypeId> {
-        self.inner.read().unwrap().intern.get(ty).copied()
-    }
-
-    /// Intern a nominal bound to a declaration row. One TypeId per
-    /// declaration: subsequent calls with the same `symbol_id` return it.
-    pub fn decl(&self, qname: &str, symbol_id: i64) -> TypeId {
-        if let Some(&id) = self.inner.read().unwrap().decl_by_symbol.get(&symbol_id) {
-            return id;
+        if let Type::Decl {
+            symbol_id, context, ..
+        } = ty
+        {
+            return self
+                .inner
+                .read()
+                .unwrap()
+                .decl_by_symbol
+                .get(&(*context, *symbol_id))
+                .copied();
         }
-        let id = self.intern(Type::Decl {
-            symbol_id,
-            qname: qname.to_string(),
-        });
-        // Reacquire write to track the fast path. Idempotent insert is safe
-        // under concurrent callers.
-        self.inner
-            .write()
-            .unwrap()
-            .decl_by_symbol
-            .insert(symbol_id, id);
-        id
+        self.inner.read().unwrap().intern.get(ty).copied()
     }
 
     /// Intern a Class type by qualified name. Subsequent calls return the
@@ -235,81 +217,6 @@ impl TypeArena {
             .qname_to_class
             .insert(qname.to_string(), id);
         id
-    }
-
-    /// Rewrite every `Class(name)` whose `name` is a key of `params` to that
-    /// param's `Type::Generic` id, recursing through structural types.
-    /// `intern_type_str` is param-blind — it interns a generic return like
-    /// `Iter<T>` as `Apply{Iter,[Class("T")]}`. Applying this with the owning
-    /// type's `{name → Type::Generic id}` map turns the nominal `Class("T")`
-    /// into the bindable `Generic(T)` so the chain walker's `substitute` can
-    /// resolve it against the receiver's bound args.
-    pub fn rebind_class_params(&self, id: TypeId, params: &FxHashMap<String, TypeId>) -> TypeId {
-        match self.get(id) {
-            Type::Class(name) => params.get(&name).copied().unwrap_or(id),
-            // A bound nominal can never be a generic-param name.
-            Type::Decl { .. } => id,
-            Type::Apply { base, args } => {
-                let base = self.rebind_class_params(base, params);
-                let args = args
-                    .iter()
-                    .map(|&a| self.rebind_class_params(a, params))
-                    .collect();
-                self.intern(Type::Apply { base, args })
-            }
-            Type::Optional(inner) => {
-                let inner = self.rebind_class_params(inner, params);
-                self.intern(Type::Optional(inner))
-            }
-            Type::AsyncWrapper(inner) => {
-                let inner = self.rebind_class_params(inner, params);
-                self.intern(Type::AsyncWrapper(inner))
-            }
-            Type::Iterator(inner) => {
-                let inner = self.rebind_class_params(inner, params);
-                self.intern(Type::Iterator(inner))
-            }
-            Type::Constructor(inner) => {
-                let inner = self.rebind_class_params(inner, params);
-                self.intern(Type::Constructor(inner))
-            }
-            Type::Tuple(elems) => {
-                let elems = elems
-                    .iter()
-                    .map(|&e| self.rebind_class_params(e, params))
-                    .collect();
-                self.intern(Type::Tuple(elems))
-            }
-            Type::Union(branches) => {
-                let branches = branches
-                    .iter()
-                    .map(|&b| self.rebind_class_params(b, params))
-                    .collect();
-                self.intern(Type::Union(branches))
-            }
-            Type::Intersection(branches) => {
-                let branches = branches
-                    .iter()
-                    .map(|&b| self.rebind_class_params(b, params))
-                    .collect();
-                self.intern(Type::Intersection(branches))
-            }
-            Type::Function {
-                params: ps,
-                return_,
-            } => {
-                let ps = ps
-                    .iter()
-                    .map(|&p| self.rebind_class_params(p, params))
-                    .collect();
-                let return_ = self.rebind_class_params(return_, params);
-                self.intern(Type::Function {
-                    params: ps,
-                    return_,
-                })
-            }
-            Type::Primitive(_) | Type::Generic { .. } | Type::Literal(_) | Type::Unknown => id,
-        }
     }
 
     /// Look up the Class TypeId for `qname` without interning.
@@ -358,6 +265,9 @@ impl TypeArena {
             Type::Primitive(p) => {
                 let _ = write!(out, "{p:?}");
             }
+            Type::Intrinsic(kind) => out.push_str(kind.display()),
+            Type::UniqueSymbol(_) => out.push_str("unique symbol"),
+            Type::Operator(op) => op.format(self, out),
             Type::Apply { base, args } => {
                 self.format_type_into(base, out);
                 if !args.is_empty() {
@@ -397,6 +307,8 @@ impl TypeArena {
                     self.format_type_into(*b, out);
                 }
             }
+            Type::Callable(callable) => callable.format(self, out),
+            Type::Object(object) => object.format(self, out),
             Type::Function { params, return_ } => {
                 out.push('(');
                 for (i, p) in params.iter().enumerate() {
@@ -411,6 +323,29 @@ impl TypeArena {
             Type::Generic { param } => {
                 let data = self.generic_param(param);
                 out.push_str(&data.name);
+            }
+            Type::Region(region) => out.push_str(&self.format_region(region)),
+            Type::Indirect {
+                kind,
+                mutability,
+                inner,
+            } => {
+                match kind {
+                    Indirection::Reference(region) => {
+                        out.push('&');
+                        out.push_str(&self.format_region(region));
+                        out.push(' ');
+                        if mutability == Mutability::Mutable {
+                            out.push_str("mut ");
+                        }
+                    }
+                    Indirection::Pointer => out.push_str(if mutability == Mutability::Mutable {
+                        "*mut "
+                    } else {
+                        "*const "
+                    }),
+                }
+                self.format_type_into(inner, out);
             }
             Type::Optional(inner) => {
                 self.format_type_into(inner, out);
@@ -481,8 +416,10 @@ impl TypeArena {
     /// `intern`/`class` calls dedup against the restored set and appended types
     /// get fresh ids after the restored range. Returns the count restored.
     /// Intended for a fresh arena at the start of an incremental load.
+    /// Configured nominal contexts are reminted consistently within this load;
+    /// program views must rebind them before interpreting restored type slots.
     pub fn restore_snapshot(&self, blob: &str) -> usize {
-        let Ok((types, generic_params)) =
+        let Ok((mut types, generic_params)) =
             serde_json::from_str::<(Vec<Type>, Vec<GenericParamData>)>(blob)
         else {
             return 0;
@@ -490,9 +427,24 @@ impl TypeArena {
         let mut inner = self.inner.write().unwrap();
         inner.intern.clear();
         inner.qname_to_class.clear();
+        inner.decl_by_symbol.clear();
+        inner.nominal_scopes.clear();
+        nominal_types::refresh_contexts(&mut types);
         for (i, ty) in types.iter().enumerate() {
             let id = TypeId(NonZeroU32::new((i + 1) as u32).expect("arena index overflow"));
-            inner.intern.insert(ty.clone(), id);
+            if let Type::Decl {
+                context, symbol_id, ..
+            } = ty
+            {
+                inner
+                    .decl_by_symbol
+                    .entry((*context, *symbol_id))
+                    .or_insert(id);
+            } else {
+                inner.intern.insert(ty.clone(), id);
+            }
+            let scope = nominal_types::Scope::capture(ty, &inner.nominal_scopes);
+            inner.nominal_scopes.push(scope);
             if let Type::Class(name) = ty {
                 inner.qname_to_class.insert(name.clone(), id);
             }

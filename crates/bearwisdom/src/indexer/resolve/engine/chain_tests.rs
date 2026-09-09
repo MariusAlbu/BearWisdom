@@ -4,6 +4,38 @@ use crate::indexer::resolve::engine::testkit::{
 };
 use crate::types::{AliasTarget, ChainSegment, EdgeKind, ExtractedRef, MemberChain};
 
+#[test]
+fn duplicate_nominal_members_and_competing_bases_do_not_pick_insertion_order() {
+    for ids in [[71, 72], [72, 71]] {
+        let lookup = Lookup::new()
+            .with_member_id(1, sym(ids[0], "make", "Doc.make", "method", "doc.rs"))
+            .with_member_id(1, sym(ids[1], "make", "Doc.make", "method", "doc.rs"));
+        assert!(lookup_member_by_id(&lookup, 1, "make", &|_| true).is_none());
+        let lookup = Lookup::new()
+            .with_parent_id(1, 2)
+            .with_parent_id(1, 3)
+            .with_member_id(2, sym(ids[0], "make", "Doc.make", "method", "left.rs"))
+            .with_member_id(3, sym(ids[1], "make", "Doc.make", "method", "right.rs"));
+        assert!(lookup_member_by_id(&lookup, 1, "make", &|_| true).is_none());
+    }
+}
+
+#[test]
+fn bound_nominal_member_miss_never_reenters_same_qname_member_index() {
+    let lookup = Lookup::new()
+        .with(sym(71, "Model", "f.Model", "interface", "a.ts"))
+        .with_member(
+            "f.Model",
+            sym(72, "erase", "f.Model.erase", "method", "a.ts"),
+        );
+    let arena = lookup.type_arena().unwrap();
+    let recv = Receiver {
+        ty: arena.decl("f.Model", 71),
+        id: Some(71),
+    };
+    assert!(lookup_member_on_bounded(&lookup, arena, recv, "erase", &|_| true, 8).is_none());
+}
+
 fn seg(name: &str, is_call: bool, kind: SegmentKind) -> ChainSegment {
     ChainSegment {
         name: name.to_string(),
@@ -35,14 +67,32 @@ fn array_destructure_binds_tuple_element_by_position() {
     // member (Signal has none).
     let lookup = Lookup::new()
         .with_local_type("s", "Signal<number>")
-        .with(sym(1, "Signal", "Signal", "type_alias", "ext:ts:solid.d.ts"))
+        .with(sym(
+            1,
+            "Signal",
+            "Signal",
+            "type_alias",
+            "ext:ts:solid.d.ts",
+        ))
         .with_alias(
             "Signal",
             crate::types::AliasTarget::Tuple(vec!["Accessor".to_string(), "Setter".to_string()]),
         )
         .with_generics("Signal", &["T"])
-        .with(sym(40, "Accessor", "Accessor", "type_alias", "ext:ts:solid.d.ts"))
-        .with(sym(50, "Setter", "Setter", "type_alias", "ext:ts:solid.d.ts"));
+        .with(sym(
+            40,
+            "Accessor",
+            "Accessor",
+            "type_alias",
+            "ext:ts:solid.d.ts",
+        ))
+        .with(sym(
+            50,
+            "Setter",
+            "Setter",
+            "type_alias",
+            "ext:ts:solid.d.ts",
+        ));
     let segs = vec![
         seg("s", false, SegmentKind::Identifier),
         seg_tuple("getter", 0),
@@ -108,7 +158,16 @@ fn resolve_cause(lookup: &Lookup, segs: Vec<ChainSegment>, src_qname: &str) -> O
 fn member_missing_on_internal_type_names_the_receiver_declaration() {
     let lookup = Lookup::new()
         .with(sym(1, "Thing", "Thing", "class", "src/thing.ts"))
-        .with_member_id(1, sym(2, "existingMethod", "Thing.existingMethod", "method", "src/thing.ts"));
+        .with_member_id(
+            1,
+            sym(
+                2,
+                "existingMethod",
+                "Thing.existingMethod",
+                "method",
+                "src/thing.ts",
+            ),
+        );
     let segs = vec![
         seg_declared("t", "Thing", &[]),
         seg("missingMethod", true, SegmentKind::Property),
@@ -123,7 +182,13 @@ fn member_missing_on_internal_type_names_the_receiver_declaration() {
 /// exposed this type's surface — rather than the internal `member_missing`.
 #[test]
 fn member_miss_on_unmaterialized_external_type_names_the_declaration() {
-    let lookup = Lookup::new().with(sym(9, "SelectQueryBuilder", "SelectQueryBuilder", "class", "ext:ts:kysely/dist/index.d.ts"));
+    let lookup = Lookup::new().with(sym(
+        9,
+        "SelectQueryBuilder",
+        "SelectQueryBuilder",
+        "class",
+        "ext:ts:kysely/dist/index.d.ts",
+    ));
     let segs = vec![
         seg_declared("qb", "SelectQueryBuilder", &[]),
         seg("selectFrom", true, SegmentKind::Property),
@@ -150,10 +215,15 @@ fn binds_static_member_on_constructor_interface() {
     // `Promise.resolve(...)` — the VALUE `Promise` has type `PromiseConstructor`
     // (`declare var Promise: PromiseConstructor`), so the static `resolve` lives on
     // the constructor interface, not the instance `interface Promise`. The bare root
-    // types to `interface Promise`; the member must fall through to the co-named
-    // `${head}Constructor`. Same shape for `Object.keys` / `Date.now` / `Array.from`.
+    // must use the declared value type, never guess a `${head}Constructor` name.
     let lookup = Lookup::new()
-        .with(sym(1, "Promise", "Promise", "interface", "ext:ts:lib.es5.d.ts"))
+        .with(sym(
+            1,
+            "Promise",
+            "Promise",
+            "interface",
+            "ext:ts:lib.es5.d.ts",
+        ))
         .with(sym(
             2,
             "PromiseConstructor",
@@ -163,8 +233,32 @@ fn binds_static_member_on_constructor_interface() {
         ))
         .with_member(
             "PromiseConstructor",
-            sym(3, "resolve", "PromiseConstructor.resolve", "method", "ext:ts:lib.es5.d.ts"),
-        );
+            sym(
+                3,
+                "resolve",
+                "PromiseConstructor.resolve",
+                "method",
+                "ext:ts:lib.es5.d.ts",
+            ),
+        )
+        .with_member_id(
+            2,
+            sym(
+                3,
+                "resolve",
+                "PromiseConstructor.resolve",
+                "method",
+                "ext:ts:lib.es5.d.ts",
+            ),
+        )
+        .with(sym(
+            4,
+            "Promise",
+            "Promise",
+            "variable",
+            "ext:ts:lib.es5.d.ts",
+        ))
+        .with_field_type("Promise", "PromiseConstructor");
     let segs = vec![
         seg("Promise", false, SegmentKind::Identifier),
         seg("resolve", true, SegmentKind::Property),
@@ -178,7 +272,13 @@ fn field_type_on_resolves_destructured_field_type() {
     // field_type_on(UsePostResult, "data") yields User, so the destructured `data`
     // binding types from the field, not the whole result object.
     let lookup = Lookup::new()
-        .with(sym(1, "UsePostResult", "UsePostResult", "interface", "a.ts"))
+        .with(sym(
+            1,
+            "UsePostResult",
+            "UsePostResult",
+            "interface",
+            "a.ts",
+        ))
         .with(sym(2, "User", "User", "interface", "a.ts"))
         .with_member(
             "UsePostResult",
@@ -207,8 +307,7 @@ fn field_type_on_substitutes_receiver_type_arg_into_field() {
         .with_field_type("Result.data", "T");
     let arena = lookup.type_arena().unwrap();
     let recv = arena.intern_type_str("Result<Movie>");
-    let ty = field_type_on(&lookup, arena, recv, Some(1), "data")
-        .expect("data field resolves");
+    let ty = field_type_on(&lookup, arena, recv, Some(1), "data").expect("data field resolves");
     assert_eq!(
         head_qname(arena, ty).as_deref(),
         Some("Movie"),
@@ -222,7 +321,13 @@ fn callable_member_qname_on_names_a_ret_placeholder_member() {
     // placeholder member (no field/return type of its own); the name-only
     // pointer still names it, for the bare-call rule's identity cache.
     let lookup = Lookup::new()
-        .with(sym(1, "makeLogger$Ret", "makeLogger$Ret", "interface", "a.ts"))
+        .with(sym(
+            1,
+            "makeLogger$Ret",
+            "makeLogger$Ret",
+            "interface",
+            "a.ts",
+        ))
         .with_member(
             "makeLogger$Ret",
             sym(2, "info", "makeLogger$Ret.info", "property", "a.ts"),
@@ -230,8 +335,8 @@ fn callable_member_qname_on_names_a_ret_placeholder_member() {
     let arena = lookup.type_arena().unwrap();
     let recv = arena.class("makeLogger$Ret");
     assert_eq!(
-        callable_member_qname_on(&lookup, arena, recv, Some(1), "info").as_deref(),
-        Some("makeLogger$Ret.info")
+        callable_member_id_on(&lookup, arena, recv, Some(1), "info"),
+        Some(2)
     );
 }
 
@@ -242,10 +347,16 @@ fn callable_member_qname_on_declines_a_real_member_outside_a_ret_synthesis() {
     // placeholders, never a real declaration's own member-less leaf.
     let lookup = Lookup::new()
         .with(sym(1, "Config", "Config", "interface", "a.ts"))
-        .with_member("Config", sym(2, "count", "Config.count", "property", "a.ts"));
+        .with_member(
+            "Config",
+            sym(2, "count", "Config.count", "property", "a.ts"),
+        );
     let arena = lookup.type_arena().unwrap();
     let recv = arena.class("Config");
-    assert_eq!(callable_member_qname_on(&lookup, arena, recv, Some(1), "count"), None);
+    assert_eq!(
+        callable_member_id_on(&lookup, arena, recv, Some(1), "count"),
+        None
+    );
 }
 
 #[test]
@@ -257,7 +368,13 @@ fn field_type_on_threads_arg_through_alias_union_chain() {
     // field_type_on(UseQueryResult<Movie>, "data") must thread Movie through the
     // alias + union hops so data resolves to Movie, not the formal T.
     let lookup = Lookup::new()
-        .with(sym(1, "UseQueryResult", "UseQueryResult", "type_alias", "a.ts"))
+        .with(sym(
+            1,
+            "UseQueryResult",
+            "UseQueryResult",
+            "type_alias",
+            "a.ts",
+        ))
         .with_generics("UseQueryResult", &["T"])
         .with_alias(
             "UseQueryResult",
@@ -266,12 +383,24 @@ fn field_type_on_threads_arg_through_alias_union_chain() {
                 args: vec!["T".to_string()],
             },
         )
-        .with(sym(2, "QueryObserverResult", "QueryObserverResult", "type_alias", "a.ts"))
+        .with(sym(
+            2,
+            "QueryObserverResult",
+            "QueryObserverResult",
+            "type_alias",
+            "a.ts",
+        ))
         .with_generics("QueryObserverResult", &["T"])
-        .with_alias("QueryObserverResult", AliasTarget::Union(vec!["Success".to_string()]))
+        .with_alias(
+            "QueryObserverResult",
+            AliasTarget::Union(vec!["Success".to_string()]),
+        )
         .with(sym(3, "Success", "Success", "interface", "a.ts"))
         .with_generics("Success", &["T"])
-        .with_member("Success", sym(4, "data", "Success.data", "property", "a.ts"))
+        .with_member(
+            "Success",
+            sym(4, "data", "Success.data", "property", "a.ts"),
+        )
         .with_field_type("Success.data", "T")
         .with(sym(5, "Movie", "Movie", "interface", "a.ts"));
     let arena = lookup.type_arena().unwrap();
@@ -300,7 +429,10 @@ fn value_root_declines_foreign_internal_same_name_unless_imported() {
         .with(sym(2, "logger", "logger", "variable", "other.ts"))
         .with_field_type("logger", "Array")
         .with(sym(3, "Array", "Array", "interface", "ext:ts:lib.es5.d.ts"))
-        .with_member("Array", sym(4, "map", "Array.map", "method", "ext:ts:lib.es5.d.ts"));
+        .with_member(
+            "Array",
+            sym(4, "map", "Array.map", "method", "ext:ts:lib.es5.d.ts"),
+        );
     let segs = || {
         vec![
             seg("logger", false, SegmentKind::Identifier),
@@ -333,10 +465,32 @@ fn renamed_external_import_roots_on_original_declared_name() {
     // the original up inside the module's files (nothing there is named by
     // the local alias) and the member then resolves on that declaration.
     let lookup = Lookup::new()
-        .with(sym(1, "Value", "Value", "enum", "ext:rust:ser_x/src/value/mod.rs"))
+        .with(sym(
+            1,
+            "Value",
+            "Value",
+            "enum",
+            "ext:rust:ser_x/src/value/mod.rs",
+        ))
         .with_member(
             "Value",
-            sym(2, "String", "Value.String", "enum_member", "ext:rust:ser_x/src/value/mod.rs"),
+            sym(
+                2,
+                "String",
+                "Value.String",
+                "enum_member",
+                "ext:rust:ser_x/src/value/mod.rs",
+            ),
+        )
+        .with_member_id(
+            1,
+            sym(
+                2,
+                "String",
+                "Value.String",
+                "enum_member",
+                "ext:rust:ser_x/src/value/mod.rs",
+            ),
         );
     let mut imp = import("Value", Some("ser_x"));
     imp.alias = Some("JsonValue".to_string());
@@ -362,9 +516,21 @@ fn static_access_root_prefers_internal_type_over_foreign_external_field() {
         .with(sym(1, "Index", "core.Index", "struct", "src/core/index.rs"))
         .with_member_id(
             1,
-            sym(2, "create", "core.Index.create", "method", "src/core/index.rs"),
+            sym(
+                2,
+                "create",
+                "core.Index.create",
+                "method",
+                "src/core/index.rs",
+            ),
         )
-        .with(sym(3, "Index", "Info.Index", "field", "ext:rust:otherpkg/src/lib.rs"))
+        .with(sym(
+            3,
+            "Index",
+            "Info.Index",
+            "field",
+            "ext:rust:otherpkg/src/lib.rs",
+        ))
         .with_field_type("Info.Index", "u64");
     let segs = vec![
         seg("Index", false, SegmentKind::Identifier),
@@ -387,7 +553,13 @@ fn scope_qualified_value_still_shadows_internal_type_at_the_root() {
         .with(sym(1, "Index", "core.Index", "struct", "src/core/index.rs"))
         .with_member_id(
             1,
-            sym(2, "create", "core.Index.create", "method", "src/core/index.rs"),
+            sym(
+                2,
+                "create",
+                "core.Index.create",
+                "method",
+                "src/core/index.rs",
+            ),
         )
         .with(sym(3, "Index", "caller.Index", "variable", "src/main.rs"))
         .with_field_type("caller.Index", "Wrapper")
@@ -413,8 +585,23 @@ fn static_access_root_prefers_external_type_over_foreign_external_field() {
     // internal declaration.
     let lookup = Lookup::new()
         .with(sym(1, "Opt", "Opt", "enum", "ext:rust:std/option.rs"))
-        .with_member_id(1, sym(2, "default", "Opt.default", "method", "ext:rust:std/option.rs"))
-        .with(sym(3, "Opt", "Descriptor.Opt", "field", "ext:rust:otherpkg/src/lib.rs"))
+        .with_member_id(
+            1,
+            sym(
+                2,
+                "default",
+                "Opt.default",
+                "method",
+                "ext:rust:std/option.rs",
+            ),
+        )
+        .with(sym(
+            3,
+            "Opt",
+            "Descriptor.Opt",
+            "field",
+            "ext:rust:otherpkg/src/lib.rs",
+        ))
         .with_field_type("Descriptor.Opt", "u32");
     let segs = vec![
         seg("Opt", false, SegmentKind::Identifier),
@@ -437,7 +624,13 @@ fn foreign_standalone_external_value_yields_to_type_declared_elsewhere() {
     let lookup = Lookup::new()
         .with(sym(1, "P", "P", "struct", "ext:rust:std/path.rs"))
         .with_member_id(1, sym(2, "new", "P.new", "method", "ext:rust:std/path.rs"))
-        .with(sym(3, "P", "otherpkg.P", "variable", "ext:rust:otherpkg/src/lib.rs"))
+        .with(sym(
+            3,
+            "P",
+            "otherpkg.P",
+            "variable",
+            "ext:rust:otherpkg/src/lib.rs",
+        ))
         .with_field_type("otherpkg.P", "Guid");
     let segs = vec![
         seg("P", false, SegmentKind::Identifier),
@@ -460,10 +653,22 @@ fn standalone_external_value_keeps_static_surface_over_merged_type() {
         .with(sym(1, "D", "D", "variable", "ext:ts:lib.es5.d.ts"))
         .with_field_type("D", "DConstructor")
         .with(sym(2, "D", "D", "interface", "ext:ts:lib.es5.d.ts"))
-        .with(sym(3, "DConstructor", "DConstructor", "interface", "ext:ts:lib.es5.d.ts"))
+        .with(sym(
+            3,
+            "DConstructor",
+            "DConstructor",
+            "interface",
+            "ext:ts:lib.es5.d.ts",
+        ))
         .with_member_id(
             3,
-            sym(4, "now", "DConstructor.now", "method", "ext:ts:lib.es5.d.ts"),
+            sym(
+                4,
+                "now",
+                "DConstructor.now",
+                "method",
+                "ext:ts:lib.es5.d.ts",
+            ),
         );
     let segs = vec![
         seg("D", false, SegmentKind::Identifier),
@@ -482,12 +687,30 @@ fn bare_external_value_still_roots_without_internal_type_collision() {
     // name: an unimported external value (an ambient-style global) roots the
     // chain on its declared type exactly as before.
     let lookup = Lookup::new()
-        .with(sym(1, "document", "document", "variable", "ext:ts:lib.dom.d.ts"))
+        .with(sym(
+            1,
+            "document",
+            "document",
+            "variable",
+            "ext:ts:lib.dom.d.ts",
+        ))
         .with_field_type("document", "Document")
-        .with(sym(2, "Document", "Document", "interface", "ext:ts:lib.dom.d.ts"))
+        .with(sym(
+            2,
+            "Document",
+            "Document",
+            "interface",
+            "ext:ts:lib.dom.d.ts",
+        ))
         .with_member_id(
             2,
-            sym(3, "querySelector", "Document.querySelector", "method", "ext:ts:lib.dom.d.ts"),
+            sym(
+                3,
+                "querySelector",
+                "Document.querySelector",
+                "method",
+                "ext:ts:lib.dom.d.ts",
+            ),
         );
     let segs = vec![
         seg("document", false, SegmentKind::Identifier),
@@ -504,7 +727,13 @@ fn call_root_falls_back_to_synthetic_ret_interface() {
     // convention so the member binds.
     let lookup = Lookup::new()
         .with(sym(1, "makeLogger", "makeLogger", "function", "a.ts"))
-        .with(sym(2, "makeLogger$Ret", "makeLogger$Ret", "interface", "a.ts"))
+        .with(sym(
+            2,
+            "makeLogger$Ret",
+            "makeLogger$Ret",
+            "interface",
+            "a.ts",
+        ))
         .with_member(
             "makeLogger$Ret",
             sym(10, "info", "makeLogger$Ret.info", "method", "a.ts"),
@@ -526,7 +755,13 @@ fn member_resolves_on_namespace_qualified_receiver_via_bare_segment() {
         .with(sym(1, "UserDelegate", "UserDelegate", "interface", "a.ts"))
         .with_member(
             "UserDelegate",
-            sym(10, "findUnique", "UserDelegate.findUnique", "method", "a.ts"),
+            sym(
+                10,
+                "findUnique",
+                "UserDelegate.findUnique",
+                "method",
+                "a.ts",
+            ),
         );
     let segs = vec![
         seg("d", false, SegmentKind::Identifier),
@@ -550,7 +785,13 @@ fn getter_accessed_as_property_yields_its_return_type() {
         .with(sym(2, "UserDelegate", "UserDelegate", "interface", "a.ts"))
         .with_member(
             "UserDelegate",
-            sym(10, "findUnique", "UserDelegate.findUnique", "method", "a.ts"),
+            sym(
+                10,
+                "findUnique",
+                "UserDelegate.findUnique",
+                "method",
+                "a.ts",
+            ),
         );
     let segs = vec![
         seg("client", false, SegmentKind::Identifier),
@@ -584,12 +825,21 @@ fn probe_typeof_callable_property_yields_referenced_fn_return() {
         .with_local_type("vi", "VitestUtils")
         .with(sym(1, "fn", "fn", "function", "a.ts"))
         .with_return_type("fn", "Mock")
-        .with_member("VitestUtils", sym(2, "fn", "VitestUtils.fn", "property", "a.ts"))
+        .with_member(
+            "VitestUtils",
+            sym(2, "fn", "VitestUtils.fn", "property", "a.ts"),
+        )
         .with_field_type("VitestUtils.fn", "fn")
         .with(sym(5, "Mock", "Mock", "interface", "a.ts"))
         .with_member(
             "Mock",
-            sym(3, "mockImplementation", "Mock.mockImplementation", "method", "a.ts"),
+            sym(
+                3,
+                "mockImplementation",
+                "Mock.mockImplementation",
+                "method",
+                "a.ts",
+            ),
         );
     let segs = vec![
         seg("vi", false, SegmentKind::Identifier),
@@ -606,7 +856,10 @@ fn probe_vitest_fn_mock_chain_end_to_end() {
     // alias to MockInstance; MockInstance.mockImplementation is the leaf.
     let lookup = Lookup::new()
         .with_local_type("vi", "VitestUtils")
-        .with_member("VitestUtils", sym(1, "fn", "VitestUtils.fn", "property", "a.ts"))
+        .with_member(
+            "VitestUtils",
+            sym(1, "fn", "VitestUtils.fn", "property", "a.ts"),
+        )
         .with_field_type("VitestUtils.fn", "spy.fn")
         .with(sym(2, "fn", "spy.fn", "function", "a.ts"))
         .with_return_type("spy.fn", "Mock")
@@ -615,7 +868,13 @@ fn probe_vitest_fn_mock_chain_end_to_end() {
         .with(sym(4, "MockInstance", "MockInstance", "interface", "a.ts"))
         .with_member(
             "MockInstance",
-            sym(5, "mockImplementation", "MockInstance.mockImplementation", "method", "a.ts"),
+            sym(
+                5,
+                "mockImplementation",
+                "MockInstance.mockImplementation",
+                "method",
+                "a.ts",
+            ),
         );
     let segs = vec![
         seg("vi", false, SegmentKind::Identifier),
@@ -637,7 +896,10 @@ fn probe_intersection_alias_with_own_members_finds_branch_member() {
             "Screen",
             crate::types::AliasTarget::Intersection(vec!["BoundFunctions".to_string()]),
         )
-        .with_member("Screen", sym(2, "debug", "Screen.debug", "property", "a.ts"))
+        .with_member(
+            "Screen",
+            sym(2, "debug", "Screen.debug", "property", "a.ts"),
+        )
         .with(sym(3, "BoundFunctions", "BoundFunctions", "type", "a.ts"))
         .with_member(
             "BoundFunctions",
@@ -673,13 +935,25 @@ fn probe_undecidable_conditional_union_extends_finds_true_branch_member() {
                 infer_binding: None,
             },
         )
-        .with(sym(2, "MockedFunction", "MockedFunction", "type_alias", "a.ts"))
+        .with(sym(
+            2,
+            "MockedFunction",
+            "MockedFunction",
+            "type_alias",
+            "a.ts",
+        ))
         .with_generics("MockedFunction", &["T"])
         .with_field_type("MockedFunction", "MockInstance")
         .with(sym(3, "MockInstance", "MockInstance", "interface", "a.ts"))
         .with_member(
             "MockInstance",
-            sym(4, "mockResolvedValue", "MockInstance.mockResolvedValue", "method", "a.ts"),
+            sym(
+                4,
+                "mockResolvedValue",
+                "MockInstance.mockResolvedValue",
+                "method",
+                "a.ts",
+            ),
         );
     let segs = vec![
         seg("mocked", false, SegmentKind::Identifier),
@@ -692,7 +966,8 @@ fn probe_undecidable_conditional_union_extends_finds_true_branch_member() {
 fn roots_at_bare_type_name_for_static_access() {
     let lookup = Lookup::new()
         .with(sym(1, "Math", "Math", "class", "a.ts"))
-        .with_member("Math", sym(30, "max", "Math.max", "method", "a.ts"));
+        .with_member("Math", sym(30, "max", "Math.max", "method", "a.ts"))
+        .with_member_id(1, sym(30, "max", "Math.max", "method", "a.ts"));
     let segs = vec![
         seg("Math", false, SegmentKind::TypeAccess),
         seg("max", true, SegmentKind::Property),
@@ -708,7 +983,13 @@ fn roots_member_on_array_typed_receiver() {
         .with_local_type("items", "User[]")
         .with_member(
             "Array",
-            sym(60, "map", "Array.map", "method", "ext:ts:__ts_lib__/lib.es5.d.ts"),
+            sym(
+                60,
+                "map",
+                "Array.map",
+                "method",
+                "ext:ts:__ts_lib__/lib.es5.d.ts",
+            ),
         );
     let segs = vec![
         seg("items", false, SegmentKind::Identifier),
@@ -812,7 +1093,13 @@ fn roots_on_imported_value_declared_type() {
         .with_field_type("@trpc/server.initTRPC", "TRPCBuilder")
         .with_member(
             "TRPCBuilder",
-            sym(50, "create", "TRPCBuilder.create", "method", "ext:ts:@trpc/server/index.d.ts"),
+            sym(
+                50,
+                "create",
+                "TRPCBuilder.create",
+                "method",
+                "ext:ts:@trpc/server/index.d.ts",
+            ),
         );
     let segs = vec![
         seg("initTRPC", false, SegmentKind::Identifier),
@@ -841,7 +1128,14 @@ fn roots_self_at_enclosing_type() {
 fn roots_self_via_scope_chain_when_enclosing_type_qname_absent() {
     let lookup = Lookup::new()
         .with(sym(1, "SegmentList", "SegmentList", "struct", "src/lib.rs"))
-        .with_member("SegmentList", sym(40, "touch", "SegmentList.touch", "method", "src/lib.rs"));
+        .with_member(
+            "SegmentList",
+            sym(40, "touch", "SegmentList.touch", "method", "src/lib.rs"),
+        )
+        .with_member_id(
+            1,
+            sym(40, "touch", "SegmentList.touch", "method", "src/lib.rs"),
+        );
     let segs = vec![
         seg("self", false, SegmentKind::SelfRef),
         seg("touch", true, SegmentKind::Property),
@@ -865,7 +1159,14 @@ fn roots_self_via_scope_chain_when_enclosing_type_qname_absent() {
 fn roots_self_via_scope_path_when_scope_chain_empty() {
     let lookup = Lookup::new()
         .with(sym(1, "SegmentList", "SegmentList", "struct", "src/lib.rs"))
-        .with_member("SegmentList", sym(40, "touch", "SegmentList.touch", "method", "src/lib.rs"));
+        .with_member(
+            "SegmentList",
+            sym(40, "touch", "SegmentList.touch", "method", "src/lib.rs"),
+        )
+        .with_member_id(
+            1,
+            sym(40, "touch", "SegmentList.touch", "method", "src/lib.rs"),
+        );
     let segs = vec![
         seg("self", false, SegmentKind::SelfRef),
         seg("touch", true, SegmentKind::Property),
@@ -896,7 +1197,10 @@ fn peels_single_inner_wrapper_before_member_lookup() {
     let lookup = Lookup::new()
         .with(sym(1, "Box", "Box", "struct", "ext:rust:alloc/boxed.rs"))
         .with(sym(2, "Thing", "Thing", "struct", "src/lib.rs"))
-        .with_member("Thing", sym(40, "touch", "Thing.touch", "method", "src/lib.rs"));
+        .with_member(
+            "Thing",
+            sym(40, "touch", "Thing.touch", "method", "src/lib.rs"),
+        );
     let segs = vec![
         seg_declared("b", "Box", &["Thing"]),
         seg("touch", true, SegmentKind::Property),
@@ -921,7 +1225,10 @@ fn declines_wrapper_peel_when_profile_omits_it() {
     let lookup = Lookup::new()
         .with(sym(1, "Box", "Box", "struct", "ext:rust:alloc/boxed.rs"))
         .with(sym(2, "Thing", "Thing", "struct", "src/lib.rs"))
-        .with_member("Thing", sym(40, "touch", "Thing.touch", "method", "src/lib.rs"));
+        .with_member(
+            "Thing",
+            sym(40, "touch", "Thing.touch", "method", "src/lib.rs"),
+        );
     let segs = vec![
         seg_declared("b", "Box", &["Thing"]),
         seg("touch", true, SegmentKind::Property),
@@ -935,13 +1242,40 @@ fn declines_wrapper_peel_when_profile_omits_it() {
 fn container_deref_lookup() -> Lookup {
     Lookup::new()
         .with_local_type("v", "Vec<Elem>")
-        .with(sym(1, "Vec", "Vec", "struct", "ext:idx:alloc/src/vec/mod.rs"))
-        .with_member("Vec", sym(10, "push", "Vec.push", "method", "ext:idx:alloc/src/vec/mod.rs"))
-        .with_member("slice", sym(41, "first", "slice.first", "method", "ext:idx:core/src/slice/mod.rs"))
+        .with(sym(
+            1,
+            "Vec",
+            "Vec",
+            "struct",
+            "ext:idx:alloc/src/vec/mod.rs",
+        ))
+        .with_member(
+            "Vec",
+            sym(
+                10,
+                "push",
+                "Vec.push",
+                "method",
+                "ext:idx:alloc/src/vec/mod.rs",
+            ),
+        )
+        .with_member(
+            "slice",
+            sym(
+                41,
+                "first",
+                "slice.first",
+                "method",
+                "ext:idx:core/src/slice/mod.rs",
+            ),
+        )
         .with_return_type("slice.first", "T")
         .with_generics("slice", &["T"])
         .with(sym(2, "Elem", "Elem", "struct", "src/lib.rs"))
-        .with_member("Elem", sym(42, "touch", "Elem.touch", "method", "src/lib.rs"))
+        .with_member(
+            "Elem",
+            sym(42, "touch", "Elem.touch", "method", "src/lib.rs"),
+        )
 }
 
 /// `v.first().touch()` on `v: Vec<Elem>` — `first` misses `Vec`'s own member
@@ -970,7 +1304,11 @@ fn reheads_container_member_miss_onto_deref_target_threading_args() {
     let got = bind_member_access(&rc, &file_ctx(vec![], None), &lookup, &profile)
         .ok()
         .map(|res| res.target_symbol_id);
-    assert_eq!(got, Some(42), "slice.first's yield T must bind Elem through the rehead");
+    assert_eq!(
+        got,
+        Some(42),
+        "slice.first's yield T must bind Elem through the rehead"
+    );
 }
 
 /// `v.push(x)` on `v: Vec<Elem>` binds `Vec`'s OWN `push` even when the Deref
@@ -985,7 +1323,13 @@ fn container_own_member_wins_over_deref_target() {
     };
     let lookup = container_deref_lookup().with_member(
         "slice",
-        sym(99, "push", "slice.push", "method", "ext:idx:core/src/slice/mod.rs"),
+        sym(
+            99,
+            "push",
+            "slice.push",
+            "method",
+            "ext:idx:core/src/slice/mod.rs",
+        ),
     );
     let segs = vec![
         seg("v", false, SegmentKind::Identifier),
@@ -1014,7 +1358,11 @@ fn declines_container_rehead_when_profile_omits_it() {
     ];
     let cause = resolve_cause(&lookup, segs, "caller").expect("miss must carry a cause");
     assert_eq!(cause.kind, CauseKind::MemberMissing);
-    assert_eq!(cause.symbol_id, Some(1), "the cause names Vec's own declaration");
+    assert_eq!(
+        cause.symbol_id,
+        Some(1),
+        "the cause names Vec's own declaration"
+    );
 }
 
 #[test]
@@ -1082,17 +1430,32 @@ fn member_yield_type_reads_return_for_calls_and_field_otherwise() {
         .with_field_type("Repo.db", "Database");
     let arena = lookup.type_arena().unwrap();
     assert_eq!(
-        member_yield_type(&lookup, arena, &sym(1, "find", "Repo.find", "method", "a.ts"), true)
-            .map(|id| arena.format_type(id)),
+        member_yield_type(
+            &lookup,
+            arena,
+            &sym(1, "find", "Repo.find", "method", "a.ts"),
+            true
+        )
+        .map(|id| arena.format_type(id)),
         Some("User".to_string())
     );
     assert_eq!(
-        member_yield_type(&lookup, arena, &sym(2, "db", "Repo.db", "field", "a.ts"), false)
-            .map(|id| arena.format_type(id)),
+        member_yield_type(
+            &lookup,
+            arena,
+            &sym(2, "db", "Repo.db", "field", "a.ts"),
+            false
+        )
+        .map(|id| arena.format_type(id)),
         Some("Database".to_string())
     );
     assert_eq!(
-        member_yield_type(&lookup, arena, &sym(3, "unknown", "Repo.unknown", "method", "a.ts"), true),
+        member_yield_type(
+            &lookup,
+            arena,
+            &sym(3, "unknown", "Repo.unknown", "method", "a.ts"),
+            true
+        ),
         None
     );
 }
@@ -1104,7 +1467,10 @@ fn binds_generic_method_return_substituting_type_arg() {
     let lookup = Lookup::new()
         .with_local_type("repo", "Repository<User>")
         .with_generics("Repository", &["T"])
-        .with_member("Repository", sym(10, "find", "Repository.find", "method", "a.ts"))
+        .with_member(
+            "Repository",
+            sym(10, "find", "Repository.find", "method", "a.ts"),
+        )
         .with_return_type("Repository.find", "T")
         .with_member("User", sym(20, "name", "User.name", "field", "a.ts"));
     let segs = vec![
@@ -1130,9 +1496,18 @@ fn binds_member_through_returntype_typeof_alias() {
                 args: vec!["createScopedLogger".to_string()],
             },
         )
-        .with(sym(1, "createScopedLogger", "createScopedLogger", "function", "a.ts"))
+        .with(sym(
+            1,
+            "createScopedLogger",
+            "createScopedLogger",
+            "function",
+            "a.ts",
+        ))
         .with_return_type("createScopedLogger", "ScopedRet")
-        .with_member("ScopedRet", sym(20, "info", "ScopedRet.info", "method", "a.ts"));
+        .with_member(
+            "ScopedRet",
+            sym(20, "info", "ScopedRet.info", "method", "a.ts"),
+        );
     let segs = vec![
         seg("logger", false, SegmentKind::Identifier),
         seg("info", true, SegmentKind::Property),
@@ -1156,9 +1531,18 @@ fn binds_param_typed_by_returntype_typeof_alias() {
                 args: vec!["createScopedLogger".to_string()],
             },
         )
-        .with(sym(1, "createScopedLogger", "createScopedLogger", "function", "a.ts"))
+        .with(sym(
+            1,
+            "createScopedLogger",
+            "createScopedLogger",
+            "function",
+            "a.ts",
+        ))
         .with_return_type("createScopedLogger", "ScopedRet")
-        .with_member("ScopedRet", sym(20, "info", "ScopedRet.info", "method", "a.ts"));
+        .with_member(
+            "ScopedRet",
+            sym(20, "info", "ScopedRet.info", "method", "a.ts"),
+        );
     let segs = vec![
         seg("logger", false, SegmentKind::Identifier),
         seg("info", true, SegmentKind::Property),
@@ -1229,7 +1613,10 @@ fn binds_through_a_type_alias() {
             },
         )
         .with_generics("Repository", &["T"])
-        .with_member("Repository", sym(10, "find", "Repository.find", "method", "a.ts"))
+        .with_member(
+            "Repository",
+            sym(10, "find", "Repository.find", "method", "a.ts"),
+        )
         .with_return_type("Repository.find", "T")
         .with_member("User", sym(20, "name", "User.name", "field", "a.ts"));
     let segs = vec![
@@ -1255,7 +1642,10 @@ fn binds_member_through_a_mapped_type_to_its_source() {
             },
         )
         .with_generics("Override", &["A"])
-        .with_member("Result", sym(30, "mutate", "Result.mutate", "property", "a.ts"));
+        .with_member(
+            "Result",
+            sym(30, "mutate", "Result.mutate", "property", "a.ts"),
+        );
     let segs = vec![
         seg("m", false, SegmentKind::Identifier),
         seg("mutate", true, SegmentKind::Property),
@@ -1280,7 +1670,10 @@ fn member_on_generic_supertype_binds_args_from_extends_edge() {
         .with_member_id(2, sym(30, "m", "Base.m", "property", "a.ts"))
         .with_field_type("Base.m", "T")
         .with(sym(3, "User", "User", "class", "a.ts"))
-        .with_member("User", sym(40, "firstName", "User.firstName", "property", "a.ts"));
+        .with_member(
+            "User",
+            sym(40, "firstName", "User.firstName", "property", "a.ts"),
+        );
     let segs = vec![
         seg("c", false, SegmentKind::Identifier),
         seg("m", false, SegmentKind::Property),
@@ -1298,10 +1691,22 @@ fn member_climbs_into_mapped_alias_supertype() {
     // mapped source, bound from the `extends VitestAssertion<ChaiAssertion>` edge.
     let lookup = Lookup::new()
         .with_local_type("x", "Assertion")
-        .with(sym(1, "Assertion", "Assertion", "interface", "ext:ts:v.d.ts"))
+        .with(sym(
+            1,
+            "Assertion",
+            "Assertion",
+            "interface",
+            "ext:ts:v.d.ts",
+        ))
         .with_parent("Assertion", "VitestAssertion")
         .with_parent_args("Assertion", "VitestAssertion", &["ChaiAssertion"])
-        .with(sym(2, "VitestAssertion", "VitestAssertion", "type_alias", "ext:ts:v.d.ts"))
+        .with(sym(
+            2,
+            "VitestAssertion",
+            "VitestAssertion",
+            "type_alias",
+            "ext:ts:v.d.ts",
+        ))
         .with_alias(
             "VitestAssertion",
             crate::types::AliasTarget::Mapped {
@@ -1310,7 +1715,13 @@ fn member_climbs_into_mapped_alias_supertype() {
             },
         )
         .with_generics("VitestAssertion", &["A"])
-        .with(sym(3, "ChaiAssertion", "ChaiAssertion", "interface", "ext:ts:c.d.ts"))
+        .with(sym(
+            3,
+            "ChaiAssertion",
+            "ChaiAssertion",
+            "interface",
+            "ext:ts:c.d.ts",
+        ))
         .with_member(
             "ChaiAssertion",
             sym(50, "not", "ChaiAssertion.not", "property", "ext:ts:c.d.ts"),
@@ -1395,11 +1806,23 @@ fn root_ignores_import_scope_when_module_absent() {
     // The fallback candidate is a standalone `declare var` — an external MEMBER
     // would be excluded from bare-name rooting.
     let lookup = Lookup::new()
-        .with(sym(99, "z", "z", "variable", "ext:ts:typescript/lib/lib.dom.d.ts"))
+        .with(sym(
+            99,
+            "z",
+            "z",
+            "variable",
+            "ext:ts:typescript/lib/lib.dom.d.ts",
+        ))
         .with_field_type("z", "CSSNumberish")
         .with_member(
             "CSSNumberish",
-            sym(50, "valueOf", "CSSNumberish.valueOf", "method", "ext:ts:typescript/lib/lib.dom.d.ts"),
+            sym(
+                50,
+                "valueOf",
+                "CSSNumberish.valueOf",
+                "method",
+                "ext:ts:typescript/lib/lib.dom.d.ts",
+            ),
         );
     // `z` imported from a module with no indexed `z` symbol.
     let fc = file_ctx(vec![import("z", Some("zod"))], None);
@@ -1426,7 +1849,10 @@ fn member_resolves_through_omit_utility_to_wrapped_type() {
             },
         )
         .with(sym(2, "Base", "Base", "interface", "ext:ts:m.d.ts"))
-        .with_member("Base", sym(50, "data", "Base.data", "property", "ext:ts:m.d.ts"));
+        .with_member(
+            "Base",
+            sym(50, "data", "Base.data", "property", "ext:ts:m.d.ts"),
+        );
     let segs = vec![
         seg("r", false, SegmentKind::Identifier),
         seg("data", false, SegmentKind::Property),
@@ -1456,7 +1882,10 @@ fn member_resolves_through_omit_of_an_applied_wrapper() {
         )
         .with(sym(3, "Wrapper", "Wrapper", "interface", "a.ts"))
         .with_generics("Wrapper", &["TData"])
-        .with_member("Wrapper", sym(50, "data", "Wrapper.data", "property", "a.ts"));
+        .with_member(
+            "Wrapper",
+            sym(50, "data", "Wrapper.data", "property", "a.ts"),
+        );
     let segs = vec![
         seg("get", true, SegmentKind::Identifier),
         seg("data", false, SegmentKind::Property),
@@ -1521,8 +1950,14 @@ fn member_resolves_through_a_distributive_omit_over_a_union() {
 
 #[test]
 fn qnames_same_type_tolerates_package_prefix() {
-    assert!(super::qnames_same_type("@types/chai.Chai.Assertion", "Chai.Assertion"));
-    assert!(super::qnames_same_type("Chai.Assertion", "@types/chai.Chai.Assertion"));
+    assert!(super::qnames_same_type(
+        "@types/chai.Chai.Assertion",
+        "Chai.Assertion"
+    ));
+    assert!(super::qnames_same_type(
+        "Chai.Assertion",
+        "@types/chai.Chai.Assertion"
+    ));
     assert!(super::qnames_same_type("Foo", "Foo"));
     assert!(!super::qnames_same_type("Foo.Assertion", "Bar.Assertion"));
     // A shared simple-name suffix is not enough — the dotted boundary must align.
@@ -1588,7 +2023,13 @@ fn roots_binding_typed_return_type_of_typeof_fn() {
         .with_return_type("render", "RenderResult")
         .with_member(
             "RenderResult",
-            sym(42, "getByText", "RenderResult.getByText", "method", "ext:ts:tl.d.ts"),
+            sym(
+                42,
+                "getByText",
+                "RenderResult.getByText",
+                "method",
+                "ext:ts:tl.d.ts",
+            ),
         );
     let segs = vec![
         seg("rendered", false, SegmentKind::Identifier),
@@ -1633,13 +2074,31 @@ fn return_type_of_typeof_fn_scopes_to_the_imported_overload() {
                 infer_binding: None,
             },
         )
-        .with(sym(1, "render", "@testing-library/vue.render", "function", "ext:ts:vue.d.ts"))
+        .with(sym(
+            1,
+            "render",
+            "@testing-library/vue.render",
+            "function",
+            "ext:ts:vue.d.ts",
+        ))
         .with_return_type("@testing-library/vue.render", "Vue")
-        .with(sym(2, "render", "@testing-library/react.render", "function", "ext:ts:react.d.ts"))
+        .with(sym(
+            2,
+            "render",
+            "@testing-library/react.render",
+            "function",
+            "ext:ts:react.d.ts",
+        ))
         .with_return_type("@testing-library/react.render", "RenderResult")
         .with_member(
             "RenderResult",
-            sym(42, "getByText", "RenderResult.getByText", "method", "ext:ts:react.d.ts"),
+            sym(
+                42,
+                "getByText",
+                "RenderResult.getByText",
+                "method",
+                "ext:ts:react.d.ts",
+            ),
         );
     let fc = file_ctx(vec![import("render", Some("@testing-library/react"))], None);
     let segs = vec![
@@ -1669,7 +2128,13 @@ fn unbound_mapped_source_declines_when_receiver_is_internal() {
         )
         .with_generics("Local", &["Q"])
         .with_reexport(internal, "*", "other")
-        .with(sym(42, "getByText", "other.getByText", "function", internal));
+        .with(sym(
+            42,
+            "getByText",
+            "other.getByText",
+            "function",
+            internal,
+        ));
     let segs = vec![
         seg("x", false, SegmentKind::Identifier),
         seg("getByText", true, SegmentKind::Property),
@@ -1698,16 +2163,34 @@ fn roots_a_call_at_a_callable_interface_values_call_signature_return() {
     // The callee `expect` is a const, not a function, so its declared interface's
     // synthesised `call` member supplies the call result type (Assertion).
     let lookup = Lookup::new()
-        .with(sym(1, "expect", "expect", "const", "ext:ts:vitest/index.d.ts"))
+        .with(sym(
+            1,
+            "expect",
+            "expect",
+            "const",
+            "ext:ts:vitest/index.d.ts",
+        ))
         .with_field_type("expect", "ExpectStatic")
         .with_member(
             "ExpectStatic",
-            sym(50, "call", "ExpectStatic.call", "method", "ext:ts:vitest/index.d.ts"),
+            sym(
+                50,
+                "call",
+                "ExpectStatic.call",
+                "method",
+                "ext:ts:vitest/index.d.ts",
+            ),
         )
         .with_return_type("ExpectStatic.call", "Assertion")
         .with_member(
             "Assertion",
-            sym(70, "toBe", "Assertion.toBe", "method", "ext:ts:vitest/index.d.ts"),
+            sym(
+                70,
+                "toBe",
+                "Assertion.toBe",
+                "method",
+                "ext:ts:vitest/index.d.ts",
+            ),
         );
     let segs = vec![
         seg("expect", true, SegmentKind::Identifier),
@@ -1742,11 +2225,23 @@ fn function_callee_return_path_unaffected_by_callable_value_fallback() {
     // render is a real function whose return type roots via callee_return_type
     // (kind=function); the callable-value fallback must not perturb it.
     let lookup = Lookup::new()
-        .with(sym(1, "render", "render", "function", "ext:ts:@testing-library/react/index.d.ts"))
+        .with(sym(
+            1,
+            "render",
+            "render",
+            "function",
+            "ext:ts:@testing-library/react/index.d.ts",
+        ))
         .with_return_type("render", "RenderResult")
         .with_member(
             "RenderResult",
-            sym(90, "getByText", "RenderResult.getByText", "method", "ext:ts:@testing-library/react/index.d.ts"),
+            sym(
+                90,
+                "getByText",
+                "RenderResult.getByText",
+                "method",
+                "ext:ts:@testing-library/react/index.d.ts",
+            ),
         );
     let segs = vec![
         seg("render", true, SegmentKind::Identifier),
@@ -1803,17 +2298,35 @@ fn callee_return_root_prefers_import_scoped_declaration_for_overloaded_name() {
         .with_workspace_pkg("dom-testing", 8)
         .with_in_package(
             7,
-            sym(1, "render", "ui.render", "function", "packages/ui/render.ts"),
+            sym(
+                1,
+                "render",
+                "ui.render",
+                "function",
+                "packages/ui/render.ts",
+            ),
         )
         .with_return_type("ui.render", "ReactNode")
         .with_in_package(
             8,
-            sym(2, "render", "domTesting.render", "function", "packages/dom-testing/render.ts"),
+            sym(
+                2,
+                "render",
+                "domTesting.render",
+                "function",
+                "packages/dom-testing/render.ts",
+            ),
         )
         .with_return_type("domTesting.render", "RenderResult")
         .with_member(
             "RenderResult",
-            sym(90, "getByText", "RenderResult.getByText", "method", "packages/dom-testing/render.ts"),
+            sym(
+                90,
+                "getByText",
+                "RenderResult.getByText",
+                "method",
+                "packages/dom-testing/render.ts",
+            ),
         );
     let segs = || {
         vec![
@@ -1823,7 +2336,10 @@ fn callee_return_root_prefers_import_scoped_declaration_for_overloaded_name() {
     };
     // Import `render` from pkg 8 -> root on domTesting.render -> RenderResult.
     let fc_dom = file_ctx(vec![import("render", Some("dom-testing"))], None);
-    assert_eq!(resolve_with_fc(&lookup, segs(), "caller", &fc_dom), Some(90));
+    assert_eq!(
+        resolve_with_fc(&lookup, segs(), "caller", &fc_dom),
+        Some(90)
+    );
     // No import attribution: first-callable (pkg 7, ReactNode) wins and has no
     // getByText -> unresolved. Proves the scope filter, not a global reorder.
     assert_eq!(resolve(&lookup, segs(), "caller"), None);
@@ -1885,22 +2401,52 @@ fn function_and_callable_value_roots_cascade_to_further_members() {
     //   expect(x).toEqualTypeOf(y)  → ExpectStatic call sig -> Assertion.toEqualTypeOf
     //   render(c).getByRole(r)      → render(): RenderResult -> RenderResult.getByRole
     let lookup = Lookup::new()
-        .with(sym(1, "expect", "expect", "const", "ext:ts:vitest/index.d.ts"))
+        .with(sym(
+            1,
+            "expect",
+            "expect",
+            "const",
+            "ext:ts:vitest/index.d.ts",
+        ))
         .with_field_type("expect", "ExpectStatic")
         .with_member(
             "ExpectStatic",
-            sym(50, "call", "ExpectStatic.call", "method", "ext:ts:vitest/index.d.ts"),
+            sym(
+                50,
+                "call",
+                "ExpectStatic.call",
+                "method",
+                "ext:ts:vitest/index.d.ts",
+            ),
         )
         .with_return_type("ExpectStatic.call", "Assertion")
         .with_member(
             "Assertion",
-            sym(71, "toEqualTypeOf", "Assertion.toEqualTypeOf", "method", "ext:ts:vitest/index.d.ts"),
+            sym(
+                71,
+                "toEqualTypeOf",
+                "Assertion.toEqualTypeOf",
+                "method",
+                "ext:ts:vitest/index.d.ts",
+            ),
         )
-        .with(sym(2, "render", "render", "function", "ext:ts:@testing-library/react/index.d.ts"))
+        .with(sym(
+            2,
+            "render",
+            "render",
+            "function",
+            "ext:ts:@testing-library/react/index.d.ts",
+        ))
         .with_return_type("render", "RenderResult")
         .with_member(
             "RenderResult",
-            sym(91, "getByRole", "RenderResult.getByRole", "method", "ext:ts:@testing-library/react/index.d.ts"),
+            sym(
+                91,
+                "getByRole",
+                "RenderResult.getByRole",
+                "method",
+                "ext:ts:@testing-library/react/index.d.ts",
+            ),
         );
     let expect_segs = vec![
         seg("expect", true, SegmentKind::Identifier),
@@ -2015,7 +2561,10 @@ fn roots_a_call_at_a_generic_return_type() {
         .with(sym(1, "makeRepo", "makeRepo", "function", "a.ts"))
         .with_return_type("makeRepo", "Repository<User>")
         .with_generics("Repository", &["T"])
-        .with_member("Repository", sym(10, "find", "Repository.find", "method", "a.ts"))
+        .with_member(
+            "Repository",
+            sym(10, "find", "Repository.find", "method", "a.ts"),
+        )
         .with_return_type("Repository.find", "T")
         .with_member("User", sym(20, "name", "User.name", "field", "a.ts"));
     let segs = vec![
@@ -2031,7 +2580,10 @@ fn roots_declared_annotation_with_split_type_args() {
     // const repo: Repository<User> — the annotation arrives split: head + type args
     let lookup = Lookup::new()
         .with_generics("Repository", &["T"])
-        .with_member("Repository", sym(10, "find", "Repository.find", "method", "a.ts"))
+        .with_member(
+            "Repository",
+            sym(10, "find", "Repository.find", "method", "a.ts"),
+        )
         .with_return_type("Repository.find", "T")
         .with_member("User", sym(20, "name", "User.name", "field", "a.ts"));
     let segs = vec![
@@ -2169,11 +2721,23 @@ fn two_query_clients() -> Lookup {
         .with_workspace_pkg("@tanstack/solid-query", 19)
         .with_in_package(
             19,
-            sym(15723, "QueryClient", "QueryClient", "class", "packages/solid-query/src/QueryClient.ts"),
+            sym(
+                15723,
+                "QueryClient",
+                "QueryClient",
+                "class",
+                "packages/solid-query/src/QueryClient.ts",
+            ),
         )
         .with_in_package(
             10,
-            sym(13168, "QueryClient", "QueryClient", "class", "packages/query-core/src/queryClient.ts"),
+            sym(
+                13168,
+                "QueryClient",
+                "QueryClient",
+                "class",
+                "packages/query-core/src/queryClient.ts",
+            ),
         )
 }
 
@@ -2227,8 +2791,26 @@ fn multi_seg_chain_roots_on_imported_packages_class() {
     // QueryClient has its OWN setQueryData (keyed by symbol id); the root must
     // pick the imported package's class so the member walk binds ITS method.
     let lookup = two_query_clients()
-        .with_member_id(13168, sym(13200, "setQueryData", "QueryClient.setQueryData", "method", "packages/query-core/src/queryClient.ts"))
-        .with_member_id(15723, sym(15800, "setQueryData", "QueryClient.setQueryData", "method", "packages/solid-query/src/QueryClient.ts"));
+        .with_member_id(
+            13168,
+            sym(
+                13200,
+                "setQueryData",
+                "QueryClient.setQueryData",
+                "method",
+                "packages/query-core/src/queryClient.ts",
+            ),
+        )
+        .with_member_id(
+            15723,
+            sym(
+                15800,
+                "setQueryData",
+                "QueryClient.setQueryData",
+                "method",
+                "packages/solid-query/src/QueryClient.ts",
+            ),
+        );
     let fc = imports_query_client_from_core();
     let segs = vec![
         seg("QueryClient", false, SegmentKind::TypeAccess),
@@ -2258,13 +2840,28 @@ fn member_walk_climbs_to_a_non_first_of_several_supertypes() {
     // single linear chain that would keep only the first parent and miss toBe.
     let lookup = Lookup::new()
         .with(sym(100, "Assertion", "pkg.Assertion", "interface", "a.ts"))
-        .with(sym(101, "VitestAssertion", "pkg.VitestAssertion", "interface", "a.ts"))
-        .with(sym(102, "JestAssertion", "pkg.JestAssertion", "interface", "a.ts"))
+        .with(sym(
+            101,
+            "VitestAssertion",
+            "pkg.VitestAssertion",
+            "interface",
+            "a.ts",
+        ))
+        .with(sym(
+            102,
+            "JestAssertion",
+            "pkg.JestAssertion",
+            "interface",
+            "a.ts",
+        ))
         .with(sym(103, "Matchers", "pkg.Matchers", "interface", "a.ts"))
         .with_parent_id(100, 101)
         .with_parent_id(100, 102)
         .with_parent_id(100, 103)
-        .with_member_id(102, sym(200, "toBe", "pkg.JestAssertion.toBe", "method", "a.ts"))
+        .with_member_id(
+            102,
+            sym(200, "toBe", "pkg.JestAssertion.toBe", "method", "a.ts"),
+        )
         .with_local_type("a", "pkg.Assertion");
     let segs = vec![
         seg("a", false, SegmentKind::Identifier),
@@ -2291,12 +2888,24 @@ fn member_walk_climbs_to_a_non_first_of_several_supertypes() {
 #[test]
 fn intermediate_hop_threads_use_site_id_not_first_winner() {
     // Members for pkg A's Client (id 100).
-    let mut exec_a = sym(105, "execute", "Client.execute", "method", "pkg_a/client.ts");
+    let mut exec_a = sym(
+        105,
+        "execute",
+        "Client.execute",
+        "method",
+        "pkg_a/client.ts",
+    );
     exec_a.package_id = Some(10);
     let mut status_a = sym(110, "status", "Client.status", "field", "pkg_a/client.ts");
     status_a.package_id = Some(10);
     // Members for pkg B's Client (id 200).
-    let mut exec_b = sym(205, "execute", "Client.execute", "method", "pkg_b/client.ts");
+    let mut exec_b = sym(
+        205,
+        "execute",
+        "Client.execute",
+        "method",
+        "pkg_b/client.ts",
+    );
     exec_b.package_id = Some(20);
     let mut status_b = sym(210, "status", "Client.status", "field", "pkg_b/client.ts");
     status_b.package_id = Some(20);
@@ -2345,7 +2954,10 @@ fn this_return_rebinds_to_receiver_for_fluent_chain() {
         .with_local_type("builder", "Builder")
         .with_member("Builder", sym(10, "set", "Builder.set", "method", "a.ts"))
         .with_return_type("Builder.set", "this")
-        .with_member("Builder", sym(20, "build", "Builder.build", "method", "a.ts"));
+        .with_member(
+            "Builder",
+            sym(20, "build", "Builder.build", "method", "a.ts"),
+        );
     let segs = vec![
         seg("builder", false, SegmentKind::Identifier),
         seg("set", true, SegmentKind::Property),
@@ -2359,9 +2971,15 @@ fn this_return_rebinds_to_receiver_for_fluent_chain() {
 fn self_return_rebinds_to_receiver_for_fluent_chain() {
     let lookup = Lookup::new()
         .with_local_type("qb", "QueryBuilder")
-        .with_member("QueryBuilder", sym(10, "where_", "QueryBuilder.where_", "method", "a.ts"))
+        .with_member(
+            "QueryBuilder",
+            sym(10, "where_", "QueryBuilder.where_", "method", "a.ts"),
+        )
         .with_return_type("QueryBuilder.where_", "Self")
-        .with_member("QueryBuilder", sym(20, "execute", "QueryBuilder.execute", "method", "a.ts"));
+        .with_member(
+            "QueryBuilder",
+            sym(20, "execute", "QueryBuilder.execute", "method", "a.ts"),
+        );
     let segs = vec![
         seg("qb", false, SegmentKind::Identifier),
         seg("where_", true, SegmentKind::Property),
@@ -2406,11 +3024,20 @@ fn callable_property_field_type_with_generic_arg_substitutes_type() {
     let lookup = Lookup::new()
         .with_local_type("vi", "Vi")
         .with_generics("Vi.fn", &["T"])
-        .with_member("Vi", sym(5, "fn", "Vi.fn", "property", "ext:ts:vitest/index.d.ts"))
+        .with_member(
+            "Vi",
+            sym(5, "fn", "Vi.fn", "property", "ext:ts:vitest/index.d.ts"),
+        )
         .with_field_type("Vi.fn", "() => MockInstance")
         .with_member(
             "MockInstance",
-            sym(80, "mockResolvedValue", "MockInstance.mockResolvedValue", "method", "ext:ts:vitest/index.d.ts"),
+            sym(
+                80,
+                "mockResolvedValue",
+                "MockInstance.mockResolvedValue",
+                "method",
+                "ext:ts:vitest/index.d.ts",
+            ),
         );
     let segs = vec![
         seg("vi", false, SegmentKind::Identifier),
@@ -2434,7 +3061,13 @@ fn mid_chain_array_return_type_reaches_array_members() {
         .with_return_type("getItems", "User[]")
         .with_member(
             "Array",
-            sym(60, "map", "Array.map", "method", "ext:ts:__ts_lib__/lib.es5.d.ts"),
+            sym(
+                60,
+                "map",
+                "Array.map",
+                "method",
+                "ext:ts:__ts_lib__/lib.es5.d.ts",
+            ),
         );
     let segs = vec![
         seg("getItems", true, SegmentKind::Identifier),
@@ -2452,12 +3085,16 @@ fn mid_chain_array_return_type_reaches_array_members() {
 fn string_typed_receiver_reaches_string_members() {
     // The receiver is a local typed as `string`. The member lookup must
     // find `split` on the `String` class (the nominal form of the primitive).
-    let lookup = Lookup::new()
-        .with_local_type("str", "string")
-        .with_member(
-            "String",
-            sym(70, "split", "String.split", "method", "ext:ts:__ts_lib__/lib.es5.d.ts"),
-        );
+    let lookup = Lookup::new().with_local_type("str", "string").with_member(
+        "String",
+        sym(
+            70,
+            "split",
+            "String.split",
+            "method",
+            "ext:ts:__ts_lib__/lib.es5.d.ts",
+        ),
+    );
     let segs = vec![
         seg("str", false, SegmentKind::Identifier),
         seg("split", true, SegmentKind::Property),
@@ -2566,10 +3203,16 @@ fn subscript_on_array_return_projects_element_then_resolves_member() {
     let lookup = Lookup::new()
         .with_local_type("email", "Str")
         .with(sym(1, "Str", "Str", "class", "ext:ts:lib.d.ts"))
-        .with_member("Str", sym(2, "split", "Str.split", "method", "ext:ts:lib.d.ts"))
+        .with_member(
+            "Str",
+            sym(2, "split", "Str.split", "method", "ext:ts:lib.d.ts"),
+        )
         .with_return_type("Str.split", "Elem[]")
         .with(sym(3, "Elem", "Elem", "class", "ext:ts:lib.d.ts"))
-        .with_member("Elem", sym(10, "trim", "Elem.trim", "method", "ext:ts:lib.d.ts"));
+        .with_member(
+            "Elem",
+            sym(10, "trim", "Elem.trim", "method", "ext:ts:lib.d.ts"),
+        );
     let segs = vec![
         seg("email", false, SegmentKind::Identifier),
         seg("split", true, SegmentKind::Property),
@@ -2653,7 +3296,10 @@ fn arg_driven_generic_binds_mid_chain_yield() {
         .with_member("User", sym(40, "name", "User.name", "property", "a.ts"));
     let segs = vec![
         seg("repo", false, SegmentKind::Identifier),
-        seg_call_with_args("find", vec![crate::types::CallArg::Ident("user".to_string())]),
+        seg_call_with_args(
+            "find",
+            vec![crate::types::CallArg::Ident("user".to_string())],
+        ),
         seg("name", false, SegmentKind::Property),
     ];
 
@@ -2675,10 +3321,16 @@ fn mid_chain_receiver_binding_wins_over_the_argument() {
         .with(sym(3, "User", "User", "class", "a.ts"))
         .with_member("User", sym(40, "name", "User.name", "property", "a.ts"))
         .with(sym(4, "Account", "Account", "class", "a.ts"))
-        .with_member("Account", sym(41, "name", "Account.name", "property", "a.ts"));
+        .with_member(
+            "Account",
+            sym(41, "name", "Account.name", "property", "a.ts"),
+        );
     let segs = vec![
         seg("repo", false, SegmentKind::Identifier),
-        seg_call_with_args("find", vec![crate::types::CallArg::Ident("user".to_string())]),
+        seg_call_with_args(
+            "find",
+            vec![crate::types::CallArg::Ident("user".to_string())],
+        ),
         seg("name", false, SegmentKind::Property),
     ];
 
@@ -2724,7 +3376,10 @@ fn an_intersection_branchs_type_arguments_reach_its_members_yield() {
         )
         .with(sym(1, "Wrapper", "Wrapper", "interface", "ext:ts:lib.d.ts"))
         .with_generics("Wrapper", &["T"])
-        .with_member("Wrapper", sym(30, "m", "Wrapper.m", "method", "ext:ts:lib.d.ts"))
+        .with_member(
+            "Wrapper",
+            sym(30, "m", "Wrapper.m", "method", "ext:ts:lib.d.ts"),
+        )
         .with_return_type("Wrapper.m", "T")
         .with(sym(3, "User", "User", "class", "a.ts"))
         .with_member("User", sym(40, "name", "User.name", "property", "a.ts"));
@@ -2821,10 +3476,22 @@ fn an_external_member_never_roots_a_bare_name() {
             "ext:ts:__ts_lib__/lib.dom.d.ts",
         ))
         .with_field_type("WorkerNavigator.storage", "StorageManager")
-        .with(sym(10, "StorageManager", "StorageManager", "interface", "ext:ts:__ts_lib__/lib.dom.d.ts"))
+        .with(sym(
+            10,
+            "StorageManager",
+            "StorageManager",
+            "interface",
+            "ext:ts:__ts_lib__/lib.dom.d.ts",
+        ))
         .with_member(
             "StorageManager",
-            sym(50, "estimate", "StorageManager.estimate", "method", "ext:ts:__ts_lib__/lib.dom.d.ts"),
+            sym(
+                50,
+                "estimate",
+                "StorageManager.estimate",
+                "method",
+                "ext:ts:__ts_lib__/lib.dom.d.ts",
+            ),
         );
     let segs = vec![
         seg("storage", false, SegmentKind::Identifier),
@@ -2845,7 +3512,10 @@ fn uncalled_method_value_resolves_function_prototype_members() {
     };
     let lookup = Lookup::new()
         .with_local_type("obs", "Obs")
-        .with_member("Obs", sym(10, "fetchNextPage", "Obs.fetchNextPage", "method", "a.ts"))
+        .with_member(
+            "Obs",
+            sym(10, "fetchNextPage", "Obs.fetchNextPage", "method", "a.ts"),
+        )
         .with_return_type("Obs.fetchNextPage", "Promise<Result>")
         .with(sym(
             20,
@@ -2856,7 +3526,13 @@ fn uncalled_method_value_resolves_function_prototype_members() {
         ))
         .with_member(
             "CallableFunction",
-            sym(50, "bind", "CallableFunction.bind", "method", "ext:ts:__ts_lib__/lib.es5.d.ts"),
+            sym(
+                50,
+                "bind",
+                "CallableFunction.bind",
+                "method",
+                "ext:ts:__ts_lib__/lib.es5.d.ts",
+            ),
         );
     let segs = vec![
         seg("obs", false, SegmentKind::Identifier),
@@ -2884,9 +3560,18 @@ fn a_called_method_still_yields_its_return_not_the_prototype() {
     };
     let lookup = Lookup::new()
         .with_local_type("obs", "Obs")
-        .with_member("Obs", sym(10, "fetchNextPage", "Obs.fetchNextPage", "method", "a.ts"))
+        .with_member(
+            "Obs",
+            sym(10, "fetchNextPage", "Obs.fetchNextPage", "method", "a.ts"),
+        )
         .with_return_type("Obs.fetchNextPage", "Result")
-        .with(sym(20, "CallableFunction", "CallableFunction", "interface", "l.d.ts"))
+        .with(sym(
+            20,
+            "CallableFunction",
+            "CallableFunction",
+            "interface",
+            "l.d.ts",
+        ))
         .with_member(
             "CallableFunction",
             sym(50, "bind", "CallableFunction.bind", "method", "l.d.ts"),
@@ -2934,7 +3619,13 @@ fn a_computed_symbol_key_is_not_an_index_signature() {
         .with(sym(1, "Timer", "Timer", "interface", "l.d.ts"))
         .with_member(
             "Timer",
-            sym(50, "[Symbol.toPrimitive]", "Timer.[Symbol.toPrimitive]", "property", "l.d.ts"),
+            sym(
+                50,
+                "[Symbol.toPrimitive]",
+                "Timer.[Symbol.toPrimitive]",
+                "property",
+                "l.d.ts",
+            ),
         );
     let segs = vec![
         seg("t", false, SegmentKind::Identifier),
@@ -2951,10 +3642,19 @@ fn index_signature_climb_requalifies_a_bare_parent_in_a_namespace() {
     // namespace so `process.env.ANY` reaches `NodeJS.Dict.[key]`.
     let lookup = Lookup::new()
         .with_local_type("env", "NodeJS.ProcessEnv")
-        .with(sym(1, "ProcessEnv", "NodeJS.ProcessEnv", "interface", "l.d.ts"))
+        .with(sym(
+            1,
+            "ProcessEnv",
+            "NodeJS.ProcessEnv",
+            "interface",
+            "l.d.ts",
+        ))
         .with_parent("NodeJS.ProcessEnv", "Dict")
         .with(sym(2, "Dict", "NodeJS.Dict", "interface", "l.d.ts"))
-        .with_member("NodeJS.Dict", sym(50, "[key]", "NodeJS.Dict.[key]", "property", "l.d.ts"));
+        .with_member(
+            "NodeJS.Dict",
+            sym(50, "[key]", "NodeJS.Dict.[key]", "property", "l.d.ts"),
+        );
     let segs = vec![
         seg("env", false, SegmentKind::Identifier),
         seg("VERCEL_URL", false, SegmentKind::Property),
@@ -2982,7 +3682,13 @@ fn arrow_typed_value_call_root_yields_the_signature_return() {
         .with_return_type("Builder.use", "Builder<E, A>")
         .with_member(
             "Builder",
-            sym(51, "action", "Builder.action", "method", "ext:ts:pkg/index.d.ts"),
+            sym(
+                51,
+                "action",
+                "Builder.action",
+                "method",
+                "ext:ts:pkg/index.d.ts",
+            ),
         );
     let segs = vec![
         seg("make", true, SegmentKind::Identifier),
@@ -3003,7 +3709,13 @@ fn extension_method_resolves_on_instance_member_miss() {
     let lookup = Lookup::new()
         .with(sym(1, "builder", "Cfg.builder", "parameter", "src/Cfg.cs"))
         .with_field_type("Cfg.builder", "ModelBuilder")
-        .with(sym(10, "ModelBuilder", "ModelBuilder", "class", "ext:dotnet:EF/EF"))
+        .with(sym(
+            10,
+            "ModelBuilder",
+            "ModelBuilder",
+            "class",
+            "ext:dotnet:EF/EF",
+        ))
         .with(sym_with_sig(
             20,
             "UseSnapshot",
@@ -3050,10 +3762,22 @@ fn two_distinct_extension_declarations_stay_ambiguous() {
         .with(sym(1, "b", "C.b", "parameter", "src/C.cs"))
         .with_field_type("C.b", "Widget")
         .with(sym(10, "Widget", "Widget", "class", "src/Widget.cs"))
-        .with(sym_with_sig(20, "Fit", "ExtA.Fit", "method", "src/A.cs",
-            "void Fit(this Widget w)"))
-        .with(sym_with_sig(21, "Fit", "ExtB.Fit", "method", "src/B.cs",
-            "void Fit(this Widget w)"));
+        .with(sym_with_sig(
+            20,
+            "Fit",
+            "ExtA.Fit",
+            "method",
+            "src/A.cs",
+            "void Fit(this Widget w)",
+        ))
+        .with(sym_with_sig(
+            21,
+            "Fit",
+            "ExtB.Fit",
+            "method",
+            "src/B.cs",
+            "void Fit(this Widget w)",
+        ));
     let segs = vec![
         seg("b", false, SegmentKind::Identifier),
         seg("Fit", true, SegmentKind::Property),
@@ -3069,18 +3793,28 @@ fn call_args_bind_against_the_arity_matching_overload() {
     use crate::indexer::resolve::engine::testkit::sym_with_sig;
     use crate::types::CallArg;
     let one = sym_with_sig(
-        30, "Entity", "ModelBuilder.Entity", "method", "ext:dotnet-type:EF.dll!!EF!!ModelBuilder",
+        30,
+        "Entity",
+        "ModelBuilder.Entity",
+        "method",
+        "ext:dotnet-type:EF.dll!!EF!!ModelBuilder",
         "Entity(string): EntityTypeBuilder",
     );
     let two = sym_with_sig(
-        31, "Entity", "ModelBuilder.Entity", "method", "ext:dotnet-type:EF.dll!!EF!!ModelBuilder",
+        31,
+        "Entity",
+        "ModelBuilder.Entity",
+        "method",
+        "ext:dotnet-type:EF.dll!!EF!!ModelBuilder",
         "Entity(string, Action<EntityTypeBuilder>): EntityTypeBuilder",
     );
     let lookup = Lookup::new().with(one.clone()).with(two);
     let arena = lookup.type_arena().expect("arena");
     let args = vec![
         CallArg::StringLit("users".to_string()),
-        CallArg::Lambda { params: vec!["b".to_string()] },
+        CallArg::Lambda {
+            params: vec!["b".to_string()],
+        },
     ];
     let picked = super::_test_select_overload_for_args(&lookup, arena, &one, &args);
     assert_eq!(picked.id, 31, "the 2-param delegate overload must win");
@@ -3100,10 +3834,22 @@ fn closest_receiver_extension_overload_wins() {
         .with(sym(11, "Seq", "Seq", "class", "src/Seq.cs"))
         .with_parent("Seq", "Root")
         .with(sym(12, "Root", "Root", "class", "src/Root.cs"))
-        .with(sym_with_sig(20, "Should", "Ext.Should", "method", "src/Ext.cs",
-            "SeqAssertions Should(this Seq actual)"))
-        .with(sym_with_sig(21, "Should", "Ext.Should", "method", "src/Ext.cs",
-            "RootAssertions Should(this Root actual)"));
+        .with(sym_with_sig(
+            20,
+            "Should",
+            "Ext.Should",
+            "method",
+            "src/Ext.cs",
+            "SeqAssertions Should(this Seq actual)",
+        ))
+        .with(sym_with_sig(
+            21,
+            "Should",
+            "Ext.Should",
+            "method",
+            "src/Ext.cs",
+            "RootAssertions Should(this Root actual)",
+        ));
     let segs = vec![
         seg("items", false, SegmentKind::Identifier),
         seg("Should", true, SegmentKind::Property),
@@ -3123,9 +3869,21 @@ fn implicit_root_extension_applies_to_a_baseless_receiver() {
     let lookup = Lookup::new()
         .with(sym(1, "result", "M.result", "parameter", "src/M.cs"))
         .with_field_type("M.result", "JobResult")
-        .with(sym(10, "JobResult", "JobResult", "class", "src/JobResult.cs"))
-        .with(sym_with_sig(20, "Should", "Ext.Should", "method", "src/Ext.cs",
-            "ObjectAssertions Should(this object actual)"));
+        .with(sym(
+            10,
+            "JobResult",
+            "JobResult",
+            "class",
+            "src/JobResult.cs",
+        ))
+        .with(sym_with_sig(
+            20,
+            "Should",
+            "Ext.Should",
+            "method",
+            "src/Ext.cs",
+            "ObjectAssertions Should(this object actual)",
+        ));
     let segs = vec![
         seg("result", false, SegmentKind::Identifier),
         seg("Should", true, SegmentKind::Property),
@@ -3151,16 +3909,37 @@ fn next_hop_miss_retries_sibling_overload_yields() {
         .with(sym(1, "fake", "M.fake", "parameter", "src/M.cs"))
         .with_field_type("M.fake", "Fake")
         .with(sym(10, "Fake", "Fake", "class", "src/Fake.cs"))
-        .with_member("Fake", sym(20, "CallTo", "Fake.CallTo", "method", "src/Fake.cs"))
+        .with_member(
+            "Fake",
+            sym(20, "CallTo", "Fake.CallTo", "method", "src/Fake.cs"),
+        )
         .with(sym(20, "CallTo", "Fake.CallTo", "method", "src/Fake.cs"))
         .with(sym(21, "CallTo", "Fake.CallTo", "method", "src/Fake.cs"))
         .with_return_type_of(20, "VoidConfig")
         .with_return_type_of(21, "ValueConfig")
-        .with(sym(30, "VoidConfig", "VoidConfig", "class", "src/VoidConfig.cs"))
-        .with(sym(31, "ValueConfig", "ValueConfig", "class", "src/ValueConfig.cs"))
+        .with(sym(
+            30,
+            "VoidConfig",
+            "VoidConfig",
+            "class",
+            "src/VoidConfig.cs",
+        ))
+        .with(sym(
+            31,
+            "ValueConfig",
+            "ValueConfig",
+            "class",
+            "src/ValueConfig.cs",
+        ))
         .with_member(
             "ValueConfig",
-            sym(32, "Returns", "ValueConfig.Returns", "method", "src/ValueConfig.cs"),
+            sym(
+                32,
+                "Returns",
+                "ValueConfig.Returns",
+                "method",
+                "src/ValueConfig.cs",
+            ),
         );
     let segs = vec![
         seg("fake", false, SegmentKind::Identifier),
@@ -3181,15 +3960,36 @@ fn alt_yield_retry_probes_extension_methods_too() {
         .with(sym(1, "fake", "M.fake", "parameter", "src/M.cs"))
         .with_field_type("M.fake", "Fake")
         .with(sym(10, "Fake", "Fake", "class", "src/Fake.cs"))
-        .with_member("Fake", sym(20, "CallTo", "Fake.CallTo", "method", "src/Fake.cs"))
+        .with_member(
+            "Fake",
+            sym(20, "CallTo", "Fake.CallTo", "method", "src/Fake.cs"),
+        )
         .with(sym(20, "CallTo", "Fake.CallTo", "method", "src/Fake.cs"))
         .with(sym(21, "CallTo", "Fake.CallTo", "method", "src/Fake.cs"))
         .with_return_type_of(20, "VoidConfig")
         .with_return_type_of(21, "ValueConfig")
-        .with(sym(30, "VoidConfig", "VoidConfig", "class", "src/VoidConfig.cs"))
-        .with(sym(31, "ValueConfig", "ValueConfig", "class", "src/ValueConfig.cs"))
+        .with(sym(
+            30,
+            "VoidConfig",
+            "VoidConfig",
+            "class",
+            "src/VoidConfig.cs",
+        ))
+        .with(sym(
+            31,
+            "ValueConfig",
+            "ValueConfig",
+            "class",
+            "src/ValueConfig.cs",
+        ))
         .with_parent("ValueConfig", "ReturnConfig")
-        .with(sym(40, "ReturnConfig", "ReturnConfig", "interface", "src/ReturnConfig.cs"))
+        .with(sym(
+            40,
+            "ReturnConfig",
+            "ReturnConfig",
+            "interface",
+            "src/ReturnConfig.cs",
+        ))
         .with(sym_with_sig(
             32,
             "Returns",
@@ -3224,18 +4024,34 @@ fn an_explicit_type_argument_binds_a_method_own_param_for_the_next_hop() {
         .with(sym(10, "SutProvider", "SutProvider", "class", "src/S.cs"))
         .with_member(
             "SutProvider",
-            sym(11, "GetDependency", "SutProvider.GetDependency", "method", "src/S.cs"),
+            sym(
+                11,
+                "GetDependency",
+                "SutProvider.GetDependency",
+                "method",
+                "src/S.cs",
+            ),
         )
         .with_generics("SutProvider.GetDependency", &["T"])
         .with_return_type("SutProvider.GetDependency", "T")
         .with(sym(20, "IOrgRepo", "IOrgRepo", "interface", "src/I.cs"))
         .with_member(
             "IOrgRepo",
-            sym(21, "GetByIdAsync", "IOrgRepo.GetByIdAsync", "method", "src/I.cs"),
+            sym(
+                21,
+                "GetByIdAsync",
+                "IOrgRepo.GetByIdAsync",
+                "method",
+                "src/I.cs",
+            ),
         );
     let mut gd = seg("GetDependency", true, SegmentKind::Property);
     gd.type_args = vec!["IOrgRepo".to_string()];
-    let segs = vec![seg("sp", false, SegmentKind::Identifier), gd, seg("GetByIdAsync", true, SegmentKind::Property)];
+    let segs = vec![
+        seg("sp", false, SegmentKind::Identifier),
+        gd,
+        seg("GetByIdAsync", true, SegmentKind::Property),
+    ];
     assert_eq!(
         resolve(&lookup, segs, "M.Run"),
         Some(21),
@@ -3253,7 +4069,10 @@ fn an_explicit_type_argument_binds_a_root_call_yield() {
         .with_generics("GetService", &["T"])
         .with_return_type("GetService", "T")
         .with(sym(20, "IClock", "IClock", "interface", "src/I.cs"))
-        .with_member("IClock", sym(21, "Now", "IClock.Now", "property", "src/I.cs"));
+        .with_member(
+            "IClock",
+            sym(21, "Now", "IClock.Now", "property", "src/I.cs"),
+        );
     let mut root = seg("GetService", true, SegmentKind::Identifier);
     root.type_args = vec!["IClock".to_string()];
     let segs = vec![root, seg("Now", false, SegmentKind::Property)];
@@ -3276,12 +4095,19 @@ fn an_explicit_type_argument_wins_over_argument_inference() {
         .with_generics("Box.wrap", &["T"])
         .with_return_type("Box.wrap", "T")
         .with(sym(20, "Admin", "Admin", "class", "src/A.cs"))
-        .with_member("Admin", sym(21, "audit", "Admin.audit", "method", "src/A.cs"))
+        .with_member(
+            "Admin",
+            sym(21, "audit", "Admin.audit", "method", "src/A.cs"),
+        )
         .with(sym(30, "User", "User", "class", "src/U.cs"))
         .with_member("User", sym(31, "audit", "User.audit", "method", "src/U.cs"));
     let mut wrap = seg("wrap", true, SegmentKind::Property);
     wrap.type_args = vec!["Admin".to_string()];
-    let segs = vec![seg("b", false, SegmentKind::Identifier), wrap, seg("audit", true, SegmentKind::Property)];
+    let segs = vec![
+        seg("b", false, SegmentKind::Identifier),
+        wrap,
+        seg("audit", true, SegmentKind::Property),
+    ];
     assert_eq!(
         resolve(&lookup, segs, "M.Run"),
         Some(21),

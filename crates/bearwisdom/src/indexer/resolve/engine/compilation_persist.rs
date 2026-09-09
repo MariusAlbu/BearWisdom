@@ -71,7 +71,9 @@ impl Compilation {
                     .iter()
                     .map(|&id| self.arena.generic_param(id).name)
                     .collect();
-                if ti.field_type_id.is_none() && ti.return_type_id.is_none() && param_names.is_empty()
+                if ti.field_type_id.is_none()
+                    && ti.return_type_id.is_none()
+                    && param_names.is_empty()
                 {
                     continue;
                 }
@@ -87,6 +89,7 @@ impl Compilation {
         }
         // Persist the arena verbatim so the `field_type_id` / `return_type_id`
         // raw indices stay valid: `restore_snapshot` rebuilds an identical arena.
+        self.persist_lexical_type_info(&tx)?;
         tx.execute(
             "INSERT OR REPLACE INTO _bearwisdom_meta (key, value) VALUES ('type_arena_snapshot', ?1)",
             rusqlite::params![self.arena.serialize_snapshot()],

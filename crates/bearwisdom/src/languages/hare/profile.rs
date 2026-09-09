@@ -38,6 +38,7 @@ pub const HARE_PROFILE: LanguageProfile = LanguageProfile {
     has_generics: false,
     has_sum_types: true,
     look_through_optional: false,
+    reference_member_projection: false,
     literal_narrowing: false,
     async_wrappers: &[],
     container_accessors: &[],
@@ -107,10 +108,27 @@ mod tests;
 pub(crate) fn is_hare_primitive(name: &str) -> bool {
     matches!(
         name,
-        "bool" | "void" | "never" | "null" | "opaque"
-            | "int" | "i8" | "i16" | "i32" | "i64"
-            | "uint" | "u8" | "u16" | "u32" | "u64"
-            | "uintptr" | "size" | "f32" | "f64"
-            | "rune" | "str" | "nomem"
+        "bool"
+            | "void"
+            | "never"
+            | "null"
+            | "opaque"
+            | "int"
+            | "i8"
+            | "i16"
+            | "i32"
+            | "i64"
+            | "uint"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "uintptr"
+            | "size"
+            | "f32"
+            | "f64"
+            | "rune"
+            | "str"
+            | "nomem"
     )
 }

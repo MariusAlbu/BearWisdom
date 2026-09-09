@@ -1,0 +1,33 @@
+[
+  {
+    "files": [{"path":"main.ts","source":"export {}; declare const tag: unique symbol; interface Uses { [tag](): void; }"}],
+    "keys": [{"path":"main.ts","expression":"[tag]","ownerPath":"main.ts","owner":"tag: unique symbol"}]
+  },
+  {
+    "files": [
+      {"path":"provider.d.ts","source":"interface Keys { readonly token: unique symbol; } declare const keys: Keys;"},
+      {"path":"main.ts","source":"export {}; declare class Factory { static readonly token: unique symbol; } interface Box<T> { value: T; } declare const box: Box<Keys>; interface Uses { [keys.token](): void; [box.value.token](): void; [Factory.token](): void; }"}
+    ],
+    "keys": [
+      {"path":"main.ts","expression":"[keys.token]","ownerPath":"provider.d.ts","owner":"readonly token: unique symbol"},
+      {"path":"main.ts","expression":"[box.value.token]","ownerPath":"provider.d.ts","owner":"readonly token: unique symbol"},
+      {"path":"main.ts","expression":"[Factory.token]","ownerPath":"main.ts","owner":"static readonly token: unique symbol"}
+    ]
+  },
+  {
+    "files": [
+      {"path":"left.ts","source":"export declare const tag: unique symbol;"},
+      {"path":"right.ts","source":"export declare const tag: unique symbol;"},
+      {"path":"barrel.ts","source":"export { tag } from './right';"},
+      {"path":"main.ts","source":"import { tag as selected } from './barrel'; import { tag as other } from './left'; export interface Uses { [selected](): void; [other](): void; }"}
+    ],
+    "keys": [
+      {"path":"main.ts","expression":"[selected]","ownerPath":"right.ts","owner":"tag: unique symbol"},
+      {"path":"main.ts","expression":"[other]","ownerPath":"left.ts","owner":"tag: unique symbol"}
+    ]
+  },
+  {
+    "files": [{"path":"main.ts","source":"/* π 🐻 */ export {}; declare const tag: (/* annotation */ unique symbol); interface Uses { [tag](): void; }"}],
+    "keys": [{"path":"main.ts","expression":"[tag]","ownerPath":"main.ts","owner":"tag: (/* annotation */ unique symbol)"}]
+  }
+]

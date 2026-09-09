@@ -1,0 +1,26 @@
+[
+  {"files":[{"path":"main.ts","source":"export {}; declare const first: typeof second; declare const second: typeof original; declare const original: unique symbol; interface Uses { [first](): void; }"}],
+   "keys":[{"path":"main.ts","expression":"[first]","ownerPath":"main.ts","owner":"original: unique symbol"}]},
+  {"files":[{"path":"provider.ts","source":"export declare const tag: unique symbol;"},{"path":"barrel.ts","source":"export * as inner from './provider';"},{"path":"main.ts","source":"import * as provider from './barrel'; type Key = typeof provider.inner.tag; declare const alias: Key; export interface Uses { [alias](): void; [provider.inner.tag](): void; }"}],
+   "keys":[{"path":"main.ts","expression":"[alias]","ownerPath":"provider.ts","owner":"tag: unique symbol"},{"path":"main.ts","expression":"[provider.inner.tag]","ownerPath":"provider.ts","owner":"tag: unique symbol"}]},
+  {"files":[{"path":"main.ts","source":"export {}; interface Keys { readonly token: unique symbol; } declare const keys: Keys; type Read<T> = T; declare const alias: Read<typeof keys.token>; interface Uses { [alias](): void; }"}],
+   "keys":[{"path":"main.ts","expression":"[alias]","ownerPath":"main.ts","owner":"readonly token: unique symbol"}]},
+  {"files":[{"path":"main.ts","source":"/* π 🐻 */ export {}; declare const original: unique symbol; declare const alias: typeof /* query */ original; interface Uses { [/* key */ (alias)](): void; }"}],
+   "diagnostics":[1169],
+   "keys":[{"path":"main.ts","expression":"[/* key */ (alias)]","ownerPath":"main.ts","owner":"original: unique symbol","unsupported":true}]},
+  {"files":[{"path":"main.ts","source":"/* π 🐻 */ export {}; declare const original: unique symbol; declare const alias: typeof /* query */ original; interface Uses { [/* key */ alias](): void; }"}],
+   "keys":[{"path":"main.ts","expression":"[/* key */ alias]","ownerPath":"main.ts","owner":"original: unique symbol"}]},
+  {"files":[{"path":"main.ts","source":"export {}; declare class Factory { static readonly token: unique symbol; } declare const ctor: typeof Factory; declare const alias: typeof ctor.token; interface Uses { [alias](): void; [ctor.token](): void; }"}],
+   "keys":[{"path":"main.ts","expression":"[alias]","ownerPath":"main.ts","owner":"static readonly token: unique symbol"},{"path":"main.ts","expression":"[ctor.token]","ownerPath":"main.ts","owner":"static readonly token: unique symbol"}]},
+  {"files":[{"path":"main.ts","source":"export {}; interface Keys { readonly token: unique symbol; } declare const keys: Keys; interface Other { readonly same: typeof keys.token; } declare const other: Other; declare const alias: typeof other.same; interface Uses { [alias](): void; }"}],
+   "keys":[{"path":"main.ts","expression":"[alias]","ownerPath":"main.ts","owner":"readonly token: unique symbol"}]},
+  {"files":[{"path":"main.ts","source":"export {}; declare const token: unique symbol; class Holder<T> { readonly key!: T; } class Derived extends Holder<typeof token> {} declare const value: Derived; declare const alias: typeof value.key; interface Uses { [alias](): void; }"}],
+   "keys":[{"path":"main.ts","expression":"[alias]","ownerPath":"main.ts","owner":"token: unique symbol"}]},
+  {"files":[{"path":"main.ts","source":"export {}; declare const text: string; declare const textCopy: typeof text; declare const opaque: unknown; declare const opaqueCopy: typeof opaque; declare const dynamic: any; declare const dynamicCopy: typeof dynamic; declare const impossible: never; declare const impossibleCopy: typeof impossible;"}],
+   "keys":[], "queryTypes":[
+     {"path":"main.ts","expression":"typeof text","binding":"textCopy","intrinsic":"String"},
+     {"path":"main.ts","expression":"typeof opaque","binding":"opaqueCopy","intrinsic":"Unknown"},
+     {"path":"main.ts","expression":"typeof dynamic","binding":"dynamicCopy","intrinsic":"Any"},
+     {"path":"main.ts","expression":"typeof impossible","binding":"impossibleCopy","intrinsic":"Never"}
+   ]}
+]

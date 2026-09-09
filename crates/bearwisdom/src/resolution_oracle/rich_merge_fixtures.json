@@ -1,0 +1,74 @@
+[
+  {
+    "name":"numeric_index_interface_merge_preserves_named_generic_cascades",
+    "diagnosticCodes":[],
+    "files":[
+      {"path":"indexed.d.ts","source":"interface Registry<T> { [index: number]: T; }"},
+      {"path":"methods.d.ts","source":"interface Registry<T> { /*@decl:1:method*/first(): T; /*@decl:2:method*/forEach(callback: (value: T) => void): void; }"},
+      {"path":"main.ts","source":"export {}; class Doc { /*@decl:3:method*/touch(): void {} } function run(list: Registry<Doc>) { list./*@ref:1*/first()./*@ref:2*/touch(); list./*@ref:3*/forEach(value => value./*@ref:4*/touch()); }"}
+    ],
+    "labels":[[1,1],[2,3],[3,2],[4,3]]
+  },
+  {
+    "name":"string_index_checks_cross_file_methods_against_language_unknown",
+    "diagnosticCodes":[],
+    "files":[
+      {"path":"indexed.d.ts","source":"interface Registry { [name: string]: unknown; } declare class Doc { /*@decl:1:method*/touch(): void; }"},
+      {"path":"methods.d.ts","source":"interface Registry { /*@decl:2:method*/read(): Doc; }"},
+      {"path":"main.ts","source":"export {}; function run(list: Registry) { list./*@ref:1*/read()./*@ref:2*/touch(); }"}
+    ],
+    "labels":[[1,2],[2,1]]
+  },
+  {
+    "name":"repeated_properties_compare_bound_alias_types",
+    "diagnosticCodes":[],
+    "files":[
+      {"path":"left.d.ts","source":"declare class Doc { /*@decl:1:method*/touch(): void; } interface Registry { value: Doc; }"},
+      {"path":"right.d.ts","source":"type Item = Doc; interface Registry { value: Item; /*@decl:2:method*/read(): Item; }"},
+      {"path":"main.ts","source":"export {}; function run(list: Registry) { list./*@ref:1*/read()./*@ref:2*/touch(); list.value./*@ref:3*/touch(); }"}
+    ],
+    "labels":[[1,2],[2,1],[3,1]]
+  },
+  {
+    "name":"overload_groups_do_not_block_disjoint_members_or_select_a_winner",
+    "diagnosticCodes":[],
+    "files":[
+      {"path":"left.d.ts","source":"declare class Doc { /*@decl:1:method*/touch(): void; } interface Registry { pick(value: string): string; }"},
+      {"path":"right.d.ts","source":"interface Registry { pick(value: number): number; /*@decl:2:method*/read(): Doc; }"},
+      {"path":"main.ts","source":"export {}; function run(list: Registry) { list./*@ref:1*/read()./*@ref:2*/touch(); }"}
+    ],
+    "labels":[[1,2],[2,1]]
+  },
+  {
+    "name":"call_construct_and_computed_members_retain_separate_key_domains",
+    "diagnosticCodes":[],
+    "files":[
+      {"path":"left.d.ts","source":"declare const key: unique symbol; declare class Doc { /*@decl:1:method*/touch(): void; } interface Registry { (value: string): Doc; new (value: number): Doc; [key](): Doc; }"},
+      {"path":"right.d.ts","source":"interface Registry { /*@decl:2:method*/read(): Doc; }"},
+      {"path":"main.ts","source":"export {}; function run(list: Registry) { list./*@ref:1*/read()./*@ref:2*/touch(); }"}
+    ],
+    "labels":[[1,2],[2,1]]
+  },
+  {
+    "name":"computed_key_depends_on_a_separately_proved_merge",
+    "diagnosticCodes":[],
+    "files":[
+      {"path":"keys.d.ts","source":"declare const keys: Keys; interface Keys { readonly tag: unique symbol; value: string; }"},
+      {"path":"extra.d.ts","source":"interface Keys { value: string; }"},
+      {"path":"dep.d.ts","source":"interface Dep { [keys.tag](): void; } interface Dep { /*@decl:1:method*/read(): Doc; } declare class Doc { /*@decl:2:method*/touch(): void; }"},
+      {"path":"main.ts","source":"export {}; function run(dep: Dep) { dep./*@ref:1*/read()./*@ref:2*/touch(); }"}
+    ],
+    "labels":[[1,1],[2,2]]
+  },
+  {
+    "name":"same_file_type_declaration_does_not_hide_a_configured_global_value_key",
+    "diagnosticCodes":[],
+    "files":[
+      {"path":"provider.d.ts","source":"interface Factory { readonly tag: unique symbol; } declare var Token: Factory;"},
+      {"path":"keys.d.ts","source":"interface Token {} interface Registry<T> { readonly [Token.tag]: string; }"},
+      {"path":"members.d.ts","source":"interface Registry<T> { /*@decl:1:method*/read(): T; /*@decl:2:method*/forEach(callback: (value: T) => void): void; }"},
+      {"path":"main.ts","source":"export {}; class Doc { /*@decl:3:method*/touch(): void {} } function run(list: Registry<Doc>) { list./*@ref:1*/read()./*@ref:2*/touch(); list./*@ref:3*/forEach(value => value./*@ref:4*/touch()); }"}
+    ],
+    "labels":[[1,1],[2,3],[3,2],[4,3]]
+  }
+]

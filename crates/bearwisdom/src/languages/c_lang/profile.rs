@@ -67,6 +67,7 @@ pub const C_LANG_PROFILE: LanguageProfile = LanguageProfile {
     has_generics: true,
     has_sum_types: false,
     look_through_optional: false,
+    reference_member_projection: false,
     literal_narrowing: false,
     async_wrappers: &[],
     container_accessors: &[],

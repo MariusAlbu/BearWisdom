@@ -325,6 +325,15 @@ pub(super) fn extract_calls_from_body_with_symbols(
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
+        if super::calls_local_items::extract(
+            child,
+            source,
+            source_symbol_index,
+            symbols.as_deref_mut(),
+            refs,
+        ) {
+            continue;
+        }
         match child.kind() {
             // Match arms: extract patterns (TypeRef for variants, Variable for bindings)
             "match_expression" => {
@@ -464,96 +473,6 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 if let Some(syms) = symbols.as_deref_mut() {
                     if let Some(sym) = super::symbols::extract_const(&child, source, None, "") {
                         syms.push(sym);
-                    }
-                }
-            }
-
-            // Function-scoped type definitions: `struct Foo { … }`,
-            // `enum Bar { … }`, `type Alias = …;` declared inside a
-            // function body. Same scoping family as PR 99/100 — the
-            // module-level extractor never sees these because they live
-            // beneath a `function_item`, so any subsequent reference
-            // (constructor calls, type annotations, pattern matches)
-            // misses the symbol and lands as unresolved. Real examples in
-            // this codebase: `CoordResult` in `ecosystem/nuget.rs::nuget_coord_artifacts`,
-            // `HandlerMatch` in `languages/csharp/connectors.rs`. Together
-            // these account for ~25 unresolved refs on the BW self-index.
-            // No body recursion needed — type definitions don't contain
-            // call sites the walker cares about (field/variant types are
-            // emitted via the symbols extractor).
-            "struct_item" => {
-                if let Some(syms) = symbols.as_deref_mut() {
-                    if let Some(sym) = super::symbols::extract_struct(&child, source, None, "") {
-                        syms.push(sym);
-                    }
-                }
-            }
-            "enum_item" => {
-                if let Some(syms) = symbols.as_deref_mut() {
-                    if let Some(sym) = super::symbols::extract_enum(&child, source, None, "") {
-                        let enum_idx = syms.len();
-                        let enum_name = sym.name.clone();
-                        syms.push(sym);
-                        // Variants too — `enum ScopeKind { Package(i64),
-                        // DirPrefix(String), All }` declared inside a fn
-                        // body otherwise leaves `ScopeKind::DirPrefix(...)`
-                        // call sites unresolved.
-                        if let Some(body) = child.child_by_field_name("body") {
-                            super::symbols::extract_enum_variants(
-                                &body,
-                                source,
-                                Some(enum_idx),
-                                &enum_name,
-                                syms,
-                                refs,
-                            );
-                        }
-                    }
-                }
-            }
-            "type_item" => {
-                if let Some(syms) = symbols.as_deref_mut() {
-                    if let Some(sym) = super::symbols::extract_type_alias(&child, source, None, "")
-                    {
-                        syms.push(sym);
-                    }
-                }
-            }
-
-            // Function-scoped `fn helper(…) { … }` — a nested function
-            // declared inside another function body. Idiomatic in Rust
-            // for one-shot helpers that don't deserve module scope:
-            //   * `parse_dep` inside `parse_go_mod` (ecosystem/go_mod.rs)
-            //   * `emit_field_type_refs_inner` inside the dart symbols
-            //     extractor (languages/dart/symbols.rs)
-            //   * `keep_for_heuristic` inside an indexer/resolve helper
-            // Without an arm here, the body walker's default fall-through
-            // (line ~620) recurses into the nested fn with the OUTER
-            // function's `source_symbol_index`, which (a) misattributes
-            // every nested-body call to the outer fn and (b) leaves no
-            // symbol entry for the nested fn name itself, so every same-
-            // file call to it lands as unresolved. The fix: extract a
-            // proper symbol AND recurse into the nested body with the
-            // new symbol's index as the source. Type-refs / decorators /
-            // signature TypeRefs handled by the same helpers the
-            // module-scope extractor uses.
-            "function_item" => {
-                if let Some(syms) = symbols.as_deref_mut() {
-                    if let Some(sym) = super::symbols::extract_function(&child, source, None, "") {
-                        let nested_idx = syms.len();
-                        syms.push(sym);
-                        super::symbols::extract_fn_signature_type_refs(
-                            &child, source, nested_idx, refs,
-                        );
-                        if let Some(body) = child.child_by_field_name("body") {
-                            extract_calls_from_body_with_symbols(
-                                &body,
-                                source,
-                                nested_idx,
-                                refs,
-                                Some(syms),
-                            );
-                        }
                     }
                 }
             }
@@ -1047,188 +966,9 @@ pub(super) fn self_member_chain(member: &str, byte_offset: u32) -> MemberChain {
     }
 }
 
-/// Build a structured member-access chain from a Rust call expression's function node.
-///
-/// Returns `None` for bare single-segment identifiers.
-fn build_chain(node: Node, source: &str) -> Option<MemberChain> {
-    if node.kind() == "identifier" || node.kind() == "self" {
-        return None;
-    }
-    let mut segments = Vec::new();
-    build_chain_inner(node, source, &mut segments)?;
-    if segments.len() < 2 {
-        return None;
-    }
-    Some(MemberChain { segments })
-}
-
-fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>) -> Option<()> {
-    match node.kind() {
-        "identifier" => {
-            segments.push(ChainSegment {
-                name: node_text(&node, source),
-                node_kind: "identifier".to_string(),
-                kind: SegmentKind::Identifier,
-                declared_type: None,
-                type_args: vec![],
-                optional_chaining: false,
-                byte_offset: 0,
-                declared_type_id: None,
-                is_call: false,
-                call_args: Vec::new(),
-                type_arg_ids: Vec::new(),
-            });
-            Some(())
-        }
-
-        "self" => {
-            segments.push(ChainSegment {
-                name: "self".to_string(),
-                node_kind: "self".to_string(),
-                kind: SegmentKind::SelfRef,
-                declared_type: None,
-                type_args: vec![],
-                optional_chaining: false,
-                byte_offset: 0,
-                declared_type_id: None,
-                is_call: false,
-                call_args: Vec::new(),
-                type_arg_ids: Vec::new(),
-            });
-            Some(())
-        }
-
-        "field_expression" => {
-            let value = node.child_by_field_name("value")?;
-            let field = node.child_by_field_name("field")?;
-            build_chain_inner(value, source, segments)?;
-            segments.push(ChainSegment {
-                name: node_text(&field, source),
-                node_kind: field.kind().to_string(),
-                kind: SegmentKind::Property,
-                declared_type: None,
-                type_args: vec![],
-                optional_chaining: false,
-                byte_offset: 0,
-                declared_type_id: None,
-                is_call: false,
-                call_args: Vec::new(),
-                type_arg_ids: Vec::new(),
-            });
-            Some(())
-        }
-
-        "scoped_identifier" => {
-            let text = node_text(&node, source);
-            let parts: Vec<&str> = text.split("::").collect();
-            if parts.len() < 2 {
-                segments.push(ChainSegment {
-                    name: text,
-                    node_kind: "scoped_identifier".to_string(),
-                    kind: SegmentKind::Identifier,
-                    declared_type: None,
-                    type_args: vec![],
-                    optional_chaining: false,
-                    byte_offset: 0,
-                    declared_type_id: None,
-                    is_call: false,
-                    call_args: Vec::new(),
-                    type_arg_ids: Vec::new(),
-                });
-            } else {
-                for (i, part) in parts.iter().enumerate() {
-                    let trimmed = part.trim();
-                    // First segment "Self" is the receiver type — must be
-                    // tagged as SelfRef so the chain walker resolves it via
-                    // the enclosing impl/struct/enum/trait. Without this,
-                    // `Self::Variant` and `Self::method()` chains fall into
-                    // the Identifier branch, which tries to look up "Self"
-                    // as a regular type and always fails.
-                    let kind = if i == 0 && trimmed == "Self" {
-                        SegmentKind::SelfRef
-                    } else if i == 0 {
-                        SegmentKind::Identifier
-                    } else {
-                        SegmentKind::Property
-                    };
-                    segments.push(ChainSegment {
-                        name: trimmed.to_string(),
-                        node_kind: "scoped_identifier".to_string(),
-                        kind,
-                        declared_type: None,
-                        type_args: vec![],
-                        optional_chaining: false,
-                        byte_offset: 0,
-                        declared_type_id: None,
-                        is_call: false,
-                        call_args: Vec::new(),
-                        type_arg_ids: Vec::new(),
-                    });
-                }
-            }
-            Some(())
-        }
-
-        "call_expression" => {
-            // Nested call in a chain: `a.b().c()` — walk into the function child,
-            // then mark the resolved segment as invoked so the walker yields the
-            // function's return type rather than the function value itself.
-            let func = node.child_by_field_name("function")?;
-            build_chain_inner(func, source, segments)?;
-            if let Some(last) = segments.last_mut() {
-                last.is_call = true;
-            }
-            Some(())
-        }
-
-        // `container[index]` — a subscript. The grammar carries no field
-        // names for `index_expression`; the container is the first named
-        // child, the index expression the second. Recurse into the
-        // container, then push a ComputedAccess segment carrying the index
-        // text — the chain walker projects the container's element type at
-        // this segment (`array_element_type` in engine/chain.rs) rather than
-        // looking up a member literally named by the index.
-        "index_expression" => {
-            let container = node.named_child(0)?;
-            build_chain_inner(container, source, segments)?;
-            let index_text = node.named_child(1).map(|n| node_text(&n, source)).unwrap_or_default();
-            segments.push(ChainSegment {
-                name: index_text,
-                node_kind: "index_expression".to_string(),
-                kind: SegmentKind::ComputedAccess,
-                declared_type: None,
-                type_args: vec![],
-                optional_chaining: false,
-                byte_offset: 0,
-                declared_type_id: None,
-                is_call: false,
-                call_args: Vec::new(),
-                type_arg_ids: Vec::new(),
-            });
-            Some(())
-        }
-
-        // `(x as Foo).bar()` — `x` is the value, `Foo` the asserted type. The
-        // chain walker adopts the inner segment's `declared_type`.
-        "type_cast_expression" => {
-            let value = node.child_by_field_name("value")?;
-            build_chain_inner(value, source, segments)?;
-            if let Some(type_node) = node.child_by_field_name("type") {
-                let name = rust_type_node_name(&type_node, source);
-                if !name.is_empty() {
-                    if let Some(last) = segments.last_mut() {
-                        if last.declared_type.is_none() {
-                            last.declared_type = Some(name);
-                        }
-                    }
-                }
-            }
-            Some(())
-        }
-
-        _ => None,
-    }
-}
+#[path = "calls_chain.rs"]
+mod chain;
+use chain::build_chain;
 
 // ---------------------------------------------------------------------------
 // Type name extraction helper (for type_cast_expression targets)

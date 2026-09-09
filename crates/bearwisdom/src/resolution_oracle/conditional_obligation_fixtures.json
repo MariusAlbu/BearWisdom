@@ -1,0 +1,13 @@
+[
+  {"name":"invalid_nominal_argument_cannot_supply_keys","preamble":"interface Model<T extends string> { value: T }","from":"keyof Model<number>","to":"'value'","proved":false,"diagnosticCodes":[2344]},
+  {"name":"union_distribution_is_not_a_false_conditional","preamble":"type Choose<T> = T extends string ? number : boolean;","from":"Choose<string | number>","to":"boolean","proved":false,"diagnosticCodes":[]},
+  {"name":"any_distribution_is_not_a_false_conditional","preamble":"type Choose<T> = T extends string ? number : boolean;","from":"Choose<any>","to":"boolean","proved":false,"diagnosticCodes":[]},
+  {"name":"unsupported_callable_infer_is_not_a_false_conditional","preamble":"type Choose<T> = T extends (value: string) => infer U ? U : boolean;","from":"Choose<(value: string) => number>","to":"boolean","proved":false,"diagnosticCodes":[]},
+  {"name":"unsupported_duplicate_binder_is_not_a_first_candidate","preamble":"type Choose<T> = T extends { a: infer U; b: infer U } ? U : boolean;","from":"Choose<{ a: string; b: number }>","to":"string","proved":false,"diagnosticCodes":[]},
+  {"name":"false_branch_cannot_see_infer_declaration","preamble":"type Choose<T> = T extends { value: infer U } ? string : U;","from":"Choose<{}>","to":"string","proved":false,"diagnosticCodes":[2304],"sourceDiagnostic":true},
+  {"name":"unresolved_generic_conditional_does_not_certify_identity","preamble":"interface Model<T> { value: T extends string ? number : boolean }","from":"Model<unknown>['value']","to":"boolean","proved":false,"diagnosticCodes":[]},
+  {"name":"unmodelled_nominal_relation_does_not_select_false","preamble":"interface A { value: string } interface B { value: string } type Choose = A extends B ? string : number;","from":"Choose","to":"number","proved":false,"diagnosticCodes":[]},
+  {"name":"invalid_nominal_arguments_do_not_certify_conditional_equality","preamble":"interface Model<T extends string> { value: T }","from":"Model<number> extends Model<number> ? string : boolean","to":"string","proved":false,"diagnosticCodes":[2344,2344]},
+  {"name":"erased_optional_callable_parameters_are_not_equality_evidence","preamble":"","from":"((v: string) => string) extends ((v?: string) => string) ? number : string","to":"number","proved":false,"compilerAssignable":false,"diagnosticCodes":[]},
+  {"name":"boolean_is_a_union_for_distributive_conditionals","preamble":"type Choose<T> = T extends true ? number : string;","from":"Choose<boolean>","to":"string","proved":false,"compilerAssignable":false,"diagnosticCodes":[]}
+]

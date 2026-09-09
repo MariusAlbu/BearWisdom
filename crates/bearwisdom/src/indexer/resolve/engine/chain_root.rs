@@ -49,6 +49,13 @@ pub(super) fn anchor(
         Ok(root) => return Ok((root, 1)),
         Err(cause) => cause,
     };
+    if chain.segments[0].kind == SegmentKind::BaseRef
+        || lookup
+            .local_reference(ref_ctx.extracted_ref.byte_offset)
+            .is_some()
+    {
+        return Err(cause);
+    }
     let anchored = namespace_anchor(
         file_ctx,
         lookup,
@@ -66,7 +73,9 @@ pub(super) fn anchor(
             );
             Ok((recv, consumed))
         }
-        None => Err(cause.or_else(|| Some(root_cause(ref_ctx, file_ctx, lookup, &chain.segments[0])))),
+        None => {
+            Err(cause.or_else(|| Some(root_cause(ref_ctx, file_ctx, lookup, &chain.segments[0]))))
+        }
     }
 }
 
@@ -160,7 +169,10 @@ fn type_receiver(lookup: &dyn SymbolLookup, arena: &TypeArena, qname: &str) -> O
     let sym = lookup
         .by_qualified_name(qname)
         .filter(|s| is_type_kind(&s.kind))?;
-    Some(Receiver::new(super::head_decl::nominal_head(lookup, arena, sym), sym.id))
+    Some(Receiver::new(
+        super::head_decl::nominal_head(lookup, arena, sym),
+        sym.id,
+    ))
 }
 
 /// The namespaces this file opens WITHOUT qualification: its wildcard imports,

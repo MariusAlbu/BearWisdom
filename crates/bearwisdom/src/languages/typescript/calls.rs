@@ -72,7 +72,7 @@ pub(super) fn emit_new_ref(
                     declared_type: None,
                     type_args: vec![],
                     optional_chaining: false,
-                    byte_offset: 0,
+                    byte_offset: constructor.start_byte() as u32,
                     declared_type_id: None,
                     is_call: false,
                     call_args: Vec::new(),
@@ -119,7 +119,7 @@ pub(super) fn emit_new_ref(
                 col: 0,
                 module: None,
                 chain,
-                byte_offset: constructor.start_byte() as u32,
+                byte_offset: new_node.start_byte() as u32,
                 namespace_segments: Vec::new(),
                 call_args,
             });
@@ -348,40 +348,11 @@ pub(super) fn extract_calls(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
+            // These declarations are extracted separately with their own owner.
+            "function_declaration" | "generator_function_declaration" | "class_declaration" => {}
+            _ if super::expressions::private_kind(child).is_some() => {}
             "call_expression" => {
-                if let Some(func_node) = child.child_by_field_name("function") {
-                    let chain = build_chain(func_node, src);
-                    let target_name = chain
-                        .as_ref()
-                        .and_then(|c| c.segments.last())
-                        .map(|s| s.name.clone())
-                        .unwrap_or_else(|| callee_name_fallback(func_node, src));
-
-                    crate::languages::emit_chain_type_ref(
-                        &chain,
-                        source_symbol_index,
-                        &func_node,
-                        refs,
-                    );
-                    if !target_name.is_empty() && target_name != "undefined" {
-                        let call_args = extract_call_args(&child, src);
-                        refs.push(ExtractedRef {
-                            is_include: false,
-                            is_import_binding: false,
-                            is_reexport: false,
-                            source_symbol_index,
-                            target_name,
-                            kind: EdgeKind::Calls,
-                            line: func_node.start_position().row as u32,
-                            col: 0,
-                            module: None,
-                            chain,
-                            byte_offset: func_node.start_byte() as u32,
-                            namespace_segments: Vec::new(),
-                            call_args,
-                        });
-                    }
-                }
+                emit_call_ref(&child, src, source_symbol_index, refs);
                 extract_calls(&child, src, source_symbol_index, refs);
             }
             "new_expression" => {
@@ -596,7 +567,10 @@ pub(super) fn build_chain_inner(
             segments.push(ChainSegment {
                 name: node_text(node, src),
                 node_kind: node.kind().to_string(),
-                kind: SegmentKind::SelfRef,
+                kind: super::profile::RECEIVER_NODES
+                    .iter()
+                    .find(|(kind, _)| *kind == node.kind())?
+                    .1,
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,
@@ -767,7 +741,7 @@ pub(super) fn build_chain_inner(
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: is_optional,
-                byte_offset: 0,
+                byte_offset: property.start_byte() as u32,
                 declared_type_id: None,
                 is_call: false,
                 call_args: Vec::new(),

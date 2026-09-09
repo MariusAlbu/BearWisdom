@@ -43,10 +43,17 @@ pub(super) fn push_variable_decl(
                     // `const f = function() {}` or `const f = () => {}` -- standard TS idiom
                     // for top-level functions written as variable assignments.
                     let init_kind = child.child_by_field_name("value").map(|v| v.kind());
-                    let sym_kind = match init_kind.as_deref() {
-                        Some("arrow_function" | "function_expression") => SymbolKind::Function,
-                        _ => SymbolKind::Variable,
-                    };
+                    let sym_kind =
+                        if matches!(init_kind, Some("arrow_function" | "function_expression"))
+                            && child
+                                .child_by_field_name("value")
+                                .and_then(super::expressions::private_kind)
+                                .is_none()
+                        {
+                            SymbolKind::Function
+                        } else {
+                            SymbolKind::Variable
+                        };
                     symbols.push(ExtractedSymbol {
                         name: name.clone(),
                         qualified_name,
@@ -72,10 +79,7 @@ pub(super) fn push_variable_decl(
                     // `f.x` carries a field_type for chain resolution and
                     // return inference, and emit its param/return TypeRefs — the
                     // same treatment a `function` declaration gets.
-                    if matches!(
-                        init_kind.as_deref(),
-                        Some("arrow_function" | "function_expression")
-                    ) {
+                    if sym_kind == SymbolKind::Function {
                         if let Some(init) = child.child_by_field_name("value") {
                             let fn_qname = symbols[idx].qualified_name.clone();
                             let params_start = symbols.len();

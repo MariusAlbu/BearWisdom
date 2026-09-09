@@ -50,6 +50,9 @@ pub use crate::ecosystem::rubygems::parse_gemfile_gems;
 /// resolver, not here. This struct is a dumb data holder.
 #[derive(Debug, Clone, Default)]
 pub struct ProjectContext {
+    /// Explicit configured programs. None means unavailable; Some(empty) clears
+    /// persisted membership. Configuration is not inferred from shared indexing.
+    pub programs: Option<Vec<super::programs::Program>>,
     /// Project root directory. Populated by the production builders
     /// (`build_project_context*`); defaults to an empty `PathBuf` for
     /// `Default`-constructed instances. Used by the activation evaluator
@@ -177,6 +180,7 @@ pub fn build_project_context(project_root: &Path) -> ProjectContext {
     log_manifests(&manifests);
     ProjectContext {
         project_root: project_root.to_path_buf(),
+        programs: None,
         manifests,
         by_package: HashMap::new(),
         workspace_pkg_by_declared_name: HashMap::new(),
@@ -220,6 +224,9 @@ pub fn build_project_context_with_packages(
                 // package — prevents a parent directory's manifest from
                 // leaking down into a child package's context.
                 let entry = pkg_manifests.entry(pm.kind).or_default();
+                entry
+                    .module_packages
+                    .extend(pm.data.module_packages.iter().cloned());
                 entry
                     .dependencies
                     .extend(pm.data.dependencies.iter().cloned());
@@ -313,6 +320,7 @@ pub fn build_project_context_with_packages(
 
     ProjectContext {
         project_root: project_root.to_path_buf(),
+        programs: None,
         manifests,
         by_package,
         workspace_pkg_by_declared_name,
@@ -849,46 +857,9 @@ fn matches_platform(plat: Platform) -> bool {
     }
 }
 
-fn union_manifests(per_package: &[PackageManifest]) -> HashMap<ManifestKind, ManifestData> {
-    let mut out: HashMap<ManifestKind, ManifestData> = HashMap::new();
-    for pm in per_package {
-        let entry = out.entry(pm.kind).or_default();
-        entry
-            .dependencies
-            .extend(pm.data.dependencies.iter().cloned());
-        if pm.data.module_path.is_some() {
-            entry.module_path = pm.data.module_path.clone();
-        }
-        entry
-            .global_usings
-            .extend(pm.data.global_usings.iter().cloned());
-        if pm.data.sdk_type.is_some() {
-            entry.sdk_type = pm.data.sdk_type.clone();
-        }
-        for pr in &pm.data.project_refs {
-            if !entry.project_refs.contains(pr) {
-                entry.project_refs.push(pr.clone());
-            }
-        }
-        // The package's own declared name — its members' names plus the
-        // workspace root's — so a reference to a project-own crate is
-        // recognized as internal.
-        if !pm.name.is_empty() && !entry.package_names.contains(&pm.name) {
-            entry.package_names.push(pm.name.clone());
-        }
-        for alias in &pm.data.path_aliases {
-            if !entry.path_aliases.contains(alias) {
-                entry.path_aliases.push(alias.clone());
-            }
-        }
-        for t in &pm.data.tsconfig_types {
-            if !entry.tsconfig_types.contains(t) {
-                entry.tsconfig_types.push(t.clone());
-            }
-        }
-    }
-    out
-}
+#[path = "project_manifest_union.rs"]
+mod manifest_union;
+use manifest_union::union_manifests;
 
 fn log_manifests(manifests: &HashMap<ManifestKind, ManifestData>) {
     if let Some(go) = manifests.get(&ManifestKind::GoMod) {

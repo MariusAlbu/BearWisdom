@@ -1,0 +1,1369 @@
+[
+  {
+    "name": "widen_parameter",
+    "mode": "heritage",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Base { new(base: number): Item } interface Factory extends Base { new(value: number | string): Item } declare const Build: Factory; const actual = new Build(1); declare const expected: Item; actual.touch();",
+    "diagnosticCodes": [],
+    "supported": true,
+    "selected": "new(value: number | string): Item",
+    "result": "Item",
+    "inventories": {
+      "Factory": [
+        {
+          "start": 147,
+          "parameters": [
+            "string | number"
+          ],
+          "result": "Item"
+        },
+        {
+          "start": 88,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ]
+    },
+    "call": {
+      "expression": "actual.touch()",
+      "declaration": "touch(): number",
+      "result": "number"
+    }
+  },
+  {
+    "name": "narrow_parameter_is_additive",
+    "mode": "heritage",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Base { new(base: number | string): Item } interface Factory extends Base { new(own: number): Item } declare const Build: Factory; const actual = new Build('x'); declare const expected: Item; actual.touch();",
+    "diagnosticCodes": [],
+    "supported": true,
+    "selected": "new(base: number | string): Item",
+    "result": "Item",
+    "inventories": {
+      "Factory": [
+        {
+          "start": 156,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        },
+        {
+          "start": 88,
+          "parameters": [
+            "string | number"
+          ],
+          "result": "Item"
+        }
+      ]
+    },
+    "call": {
+      "expression": "actual.touch()",
+      "declaration": "touch(): number",
+      "result": "number"
+    }
+  },
+  {
+    "name": "incompatible_own_is_additive",
+    "mode": "heritage",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Base { new(base: number): Item } interface Factory extends Base { new(own: string): Other } declare const Build: Factory; const actual = new Build(1); declare const expected: Item; actual.touch();",
+    "diagnosticCodes": [],
+    "supported": true,
+    "selected": "new(base: number): Item",
+    "result": "Item",
+    "inventories": {
+      "Factory": [
+        {
+          "start": 147,
+          "parameters": [
+            "string"
+          ],
+          "result": "Other"
+        },
+        {
+          "start": 88,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ]
+    },
+    "call": {
+      "expression": "actual.touch()",
+      "declaration": "touch(): number",
+      "result": "number"
+    }
+  },
+  {
+    "name": "incompatible_own_selected",
+    "mode": "heritage",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Base { new(base: number): Item } interface Factory extends Base { new(own: string): Other } declare const Build: Factory; const actual = new Build('x'); declare const expected: Other; actual.other();",
+    "diagnosticCodes": [],
+    "supported": true,
+    "selected": "new(own: string): Other",
+    "result": "Other",
+    "inventories": {
+      "Factory": [
+        {
+          "start": 147,
+          "parameters": [
+            "string"
+          ],
+          "result": "Other"
+        },
+        {
+          "start": 88,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ]
+    },
+    "call": {
+      "expression": "actual.other()",
+      "declaration": "other(): string",
+      "result": "string"
+    }
+  },
+  {
+    "name": "narrow_return",
+    "mode": "heritage",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Special extends Item { extra(): void } interface Base { new(base: number): Item } interface Factory extends Base { new(own: number): Special } declare const Build: Factory; const actual = new Build(1); declare const expected: Special; actual.touch();",
+    "diagnosticCodes": [],
+    "supported": true,
+    "selected": "new(own: number): Special",
+    "result": "Special",
+    "inventories": {
+      "Factory": [
+        {
+          "start": 196,
+          "parameters": [
+            "number"
+          ],
+          "result": "Special"
+        },
+        {
+          "start": 137,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ]
+    },
+    "call": {
+      "expression": "actual.touch()",
+      "declaration": "touch(): number",
+      "result": "number"
+    }
+  },
+  {
+    "name": "unrelated_return_is_additive",
+    "mode": "heritage",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Base { new(base: number): Item } interface Factory extends Base { new(own: number): Other } declare const Build: Factory; const actual = new Build(1); declare const expected: Other; actual.other();",
+    "diagnosticCodes": [],
+    "supported": true,
+    "selected": "new(own: number): Other",
+    "result": "Other",
+    "inventories": {
+      "Factory": [
+        {
+          "start": 147,
+          "parameters": [
+            "number"
+          ],
+          "result": "Other"
+        },
+        {
+          "start": 88,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ]
+    },
+    "call": {
+      "expression": "actual.other()",
+      "declaration": "other(): string",
+      "result": "string"
+    }
+  },
+  {
+    "name": "multiple_bases",
+    "mode": "heritage",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Left { new(left: number): Item } interface Right { new(right: string): Other } interface Factory extends Left, Right {} declare const Build: Factory; const actual = new Build('x'); declare const expected: Other; actual.other();",
+    "diagnosticCodes": [],
+    "supported": true,
+    "selected": "new(right: string): Other",
+    "result": "Other",
+    "inventories": {
+      "Factory": [
+        {
+          "start": 88,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        },
+        {
+          "start": 132,
+          "parameters": [
+            "string"
+          ],
+          "result": "Other"
+        }
+      ]
+    },
+    "call": {
+      "expression": "actual.other()",
+      "declaration": "other(): string",
+      "result": "string"
+    }
+  },
+  {
+    "name": "multiple_base_order",
+    "mode": "heritage",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Left { new(left: number): Item } interface Right { new(right: number): Other } interface Factory extends Right, Left {} declare const Build: Factory; const actual = new Build(1); declare const expected: Other; actual.other();",
+    "diagnosticCodes": [],
+    "supported": true,
+    "selected": "new(right: number): Other",
+    "result": "Other",
+    "inventories": {
+      "Factory": [
+        {
+          "start": 132,
+          "parameters": [
+            "number"
+          ],
+          "result": "Other"
+        },
+        {
+          "start": 88,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ]
+    },
+    "call": {
+      "expression": "actual.other()",
+      "declaration": "other(): string",
+      "result": "string"
+    }
+  },
+  {
+    "name": "inherited_specialization",
+    "mode": "heritage",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Base { new(base: \"yes\"): Other } interface Factory extends Base { new(own: string): Item } declare const Build: Factory; const actual = new Build('yes'); declare const expected: Other; actual.other();",
+    "diagnosticCodes": [],
+    "supported": true,
+    "selected": "new(base: \"yes\"): Other",
+    "result": "Other",
+    "inventories": {
+      "Factory": [
+        {
+          "start": 147,
+          "parameters": [
+            "string"
+          ],
+          "result": "Item"
+        },
+        {
+          "start": 88,
+          "parameters": [
+            "\"yes\""
+          ],
+          "result": "Other"
+        }
+      ]
+    },
+    "call": {
+      "expression": "actual.other()",
+      "declaration": "other(): string",
+      "result": "string"
+    }
+  },
+  {
+    "name": "diamond",
+    "mode": "heritage",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Root { new(root: number): Item } interface Left extends Root {} interface Right extends Root {} interface Factory extends Left, Right {} declare const Build: Factory; const actual = new Build(1); declare const expected: Item; actual.touch();",
+    "diagnosticCodes": [],
+    "supported": true,
+    "selected": "new(root: number): Item",
+    "result": "Item",
+    "inventories": {
+      "Factory": [
+        {
+          "start": 88,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        },
+        {
+          "start": 88,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ]
+    },
+    "call": {
+      "expression": "actual.touch()",
+      "declaration": "touch(): number",
+      "result": "number"
+    }
+  },
+  {
+    "name": "generic_base",
+    "mode": "heritage",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Base<T> { new(base: T): Item } interface Factory extends Base<number> { new(own: string): Other } declare const Build: Factory; const actual = new Build(1); declare const expected: Item; actual.touch();",
+    "diagnosticCodes": [],
+    "supported": true,
+    "selected": "new(base: T): Item",
+    "result": "Item",
+    "inventories": {
+      "Factory": [
+        {
+          "start": 153,
+          "parameters": [
+            "string"
+          ],
+          "result": "Other"
+        },
+        {
+          "start": 91,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ]
+    },
+    "call": {
+      "expression": "actual.touch()",
+      "declaration": "touch(): number",
+      "result": "number"
+    }
+  },
+  {
+    "name": "generic_signature",
+    "mode": "heritage",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Base { new<T>(base: T): Item } interface Factory extends Base { new<U>(own: U): Other } declare const Build: Factory; const actual = new Build(1); declare const expected: Other; actual.other();",
+    "diagnosticCodes": [],
+    "supported": true,
+    "selected": "new<U>(own: U): Other",
+    "result": "Other",
+    "inventories": {
+      "Factory": [
+        {
+          "start": 145,
+          "parameters": [
+            "U"
+          ],
+          "result": "Other"
+        },
+        {
+          "start": 88,
+          "parameters": [
+            "T"
+          ],
+          "result": "Item"
+        }
+      ]
+    },
+    "call": {
+      "expression": "actual.other()",
+      "declaration": "other(): string",
+      "result": "string"
+    }
+  },
+  {
+    "name": "optional_constructor",
+    "mode": "heritage",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Base { new(base: number): Item } interface Factory extends Base { new(own?: number): Other } declare const Build: Factory; const actual = new Build(); declare const expected: Other; actual.other();",
+    "diagnosticCodes": [],
+    "supported": true,
+    "selected": "new(own?: number): Other",
+    "result": "Other",
+    "inventories": {
+      "Factory": [
+        {
+          "start": 147,
+          "parameters": [
+            "number | undefined"
+          ],
+          "result": "Other"
+        },
+        {
+          "start": 88,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ]
+    },
+    "call": {
+      "expression": "actual.other()",
+      "declaration": "other(): string",
+      "result": "string"
+    }
+  },
+  {
+    "name": "tuple_rest_constructor",
+    "mode": "heritage",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Base { new(base: number): Item } interface Factory extends Base { new(...own: [number, string?]): Other } declare const Build: Factory; const actual = new Build(1, 'x'); declare const expected: Other; actual.other();",
+    "diagnosticCodes": [],
+    "supported": true,
+    "selected": "new(...own: [number, string?]): Other",
+    "result": "Other",
+    "inventories": {
+      "Factory": [
+        {
+          "start": 147,
+          "parameters": [
+            "[number, (string | undefined)?]"
+          ],
+          "result": "Other"
+        },
+        {
+          "start": 88,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ]
+    },
+    "call": {
+      "expression": "actual.other()",
+      "declaration": "other(): string",
+      "result": "string"
+    }
+  },
+  {
+    "name": "unknown_signature",
+    "mode": "heritage",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Base { new(base: number): Item } interface Factory extends Base { new(own: Missing): Other } declare const Build: Factory; const actual = new Build(1); declare const expected: Item;",
+    "diagnosticCodes": [
+      2304
+    ],
+    "supported": false,
+    "selected": null,
+    "result": "Item",
+    "inventories": {
+      "Factory": [
+        {
+          "start": 147,
+          "parameters": [
+            "Missing"
+          ],
+          "result": "Other"
+        },
+        {
+          "start": 88,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  },
+  {
+    "name": "cyclic_base",
+    "mode": "heritage",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Base extends Factory { new(base: number): Item } interface Factory extends Base { new(own: string): Other } declare const Build: Factory; const actual = new Build(1); declare const expected: Item;",
+    "diagnosticCodes": [
+      2310,
+      2310
+    ],
+    "supported": false,
+    "selected": null,
+    "result": "Item",
+    "inventories": {
+      "Factory": [
+        {
+          "start": 163,
+          "parameters": [
+            "string"
+          ],
+          "result": "Other"
+        },
+        {
+          "start": 104,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  },
+  {
+    "name": "incompatible_named_property",
+    "mode": "heritage",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Base { value: number; new(base: number): Item } interface Factory extends Base { value: string; new(own: string): Other } declare const Build: Factory; const actual = new Build(1); declare const expected: Item;",
+    "diagnosticCodes": [
+      2430
+    ],
+    "supported": false,
+    "selected": null,
+    "result": "Item",
+    "inventories": {
+      "Factory": [
+        {
+          "start": 177,
+          "parameters": [
+            "string"
+          ],
+          "result": "Other"
+        },
+        {
+          "start": 103,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  },
+  {
+    "name": "parameter_contravariance",
+    "mode": "relation",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Source { new(x: number | string): Item } interface Target { new(y: number): Item } declare const source: Source; const checked: Target = source;",
+    "strict": true,
+    "diagnosticCodes": [],
+    "admitted": true,
+    "supported": true,
+    "inventories": {
+      "Source": [
+        {
+          "start": 90,
+          "parameters": [
+            "string | number"
+          ],
+          "result": "Item"
+        }
+      ],
+      "Target": [
+        {
+          "start": 141,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  },
+  {
+    "name": "parameter_narrow_strict",
+    "mode": "relation",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Source { new(x: number): Item } interface Target { new(y: number | string): Item } declare const source: Source; const checked: Target = source;",
+    "strict": true,
+    "diagnosticCodes": [
+      2322
+    ],
+    "admitted": false,
+    "supported": true,
+    "inventories": {
+      "Source": [
+        {
+          "start": 90,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ],
+      "Target": [
+        {
+          "start": 132,
+          "parameters": [
+            "string | number"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  },
+  {
+    "name": "parameter_narrow_non_strict",
+    "mode": "relation",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Source { new(x: number): Item } interface Target { new(y: number | string): Item } declare const source: Source; const checked: Target = source;",
+    "strict": false,
+    "diagnosticCodes": [],
+    "admitted": true,
+    "supported": true,
+    "inventories": {
+      "Source": [
+        {
+          "start": 90,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ],
+      "Target": [
+        {
+          "start": 132,
+          "parameters": [
+            "string | number"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  },
+  {
+    "name": "return_covariance",
+    "mode": "relation",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Source { new(x: number): Item } interface Target { new(y: number): object } declare const source: Source; const checked: Target = source;",
+    "strict": true,
+    "diagnosticCodes": [],
+    "admitted": true,
+    "supported": true,
+    "inventories": {
+      "Source": [
+        {
+          "start": 90,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ],
+      "Target": [
+        {
+          "start": 132,
+          "parameters": [
+            "number"
+          ],
+          "result": "object"
+        }
+      ]
+    }
+  },
+  {
+    "name": "return_incompatible",
+    "mode": "relation",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Source { new(x: number): Other } interface Target { new(y: number): Item } declare const source: Source; const checked: Target = source;",
+    "strict": true,
+    "diagnosticCodes": [
+      2322
+    ],
+    "admitted": false,
+    "supported": true,
+    "inventories": {
+      "Source": [
+        {
+          "start": 90,
+          "parameters": [
+            "number"
+          ],
+          "result": "Other"
+        }
+      ],
+      "Target": [
+        {
+          "start": 133,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  },
+  {
+    "name": "optional_accepts_required",
+    "mode": "relation",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Source { new(x?: number): Item } interface Target { new(y: number): Item } declare const source: Source; const checked: Target = source;",
+    "strict": true,
+    "diagnosticCodes": [],
+    "admitted": true,
+    "supported": true,
+    "inventories": {
+      "Source": [
+        {
+          "start": 90,
+          "parameters": [
+            "number | undefined"
+          ],
+          "result": "Item"
+        }
+      ],
+      "Target": [
+        {
+          "start": 133,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  },
+  {
+    "name": "required_rejects_optional",
+    "mode": "relation",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Source { new(x: number): Item } interface Target { new(y?: number): Item } declare const source: Source; const checked: Target = source;",
+    "strict": true,
+    "diagnosticCodes": [
+      2322
+    ],
+    "admitted": false,
+    "supported": true,
+    "inventories": {
+      "Source": [
+        {
+          "start": 90,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ],
+      "Target": [
+        {
+          "start": 132,
+          "parameters": [
+            "number | undefined"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  },
+  {
+    "name": "fewer_parameters",
+    "mode": "relation",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Source { new(): Item } interface Target { new(y: number): Item } declare const source: Source; const checked: Target = source;",
+    "strict": true,
+    "diagnosticCodes": [],
+    "admitted": true,
+    "supported": true,
+    "inventories": {
+      "Source": [
+        {
+          "start": 90,
+          "parameters": [],
+          "result": "Item"
+        }
+      ],
+      "Target": [
+        {
+          "start": 123,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  },
+  {
+    "name": "more_required_parameters",
+    "mode": "relation",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Source { new(x: number, z: string): Item } interface Target { new(y: number): Item } declare const source: Source; const checked: Target = source;",
+    "strict": true,
+    "diagnosticCodes": [
+      2322
+    ],
+    "admitted": false,
+    "supported": true,
+    "inventories": {
+      "Source": [
+        {
+          "start": 90,
+          "parameters": [
+            "number",
+            "string"
+          ],
+          "result": "Item"
+        }
+      ],
+      "Target": [
+        {
+          "start": 143,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  },
+  {
+    "name": "tuple_rest_variance",
+    "mode": "relation",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Source { new(...x: [number | string, boolean?]): Item } interface Target { new(...y: [number, boolean?]): Item } declare const source: Source; const checked: Target = source;",
+    "strict": true,
+    "diagnosticCodes": [],
+    "admitted": true,
+    "supported": true,
+    "inventories": {
+      "Source": [
+        {
+          "start": 90,
+          "parameters": [
+            "[string | number, (boolean | undefined)?]"
+          ],
+          "result": "Item"
+        }
+      ],
+      "Target": [
+        {
+          "start": 156,
+          "parameters": [
+            "[number, (boolean | undefined)?]"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  },
+  {
+    "name": "alpha_generic",
+    "mode": "relation",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Source { new<T>(x: T): Item } interface Target { new<U>(y: U): Item } declare const source: Source; const checked: Target = source;",
+    "strict": true,
+    "diagnosticCodes": [],
+    "admitted": true,
+    "supported": true,
+    "inventories": {
+      "Source": [
+        {
+          "start": 90,
+          "parameters": [
+            "T"
+          ],
+          "result": "Item"
+        }
+      ],
+      "Target": [
+        {
+          "start": 130,
+          "parameters": [
+            "U"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  },
+  {
+    "name": "generic_result",
+    "mode": "relation",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Source { new<T>(x: T): T } interface Target { new<U>(y: U): U } declare const source: Source; const checked: Target = source;",
+    "strict": true,
+    "diagnosticCodes": [],
+    "admitted": true,
+    "supported": true,
+    "inventories": {
+      "Source": [
+        {
+          "start": 90,
+          "parameters": [
+            "T"
+          ],
+          "result": "T"
+        }
+      ],
+      "Target": [
+        {
+          "start": 127,
+          "parameters": [
+            "U"
+          ],
+          "result": "U"
+        }
+      ]
+    }
+  },
+  {
+    "name": "generic_constraint_equal",
+    "mode": "relation",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Source { new<T extends string>(x: T): T } interface Target { new<U extends string>(y: U): U } declare const source: Source; const checked: Target = source;",
+    "strict": true,
+    "diagnosticCodes": [],
+    "admitted": true,
+    "supported": true,
+    "inventories": {
+      "Source": [
+        {
+          "start": 90,
+          "parameters": [
+            "T"
+          ],
+          "result": "T"
+        }
+      ],
+      "Target": [
+        {
+          "start": 142,
+          "parameters": [
+            "U"
+          ],
+          "result": "U"
+        }
+      ]
+    }
+  },
+  {
+    "name": "generic_defaults",
+    "mode": "relation",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Source { new<T = string>(x?: T): Item } interface Target { new<U = number>(y?: U): Item } declare const source: Source; const checked: Target = source;",
+    "strict": true,
+    "diagnosticCodes": [],
+    "admitted": true,
+    "supported": true,
+    "inventories": {
+      "Source": [
+        {
+          "start": 90,
+          "parameters": [
+            "T | undefined"
+          ],
+          "result": "Item"
+        }
+      ],
+      "Target": [
+        {
+          "start": 140,
+          "parameters": [
+            "U | undefined"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  },
+  {
+    "name": "overload_coverage",
+    "mode": "relation",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Source { new(x: number): Item; new(x: string): Other } interface Target { new(y: string): Other } declare const source: Source; const checked: Target = source;",
+    "strict": true,
+    "diagnosticCodes": [],
+    "admitted": true,
+    "supported": true,
+    "inventories": {
+      "Source": [
+        {
+          "start": 90,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        },
+        {
+          "start": 112,
+          "parameters": [
+            "string"
+          ],
+          "result": "Other"
+        }
+      ],
+      "Target": [
+        {
+          "start": 155,
+          "parameters": [
+            "string"
+          ],
+          "result": "Other"
+        }
+      ]
+    }
+  },
+  {
+    "name": "missing_overload",
+    "mode": "relation",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Source { new(x: number): Item } interface Target { new(y: number): Item; new(y: string): Other } declare const source: Source; const checked: Target = source;",
+    "strict": true,
+    "diagnosticCodes": [
+      2322
+    ],
+    "admitted": false,
+    "supported": true,
+    "inventories": {
+      "Source": [
+        {
+          "start": 90,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ],
+      "Target": [
+        {
+          "start": 132,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        },
+        {
+          "start": 154,
+          "parameters": [
+            "string"
+          ],
+          "result": "Other"
+        }
+      ]
+    }
+  },
+  {
+    "name": "unknown_signature_relation",
+    "mode": "relation",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Source { new(x: Missing): Item } interface Target { new(y: number): Item } declare const source: Source; const checked: Target = source;",
+    "strict": true,
+    "diagnosticCodes": [
+      2304
+    ],
+    "admitted": true,
+    "supported": false,
+    "inventories": {
+      "Source": [
+        {
+          "start": 90,
+          "parameters": [
+            "Missing"
+          ],
+          "result": "Item"
+        }
+      ],
+      "Target": [
+        {
+          "start": 133,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  },
+  {
+    "name": "call_facet_barrier",
+    "mode": "relation",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Source { (x: number): Item; new(x: number): Item } interface Target { new(y: number): Item } declare const source: Source; const checked: Target = source;",
+    "strict": true,
+    "diagnosticCodes": [],
+    "admitted": true,
+    "supported": false,
+    "inventories": {
+      "Source": [
+        {
+          "start": 109,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ],
+      "Target": [
+        {
+          "start": 151,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  },
+  {
+    "name": "constructor_required",
+    "mode": "relation",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Source {  } interface Target { new(y: number): Item } declare const source: Source; const checked: Target = source;",
+    "strict": true,
+    "diagnosticCodes": [
+      2322
+    ],
+    "admitted": false,
+    "supported": true,
+    "inventories": {
+      "Source": [],
+      "Target": [
+        {
+          "start": 112,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  },
+  {
+    "name": "extra_constructor_allowed",
+    "mode": "relation",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Source { new(x: number): Item } interface Target {  } declare const source: Source; const checked: Target = source;",
+    "strict": true,
+    "diagnosticCodes": [],
+    "admitted": true,
+    "supported": true,
+    "inventories": {
+      "Source": [
+        {
+          "start": 90,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ],
+      "Target": []
+    }
+  },
+  {
+    "name": "nested_callback_variance",
+    "mode": "relation",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Source { new(x: (value: string) => void): Item } interface Target { new(y: (value: string | number) => void): Item } declare const source: Source; const checked: Target = source;",
+    "strict": true,
+    "diagnosticCodes": [],
+    "admitted": true,
+    "supported": true,
+    "inventories": {
+      "Source": [
+        {
+          "start": 90,
+          "parameters": [
+            "(value: string) => void"
+          ],
+          "result": "Item"
+        }
+      ],
+      "Target": [
+        {
+          "start": 149,
+          "parameters": [
+            "(value: string | number) => void"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  },
+  {
+    "name": "null_parameter_rejected",
+    "mode": "relation",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Source { new(x: number): Item } interface Target { new(y: number | null): Item } declare const source: Source; const checked: Target = source;",
+    "strict": true,
+    "diagnosticCodes": [
+      2322
+    ],
+    "admitted": false,
+    "supported": true,
+    "inventories": {
+      "Source": [
+        {
+          "start": 90,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ],
+      "Target": [
+        {
+          "start": 132,
+          "parameters": [
+            "number | null"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  },
+  {
+    "name": "constructor_argument_variance",
+    "mode": "heritage",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Narrow { new(n: number): Item } interface Wide { new(w: number | string): Item } interface Base { new(base: Narrow): Item } interface Factory extends Base { new(own: Wide): Other } declare const wide: Wide; declare const Build: Factory; const actual = new Build(wide); declare const expected: Other; actual.other();",
+    "diagnosticCodes": [],
+    "supported": true,
+    "selected": "new(own: Wide): Other",
+    "result": "Other",
+    "call": {
+      "expression": "actual.other()",
+      "declaration": "other(): string",
+      "result": "string"
+    },
+    "inventories": {
+      "Factory": [
+        {
+          "start": 238,
+          "parameters": [
+            "Wide"
+          ],
+          "result": "Other"
+        },
+        {
+          "start": 179,
+          "parameters": [
+            "Narrow"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  },
+  {
+    "name": "constructor_argument_variance_rejection",
+    "mode": "heritage",
+    "source": "interface Item { touch(): number } interface Other { other(): string } interface Narrow { new(n: number): Item } interface Wide { new(w: number | string): Item } interface Base { new(base: boolean): Item } interface Factory extends Base { new(own: Wide): Other } declare const narrow: Narrow; declare const Build: Factory; const actual = new Build(narrow); declare const expected: Other;",
+    "diagnosticCodes": [
+      2769
+    ],
+    "supported": false,
+    "admitted": true,
+    "selected": null,
+    "result": "Other",
+    "inventories": {
+      "Factory": [
+        {
+          "start": 239,
+          "parameters": [
+            "Wide"
+          ],
+          "result": "Other"
+        },
+        {
+          "start": 179,
+          "parameters": [
+            "boolean"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  },
+  {
+    "name": "generic_constraint_domain_retained_gap",
+    "mode": "relation",
+    "strict": true,
+    "source": "interface Item {} interface Source { new<T extends number | string>(value: T): Item } interface Target { new<U extends number>(value: U): Item } declare const source: Source; const actual: Target = source;",
+    "diagnosticCodes": [],
+    "admitted": true,
+    "supported": true,
+    "inventories": {
+      "Source": [
+        {
+          "start": 37,
+          "parameters": [
+            "T"
+          ],
+          "result": "Item"
+        }
+      ],
+      "Target": [
+        {
+          "start": 105,
+          "parameters": [
+            "U"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  },
+  {
+    "name": "unbounded_rest_variance_retained_gap",
+    "mode": "relation",
+    "strict": true,
+    "arrayProvider": "interface Array<T> { length: number } ",
+    "source": "interface Item {} interface Source { new(...values: number[]): Item } interface Target { new(value: number): Item } declare const source: Source; const actual: Target = source;",
+    "diagnosticCodes": [],
+    "admitted": true,
+    "supported": true,
+    "inventories": {
+      "Source": [
+        {
+          "start": 75,
+          "parameters": [
+            "number[]"
+          ],
+          "result": "Item"
+        }
+      ],
+      "Target": [
+        {
+          "start": 127,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  },
+  {
+    "name": "generic_rest_constraint_retained_gap",
+    "mode": "relation",
+    "strict": true,
+    "arrayProvider": "interface Array<T> { length: number } ",
+    "source": "interface Item {} interface Source { new<T extends number[]>(...values: T): Item } interface Target { new(value: number): Item } declare const source: Source; const actual: Target = source;",
+    "admitted": true,
+    "supported": true,
+    "diagnosticCodes": [],
+    "inventories": {
+      "Source": [
+        {
+          "start": 75,
+          "parameters": [
+            "T"
+          ],
+          "result": "Item"
+        }
+      ],
+      "Target": [
+        {
+          "start": 140,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  },
+  {
+    "name": "generic_tuple_rest_constraint",
+    "mode": "relation",
+    "strict": true,
+    "source": "interface Item {} interface Source { new<T extends [number, string?]>(...values: T): Item } interface Target { new(value: number): Item } declare const source: Source; const actual: Target = source;",
+    "admitted": true,
+    "supported": true,
+    "diagnosticCodes": [],
+    "inventories": {
+      "Source": [
+        {
+          "start": 37,
+          "parameters": [
+            "T"
+          ],
+          "result": "Item"
+        }
+      ],
+      "Target": [
+        {
+          "start": 111,
+          "parameters": [
+            "number"
+          ],
+          "result": "Item"
+        }
+      ]
+    }
+  }
+]

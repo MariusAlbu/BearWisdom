@@ -22,15 +22,24 @@ use crate::types::AliasTargetIds;
 /// is populated as the ref loop progresses so a later ref can read the type
 /// inferred from an earlier binding (`const x = makeRepo(); x.find()`).
 ///
-/// The cache is intentionally flat (no CFG, no narrowing) — this is forward
-/// inference only: LHS-name → yield-type. Two parallel caches are maintained:
-/// `locals_id` stores the canonical TypeId directly (populated from
-/// `resolved_yield_type` when present, avoiding the `format_type` →
-/// `intern_type_str` round-trip that nominalizes primitives/optionals/generics
-/// to `Class`); `locals` stores the String fallback for the call sites that
-/// still operate on type strings (return_type_str / field_type_str paths).
+/// Syntax-migrated files use LexicalCache: ScopeId/BindingId-keyed typed facts.
+/// The maps below are the legacy path for languages/files without lexical
+/// metadata; they are never consulted when the scoped cache is installed.
+/// CFG joins and identity-bearing contextual lambda writes remain separate work.
 pub(super) struct FileLookup<'a> {
     tree: &'a Compilation,
+    program: Option<super::program_view::Lookup<'a>>,
+    module_site: super::module_graph::ModuleSite,
+    lexical: Option<super::lexical_cache::LexicalCache<'a>>,
+    namespace_roots: FxHashMap<u32, super::contract::flow_cache::LocalReference>,
+    namespace_selectors: FxHashMap<u32, super::contract::flow_cache::LocalReference>,
+    method_calls: FxHashMap<u32, i64>,
+    borrow_sites:
+        FxHashMap<crate::types::SourceSpan, (i64, crate::type_checker::core::types::Mutability)>,
+    method_names: FxHashMap<u32, super::member_index::MemberNameId>,
+    private_members: FxHashMap<u32, Option<i64>>,
+    trait_file: Option<&'a super::trait_graph::File>,
+    call_arguments: Option<&'a crate::indexer::namespaces::arguments::Table>,
     /// Candidate-language codes whose EXTERNAL declarations this file's
     /// language may bind by name (`Compilation::ext_lang_allowed`). `None`
     /// disables the check. Applied by the candidate-set delegates
@@ -57,9 +66,33 @@ pub(super) struct FileLookup<'a> {
 }
 
 impl<'a> FileLookup<'a> {
+    fn structural(&self) -> &dyn SymbolLookup {
+        self.program
+            .as_ref()
+            .map(|p| p as &dyn SymbolLookup)
+            .unwrap_or(self.tree)
+    }
+    fn root_candidates<'s>(&self, symbols: SymbolSet<'s>) -> SymbolSet<'s> {
+        if self.program.is_some() {
+            return SymbolSet::empty();
+        }
+        self.tree
+            .root_candidates(self.tree.filter_ext_langs(symbols, self.allowed_ext_langs))
+    }
     pub(super) fn new(tree: &'a Compilation, language: &str) -> Self {
         Self {
             tree,
+            program: None,
+            module_site: Default::default(),
+            lexical: None,
+            namespace_roots: FxHashMap::default(),
+            namespace_selectors: FxHashMap::default(),
+            method_calls: FxHashMap::default(),
+            borrow_sites: FxHashMap::default(),
+            method_names: FxHashMap::default(),
+            private_members: FxHashMap::default(),
+            trait_file: None,
+            call_arguments: None,
             allowed_ext_langs: tree.ext_lang_allowed(language),
             locals: RefCell::new(FxHashMap::default()),
             locals_id: RefCell::new(FxHashMap::default()),
@@ -67,14 +100,151 @@ impl<'a> FileLookup<'a> {
             local_callable_heads: RefCell::new(FxHashMap::default()),
         }
     }
+
+    pub(super) fn for_file(
+        tree: &'a Compilation,
+        pf: &'a crate::types::ParsedFile,
+        ids: &crate::indexer::symbol_ids::SymbolIds,
+    ) -> Self {
+        let mut lookup = Self::new(tree, &pf.language);
+        lookup.program = tree.source_program_lookup(pf);
+        if let Some(program) = &lookup.program {
+            if let Some(graph) = &pf.flow.lexical {
+                lookup.method_names = graph
+                    .globals
+                    .iter()
+                    .flat_map(|g| &g.selectors)
+                    .filter_map(|(&byte, &name)| {
+                        program.source_member_id(name).map(|name| (byte, name))
+                    })
+                    .collect();
+                lookup.private_members = graph
+                    .globals
+                    .iter()
+                    .flat_map(|g| &g.private_selectors)
+                    .map(|(&byte, slot)| (byte, slot.and_then(|slot| ids.row_id(&pf.path, slot))))
+                    .collect();
+            }
+        }
+        lookup.module_site = tree.module_site(&pf.path);
+        lookup.trait_file = tree.trait_file(&pf.path);
+        if let Some(data) = &pf.flow.namespaces {
+            lookup.call_arguments = Some(&data.call_arguments);
+            // Ingestion bridge only: the reference loop carries selector IDs,
+            // and never interns or compares method spellings during selection.
+            lookup.method_names = pf
+                .refs
+                .iter()
+                .filter_map(|r| r.chain.as_ref())
+                .flat_map(|c| &c.segments)
+                .filter(|s| {
+                    data.method_calls.contains_key(&s.byte_offset)
+                        || data.traits.qualified_calls.contains_key(&s.byte_offset)
+                })
+                .filter_map(|s| {
+                    tree.member_index()?
+                        .name(&s.name)
+                        .map(|name| (s.byte_offset, name))
+                })
+                .collect();
+            lookup.method_calls = data
+                .method_calls
+                .iter()
+                .filter_map(|(&byte, &slot)| ids.row_id(&pf.path, slot).map(|id| (byte, id)))
+                .collect();
+            lookup.borrow_sites = data
+                .borrow_sites
+                .iter()
+                .filter_map(|(&span, &(slot, mutable))| {
+                    ids.row_id(&pf.path, slot).map(|id| (span, (id, mutable)))
+                })
+                .collect();
+            lookup.namespace_roots = data
+                .roots
+                .iter()
+                .filter_map(|(&byte, &usage)| {
+                    tree.namespace_use(&pf.path, usage)
+                        .map(|value| (byte, value))
+                })
+                .collect();
+            lookup.namespace_selectors = data
+                .selectors
+                .iter()
+                .filter_map(|(&byte, &usage)| {
+                    tree.namespace_use(&pf.path, usage)
+                        .map(|value| (byte, value))
+                })
+                .collect();
+            for call in data.traits.qualified_calls.values() {
+                // Qualified syntax is an authoritative root even if its explicit
+                // trait/Self recipe cannot yet be materialized.
+                lookup.namespace_roots.insert(
+                    call.root.start,
+                    super::contract::flow_cache::LocalReference {
+                        declaration: None,
+                        kind: crate::types::SymbolKind::Variable,
+                        value_type: None,
+                        type_args: Vec::new(),
+                        callable: None,
+                    },
+                );
+            }
+        }
+        lookup.lexical = pf.flow.lexical.as_ref().and_then(|bindings| {
+            tree.type_arena()
+                .map(|arena| super::lexical_cache::LexicalCache::new(bindings, arena))
+        });
+        if let Some(cache) = &mut lookup.lexical {
+            cache.install_declarations(&pf.path, ids);
+            let selected: &dyn SymbolLookup = lookup
+                .program
+                .as_ref()
+                .map(|p| p as &dyn SymbolLookup)
+                .unwrap_or(tree);
+            cache.install_types(&pf.path, ids, tree, selected);
+            cache.install_initial_values(selected);
+            cache.install_imports(&pf.path, selected);
+            for (&byte, value) in lookup
+                .namespace_roots
+                .iter_mut()
+                .chain(&mut lookup.namespace_selectors)
+            {
+                if let Some(arguments) = cache.member_type_arguments(byte) {
+                    value.type_args = arguments.to_vec();
+                }
+            }
+        }
+        lookup
+    }
 }
 
 impl<'a> SymbolLookup for FileLookup<'a> {
+    fn bound_import_namespace(
+        &self,
+        file: &str,
+        binding: crate::indexer::lexical::BindingId,
+    ) -> bool {
+        self.structural().bound_import_namespace(file, binding)
+    }
+    fn bound_import_overloads(
+        &self,
+        file: &str,
+        binding: crate::indexer::lexical::BindingId,
+    ) -> &[i64] {
+        self.structural().bound_import_overloads(file, binding)
+    }
+    fn bound_import(
+        &self,
+        file: &str,
+        binding: crate::indexer::lexical::BindingId,
+        type_space: bool,
+    ) -> Option<i64> {
+        self.structural().bound_import(file, binding, type_space)
+    }
     // -- Structural delegation: 22 methods forwarded directly to the tree. ----
 
     fn by_name(&self, name: &str) -> SymbolSet<'_> {
-        self.tree
-            .filter_ext_langs(self.tree.by_name(name), self.allowed_ext_langs)
+        self.root_candidates(self.structural().by_name(name))
     }
 
     // Qualified lookups are visibility-filtered too: a dotted target from
@@ -83,42 +253,44 @@ impl<'a> SymbolLookup for FileLookup<'a> {
     // first-wins pick is kept whenever the receiver may bind it; only a
     // blocked pick falls back to the first allowed same-qname candidate.
     fn by_qualified_name(&self, qname: &str) -> Option<&Symbol> {
-        let sym = self.tree.by_qualified_name(qname)?;
+        let sym = self.structural().by_qualified_name(qname)?;
         if self
-            .tree
-            .filter_ext_langs(SymbolSet::Owned(vec![sym]), self.allowed_ext_langs)
+            .root_candidates(SymbolSet::Owned(vec![sym]))
             .into_iter()
             .next()
             .is_some()
         {
             return Some(sym);
         }
-        self.tree
-            .filter_ext_langs(self.tree.all_by_qualified_name(qname), self.allowed_ext_langs)
+        self.root_candidates(self.structural().all_by_qualified_name(qname))
             .into_iter()
             .next()
     }
 
     fn all_by_qualified_name(&self, qname: &str) -> SymbolSet<'_> {
-        self.tree
-            .filter_ext_langs(self.tree.all_by_qualified_name(qname), self.allowed_ext_langs)
+        self.root_candidates(self.structural().all_by_qualified_name(qname))
     }
 
     fn members_of(&self, parent_qname: &str) -> SymbolSet<'_> {
-        self.tree.members_of(parent_qname)
+        self.structural().members_of(parent_qname)
     }
 
     fn members_of_id(&self, parent_id: i64) -> SymbolSet<'_> {
-        self.tree.members_of_id(parent_id)
+        self.structural().members_of_id(parent_id)
+    }
+
+    fn member_index(&self) -> Option<&super::member_index::MemberIndex> {
+        self.structural().member_index()
     }
 
     fn types_by_name(&self, name: &str) -> SymbolSet<'_> {
-        self.tree
-            .filter_ext_langs(self.tree.types_by_name(name), self.allowed_ext_langs)
+        self.root_candidates(self.structural().types_by_name(name))
     }
 
     fn in_namespace(&self, namespace: &str) -> Vec<&Symbol> {
-        self.tree.in_namespace(namespace)
+        self.root_candidates(SymbolSet::Owned(self.tree.in_namespace(namespace)))
+            .into_iter()
+            .collect()
     }
 
     fn has_in_namespace(&self, namespace: &str) -> bool {
@@ -126,52 +298,61 @@ impl<'a> SymbolLookup for FileLookup<'a> {
     }
 
     fn in_file(&self, file_path: &str) -> SymbolSet<'_> {
-        self.tree.in_file(file_path)
+        self.root_candidates(self.tree.in_file(file_path))
     }
 
     fn ambient_symbols(&self, name: &str) -> SymbolSet<'_> {
-        self.tree
-            .filter_ext_langs(self.tree.ambient_symbols(name), self.allowed_ext_langs)
+        self.root_candidates(self.structural().ambient_symbols(name))
     }
 
     fn field_type_name(&self, property_qname: &str) -> Option<&str> {
-        self.tree.field_type_name(property_qname)
+        self.structural().field_type_name(property_qname)
     }
 
     fn return_type_name(&self, method_qname: &str) -> Option<&str> {
-        self.tree.return_type_name(method_qname)
+        self.structural().return_type_name(method_qname)
     }
 
     fn generic_params(&self, type_name: &str) -> Option<Vec<String>> {
-        self.tree.generic_params(type_name)
+        self.structural().generic_params(type_name)
     }
 
     fn field_type_id(&self, property_qname: &str) -> Option<TypeId> {
-        self.tree.field_type_id(property_qname)
+        self.structural().field_type_id(property_qname)
     }
 
     fn return_type_id(&self, method_qname: &str) -> Option<TypeId> {
-        self.tree.return_type_id(method_qname)
+        self.structural().return_type_id(method_qname)
     }
 
     fn return_type_id_of(&self, symbol_id: i64) -> Option<TypeId> {
-        self.tree.return_type_id_of(symbol_id)
+        self.structural().return_type_id_of(symbol_id)
+    }
+    fn generic_return_of(
+        &self,
+        id: i64,
+    ) -> Option<&super::contract::generic_return::GenericReturn> {
+        self.structural().generic_return_of(id)
     }
 
     fn field_type_id_of(&self, symbol_id: i64) -> Option<TypeId> {
-        self.tree.field_type_id_of(symbol_id)
+        self.structural().field_type_id_of(symbol_id)
     }
 
     fn generic_params_of(&self, symbol_id: i64) -> Option<Vec<String>> {
-        self.tree.generic_params_of(symbol_id)
+        self.structural().generic_params_of(symbol_id)
+    }
+
+    fn canonical_type_info(&self, symbol_id: i64) -> Option<&super::contract::TypeInfo> {
+        self.structural().canonical_type_info(symbol_id)
     }
 
     fn generic_param_defaults_of(&self, symbol_id: i64) -> Option<Vec<Option<String>>> {
-        self.tree.generic_param_defaults_of(symbol_id)
+        self.structural().generic_param_defaults_of(symbol_id)
     }
 
     fn symbol_by_id(&self, id: i64) -> Option<&Symbol> {
-        self.tree.symbol_by_id(id)
+        self.structural().symbol_by_id(id)
     }
 
     fn type_arena(&self) -> Option<&TypeArena> {
@@ -179,11 +360,11 @@ impl<'a> SymbolLookup for FileLookup<'a> {
     }
 
     fn alias_target(&self, name: &str) -> Option<&AliasTargetIds> {
-        self.tree.alias_target(name)
+        self.structural().alias_target(name)
     }
 
     fn alias_target_by_id(&self, id: i64) -> Option<&AliasTargetIds> {
-        self.tree.alias_target_by_id(id)
+        self.structural().alias_target_by_id(id)
     }
 
     fn reexports_from(&self, file_path: &str) -> &[(String, String)] {
@@ -200,11 +381,12 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         source_file: &str,
         spec: &str,
     ) -> Option<String> {
-        self.tree.resolve_module_via_language_resolver(language, source_file, spec)
+        self.tree
+            .resolve_module_via_language_resolver(language, source_file, spec)
     }
 
     fn in_module_from(&self, source_file: &str, spec: &str) -> SymbolSet<'_> {
-        self.tree.in_module_from(source_file, spec)
+        self.root_candidates(self.tree.in_module_from(source_file, spec))
     }
 
     fn resolve_external_reexport(&self, target: &str, prefix: &str, module: &str) -> Option<i64> {
@@ -235,11 +417,11 @@ impl<'a> SymbolLookup for FileLookup<'a> {
     }
 
     fn parent_class_id(&self, child_id: i64) -> Option<i64> {
-        self.tree.parent_class_id(child_id)
+        self.structural().parent_class_id(child_id)
     }
 
     fn parent_class_ids(&self, child_id: i64) -> Vec<i64> {
-        self.tree.parent_class_ids(child_id)
+        self.structural().parent_class_ids(child_id)
     }
 
     fn parent_class_args(&self, child_head: &str, parent_head: &str) -> &[String] {
@@ -251,11 +433,12 @@ impl<'a> SymbolLookup for FileLookup<'a> {
     }
 
     fn parent_class_arg_ids_of(&self, child_id: i64, parent_id: i64) -> &[TypeId] {
-        self.tree.parent_class_arg_ids_of(child_id, parent_id)
+        self.structural()
+            .parent_class_arg_ids_of(child_id, parent_id)
     }
 
     fn canonical_decl_id(&self, id: i64) -> i64 {
-        self.tree.canonical_decl_id(id)
+        self.structural().canonical_decl_id(id)
     }
 
     fn enclosing_type_qname(&self, source_qname: &str) -> Option<&str> {
@@ -263,7 +446,7 @@ impl<'a> SymbolLookup for FileLookup<'a> {
     }
 
     fn enclosing_type_id_of(&self, source_symbol_id: i64) -> Option<i64> {
-        self.tree.enclosing_type_id_of(source_symbol_id)
+        self.structural().enclosing_type_id_of(source_symbol_id)
     }
 
     fn enclosing_namespace_qname(&self, source_qname: &str) -> Option<&str> {
@@ -271,7 +454,7 @@ impl<'a> SymbolLookup for FileLookup<'a> {
     }
 
     fn symbols_in_package(&self, package_id: i64) -> SymbolSet<'_> {
-        self.tree.symbols_in_package(package_id)
+        self.root_candidates(self.tree.symbols_in_package(package_id))
     }
 
     fn workspace_package_id(&self, specifier: &str) -> Option<i64> {
@@ -297,86 +480,7 @@ impl<'a> SymbolLookup for FileLookup<'a> {
     fn package_id_for_file(&self, file_path: &str) -> Option<i64> {
         self.tree.package_id_for_file(file_path)
     }
-
 }
 
-// Flow cache: methods implemented over `locals` and `locals_id`.
-impl<'a> FlowCacheLookup for FileLookup<'a> {
-    /// Return the inferred type of `name` from the per-file forward-inference
-    /// cache. Returns `None` when the name has not been bound by an earlier ref.
-    fn local_type(&self, name: &str) -> Option<String> {
-        self.locals.borrow().get(name).cloned()
-    }
-
-    /// Single-branch wrapper over `local_type` for the union-aware chain walker.
-    fn local_type_union(&self, name: &str) -> Option<Vec<String>> {
-        self.local_type(name).map(|t| vec![t])
-    }
-
-    /// Bind `name` to `type_name` in the String forward-inference cache. Evicts
-    /// any prior TypeId binding for `name` so the two caches never both hold a
-    /// stale entry for the same name — a reassignment's latest write wins
-    /// regardless of which cache it lands in (`resolve_root` probes `locals_id`
-    /// before `locals`).
-    ///
-    /// Does NOT evict `root_cause_hints` — that cache is consulted only as
-    /// `resolve_root`'s last resort, strictly after `local_type_id`/`local_type`
-    /// both miss, so a stale hint left behind by an earlier failed seed for
-    /// this name is never read once this record succeeds.
-    fn record_local_type(&self, name: String, type_name: String) {
-        self.locals_id.borrow_mut().remove(&name);
-        self.locals.borrow_mut().insert(name, type_name);
-    }
-
-    /// Return the canonical TypeId binding for `name`. Preferred by the chain
-    /// walker root step over `local_type` so non-nominal types (primitives,
-    /// optionals, generics) are not nominalized on the round-trip.
-    fn local_type_id(&self, name: &str) -> Option<TypeId> {
-        self.locals_id.borrow().get(name).copied()
-    }
-
-    /// Bind `name` directly to a TypeId, bypassing `format_type` serialization.
-    /// Evicts any prior String binding for `name` so a later reassignment that
-    /// resolves to a TypeId supersedes an earlier String binding (and vice
-    /// versa via `record_local_type`).
-    fn record_local_type_id(&self, name: String, id: TypeId) {
-        self.locals.borrow_mut().remove(&name);
-        self.locals_id.borrow_mut().insert(name, id);
-    }
-
-    fn record_root_cause_hint(&self, name: String, cause: crate::indexer::resolve::engine::cause::Cause) {
-        self.root_cause_hints.borrow_mut().insert(name, cause);
-    }
-
-    fn local_callable_head(&self, name: &str) -> Option<String> {
-        self.local_callable_heads.borrow().get(name).cloned()
-    }
-
-    fn record_local_callable_head(&self, name: String, qname: String) {
-        self.local_callable_heads.borrow_mut().insert(name, qname);
-    }
-
-    fn root_cause_hint(&self, name: &str) -> Option<crate::indexer::resolve::engine::cause::Cause> {
-        self.root_cause_hints.borrow().get(name).copied()
-    }
-
-    /// No-op: cursor-based narrowing is deferred; flat forward inference only.
-    fn set_cursor(&self, _byte: u32) {}
-
-    /// No-op: narrowing cache installation is deferred; flat forward inference only.
-    fn install_local_cache(
-        &self,
-        _narrowings: Vec<crate::types::Narrowing>,
-        _discriminants: Vec<crate::types::DiscriminantNarrowing>,
-        _cfg: crate::indexer::flow_cfg::FileCfg,
-    ) {
-    }
-
-    /// Evict all cached bindings so they cannot bleed into the next file's pass.
-    fn clear_local_cache(&self) {
-        self.locals.borrow_mut().clear();
-        self.locals_id.borrow_mut().clear();
-        self.root_cause_hints.borrow_mut().clear();
-        self.local_callable_heads.borrow_mut().clear();
-    }
-}
+#[path = "file_lookup_flow.rs"]
+mod flow_cache;

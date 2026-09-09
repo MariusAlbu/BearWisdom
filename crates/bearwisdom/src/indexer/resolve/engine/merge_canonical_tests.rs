@@ -22,6 +22,16 @@ fn min_id_is_canonical_and_singletons_are_ignored() {
 }
 
 #[test]
+fn scoped_groups_and_singletons_override_legacy_qname_merges() {
+    let mut groups = groups_same_file("f.Model", "a.ts", &[7, 8, 9, 10, 11]);
+    groups.scoped.insert(8, vec![8, 7]);
+    groups.scoped.insert(10, vec![10, 9]);
+    groups.scoped.insert(11, vec![11]);
+    groups.attested.extend([7, 8, 9, 10, 11]);
+    assert_eq!(compute(&groups), FxHashMap::from_iter([(7, 8), (9, 10)]));
+}
+
+#[test]
 fn same_qname_in_different_files_stays_distinct_under_same_file_scope() {
     let mut g = MergeGroups::default();
     g.by_file
@@ -47,13 +57,33 @@ fn apply_unions_member_buckets_and_rewrites_edges() {
     let mut enclosing: FxHashMap<i64, i64> = FxHashMap::default();
     enclosing.insert(71, 42); // the namespace member's enclosing type
 
-    apply(&canonical, &mut members, &mut inherits, &mut args, &mut enclosing);
+    apply(
+        &canonical,
+        &mut members,
+        &mut inherits,
+        &mut args,
+        &mut enclosing,
+    );
 
     let bucket = members.get(&7).expect("canonical bucket");
-    assert!(bucket.contains(&70) && bucket.contains(&71), "union: {bucket:?}");
-    assert!(!members.contains_key(&42), "non-canonical bucket folded away");
-    assert_eq!(inherits.get(&99), Some(&vec![7]), "parent rewritten to canonical");
-    assert_eq!(enclosing.get(&71), Some(&7), "enclosing value canonicalized");
+    assert!(
+        bucket.contains(&70) && bucket.contains(&71),
+        "union: {bucket:?}"
+    );
+    assert!(
+        !members.contains_key(&42),
+        "non-canonical bucket folded away"
+    );
+    assert_eq!(
+        inherits.get(&99),
+        Some(&vec![7]),
+        "parent rewritten to canonical"
+    );
+    assert_eq!(
+        enclosing.get(&71),
+        Some(&7),
+        "enclosing value canonicalized"
+    );
 }
 
 #[test]
@@ -66,8 +96,20 @@ fn apply_is_idempotent() {
     let mut args = FxHashMap::default();
     let mut enclosing: FxHashMap<i64, i64> = FxHashMap::default();
 
-    apply(&canonical, &mut members, &mut inherits, &mut args, &mut enclosing);
+    apply(
+        &canonical,
+        &mut members,
+        &mut inherits,
+        &mut args,
+        &mut enclosing,
+    );
     let snapshot = members.clone();
-    apply(&canonical, &mut members, &mut inherits, &mut args, &mut enclosing);
+    apply(
+        &canonical,
+        &mut members,
+        &mut inherits,
+        &mut args,
+        &mut enclosing,
+    );
     assert_eq!(members, snapshot, "second application changes nothing");
 }

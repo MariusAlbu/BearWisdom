@@ -1,0 +1,618 @@
+[
+  {
+    "name": "ambient_interface_parts_share_generic_identity",
+    "report": {
+      "revision": [
+        4,
+        9,
+        23,
+        149,
+        121,
+        209,
+        252,
+        189,
+        236,
+        12,
+        40,
+        0,
+        138,
+        254,
+        169,
+        251,
+        148,
+        174,
+        144,
+        187,
+        229,
+        32,
+        98,
+        200,
+        244,
+        110,
+        69,
+        118,
+        179,
+        240,
+        193,
+        85
+      ],
+      "counts": {
+        "labelled": 4,
+        "expected_bound": 4,
+        "correct": 3,
+        "incorrect": 0,
+        "correct_unbound": 0,
+        "unresolved": 1,
+        "not_extracted": 0,
+        "missing_resolution": 0,
+        "unlabelled_observations": 0,
+        "binding_precision_percent": 100,
+        "correct_binding_recall_percent": 75,
+        "extraction_coverage_percent": 100
+      },
+      "references": [
+        {
+          "expected": {
+            "site": {
+              "file": 3,
+              "byte_offset": 76,
+              "kind": "calls"
+            },
+            "target": {
+              "file": 1,
+              "line": 0,
+              "col": 23,
+              "kind": "method"
+            }
+          },
+          "actual": {
+            "resolved": {
+              "file": 1,
+              "line": 0,
+              "col": 23,
+              "kind": "method"
+            }
+          },
+          "verdict": "correct"
+        },
+        {
+          "expected": {
+            "site": {
+              "file": 3,
+              "byte_offset": 84,
+              "kind": "calls"
+            },
+            "target": {
+              "file": 3,
+              "line": 0,
+              "col": 23,
+              "kind": "method"
+            }
+          },
+          "actual": {
+            "resolved": {
+              "file": 3,
+              "line": 0,
+              "col": 23,
+              "kind": "method"
+            }
+          },
+          "verdict": "correct"
+        },
+        {
+          "expected": {
+            "site": {
+              "file": 3,
+              "byte_offset": 98,
+              "kind": "calls"
+            },
+            "target": {
+              "file": 2,
+              "line": 0,
+              "col": 23,
+              "kind": "method"
+            }
+          },
+          "actual": {
+            "resolved": {
+              "file": 2,
+              "line": 0,
+              "col": 23,
+              "kind": "method"
+            }
+          },
+          "verdict": "correct"
+        },
+        {
+          "expected": {
+            "site": {
+              "file": 3,
+              "byte_offset": 119,
+              "kind": "calls"
+            },
+            "target": {
+              "file": 3,
+              "line": 0,
+              "col": 23,
+              "kind": "method"
+            }
+          },
+          "actual": "unresolved",
+          "verdict": "unresolved"
+        }
+      ]
+    }
+  },
+  {
+    "name": "same_file_interface_parts_are_a_control",
+    "report": {
+      "revision": [
+        152,
+        79,
+        172,
+        218,
+        201,
+        185,
+        167,
+        106,
+        254,
+        126,
+        27,
+        126,
+        183,
+        40,
+        79,
+        214,
+        89,
+        203,
+        62,
+        36,
+        132,
+        95,
+        226,
+        75,
+        7,
+        118,
+        134,
+        146,
+        151,
+        92,
+        245,
+        115
+      ],
+      "counts": {
+        "labelled": 4,
+        "expected_bound": 4,
+        "correct": 4,
+        "incorrect": 0,
+        "correct_unbound": 0,
+        "unresolved": 0,
+        "not_extracted": 0,
+        "missing_resolution": 0,
+        "unlabelled_observations": 0,
+        "binding_precision_percent": 100,
+        "correct_binding_recall_percent": 100,
+        "extraction_coverage_percent": 100
+      },
+      "references": [
+        {
+          "expected": {
+            "site": {
+              "file": 2,
+              "byte_offset": 76,
+              "kind": "calls"
+            },
+            "target": {
+              "file": 1,
+              "line": 0,
+              "col": 23,
+              "kind": "method"
+            }
+          },
+          "actual": {
+            "resolved": {
+              "file": 1,
+              "line": 0,
+              "col": 23,
+              "kind": "method"
+            }
+          },
+          "verdict": "correct"
+        },
+        {
+          "expected": {
+            "site": {
+              "file": 2,
+              "byte_offset": 84,
+              "kind": "calls"
+            },
+            "target": {
+              "file": 2,
+              "line": 0,
+              "col": 23,
+              "kind": "method"
+            }
+          },
+          "actual": {
+            "resolved": {
+              "file": 2,
+              "line": 0,
+              "col": 23,
+              "kind": "method"
+            }
+          },
+          "verdict": "correct"
+        },
+        {
+          "expected": {
+            "site": {
+              "file": 2,
+              "byte_offset": 98,
+              "kind": "calls"
+            },
+            "target": {
+              "file": 1,
+              "line": 0,
+              "col": 60,
+              "kind": "method"
+            }
+          },
+          "actual": {
+            "resolved": {
+              "file": 1,
+              "line": 0,
+              "col": 60,
+              "kind": "method"
+            }
+          },
+          "verdict": "correct"
+        },
+        {
+          "expected": {
+            "site": {
+              "file": 2,
+              "byte_offset": 119,
+              "kind": "calls"
+            },
+            "target": {
+              "file": 2,
+              "line": 0,
+              "col": 23,
+              "kind": "method"
+            }
+          },
+          "actual": {
+            "resolved": {
+              "file": 2,
+              "line": 0,
+              "col": 23,
+              "kind": "method"
+            }
+          },
+          "verdict": "correct"
+        }
+      ]
+    }
+  },
+  {
+    "name": "ambient_value_and_type_are_distinct_bindings",
+    "report": {
+      "revision": [
+        219,
+        9,
+        88,
+        8,
+        155,
+        250,
+        122,
+        37,
+        174,
+        137,
+        4,
+        37,
+        73,
+        156,
+        131,
+        217,
+        241,
+        210,
+        48,
+        102,
+        226,
+        132,
+        215,
+        196,
+        118,
+        157,
+        152,
+        184,
+        1,
+        69,
+        88,
+        118
+      ],
+      "counts": {
+        "labelled": 2,
+        "expected_bound": 2,
+        "correct": 2,
+        "incorrect": 0,
+        "correct_unbound": 0,
+        "unresolved": 0,
+        "not_extracted": 0,
+        "missing_resolution": 0,
+        "unlabelled_observations": 0,
+        "binding_precision_percent": 100,
+        "correct_binding_recall_percent": 100,
+        "extraction_coverage_percent": 100
+      },
+      "references": [
+        {
+          "expected": {
+            "site": {
+              "file": 2,
+              "byte_offset": 20,
+              "kind": "calls"
+            },
+            "target": {
+              "file": 1,
+              "line": 0,
+              "col": 106,
+              "kind": "method"
+            }
+          },
+          "actual": {
+            "resolved": {
+              "file": 1,
+              "line": 0,
+              "col": 106,
+              "kind": "method"
+            }
+          },
+          "verdict": "correct"
+        },
+        {
+          "expected": {
+            "site": {
+              "file": 2,
+              "byte_offset": 29,
+              "kind": "calls"
+            },
+            "target": {
+              "file": 1,
+              "line": 0,
+              "col": 24,
+              "kind": "method"
+            }
+          },
+          "actual": {
+            "resolved": {
+              "file": 1,
+              "line": 0,
+              "col": 24,
+              "kind": "method"
+            }
+          },
+          "verdict": "correct"
+        }
+      ]
+    }
+  },
+  {
+    "name": "ambient_value_and_type_split_across_files",
+    "report": {
+      "revision": [
+        79,
+        15,
+        234,
+        5,
+        55,
+        166,
+        77,
+        75,
+        218,
+        10,
+        134,
+        100,
+        151,
+        62,
+        23,
+        160,
+        25,
+        108,
+        84,
+        166,
+        119,
+        74,
+        128,
+        201,
+        14,
+        112,
+        123,
+        145,
+        189,
+        228,
+        76,
+        173
+      ],
+      "counts": {
+        "labelled": 2,
+        "expected_bound": 2,
+        "correct": 1,
+        "incorrect": 0,
+        "correct_unbound": 0,
+        "unresolved": 1,
+        "not_extracted": 0,
+        "missing_resolution": 0,
+        "unlabelled_observations": 0,
+        "binding_precision_percent": 100,
+        "correct_binding_recall_percent": 50,
+        "extraction_coverage_percent": 100
+      },
+      "references": [
+        {
+          "expected": {
+            "site": {
+              "file": 3,
+              "byte_offset": 20,
+              "kind": "calls"
+            },
+            "target": {
+              "file": 2,
+              "line": 0,
+              "col": 84,
+              "kind": "method"
+            }
+          },
+          "actual": {
+            "resolved": {
+              "file": 2,
+              "line": 0,
+              "col": 84,
+              "kind": "method"
+            }
+          },
+          "verdict": "correct"
+        },
+        {
+          "expected": {
+            "site": {
+              "file": 3,
+              "byte_offset": 29,
+              "kind": "calls"
+            },
+            "target": {
+              "file": 1,
+              "line": 0,
+              "col": 24,
+              "kind": "method"
+            }
+          },
+          "actual": "unresolved",
+          "verdict": "unresolved"
+        }
+      ]
+    }
+  },
+  {
+    "name": "exported_namesakes_do_not_augment_ambient_interfaces",
+    "report": {
+      "revision": [
+        25,
+        255,
+        81,
+        144,
+        204,
+        156,
+        25,
+        38,
+        135,
+        222,
+        37,
+        79,
+        29,
+        9,
+        158,
+        136,
+        45,
+        208,
+        123,
+        150,
+        211,
+        42,
+        1,
+        81,
+        48,
+        66,
+        2,
+        101,
+        251,
+        50,
+        43,
+        36
+      ],
+      "counts": {
+        "labelled": 3,
+        "expected_bound": 2,
+        "correct": 2,
+        "incorrect": 1,
+        "correct_unbound": 0,
+        "unresolved": 0,
+        "not_extracted": 0,
+        "missing_resolution": 0,
+        "unlabelled_observations": 0,
+        "binding_precision_percent": 66.66666666666667,
+        "correct_binding_recall_percent": 100,
+        "extraction_coverage_percent": 100
+      },
+      "references": [
+        {
+          "expected": {
+            "site": {
+              "file": 3,
+              "byte_offset": 76,
+              "kind": "calls"
+            },
+            "target": {
+              "file": 1,
+              "line": 0,
+              "col": 23,
+              "kind": "method"
+            }
+          },
+          "actual": {
+            "resolved": {
+              "file": 1,
+              "line": 0,
+              "col": 23,
+              "kind": "method"
+            }
+          },
+          "verdict": "correct"
+        },
+        {
+          "expected": {
+            "site": {
+              "file": 3,
+              "byte_offset": 84,
+              "kind": "calls"
+            },
+            "target": {
+              "file": 3,
+              "line": 0,
+              "col": 23,
+              "kind": "method"
+            }
+          },
+          "actual": {
+            "resolved": {
+              "file": 3,
+              "line": 0,
+              "col": 23,
+              "kind": "method"
+            }
+          },
+          "verdict": "correct"
+        },
+        {
+          "expected": {
+            "site": {
+              "file": 3,
+              "byte_offset": 98,
+              "kind": "calls"
+            },
+            "target": null
+          },
+          "actual": {
+            "resolved": {
+              "file": 2,
+              "line": 0,
+              "col": 30,
+              "kind": "method"
+            }
+          },
+          "verdict": "incorrect"
+        }
+      ]
+    }
+  }
+]

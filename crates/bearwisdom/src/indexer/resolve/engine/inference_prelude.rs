@@ -21,6 +21,7 @@ use super::compilation::Compilation;
 pub(super) fn run(
     tree: &mut Compilation,
     parsed: &[ParsedFile],
+    ids: &crate::indexer::symbol_ids::SymbolIds,
     profiles: &FxHashMap<&'static str, &'static LanguageProfile>,
 ) {
     // Resolve `ReturnType<typeof fn>` declared return types now that the wrapped
@@ -36,19 +37,19 @@ pub(super) fn run(
     // after externals materialize so a wrapper of an external call resolves too.
     {
         let _t = phase_timer::scope("resolve.call_wrapper_returns");
-        tree.infer_call_wrapper_returns(parsed);
+        tree.infer_call_wrapper_returns(parsed, ids);
     }
     // Type class fields from their call/new initializer — `m = injectMutation(...)`,
     // `#http = inject(HttpClient)` — so `this.m.mutate()` / `this.#http.get()` root.
     {
         let _t = phase_timer::scope("resolve.field_init_types");
-        tree.infer_field_init_types(parsed, profiles);
+        tree.infer_field_init_types(parsed, profiles, ids);
     }
     // Chain-initialized bindings (`const c = base.with(x).use(cb)`) walk their
     // initializer chain with the full member walker; runs after the single-init
     // pass so a fluent chain roots on the just-typed base binding.
     {
         let _t = phase_timer::scope("resolve.chain_init_types");
-        tree.infer_chain_init_types(parsed, profiles);
+        tree.infer_chain_init_types(parsed, profiles, ids);
     }
 }

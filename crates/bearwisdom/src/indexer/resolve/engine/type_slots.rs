@@ -20,6 +20,9 @@ pub(super) fn return_type_by_identity(lookup: &dyn SymbolLookup, sym: &Symbol) -
     if let Some(id) = lookup.return_type_id_of(sym.id) {
         return Some(id);
     }
+    if lookup.nominal_context().is_some() {
+        return None;
+    }
     for sib in lookup.all_by_qualified_name(&sym.qualified_name).iter() {
         if sib.id != sym.id && sib.file_path == sym.file_path {
             if let Some(id) = lookup.return_type_id_of(sib.id) {
@@ -35,6 +38,9 @@ pub(super) fn return_type_by_identity(lookup: &dyn SymbolLookup, sym: &Symbol) -
 pub(super) fn field_type_by_identity(lookup: &dyn SymbolLookup, sym: &Symbol) -> Option<TypeId> {
     if let Some(id) = lookup.field_type_id_of(sym.id) {
         return Some(id);
+    }
+    if lookup.nominal_context().is_some() {
+        return None;
     }
     for sib in lookup.all_by_qualified_name(&sym.qualified_name).iter() {
         if sib.id != sym.id && sib.file_path == sym.file_path {

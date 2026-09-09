@@ -15,7 +15,220 @@
 
 use crate::type_checker::core::types::TypeId;
 
+/// A selected static method declaration and its numeric substitution evidence.
+#[derive(Clone)]
+pub struct BoundMethod {
+    pub(crate) declaration: i64,
+    pub(crate) receiver: TypeId,
+    pub(crate) adjusted: TypeId,
+    pub(crate) bindings:
+        rustc_hash::FxHashMap<crate::type_checker::core::types::GenericParamId, TypeId>,
+}
+
+/// Fully qualified call evidence; receiver arguments are not ordinary parameters.
+pub struct BoundCall {
+    pub(crate) declaration: i64,
+    pub(crate) return_type: Option<TypeId>,
+    pub(crate) parameters: Vec<TypeId>,
+    pub(crate) receiver_arguments: usize,
+}
+
+/// A complete source-owned overload group, distinct from its selected signature.
+pub struct OverloadCall {
+    pub(crate) origins: Vec<CallSignatureOrigin>,
+    pub(crate) selected: usize,
+    pub(crate) return_type: TypeId,
+    pub(crate) parameters: Vec<TypeId>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) struct CallSignatureOrigin {
+    pub source: super::super::program_graph::SourceInstanceId,
+    pub span: crate::types::SourceSpan,
+    pub declaration: Option<i64>,
+}
+
+/// A source occurrence already bound at ingestion. Missing persisted identity
+/// is not permission to fall through to a spelling-based rule.
+#[derive(Clone)]
+pub struct LocalReference {
+    pub declaration: Option<i64>,
+    pub kind: crate::types::SymbolKind,
+    pub value_type: Option<TypeId>,
+    pub type_args: Vec<TypeId>,
+    /// Independently captured callable provenance; never the navigation target.
+    pub callable: Option<i64>,
+}
+
+pub struct ObjectMember {
+    pub(crate) declaration: Option<i64>,
+    pub(crate) value: TypeId,
+}
+
 pub trait FlowCacheLookup {
+    /// Outer None keeps legacy expansion. Some(None) is a configured proof failure.
+    fn evaluated_receiver(&self, _receiver: TypeId) -> Option<Option<TypeId>> {
+        None
+    }
+    fn source_object_member(
+        &self,
+        _receiver: TypeId,
+        _selector: u32,
+    ) -> Option<Result<ObjectMember, ()>> {
+        None
+    }
+    fn object_member_type(&self, _receiver: TypeId, _member: i64) -> Option<Option<TypeId>> {
+        None
+    }
+    /// None: not an overloaded source method. Some(Err): authoritative barrier.
+    fn overloaded_call(
+        &self,
+        _receiver: TypeId,
+        _selector: u32,
+        _actual: &[TypeId],
+        _explicit: &[TypeId],
+    ) -> Option<Result<OverloadCall, ()>> {
+        None
+    }
+    /// Proved receiver-owned signature, separate from shared navigation-row types.
+    fn receiver_member_info(&self, _owner: i64, _member: i64) -> Option<&super::TypeInfo> {
+        None
+    }
+    /// Bound apparent object type for an intrinsic member receiver; no name fallback.
+    fn intrinsic_member_type(
+        &self,
+        _kind: crate::type_checker::core::types::Intrinsic,
+    ) -> Option<TypeId> {
+        None
+    }
+    /// Selected configured-program identity. Workspace-only environments cannot
+    /// interpret nominal types owned by a program-specific view.
+    fn nominal_context(&self) -> Option<crate::type_checker::core::types::NominalContextId> {
+        None
+    }
+    /// Outer None is unconfigured. Some(None) is an authoritative global miss.
+    fn source_global_type(&self, _name: crate::indexer::lexical::NameId) -> Option<Option<i64>> {
+        None
+    }
+    /// Source-signature owner within this exact configured source snapshot.
+    fn source_signature_parameter(
+        &self,
+        _owner: crate::types::SourceSpan,
+        _index: usize,
+    ) -> Option<crate::type_checker::core::types::GenericParamId> {
+        None
+    }
+    fn source_callable_origin(
+        &self,
+        _owner: crate::types::SourceSpan,
+    ) -> Option<crate::type_checker::core::types::CallableOrigin> {
+        None
+    }
+    fn source_unique_symbol(&self, _declaration: crate::types::SourceSpan) -> Option<TypeId> {
+        None
+    }
+    fn source_value_type(&self, _site: crate::types::SourceSpan) -> Option<Option<TypeId>> {
+        None
+    }
+    /// Source initializer signature and its exact local declaration token.
+    /// Some(None) is an authoritative configured-source miss.
+    fn source_initializer_type(
+        &self,
+        _owner: crate::types::SourceSpan,
+        _target: crate::types::SourceSpan,
+    ) -> Option<Option<TypeId>> {
+        None
+    }
+    /// Exact source recipe shared by arguments and local initializer evaluation.
+    fn value_expression(&self, _span: crate::types::SourceSpan) -> Option<TypeId> {
+        None
+    }
+    /// None: unmigrated source. Some(Err): captured source cannot attest this call.
+    /// An attested zero-argument call is Some(Ok(&[])), never a display fallback.
+    fn source_call_arguments(
+        &self,
+        _selector: u32,
+    ) -> Option<Result<&[crate::types::CallArg], ()>> {
+        None
+    }
+    /// Attested explicit borrow plus the operand's bound type; never a dot-call adjustment.
+    fn borrow_argument(&self, _span: crate::types::SourceSpan, _operand: TypeId) -> Option<TypeId> {
+        None
+    }
+    /// Numeric source-kind guard before typing operands for a qualified call.
+    fn qualified_call_site(&self, _selector: u32) -> bool {
+        false
+    }
+    /// Source selector plus typed operands; no declaration/member spelling bridge.
+    fn qualified_call(
+        &self,
+        _selector: u32,
+        _actual: &[TypeId],
+        _explicit: &[TypeId],
+    ) -> Option<Result<BoundCall, ()>> {
+        None
+    }
+    /// None is an unmigrated source; Some(Err) is authoritative, not a name fallback.
+    fn bound_method(&self, _receiver: TypeId, _selector: u32) -> Option<Result<BoundMethod, ()>> {
+        None
+    }
+    /// Source-owned non-call selectors. Some(Err) forbids display-name recovery.
+    fn source_member_name(
+        &self,
+        _selector: u32,
+    ) -> Option<Result<super::super::member_index::MemberNameId, ()>> {
+        None
+    }
+    /// Private selectors attest a lexical declaration, never a receiver name.
+    fn source_private_member(&self, _selector: u32) -> Option<Result<i64, ()>> {
+        None
+    }
+    /// A CST-attested dot-call inference region; absent for legacy or missing owners.
+    fn method_call_region(&self, _selector: u32) -> Option<TypeId> {
+        None
+    }
+    /// An inherent member declared on a particular alias/application.
+    fn member_pattern(
+        &self,
+        _member: i64,
+    ) -> Option<&super::member_applicability::ReceiverPattern> {
+        None
+    }
+    /// ID-addressed access from the active source module. Unconfigured profiles
+    /// retain their existing contract; captured private/unknown scopes do not.
+    fn declaration_accessible(&self, _declaration: i64) -> bool {
+        true
+    }
+    /// An identifier argument's own use address, independent of the call cursor.
+    fn argument_reference(&self, _span: crate::types::SourceSpan) -> Option<LocalReference> {
+        None
+    }
+    /// Member selector address, deliberately distinct from the lexical root address.
+    fn member_type_arguments(&self, _selector: u32) -> Option<&[TypeId]> {
+        None
+    }
+    fn local_reference(&self, _byte: u32) -> Option<LocalReference> {
+        None
+    }
+    /// Captured namespace export selector, not a member-name lookup.
+    fn namespace_member(&self, _selector: u32) -> Option<LocalReference> {
+        None
+    }
+    /// Namespace facet of a source-bound entity, independent of its callable kind.
+    fn namespace_root(&self, _byte: u32) -> bool {
+        false
+    }
+    /// Ingestion address -> BindingId -> TypeId. Never guess a callback's
+    /// declaration from a parameter spelling at the caller's cursor.
+    fn record_contextual_type(&self, _parameter: crate::types::SourceSpan, _ty: TypeId) {}
+    /// A known lexical declaration must not fall through to unrelated globals
+    /// merely because its type has not been captured or initialized.
+    fn has_local_binding(&self, _name: &str) -> bool {
+        false
+    }
+    fn local_callable_id(&self, _name: &str) -> Option<i64> {
+        None
+    }
     /// Look up the inferred type of a local variable in the currently-active
     /// file scope. Honors active conditional narrowings via the cursor set by
     /// `set_cursor`. Returns `None` when the name is not tracked.
@@ -106,7 +319,10 @@ pub trait FlowCacheLookup {
     /// The cause recorded for `name` by `record_root_cause_hint`, when the
     /// forward-inference seed for this binding failed and recorded one.
     /// Default `None`.
-    fn root_cause_hint(&self, _name: &str) -> Option<crate::indexer::resolve::engine::cause::Cause> {
+    fn root_cause_hint(
+        &self,
+        _name: &str,
+    ) -> Option<crate::indexer::resolve::engine::cause::Cause> {
         None
     }
 }

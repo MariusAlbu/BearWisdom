@@ -1,0 +1,9 @@
+[
+  { "source": "declare module 'provider' { interface Hidden {} export interface Public {} }", "exports": [["Hidden", "Public"]] },
+  { "source": "declare module 'provider' { interface Hidden {} export { Hidden as Public }; }", "exports": [["Public"]] },
+  { "source": "declare module 'provider' { interface Hidden {} }", "exports": [["Hidden"]] },
+  { "source": "declare module 'provider' { interface Hidden {} export {}; }", "exports": [[]] },
+  { "source": "declare module 'pro\\u0076ider' { namespace Nested { interface Hidden {} } }", "exports": [["Nested"], ["Hidden"]] },
+  { "source": "declare module 'one' { export interface Doc {} } declare module 'two' { export interface Doc {} } declare module 'left' { import { Doc as Item } from 'one'; export { Item as Public }; } declare module 'right' { import { Doc as Item } from 'two'; export { Item as Public }; }", "exports": [["Doc"], ["Doc"], ["Public"], ["Public"]] },
+  { "source": "export namespace API { export function make(): void {} }", "exports": [["make"]] }
+]

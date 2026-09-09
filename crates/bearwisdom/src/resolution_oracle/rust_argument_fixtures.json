@@ -1,0 +1,44 @@
+[
+  {
+    "name":"bare_function_borrow_arguments_direct_and_local", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } /*@decl:1:function*/pub fn keep(p:&Doc)->&Doc { p }\npub fn f(p:Doc,q:Doc) { /*@ref:11*/keep(&p)./*@ref:12*/touch(); let x=/*@ref:13*/keep(&q); x./*@ref:14*/touch(); }\n"}],
+    "labels":[[11,1],[12,2],[13,1],[14,2]]
+  },
+  {
+    "name":"bare_generic_argument_bindings_are_scope_local", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub mod a { pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } } pub mod b { pub struct Doc; impl Doc { /*@decl:3:method*/pub fn touch(&self) {} } }\n/*@decl:1:function*/pub fn identity<T>(x:T)->T { x } pub fn f(p:a::Doc) { let x=/*@ref:11*/identity(p); x./*@ref:12*/touch(); } pub fn g(p:b::Doc) { let x=/*@ref:13*/identity(p); x./*@ref:14*/touch(); }\n"}],
+    "labels":[[11,1],[12,2],[13,1],[14,3]]
+  },
+  {
+    "name":"inherent_member_borrow_arguments_direct_and_local", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } pub struct Input; impl Input { /*@decl:1:method*/pub fn keep<'a>(&self,p:&'a Doc)->&'a Doc { p } }\npub fn f(input:Input,p:Doc,q:Doc) { input./*@ref:11*/keep(&p)./*@ref:12*/touch(); let x=input./*@ref:13*/keep(&q); x./*@ref:14*/touch(); }\n"}],
+    "labels":[[11,1],[12,2],[13,1],[14,2]]
+  },
+  {
+    "name":"associated_function_borrow_arguments_direct_and_local", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } pub struct Input; impl Input { /*@decl:1:method*/pub fn keep(p:&Doc)->&Doc { p } }\npub fn f(p:Doc,q:Doc) { Input::/*@ref:11*/keep(&p)./*@ref:12*/touch(); let x=Input::/*@ref:13*/keep(&q); x./*@ref:14*/touch(); }\n"}],
+    "labels":[[11,1],[12,2],[13,1],[14,2]]
+  },
+  {
+    "name":"namespace_function_borrow_arguments_direct_and_local", "entry":"lib.rs",
+    "files":[{"path":"api.rs","source":"pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } /*@decl:1:function*/pub fn keep(p:&Doc)->&Doc { p }\n"},
+      {"path":"lib.rs","source":"pub mod api; pub fn f(p:api::Doc,q:api::Doc) { api::/*@ref:11*/keep(&p)./*@ref:12*/touch(); let x=api::/*@ref:13*/keep(&q); x./*@ref:14*/touch(); }\n"}],
+    "labels":[[11,1],[12,2],[13,1],[14,2]]
+  },
+  {
+    "name":"renamed_imported_function_borrow_arguments_direct_and_local", "entry":"lib.rs",
+    "files":[{"path":"api.rs","source":"pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } /*@decl:1:function*/pub fn keep(p:&Doc)->&Doc { p }\n"},
+      {"path":"lib.rs","source":"pub mod api; use api::keep as hold; pub fn f(p:api::Doc,q:api::Doc) { /*@ref:11*/hold(&p)./*@ref:12*/touch(); let x=/*@ref:13*/hold(&q); x./*@ref:14*/touch(); }\n"}],
+    "labels":[[11,1],[12,2],[13,1],[14,2]]
+  },
+  {
+    "name":"terminal_trait_method_mutable_argument_preserves_output", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&mut self) {} } pub struct Input; pub trait Keep { /*@decl:1:method*/fn keep<'a>(&self,p:&'a mut Doc)->&'a mut Doc { p } } impl Keep for Input {}\npub fn f(input:Input,mut p:Doc,mut q:Doc) { input./*@ref:11*/keep(&mut p)./*@ref:12*/touch(); let x=input./*@ref:13*/keep(&mut q); x./*@ref:14*/touch(); }\n"}],
+    "labels":[[11,1],[12,2],[13,1],[14,2]]
+  },
+  {
+    "name":"missing_bare_call_with_borrow_never_uses_module_namesake", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct Doc; pub mod unrelated { pub fn absent(_: &super::Doc) {} } pub fn f(p:Doc) { /*@ref:11*/absent(&p); }\n"}],
+    "labels":[[11,null]], "diagnostics":[[11,"E0425"]]
+  }
+]

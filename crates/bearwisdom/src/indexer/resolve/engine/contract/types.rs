@@ -133,23 +133,32 @@ pub struct Symbol {
     pub signature: Option<String>,
 }
 
-
 // ---------------------------------------------------------------------------
 // TypeInfo — unified per-symbol type metadata
 // ---------------------------------------------------------------------------
 
-/// All type metadata for a single symbol, stored in a single map keyed by
-/// the symbol's qualified name (or simple name for generic params).
+/// Type metadata for one symbol. Source-bound semantics use the canonical
+/// declaration-ID map; the name-keyed map remains for unmigrated legacy paths.
 ///
 /// TypeIds are the canonical source of truth: the build pipeline populates
 /// `field_type_id` / `return_type_id` first from extractor signals (TypeRef
 /// refs, signature parsing, AST-driven extractors). `generic_param_ids` carries
 /// interned `GenericParamData` (name + optional bound) per parameter;
 /// `generic_param_default_ids` carries interned default TypeIds index-aligned
-/// with `generic_param_ids`. The DB column `generic_params` (TEXT) persists
-/// the NAME strings derived from ids and re-interns them on reload.
-#[derive(Debug, Default, Clone)]
+/// with `generic_param_ids`. Canonical snapshots retain these IDs with the arena;
+/// the DB `generic_params` name column is only legacy compatibility metadata.
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TypeInfo {
+    /// Source-bound direct base; Some(Unknown) fences missing/unsupported heads.
+    #[serde(default)]
+    pub base_type_id: Option<TypeId>,
+    /// Trait Self is a separate binder, never an explicit generic argument slot.
+    #[serde(default)]
+    pub trait_self_param: Option<GenericParamId>,
+    /// Anonymous input regions: (source byte, omitted-slot index, parameter ID).
+    /// Owned by this declaration, separate from explicit generic argument order.
+    #[serde(default)]
+    pub elided_input_params: Vec<(u32, usize, GenericParamId)>,
     /// Interned generic parameter slots for type declarations, e.g., two
     /// entries for `interface Repository<T, U>`. Each `GenericParamId`
     /// carries the parameter name and optional upper bound in the TypeArena.
@@ -162,4 +171,13 @@ pub struct TypeInfo {
     pub field_type_id: Option<TypeId>,
     /// Canonical TypeId form of `return_type`.
     pub return_type_id: Option<TypeId>,
+    /// Ingestion-bound template; runtime substitution uses GenericParamId only.
+    pub generic_return: Option<super::generic_return::GenericReturn>,
+    pub lexical_alias: Option<super::generic_return::GenericReturn>,
+    /// Source-bound parameter types, in declaration order. None is legacy input.
+    #[serde(default)]
+    pub parameter_type_ids: Option<Vec<TypeId>>,
+    /// Source-bound receiver, separate from ordinary argument positions.
+    #[serde(default)]
+    pub receiver_type_id: Option<TypeId>,
 }

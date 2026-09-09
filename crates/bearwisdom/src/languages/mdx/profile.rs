@@ -35,6 +35,7 @@ pub const MDX_PROFILE: LanguageProfile = LanguageProfile {
     has_generics: false,
     has_sum_types: false,
     look_through_optional: false,
+    reference_member_projection: false,
     literal_narrowing: false,
     async_wrappers: &[],
     container_accessors: &[],
@@ -56,7 +57,8 @@ pub const MDX_PROFILE: LanguageProfile = LanguageProfile {
             crate::type_checker::profile::language_profile::ModuleAnchorBind::NameExactKind,
         ),
         module_anchor_terminal: false,
-        relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::DotSlashPrefix,
+        relative_marker:
+            crate::type_checker::profile::language_profile::RelativeMarker::DotSlashPrefix,
         external_by_import: None,
         module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
         wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,

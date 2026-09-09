@@ -4,6 +4,23 @@
 use crate::languages::javascript::extract;
 use crate::types::{CallArg, EdgeKind};
 
+fn callback_parameters<'a>(source: &'a str, args: &[CallArg]) -> Vec<Vec<&'a str>> {
+    args.iter()
+        .filter_map(|arg| match arg {
+            CallArg::LambdaAt { params } => Some(
+                params
+                    .iter()
+                    .map(|span| {
+                        span.map(|s| &source[s.start as usize..s.end as usize])
+                            .unwrap_or("")
+                    })
+                    .collect(),
+            ),
+            _ => None,
+        })
+        .collect()
+}
+
 /// Parse a JavaScript snippet and return the `call_args` of the first Calls
 /// ref whose target is `callee`.
 fn call_args_for(src: &str, callee: &str) -> Vec<CallArg> {
@@ -25,8 +42,7 @@ function caller() { arr.map(x => x.foo); }
 "#;
     let args = call_args_for(src, "map");
     assert!(
-        args.iter()
-            .any(|a| matches!(a, CallArg::Lambda { params } if params == &vec!["x".to_string()])),
+        callback_parameters(src, &args).contains(&vec!["x"]),
         "expected CallArg::Lambda {{ params: [\"x\"] }}, got: {args:?}"
     );
 }
@@ -40,9 +56,7 @@ function caller() { arr.forEach(function (item) { use(item); }); }
 "#;
     let args = call_args_for(src, "forEach");
     assert!(
-        args.iter().any(
-            |a| matches!(a, CallArg::Lambda { params } if params == &vec!["item".to_string()])
-        ),
+        callback_parameters(src, &args).contains(&vec!["item"]),
         "expected CallArg::Lambda {{ params: [\"item\"] }}, got: {args:?}"
     );
 }
@@ -55,10 +69,7 @@ function caller() { arr.reduce((acc, cur) => acc + cur); }
 "#;
     let args = call_args_for(src, "reduce");
     assert!(
-        args.iter().any(|a| matches!(
-            a,
-            CallArg::Lambda { params } if params == &vec!["acc".to_string(), "cur".to_string()]
-        )),
+        callback_parameters(src, &args).contains(&vec!["acc", "cur"]),
         "expected CallArg::Lambda {{ params: [\"acc\", \"cur\"] }}, got: {args:?}"
     );
 }

@@ -110,7 +110,7 @@ fn find_cargo_lock_descend_bounded(dir: &Path, depth: u8) -> Option<PathBuf> {
     None
 }
 
-fn cargo_registry_src_dirs() -> Vec<PathBuf> {
+pub(super) fn cargo_registry_src_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     let src_root = if let Ok(home) = std::env::var("CARGO_HOME") {
         PathBuf::from(home).join("registry").join("src")

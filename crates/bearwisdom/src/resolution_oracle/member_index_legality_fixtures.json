@@ -1,0 +1,8 @@
+[
+  {"name":"different_parameter_names_do_not_make_duplicate_index_signatures_legal","diagnosticCodes":[2374,2374],
+    "files":[{"path":"first.d.ts","source":"interface Catalog { [first: string]: number; }"},
+      {"path":"second.d.ts","source":"interface Catalog { [second: string]: number; }"}],"labels":[]},
+  {"name":"an_index_and_an_ordinary_method_can_legally_coexist","diagnosticCodes":[],
+    "files":[{"path":"first.d.ts","source":"interface Catalog { [index: number]: number; }"},
+      {"path":"second.d.ts","source":"interface Catalog { read(): number; }"}],"labels":[]}
+]

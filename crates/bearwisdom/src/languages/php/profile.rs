@@ -67,6 +67,7 @@ pub const PHP_PROFILE: LanguageProfile = LanguageProfile {
     has_generics: false,
     has_sum_types: true,
     look_through_optional: true,
+    reference_member_projection: false,
     literal_narrowing: false,
     async_wrappers: &[],
     container_accessors: &[],
@@ -84,7 +85,8 @@ pub const PHP_PROFILE: LanguageProfile = LanguageProfile {
     imports: crate::type_checker::profile::language_profile::ImportAxes {
         decline_qualified_when_prefix_imported: false,
         import_resolution: None,
-        import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
+        import_module_path:
+            crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
         module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
         module_anchor_terminal: false,
         relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,

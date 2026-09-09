@@ -12,13 +12,15 @@
 use std::str::FromStr;
 
 use crate::indexer::resolve::engine::cause::{Cause, CauseKind};
-use crate::indexer::resolve::engine::contract::{FileContext, RefContext, SymbolInfo, SymbolLookup};
+use crate::indexer::resolve::engine::contract::{
+    FileContext, RefContext, SymbolInfo, SymbolLookup,
+};
 use crate::type_checker::profile::language_profile::{
     KindCompatibility, KindTable, LanguageProfile,
 };
 use crate::types::{EdgeKind, SymbolKind};
 
-use super::{BindOutcome, BinderContext, Binder};
+use super::{BindOutcome, Binder, BinderContext};
 
 /// Outcome of solving one ref, chain-bearing or chain-less.
 pub enum SolveOutcome {
@@ -69,6 +71,35 @@ impl SemanticModel {
         lookup: &dyn SymbolLookup,
         profile: &LanguageProfile,
     ) -> SolveOutcome {
+        let reference = ref_ctx.extracted_ref;
+        if matches!(reference.kind, EdgeKind::Calls | EdgeKind::Instantiates)
+            && reference
+                .chain
+                .as_ref()
+                .is_none_or(|c| c.segments.len() < 2)
+        {
+            if let Some(local) = lookup.local_reference(reference.byte_offset) {
+                let Some(target_symbol_id) = local.declaration else {
+                    // Known binding, missing/ambiguous persisted row: no global fallback.
+                    return SolveOutcome::Unresolved(None);
+                };
+                let resolved_yield_type = lookup.type_arena().and_then(|arena| {
+                    super::lexical_value::yield_type(
+                        &local,
+                        lookup,
+                        arena,
+                        reference.kind == EdgeKind::Instantiates,
+                    )
+                });
+                return SolveOutcome::Resolved(SymbolInfo {
+                    target_symbol_id,
+                    confidence: super::contract::RESOLVED_CONFIDENCE,
+                    strategy: "lexical_binding",
+                    resolved_yield_type,
+                    flow_emit: None,
+                });
+            }
+        }
         // The walk's own diagnosis of a declined chain. When a namespace or
         // wildcard-import root sends the chain through the bare ladder below and
         // that ladder also comes up empty, this outranks a bare-name
@@ -80,6 +111,18 @@ impl SemanticModel {
                 Ok(res) => return SolveOutcome::Resolved(res),
                 Err(cause) => {
                     chain_cause = cause;
+                    if chain
+                        .segments
+                        .first()
+                        .is_some_and(|s| s.kind == crate::types::SegmentKind::BaseRef)
+                    {
+                        return SolveOutcome::Unresolved(cause);
+                    }
+                    if chain.segments.len() > 1
+                        && lookup.local_reference(reference.byte_offset).is_some()
+                    {
+                        return SolveOutcome::Unresolved(cause);
+                    }
                     // A multi-segment chain the walk declined is normally a genuine
                     // miss: a same-named sibling must not hijack `a.b.c`. Three
                     // exceptions all root on a MODULE the chain walker can't type
@@ -107,12 +150,11 @@ impl SemanticModel {
                         // A declined walk without a cause of its own anchored the
                         // root (a failed anchor always carries one) and died on a
                         // later hop silently — record that as the chain's cause.
-                        let cause = cause
-                            .or(Some(Cause::new(None, CauseKind::ChainDeclined)));
+                        let cause = cause.or(Some(Cause::new(None, CauseKind::ChainDeclined)));
                         if module_is_chain_qualifier(ref_ctx.extracted_ref, chain, profile) {
-                            return match self.resolve_module_scoped(
-                                ref_ctx, file_ctx, lookup, profile,
-                            ) {
+                            return match self
+                                .resolve_module_scoped(ref_ctx, file_ctx, lookup, profile)
+                            {
                                 BindOutcome::Resolved(res, _rule) => SolveOutcome::Resolved(res),
                                 BindOutcome::Drained => SolveOutcome::Drained,
                                 BindOutcome::Unresolved => SolveOutcome::Unresolved(cause),
@@ -200,7 +242,11 @@ fn module_is_chain_qualifier(
     };
     let quals = &chain.segments[..chain.segments.len() - 1];
     let mut for_sep = |sep: &str| {
-        let joined = quals.iter().map(|s| s.name.as_str()).collect::<Vec<_>>().join(sep);
+        let joined = quals
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect::<Vec<_>>()
+            .join(sep);
         joined == module
     };
     for_sep(profile.qname_separator) || for_sep(".")

@@ -31,8 +31,13 @@ pub(crate) fn bind_explicit_type_args(
     seg: &ChainSegment,
     yielded: TypeId,
 ) -> TypeId {
-    if seg.type_args.is_empty() && seg.type_arg_ids.is_empty() {
+    let arguments = type_arguments(lookup, arena, seg);
+    if arguments.is_empty() {
         return yielded;
+    }
+    if let Some(bound) = super::bound_call::explicit(lookup, arena, member.id, &arguments, yielded)
+    {
+        return bound;
     }
     let Some(params) = lookup
         .generic_params_of(member.id)
@@ -45,11 +50,7 @@ pub(crate) fn bind_explicit_type_args(
     }
     let mut map: FxHashMap<String, TypeId> = FxHashMap::default();
     for (i, param) in params.iter().enumerate() {
-        let arg = seg
-            .type_arg_ids
-            .get(i)
-            .copied()
-            .or_else(|| seg.type_args.get(i).map(|a| arena.intern_type_str(a)));
+        let arg = arguments.get(i).copied();
         if let Some(ty) = arg {
             map.insert(param.clone(), ty);
         }
@@ -63,6 +64,23 @@ pub(crate) fn bind_explicit_type_args(
         map.keys().collect::<Vec<_>>(),
     );
     arena.rebind_class_params(yielded, &map)
+}
+
+pub(super) fn type_arguments(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    seg: &ChainSegment,
+) -> Vec<TypeId> {
+    if let Some(bound) = lookup.member_type_arguments(seg.byte_offset) {
+        return bound.to_vec();
+    }
+    if !seg.type_arg_ids.is_empty() {
+        return seg.type_arg_ids.clone();
+    }
+    seg.type_args
+        .iter()
+        .map(|arg| arena.intern_type_str(arg))
+        .collect()
 }
 
 /// Attach a segment's in-source type arguments to a freshly-interned bare head

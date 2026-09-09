@@ -42,7 +42,10 @@ fn a_type_ref_naming_an_own_method_param_drains() {
         .with(sym(30, "T", "App.Translations.T", "class", "src/T.cs"))
         .with_generics("App.Resolvers.Sync", &["TSource", "T"]);
     let verdict = shadow_ctx_verdict(&lookup, EdgeKind::TypeRef, "T", "App.Resolvers.Sync");
-    assert!(matches!(verdict, LookupResult::Drained), "in-scope param must drain");
+    assert!(
+        matches!(verdict, LookupResult::Drained),
+        "in-scope param must drain"
+    );
 }
 
 /// The same target from a NON-generic method passes through, so the ladder's
@@ -53,7 +56,10 @@ fn the_same_type_ref_from_a_non_generic_method_passes() {
         .with(sym(30, "T", "App.Translations.T", "class", "src/T.cs"))
         .with_generics("App.Resolvers.Sync", &["TSource", "T"]);
     let verdict = shadow_ctx_verdict(&lookup, EdgeKind::TypeRef, "T", "App.Resolvers.Plain");
-    assert!(matches!(verdict, LookupResult::Pass), "no param in scope — pass through");
+    assert!(
+        matches!(verdict, LookupResult::Pass),
+        "no param in scope — pass through"
+    );
 }
 
 /// A parameter of an ENCLOSING type is in scope for a member's body: the
@@ -64,7 +70,10 @@ fn an_enclosing_type_param_also_vetoes() {
         .with(sym(30, "T", "App.Translations.T", "class", "src/T.cs"))
         .with_generics("App.Repo", &["T"]);
     let verdict = shadow_ctx_verdict(&lookup, EdgeKind::TypeRef, "T", "App.Repo.Find");
-    assert!(matches!(verdict, LookupResult::Drained), "owner param must drain");
+    assert!(
+        matches!(verdict, LookupResult::Drained),
+        "owner param must drain"
+    );
 }
 
 #[test]
@@ -95,11 +104,15 @@ fn a_dotted_target_is_not_a_param_mention() {
 #[test]
 fn arena_interned_source_params_also_veto() {
     let lookup = Lookup::new().with(sym(30, "T", "App.Translations.T", "class", "src/T.cs"));
-    let gp = lookup.type_arena().unwrap().intern_generic(GenericParamData {
-        name: "T".to_string(),
-        owner_symbol_index: 0,
-        bound: None,
-    });
+    let gp = lookup
+        .type_arena()
+        .unwrap()
+        .intern_generic(GenericParamData {
+            kind: Default::default(),
+            name: "T".to_string(),
+            owner_symbol_index: 0,
+            bound: None,
+        });
     let mut r = call_ref("T");
     r.kind = EdgeKind::TypeRef;
     let mut s = source_symbol("Sync");
@@ -114,7 +127,10 @@ fn arena_interned_source_params_also_veto() {
         kind: &accept_any,
         profile: &DEFAULT_PROFILE,
     };
-    assert!(matches!(GenericParamShadowRule.apply(&ctx), LookupResult::Drained));
+    assert!(matches!(
+        GenericParamShadowRule.apply(&ctx),
+        LookupResult::Drained
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -143,7 +159,10 @@ fn a_method_own_param_inside_an_application_becomes_a_generic_marker() {
         Type::Apply { args, .. } => {
             assert_eq!(args.len(), 2);
             for a in args {
-                assert!(matches!(arena.get(a), Type::Generic { .. }), "each param arg is marked");
+                assert!(
+                    matches!(arena.get(a), Type::Generic { .. }),
+                    "each param arg is marked"
+                );
             }
         }
         other => panic!("expected an application, got {other:?}"),
@@ -156,7 +175,10 @@ fn a_concrete_yield_is_untouched() {
     let arena = lookup.type_arena().unwrap();
     let member = sym(11, "Id", "NamedId.Id", "property", "src/NamedId.cs");
     let yielded = arena.intern_type_str("DomainId");
-    assert_eq!(mark_unbound_member_params(&lookup, arena, &member, yielded), yielded);
+    assert_eq!(
+        mark_unbound_member_params(&lookup, arena, &member, yielded),
+        yielded
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -194,12 +216,21 @@ fn nid_lookup(receiver_field_type: &str) -> Lookup {
         .with_field_type("M.nid", receiver_field_type)
         .with(sym(10, "NamedId", "NamedId", "class", "src/NamedId.cs"))
         .with_generics("NamedId", &["T"])
-        .with_member("NamedId", sym(11, "Id", "NamedId.Id", "property", "src/NamedId.cs"))
+        .with_member(
+            "NamedId",
+            sym(11, "Id", "NamedId.Id", "property", "src/NamedId.cs"),
+        )
         .with_field_type("NamedId.Id", "T")
         .with(sym(90, "Object", "System.Object", "class", ROOT_FILE))
         .with_member(
             "System.Object",
-            sym(91, "ToString", "System.Object.ToString", "method", ROOT_FILE),
+            sym(
+                91,
+                "ToString",
+                "System.Object.ToString",
+                "method",
+                ROOT_FILE,
+            ),
         )
 }
 
@@ -223,7 +254,13 @@ fn an_applied_receiver_still_substitutes_and_resolves() {
         .with(sym(20, "DomainId", "DomainId", "class", "src/DomainId.cs"))
         .with_member(
             "DomainId",
-            sym(21, "ToString", "DomainId.ToString", "method", "src/DomainId.cs"),
+            sym(
+                21,
+                "ToString",
+                "DomainId.ToString",
+                "method",
+                "src/DomainId.cs",
+            ),
         );
     assert_eq!(resolve_tostring(&lookup), Some(21));
 }

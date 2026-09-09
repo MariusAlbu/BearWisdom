@@ -1,0 +1,167 @@
+[
+  {
+    "name": "local_constructor_callback_cascade",
+    "source": "interface Payload { touch(): void } interface Collection<T> { has(item: T): boolean } interface Vector<T> { item: T; filter<S extends T>(predicate: (value: T) => value is S): Vector<S>; filter(predicate: (value: T) => unknown): Vector<T>; first(): T } interface Factory { new<U>(items: Vector<U>): Collection<U> } declare const Build: Factory; function run(values: Vector<Payload>, expected: Collection<Payload>) { const excludeSet = new Build(values); const filtered = values.filter(item => !excludeSet.has(item)); filtered.first().touch(); }",
+    "supported": true,
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "values.filter",
+        "declaration": "filter(predicate:"
+      },
+      {
+        "expression": "excludeSet.has",
+        "declaration": "has(item:"
+      },
+      {
+        "expression": "filtered.first",
+        "declaration": "first():"
+      },
+      {
+        "expression": "filtered.first().touch",
+        "declaration": "touch():"
+      }
+    ]
+  },
+  {
+    "name": "caller_generic_constructor_callback",
+    "source": "interface Payload { touch(): void } interface Collection<T> { has(item: T): boolean } interface Vector<T> { item: T; filter<S extends T>(predicate: (value: T) => value is S): Vector<S>; filter(predicate: (value: T) => unknown): Vector<T>; first(): T } interface Factory { new<U>(items: Vector<U>): Collection<U> } declare const Build: Factory; function run<T>(values: Vector<T>, expected: Collection<T>) { const excludeSet = new Build(values); const filtered = values.filter(item => !excludeSet.has(item)); filtered.first(); }",
+    "supported": true,
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "values.filter",
+        "declaration": "filter(predicate:"
+      },
+      {
+        "expression": "excludeSet.has",
+        "declaration": "has(item:"
+      },
+      {
+        "expression": "filtered.first",
+        "declaration": "first():"
+      }
+    ]
+  },
+  {
+    "name": "shadowed_block_and_captured_local",
+    "source": "interface Payload { touch(): void } interface Collection<T> { has(item: T): boolean } interface Vector<T> { item: T } interface Factory { new<U>(items: Vector<U>): Collection<U> } declare const Build: Factory; function run(values: Vector<Payload>, numbers: Vector<number>, expected: Collection<Payload>, numeric: Collection<number>) { const excludeSet = new Build(values); /*outer*/excludeSet; { const excludeSet = new Build(numbers); /*inner*/excludeSet; } /*restored*/excludeSet; function closure() { /*captured*/excludeSet; } }",
+    "checks": [
+      {
+        "at": "/*outer*/",
+        "name": "excludeSet",
+        "expected": "expected"
+      },
+      {
+        "at": "/*inner*/",
+        "name": "excludeSet",
+        "expected": "numeric"
+      },
+      {
+        "at": "/*restored*/",
+        "name": "excludeSet",
+        "expected": "expected"
+      },
+      {
+        "at": "/*captured*/",
+        "name": "excludeSet",
+        "expected": "expected"
+      }
+    ],
+    "diagnosticCodes": []
+  },
+  {
+    "name": "sibling_function_local_identity",
+    "source": "interface Payload { touch(): void } interface Collection<T> { has(item: T): boolean } interface Vector<T> { item: T } interface Factory { new<U>(items: Vector<U>): Collection<U> } declare const Build: Factory; function left(values: Vector<Payload>, expected: Collection<Payload>) { const excludeSet = new Build(values); /*left*/excludeSet; } function right(values: Vector<number>, expected: Collection<number>) { const excludeSet = new Build(values); /*right*/excludeSet; }",
+    "checks": [
+      {
+        "at": "/*left*/",
+        "name": "excludeSet",
+        "expected": "expected"
+      },
+      {
+        "at": "/*right*/",
+        "name": "excludeSet",
+        "expected": "expected"
+      }
+    ],
+    "diagnosticCodes": []
+  },
+  {
+    "name": "read_before_initializer_is_unavailable",
+    "source": "interface Payload { touch(): void } interface Collection<T> { has(item: T): boolean } interface Vector<T> { item: T } interface Factory { new<U>(items: Vector<U>): Collection<U> } declare const Build: Factory; function run(values: Vector<Payload>, expected: Collection<Payload>) { /*before*/excludeSet; const excludeSet = new Build(values); /*after*/excludeSet; }",
+    "checks": [
+      {
+        "at": "/*before*/",
+        "name": "excludeSet",
+        "expected": null
+      },
+      {
+        "at": "/*after*/",
+        "name": "excludeSet",
+        "expected": "expected"
+      }
+    ],
+    "diagnosticCodes": [
+      2448,
+      2454
+    ]
+  },
+  {
+    "name": "explicit_annotation_is_authoritative",
+    "source": "interface Payload { touch(): void } interface Collection<T> { has(item: T): boolean } interface Vector<T> { item: T } interface Factory { new<U>(items: Vector<U>): Collection<U> } declare const Build: Factory; function run(values: Vector<Payload>, expected: object) { const excludeSet: object = new Build(values); /*after*/excludeSet; }",
+    "checks": [
+      {
+        "at": "/*after*/",
+        "name": "excludeSet",
+        "expected": "expected"
+      }
+    ],
+    "diagnosticCodes": []
+  },
+  {
+    "name": "non_union_inferred_contract_survives_assignment",
+    "source": "interface Payload { touch(): void } interface Collection<T> { has(item: T): boolean } interface Vector<T> { item: T } interface Factory { new<U>(items: Vector<U>): Collection<U> } declare const Build: Factory; interface Other extends Payload { extra(): void } function run(values: Vector<Payload>, replacement: Collection<Other>, expected: Collection<Payload>) { let excludeSet = new Build(values); /*before*/excludeSet; excludeSet = replacement; /*after*/excludeSet; }",
+    "checks": [
+      {
+        "at": "/*before*/",
+        "name": "excludeSet",
+        "expected": "expected"
+      },
+      {
+        "at": "/*after*/",
+        "name": "excludeSet",
+        "expected": "expected"
+      }
+    ],
+    "diagnosticCodes": []
+  },
+  {
+    "name": "invalid_constructor_operand_has_no_local_type",
+    "source": "interface Payload { touch(): void } interface Collection<T> { has(item: T): boolean } interface Vector<T> { item: T } interface Factory { new<U>(items: Vector<U>): Collection<U> } declare const Build: Factory; function run(values: string) { const excludeSet = new Build(values); /*after*/excludeSet; }",
+    "checks": [
+      {
+        "at": "/*after*/",
+        "name": "excludeSet",
+        "expected": null
+      }
+    ],
+    "diagnosticCodes": [
+      2345
+    ]
+  },
+  {
+    "name": "abstract_constructor_has_no_local_type",
+    "source": "declare abstract class Build { constructor() } function run() { const excludeSet = new Build(); /*after*/excludeSet; }",
+    "checks": [
+      {
+        "at": "/*after*/",
+        "name": "excludeSet",
+        "expected": null
+      }
+    ],
+    "diagnosticCodes": [
+      2511
+    ]
+  }
+]

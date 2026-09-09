@@ -1,0 +1,1924 @@
+[
+  {
+    "name": "array_to_one",
+    "sourceParameters": "...values: number[]",
+    "targetParameters": "value: number",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "one_to_array",
+    "sourceParameters": "value: number",
+    "targetParameters": "...values: number[]",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "array_to_many",
+    "sourceParameters": "...values: number[]",
+    "targetParameters": "a: number, b: number, c: number",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "many_to_array",
+    "sourceParameters": "a: number, b: number, c: number",
+    "targetParameters": "...values: number[]",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "array_to_empty",
+    "sourceParameters": "...values: number[]",
+    "targetParameters": "",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "empty_to_array",
+    "sourceParameters": "",
+    "targetParameters": "...values: number[]",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "prefix_still_required",
+    "sourceParameters": "first: number, ...values: number[]",
+    "targetParameters": "",
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      }
+    }
+  },
+  {
+    "name": "array_wrong_element",
+    "sourceParameters": "...values: string[]",
+    "targetParameters": "value: number",
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      }
+    }
+  },
+  {
+    "name": "array_rejects_later_wrong_element",
+    "sourceParameters": "...values: number[]",
+    "targetParameters": "first: number, second: string",
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      }
+    }
+  },
+  {
+    "name": "prefix_and_tail",
+    "sourceParameters": "first: string, ...values: number[]",
+    "targetParameters": "first: string, x: number, y: number",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "prefix_and_tail_wrong_position",
+    "sourceParameters": "first: string, ...values: number[]",
+    "targetParameters": "first: string, x: string",
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      }
+    }
+  },
+  {
+    "name": "array_wide_parameter",
+    "sourceParameters": "...values: (number | string)[]",
+    "targetParameters": "...values: number[]",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "array_narrow_parameter_strict",
+    "sourceParameters": "...values: number[]",
+    "targetParameters": "...values: (number | string)[]",
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "array_narrow_parameter_nonstrict",
+    "sourceParameters": "...values: number[]",
+    "targetParameters": "...values: (number | string)[]",
+    "strict": false,
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "array_optional_target",
+    "sourceParameters": "...values: number[]",
+    "targetParameters": "value?: number",
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "array_optional_target_nonstrict_nulls",
+    "sourceParameters": "...values: number[]",
+    "targetParameters": "value?: number",
+    "strictNulls": false,
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "optional_source_array",
+    "sourceParameters": "value?: number",
+    "targetParameters": "...values: number[]",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "readonly_array_to_one",
+    "sourceParameters": "...values: readonly number[]",
+    "targetParameters": "value: number",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "one_to_readonly_array",
+    "sourceParameters": "value: number",
+    "targetParameters": "...values: readonly number[]",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "literal_array_variance",
+    "sourceParameters": "...values: number[]",
+    "targetParameters": "...values: (1 | 2)[]",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "literal_array_rejects_wide",
+    "sourceParameters": "...values: (1 | 2)[]",
+    "targetParameters": "...values: number[]",
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "finite_tuple_to_array",
+    "sourceParameters": "...values: [number, number]",
+    "targetParameters": "...values: number[]",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "array_to_finite_tuple",
+    "sourceParameters": "...values: number[]",
+    "targetParameters": "...values: [number, number]",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "array_to_tuple_union",
+    "sourceParameters": "...values: number[]",
+    "targetParameters": "...values: [number] | [number, number]",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "tuple_union_to_array",
+    "sourceParameters": "...values: [number] | [number, number]",
+    "targetParameters": "...values: number[]",
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "array_to_tuple_union_negative",
+    "sourceParameters": "...values: number[]",
+    "targetParameters": "...values: [number] | [number, string]",
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      }
+    }
+  },
+  {
+    "name": "prefix_array_to_correlated_tuple",
+    "sourceParameters": "tag: string, ...values: (number | string)[]",
+    "targetParameters": "...values: ['a', number] | ['b', string]",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "prefix_array_rejects_correlated_branch",
+    "sourceParameters": "tag: string, ...values: number[]",
+    "targetParameters": "...values: ['a', number] | ['b', string]",
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      }
+    }
+  },
+  {
+    "name": "correlated_tuple_to_prefix_array",
+    "sourceParameters": "...values: ['a', number] | ['b', string]",
+    "targetParameters": "tag: string, ...values: (number | string)[]",
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "array_union_to_element_union",
+    "sourceParameters": "...values: number[] | string[]",
+    "targetParameters": "...values: (number | string)[]",
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "element_union_to_array_union",
+    "sourceParameters": "...values: (number | string)[]",
+    "targetParameters": "...values: number[] | string[]",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "array_union_to_number_array",
+    "sourceParameters": "...values: number[] | string[]",
+    "targetParameters": "...values: number[]",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "number_array_to_array_union",
+    "sourceParameters": "...values: number[]",
+    "targetParameters": "...values: number[] | string[]",
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "any_array_to_correlated_tuple",
+    "sourceParameters": "...values: any[]",
+    "targetParameters": "...values: [number] | [string, boolean]",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "correlated_tuple_to_any_array",
+    "sourceParameters": "...values: [number] | [string, boolean]",
+    "targetParameters": "...values: any[]",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "any_rest_to_one",
+    "sourceParameters": "...values: any",
+    "targetParameters": "value: number",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "one_to_any_rest",
+    "sourceParameters": "value: number",
+    "targetParameters": "...values: any",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "unknown_array_to_one",
+    "sourceParameters": "...values: unknown[]",
+    "targetParameters": "value: number",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "one_to_unknown_array",
+    "sourceParameters": "value: number",
+    "targetParameters": "...values: unknown[]",
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "array_alias",
+    "sourceParameters": "...values: Args",
+    "targetParameters": "a: number, b: number",
+    "preamble": "type Args = number[];",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "alpha_generic_arrays",
+    "sourceParameters": "...values: T[]",
+    "targetParameters": "value: U",
+    "sourceGenerics": "<T>",
+    "targetGenerics": "<U>",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_constraint_retained_gap",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value: number",
+    "sourceGenerics": "<T extends number[]>",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "nested_callback_rest",
+    "sourceParameters": "...values: ((value: number) => void)[]",
+    "targetParameters": "callback: (value: number | string) => void",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "nested_callback_rest_reverse",
+    "sourceParameters": "...values: ((value: number | string) => void)[]",
+    "targetParameters": "callback: (value: number) => void",
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      }
+    }
+  },
+  {
+    "name": "return_covariance",
+    "sourceParameters": "...values: number[]",
+    "targetParameters": "value: number",
+    "sourceResult": "Rich",
+    "targetResult": "Item",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "return_rejection",
+    "sourceParameters": "...values: number[]",
+    "targetParameters": "value: number",
+    "sourceResult": "Item",
+    "targetResult": "Rich",
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      }
+    }
+  },
+  {
+    "name": "unknown_element_source",
+    "sourceParameters": "...values: Missing[]",
+    "targetParameters": "value: number",
+    "supported": false,
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2304
+        ],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [
+          2304
+        ],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [
+          2304
+        ],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "invalid_scalar_rest",
+    "sourceParameters": "...values: number",
+    "targetParameters": "value: number",
+    "supported": false,
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322,
+          2370
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322,
+          2370
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [
+          2322,
+          2370
+        ],
+        "assignable": false
+      }
+    }
+  },
+  {
+    "name": "readonly_tuple_union_target",
+    "sourceParameters": "...values: number[]",
+    "targetParameters": "...values: readonly [number] | readonly [number, number]",
+    "supported": false,
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      }
+    }
+  },
+  {
+    "name": "optional_prefix_to_tuple_union",
+    "sourceParameters": "tag?: string, ...values: number[]",
+    "targetParameters": "...values: [] | [string, number]",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_constraint_empty_target",
+    "sourceParameters": "...values: T",
+    "targetParameters": "",
+    "sourceGenerics": "<T extends number[]>",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_constraint_two_fixed_targets",
+    "sourceParameters": "...values: T",
+    "targetParameters": "left: number, right: number",
+    "sourceGenerics": "<T extends number[]>",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_constraint_fixed_mismatch",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value: string",
+    "sourceGenerics": "<T extends number[]>",
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      }
+    }
+  },
+  {
+    "name": "generic_rest_constraint_array_target",
+    "sourceParameters": "...values: T",
+    "targetParameters": "...values: number[]",
+    "sourceGenerics": "<T extends number[]>",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_constraint_wider_array_target",
+    "sourceParameters": "...values: T",
+    "targetParameters": "...values: (number | string)[]",
+    "sourceGenerics": "<T extends number[]>",
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_constraint_generic_target",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value: U",
+    "sourceGenerics": "<T extends number[]>",
+    "targetGenerics": "<U extends number>",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_constraint_unconstrained_target",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value: U",
+    "sourceGenerics": "<T extends number[]>",
+    "targetGenerics": "<U>",
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      }
+    }
+  },
+  {
+    "name": "generic_rest_tuple_constraint_one_target",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value: number",
+    "sourceGenerics": "<T extends [number, string?]>",
+    "supported": true,
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_tuple_constraint_two_targets",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value: number, label: string",
+    "sourceGenerics": "<T extends [number, string?]>",
+    "supported": true,
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_tuple_constraint_too_many_targets",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value: number, label: string, extra: number",
+    "sourceGenerics": "<T extends [number, string?]>",
+    "supported": true,
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_tuple_union_constraint",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value: number, label: string",
+    "sourceGenerics": "<T extends [number] | [number, string]>",
+    "supported": true,
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_readonly_array_constraint",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value: number",
+    "sourceGenerics": "<T extends readonly number[]>",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_unknown_array_constraint",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value: string",
+    "sourceGenerics": "<T extends unknown[]>",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_alias_constraint",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value: number",
+    "sourceGenerics": "<T extends Args>",
+    "preamble": "type Args = number[];",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_dependent_array_constraint",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value: V",
+    "sourceGenerics": "<U extends number, T extends U[]>",
+    "targetGenerics": "<V extends number>",
+    "supported": false,
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_unconstrained_invalid_source",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value: number",
+    "sourceGenerics": "<T>",
+    "supported": false,
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2370
+        ],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [
+          2370
+        ],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [
+          2370
+        ],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_scalar_constraint_invalid_source",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value: number",
+    "sourceGenerics": "<T extends number>",
+    "supported": false,
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322,
+          2370
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322,
+          2370
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [
+          2322,
+          2370
+        ],
+        "assignable": false
+      }
+    }
+  },
+  {
+    "name": "generic_rest_constraint_after_fixed_prefix",
+    "sourceParameters": "tag: string, ...values: T",
+    "targetParameters": "tag: string, value: number",
+    "sourceGenerics": "<T extends number[]>",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_constraint_optional_target",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value?: number",
+    "sourceGenerics": "<T extends number[]>",
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_constraint_tuple_rest_target",
+    "sourceParameters": "...values: T",
+    "targetParameters": "...values: [number, number?]",
+    "sourceGenerics": "<T extends number[]>",
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_constraint_tuple_return",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value: number",
+    "sourceGenerics": "<T extends number[]>",
+    "sourceResult": "T",
+    "targetResult": "[number]",
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_constraint_array_return_conflict",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value: number",
+    "sourceGenerics": "<T extends number[]>",
+    "sourceResult": "T",
+    "targetResult": "number[]",
+    "supported": false,
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_tuple_constraint_empty_target",
+    "sourceParameters": "...values: T",
+    "targetParameters": "",
+    "sourceGenerics": "<T extends [number, string?]>",
+    "supported": true,
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_tuple_constraint_first_mismatch",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value: string",
+    "sourceGenerics": "<T extends [number, string?]>",
+    "supported": true,
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      }
+    }
+  },
+  {
+    "name": "generic_rest_tuple_constraint_optional_target",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value?: number",
+    "sourceGenerics": "<T extends [number, string?]>",
+    "supported": true,
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_tuple_constraint_same_tuple_target",
+    "sourceParameters": "...values: T",
+    "targetParameters": "...values: [number, string?]",
+    "sourceGenerics": "<T extends [number, string?]>",
+    "supported": true,
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_tuple_constraint_array_target",
+    "sourceParameters": "...values: T",
+    "targetParameters": "...values: number[]",
+    "sourceGenerics": "<T extends [number, string?]>",
+    "supported": true,
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      }
+    }
+  },
+  {
+    "name": "generic_rest_tuple_constraint_rigid_target",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value: U",
+    "sourceGenerics": "<T extends [number]>",
+    "targetGenerics": "<U extends number>",
+    "supported": true,
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_tuple_constraint_unconstrained_target",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value: U",
+    "sourceGenerics": "<T extends [number]>",
+    "targetGenerics": "<U>",
+    "supported": false,
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      }
+    }
+  },
+  {
+    "name": "generic_rest_tuple_constraint_inferred_return",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value: number",
+    "sourceGenerics": "<T extends [number, string?]>",
+    "sourceResult": "T",
+    "targetResult": "[number]",
+    "supported": true,
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_tuple_union_constraint_first_branch",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value: number",
+    "sourceGenerics": "<T extends [number] | [number, string]>",
+    "supported": true,
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_tuple_union_constraint_mismatch",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value: number, label: boolean",
+    "sourceGenerics": "<T extends [number] | [number, string]>",
+    "supported": true,
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      }
+    }
+  },
+  {
+    "name": "generic_rest_tuple_union_constraint_overlong_target",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value: number, label: string, extra: boolean",
+    "sourceGenerics": "<T extends [number] | [number, string]>",
+    "supported": true,
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      }
+    }
+  },
+  {
+    "name": "generic_rest_optional_tuple_constraint_empty_target",
+    "sourceParameters": "...values: T",
+    "targetParameters": "",
+    "sourceGenerics": "<T extends [number?]>",
+    "supported": true,
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_readonly_tuple_constraint",
+    "sourceParameters": "...values: T",
+    "targetParameters": "value: number",
+    "sourceGenerics": "<T extends readonly [number]>",
+    "supported": true,
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_tuple_constraint_empty_target_constraint_return",
+    "sourceParameters": "...values: T",
+    "targetParameters": "",
+    "sourceGenerics": "<T extends [number]>",
+    "sourceResult": "T",
+    "targetResult": "[number]",
+    "supported": true,
+    "labels": {
+      "callable": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "constructor": {
+        "diagnostics": [],
+        "assignable": true
+      },
+      "method": {
+        "diagnostics": [],
+        "assignable": true
+      }
+    }
+  },
+  {
+    "name": "generic_rest_tuple_constraint_empty_target_empty_return",
+    "sourceParameters": "...values: T",
+    "targetParameters": "",
+    "sourceGenerics": "<T extends [number]>",
+    "sourceResult": "T",
+    "targetResult": "[]",
+    "supported": true,
+    "labels": {
+      "callable": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "constructor": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      },
+      "method": {
+        "diagnostics": [
+          2322
+        ],
+        "assignable": false
+      }
+    }
+  }
+]

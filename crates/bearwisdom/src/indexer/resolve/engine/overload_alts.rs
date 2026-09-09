@@ -10,9 +10,7 @@ use crate::indexer::resolve::engine::contract::{FileContext, Symbol, SymbolLooku
 use crate::type_checker::core::types::{TypeArena, TypeId};
 use crate::type_checker::profile::language_profile::LanguageProfile;
 
-use super::chain::{
-    expand_receiver, lookup_member_on, peel_wrapped_receiver, yield_through, Receiver,
-};
+use super::chain::{lookup_member_on, project_receiver, yield_through, Receiver};
 use super::head_decl::yielded_receiver;
 
 /// Bound on the sibling-overload yields carried between hops.
@@ -72,15 +70,12 @@ pub(super) fn collect_overload_alt_yields(
         let Some(y) = yield_through(lookup, arena, sib, true, mid_recv, mid_id) else {
             continue;
         };
-        let r = expand_receiver(
-            peel_wrapped_receiver(
-                yielded_receiver(lookup, arena, y, sib.package_id),
-                arena,
-                profile.single_inner_wrappers,
-            ),
+        let r = project_receiver(
+            yielded_receiver(lookup, arena, y, sib.package_id),
             lookup,
             arena,
             Some(file_ctx),
+            profile,
         );
         if r.ty != picked_ty && !alts.iter().any(|a| a.ty == r.ty) {
             alts.push(r);

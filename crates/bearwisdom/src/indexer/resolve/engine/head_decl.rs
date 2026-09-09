@@ -15,8 +15,8 @@
 // binding one makes every member on it miss.
 // =============================================================================
 
-use crate::indexer::resolve::engine::contract::{FileContext, Symbol, SymbolLookup};
 use crate::indexer::resolve::engine::contract::util::is_type_like_kind;
+use crate::indexer::resolve::engine::contract::{FileContext, Symbol, SymbolLookup};
 use crate::indexer::resolve::engine::support::pick_ranked_candidate;
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 
@@ -29,7 +29,9 @@ use super::chain::{head_qname, Receiver};
 /// always has.
 pub(crate) fn nominal_head(lookup: &dyn SymbolLookup, arena: &TypeArena, sym: &Symbol) -> TypeId {
     if crate::indexer::resolve::engine::kinds::is_type_kind(&sym.kind) {
-        arena.decl(&sym.qualified_name, lookup.canonical_decl_id(sym.id))
+        lookup
+            .declaration_type(arena, sym.id)
+            .unwrap_or_else(|| arena.intern(Type::Unknown))
     } else {
         arena.class(&sym.qualified_name)
     }
@@ -39,11 +41,25 @@ pub(crate) fn nominal_head(lookup: &dyn SymbolLookup, arena: &TypeArena, sym: &S
 /// through the same wrappers `head_qname` peels. `None` for a name-only head;
 /// the recovery lookups below are the fallback for those.
 pub(crate) fn head_decl_id(arena: &TypeArena, id: TypeId) -> Option<i64> {
+    head_identity(arena, id).map(|(_, id)| id)
+}
+
+/// Full nominal identity. Stripping to a physical row is for navigation, not
+/// equality or permission to consume another program's declaration metadata.
+pub(super) fn head_identity(
+    arena: &TypeArena,
+    id: TypeId,
+) -> Option<(
+    Option<crate::type_checker::core::types::NominalContextId>,
+    i64,
+)> {
     match arena.get(id) {
-        Type::Decl { symbol_id, .. } => Some(symbol_id),
-        Type::Apply { base, .. } => head_decl_id(arena, base),
+        Type::Decl {
+            symbol_id, context, ..
+        } => Some((context, symbol_id)),
+        Type::Apply { base, .. } => head_identity(arena, base),
         Type::Optional(inner) | Type::AsyncWrapper(inner) | Type::Iterator(inner) => {
-            head_decl_id(arena, inner)
+            head_identity(arena, inner)
         }
         _ => None,
     }
@@ -81,6 +97,9 @@ pub(crate) fn head_symbol_id(
     ty: TypeId,
     file_ctx: Option<&FileContext>,
 ) -> Option<i64> {
+    if !lookup.accepts_type_context(arena, ty) {
+        return None;
+    }
     // A head that carries its declaration needs no recovery.
     if let Some(id) = head_decl_id(arena, ty) {
         return Some(id);
@@ -126,6 +145,9 @@ pub(crate) fn head_symbol_id_preferring_package(
     ty: TypeId,
     preferred_pkg: Option<i64>,
 ) -> Option<i64> {
+    if !lookup.accepts_type_context(arena, ty) {
+        return None;
+    }
     // A head that carries its declaration needs no recovery.
     if let Some(id) = head_decl_id(arena, ty) {
         return Some(id);
@@ -134,10 +156,7 @@ pub(crate) fn head_symbol_id_preferring_package(
     let simple = head.rsplit('.').next().unwrap_or(&head);
     if let Some(pkg) = preferred_pkg {
         for s in lookup.by_name(simple) {
-            if s.qualified_name == head
-                && s.package_id == Some(pkg)
-                && is_type_like_kind(&s.kind)
-            {
+            if s.qualified_name == head && s.package_id == Some(pkg) && is_type_like_kind(&s.kind) {
                 return Some(s.id);
             }
         }
@@ -219,6 +238,9 @@ pub(super) fn reroot_bare_head(
     id: Option<i64>,
     file_ctx: Option<&FileContext>,
 ) -> Receiver {
+    if !lookup.accepts_type_context(arena, ty) {
+        return Receiver::untyped(arena.intern(Type::Unknown));
+    }
     // A bound head IS its indexed declaration — nothing to re-root.
     if super::head_decl::head_decl_id(arena, ty).is_some() {
         return Receiver { ty, id };
@@ -239,12 +261,20 @@ pub(super) fn reroot_bare_head(
             // Several copies sharing ONE qname (a package re-exported through several
             // disk paths, e.g. `rxjs.Observable`) are an unambiguous re-root target
             // even when ranking can't separate them.
-            None if many.iter().all(|c| c.qualified_name == many[0].qualified_name) => many[0],
+            None if many
+                .iter()
+                .all(|c| c.qualified_name == many[0].qualified_name) =>
+            {
+                many[0]
+            }
             None => return Receiver { ty, id },
         },
     };
     if decl.qualified_name == head {
-        return Receiver { ty, id: id.or(Some(decl.id)) };
+        return Receiver {
+            ty,
+            id: id.or(Some(decl.id)),
+        };
     }
     Receiver {
         ty: rebind_head(arena, ty, &decl.qualified_name),

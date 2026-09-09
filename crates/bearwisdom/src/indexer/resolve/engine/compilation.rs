@@ -12,21 +12,21 @@ use std::sync::Arc;
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::ecosystem::externals::ts_package_from_virtual_path;
+use crate::ecosystem::manifest::ManifestKind;
+use crate::indexer::project_context::ProjectContext;
+use crate::indexer::resolve::engine::contract::{
+    build_scope_chain, is_jvm_language, parse_object_type_members,
+    parse_param_types_from_signature, parse_return_type_from_jvm_descriptor,
+    parse_return_type_from_signature, parse_return_type_positional, parse_top_level_conditional,
+    parse_type_head_and_args, resolve_type_name_in_scope, signature_generic_params, FileContext,
+    ImportEntry, RefContext, Symbol, SymbolLookup, SymbolSet, TypeInfo,
+};
 use crate::indexer::resolve::engine::ext_lang_visibility::ExtLangVisibility;
 use crate::indexer::resolve::engine::import_qualify;
 use crate::indexer::resolve::engine::module_specifier;
-use crate::indexer::resolve::engine::contract::{
-    is_jvm_language, parse_object_type_members, parse_param_types_from_signature,
-    parse_return_type_from_jvm_descriptor, parse_return_type_from_signature,
-    parse_return_type_positional, parse_top_level_conditional, parse_type_head_and_args,
-    build_scope_chain, resolve_type_name_in_scope, signature_generic_params,
-    FileContext, ImportEntry, RefContext, Symbol, SymbolLookup, SymbolSet, TypeInfo,
-};
 use crate::indexer::resolve::engine::support::resolve_module_exported_value_type;
-use crate::ecosystem::externals::ts_package_from_virtual_path;
-use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::write::SymbolIds;
-use crate::indexer::project_context::ProjectContext;
 use crate::type_checker::core::types::{GenericParamData, GenericParamId, Type, TypeArena, TypeId};
 use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::{
@@ -37,7 +37,18 @@ use crate::types::{
 // ---------------------------------------------------------------------------
 // `is_type_like` is the single canonical type-name-surface predicate, owned by
 // `engine::contract::util`. Aliased here so the call sites read unchanged.
+use super::contract::flow_cache::FlowCacheLookup;
 use super::contract::is_type_like_kind as is_type_like;
+#[path = "compilation_extensions.rs"]
+mod extensions;
+#[path = "compilation_type_bindings.rs"]
+mod lexical_types;
+#[path = "compilation_visibility.rs"]
+mod lexical_visibility;
+#[path = "compilation_merges.rs"]
+mod scoped_merges;
+#[path = "compilation_wrappers.rs"]
+mod wrappers;
 
 // ---------------------------------------------------------------------------
 // PendingModuleValue — a deferred module-tagged value TypeRef
@@ -65,6 +76,8 @@ struct PendingModuleValue {
 /// Built once from parse output; implements `SymbolLookup` for the binder, the
 /// rules, and the chain walker.
 pub struct Compilation {
+    modules: super::module_graph::ModuleGraph,
+    program_views: super::program_view::Store,
     by_name: FxHashMap<String, Vec<Symbol>>,
     /// First-winner qualified-name index. Stored as a `BTreeMap` so the
     /// `resolve_type_name_in_scope` helper — which requires a
@@ -79,12 +92,16 @@ pub struct Compilation {
     /// (which keys on the qname string); lets consumers holding a resolved id
     /// recover the symbol without a qname round-trip.
     by_id: FxHashMap<i64, Symbol>,
+    lexical_only: FxHashSet<i64>,
     /// Direct children keyed by PARENT symbol id — the id-keyed counterpart to
     /// `members_by_parent`. Stores child ids (resolved through `by_id`), so a
     /// chain walker that has typed a receiver to a symbol id walks its members
     /// by identity rather than re-matching qname strings. Derived at the end of
     /// `ingest` from the fully-built `members_by_parent` + `by_qname`.
     members_by_id: FxHashMap<i64, Vec<i64>>,
+    extension_owners: FxHashMap<i64, Option<i64>>,
+    extension_patterns: FxHashMap<i64, Arc<super::contract::member_applicability::ReceiverPattern>>,
+    member_index: super::member_index::MemberIndex,
     types_by_name: FxHashMap<String, Vec<Symbol>>,
     /// Per-symbol type metadata: field type, return type, generic params.
     pub(super) type_info: FxHashMap<String, TypeInfo>,
@@ -231,6 +248,10 @@ pub struct Compilation {
     empty_pairs: Vec<(String, String)>,
 }
 
+#[cfg(test)]
+#[path = "compilation_program_tests.rs"]
+mod program_tests;
+
 impl Compilation {
     /// Build the store from parse output.
     ///
@@ -239,11 +260,7 @@ impl Compilation {
     /// `arena` must be the same instance used during extraction so extractor-set
     /// TypeIds on `ExtractedSymbol` (`declared_type`, `return_type`) point into
     /// the canonical table the engine and rules consult.
-    pub fn build(
-        parsed: &[ParsedFile],
-        symbol_id_map: &SymbolIds,
-        arena: Arc<TypeArena>,
-    ) -> Self {
+    pub fn build(parsed: &[ParsedFile], symbol_id_map: &SymbolIds, arena: Arc<TypeArena>) -> Self {
         Self::build_with_context(parsed, symbol_id_map, arena, None, &HashSet::new())
     }
 
@@ -281,6 +298,7 @@ impl Compilation {
             .map(|(k, v)| (k.clone(), *v))
             .collect();
         self.module_specifier.snapshot_manifests(ctx);
+        self.modules.snapshot_configuration(ctx);
         // One entry per isolated package (so an alias-less package declines rather
         // than borrowing the global set) plus the workspace-wide fallback. The
         // `AliasedImportRule` consults these via `resolve_path_alias`.
@@ -338,12 +356,18 @@ impl Compilation {
             by_file: FxHashMap::default(),
             members_by_parent: FxHashMap::default(),
             by_id: FxHashMap::default(),
+            lexical_only: FxHashSet::default(),
             members_by_id: FxHashMap::default(),
+            extension_owners: FxHashMap::default(),
+            extension_patterns: FxHashMap::default(),
+            member_index: Default::default(),
             types_by_name: FxHashMap::default(),
             type_info: FxHashMap::default(),
             type_info_by_id: FxHashMap::default(),
             head_bind: super::bind_stored_heads::HeadBindMemo::default(),
             pending_import_requalify: Vec::new(),
+            modules: super::module_graph::ModuleGraph::default(),
+            program_views: Default::default(),
             reexport_map: FxHashMap::default(),
             module_entry: FxHashMap::default(),
             module_specifier: module_specifier::Context::default(),
@@ -432,16 +456,11 @@ impl Compilation {
                 // `useQueryClient` binds to the doc fence shadowing the real
                 // function. Markdown-NATIVE symbols are not from_snippet, so doc
                 // link resolution is unaffected; symbols stay in the DB for search.
-                let from_snippet = pf
-                    .symbol_from_snippet
-                    .get(sym_i)
-                    .copied()
-                    .unwrap_or(false);
+                let from_snippet = pf.symbol_from_snippet.get(sym_i).copied().unwrap_or(false);
                 if from_snippet {
                     continue;
                 }
-                let Some(id) = symbol_id_map.id_of(&pf.path, sym_i, &sym.qualified_name)
-                else {
+                let Some(id) = symbol_id_map.id_of(&pf.path, sym_i, &sym.qualified_name) else {
                     continue;
                 };
 
@@ -538,7 +557,11 @@ impl Compilation {
                     if let Some(parent_id) =
                         symbol_id_map.id_of(&pf.path, p_idx, &parent.qualified_name)
                     {
-                        self.members_by_id.entry(parent_id).or_default().push(info.id);
+                        self.members_by_id
+                            .entry(parent_id)
+                            .or_default()
+                            .push(info.id);
+                        self.member_index.record(parent_id, &info.name, info.id);
                     }
                 }
 
@@ -549,11 +572,7 @@ impl Compilation {
                 // value+type qname guard below sees every type declaration.
                 if sym.declared_type.is_some() || sym.return_type.is_some() {
                     if let Some(type_id) = sym.declared_type {
-                        pending_field_types.push((
-                            sym.qualified_name.clone(),
-                            info.id,
-                            type_id,
-                        ));
+                        pending_field_types.push((sym.qualified_name.clone(), info.id, type_id));
                     }
                     if let Some(type_id) = sym.return_type {
                         let ti = self
@@ -600,7 +619,10 @@ impl Compilation {
                 let (parent_head_raw, parent_args) =
                     super::contract::chain_walker::parse_type_head_and_args(&r.target_name);
                 let parent_head = parent_head_raw.to_string();
-                let parents = self.inherits.entry(child_sym.qualified_name.clone()).or_default();
+                let parents = self
+                    .inherits
+                    .entry(child_sym.qualified_name.clone())
+                    .or_default();
                 if !parents.contains(&parent_head) {
                     parents.push(parent_head.clone());
                 }
@@ -705,9 +727,15 @@ impl Compilation {
             if qname_owned_by_type {
                 continue;
             }
-            let ti = self.type_info.entry(qname).or_insert_with(TypeInfo::default);
+            let ti = self
+                .type_info
+                .entry(qname)
+                .or_insert_with(TypeInfo::default);
             ti.field_type_id = Some(type_id);
-            let tid = self.type_info_by_id.entry(id).or_insert_with(TypeInfo::default);
+            let tid = self
+                .type_info_by_id
+                .entry(id)
+                .or_insert_with(TypeInfo::default);
             tid.field_type_id = Some(type_id);
         }
 
@@ -718,9 +746,12 @@ impl Compilation {
 
         // Declaration merging: fold the id-keyed structural indexes onto each
         // merge set's canonical id. Runs per batch; idempotent.
+        self.capture_scoped_merges(parsed, symbol_id_map);
         self.finish_identity_passes();
 
-        self.module_specifier.file_paths.extend(module_specifier::internal_file_paths(parsed));
+        self.module_specifier
+            .file_paths
+            .extend(module_specifier::internal_file_paths(parsed));
 
         // Selector → class qname. Backs SymbolLookup::selector_qname, which
         // SelectorMapRule consults to bind an Angular/CSS selector ref (`<nb-card>`,
@@ -832,6 +863,10 @@ impl Compilation {
             &self.by_file,
             &mut self.type_info_by_id,
         );
+        self.refresh_module_bindings(parsed, symbol_id_map);
+        self.capture_lexical_types(parsed, symbol_id_map);
+        super::contract::generic_return::capture_all(&self.arena, &mut self.type_info_by_id);
+        self.capture_lexical_visibility(parsed, symbol_id_map);
 
         // Id-keyed inherits, derived from the now-complete `inherits` (child qname
         // → parent head string) + `by_qname`. Each edge resolves to specific
@@ -841,7 +876,13 @@ impl Compilation {
 
     /// Merge ladder-RESOLVED inheritance edges into the climb map — see `parent_resolution::apply_resolved`.
     pub(crate) fn apply_resolved_inherits(&mut self, pairs: impl IntoIterator<Item = (i64, i64)>) {
-        let pairs: Vec<(i64, i64)> = pairs.into_iter().collect();
+        let pairs: Vec<(i64, i64)> = pairs
+            .into_iter()
+            .filter(|(id, _)| {
+                self.canonical_type_info(self.canon_id(*id))
+                    .is_none_or(|info| info.base_type_id.is_none())
+            })
+            .collect();
         super::parent_resolution::apply_resolved(&mut self.inherits_by_id, pairs.iter().copied());
         super::parent_resolution::attach_edge_args(
             &pairs,
@@ -851,11 +892,8 @@ impl Compilation {
         );
     }
 
-    /// Rebuild `inherits_by_id` from the string-keyed `inherits` map, the
-    /// captured import evidence, and the fully-built symbol indexes. Rebuilt
-    /// in full (not incrementally) because `ingest` / `ingest_from_db` each
-    /// run over the cumulative symbol set. Resolution ranking lives in
-    /// `engine/parent_resolution`.
+    /// Rebuild legacy inheritance seeds, then overwrite source-attested owners
+    /// with bound base IDs and generic arguments. Every ingest uses this order.
     fn rebuild_inherits_by_id(&mut self) {
         let (by_id, args_by_pair) = super::parent_resolution::rebuild_inherits_by_id(
             self,
@@ -865,6 +903,7 @@ impl Compilation {
         );
         self.inherits_by_id = by_id;
         self.inherits_args_by_pair.extend(args_by_pair);
+        self.rebind_base_types();
     }
 
     /// Merge TypeScript module-augmentation supertypes into the augmented
@@ -987,7 +1026,14 @@ impl Compilation {
         let mut type_refs_by_sym: Vec<Vec<(&str, Option<&str>)>> =
             vec![Vec::new(); pf.symbols.len()];
         for r in &pf.refs {
-            if r.kind != EdgeKind::TypeRef || r.is_import_binding {
+            if r.kind != EdgeKind::TypeRef
+                || r.is_import_binding
+                || pf
+                    .flow
+                    .lexical
+                    .as_ref()
+                    .is_some_and(|graph| graph.source_owned_types.contains(&r.source_symbol_index))
+            {
                 continue;
             }
             // A chain-bearing TypeRef is a `const x = f(...)` initializer signal:
@@ -1148,8 +1194,10 @@ impl Compilation {
                     if !qname_owned_by_type {
                         if let Some((_, _, fid)) = derived {
                             // Qname slot — first-writer-wins.
-                            let ti =
-                                self.type_info.entry(sym.qualified_name.clone()).or_default();
+                            let ti = self
+                                .type_info
+                                .entry(sym.qualified_name.clone())
+                                .or_default();
                             if ti.field_type_id.is_none() {
                                 ti.field_type_id = Some(fid);
                             }
@@ -1171,7 +1219,10 @@ impl Compilation {
                     // A callable-typed property (`fn: () => Mock`) yields its
                     // function's return type when CALLED — captured here so
                     // `obj.fn().member` chains continue past the call.
-                    let ti = self.type_info.entry(sym.qualified_name.clone()).or_default();
+                    let ti = self
+                        .type_info
+                        .entry(sym.qualified_name.clone())
+                        .or_default();
                     if ti.return_type_id.is_none() {
                         if let Some(rt) = sym
                             .signature
@@ -1189,7 +1240,10 @@ impl Compilation {
                 }
                 SymbolKind::TypeAlias => {
                     if let Some(&(first, _)) = type_refs.first() {
-                        let ti = self.type_info.entry(sym.qualified_name.clone()).or_default();
+                        let ti = self
+                            .type_info
+                            .entry(sym.qualified_name.clone())
+                            .or_default();
                         if ti.field_type_id.is_none() {
                             // Scope-qualify the alias's flattened RHS head to the
                             // declaring module so a transparent alias follows it to
@@ -1248,169 +1302,164 @@ impl Compilation {
                     // This symbol's OWN return type, computed independent of the
                     // shared qname slot — so a same-qname overload in another
                     // package (the qname slot's first-winner) does not hide it.
-                    let computed: Option<(String, Option<TypeId>)> =
-                        if let Some(obj) = sig_rt
-                            .as_deref()
-                            .filter(|s| {
-                                let t = s.trim();
-                                t.starts_with('{') && t.ends_with('}')
-                            })
-                            .filter(|_| {
-                                self.by_qname
-                                    .contains_key(&format!("{}$Ret", sym.qualified_name))
-                            })
-                        {
-                            // An inline object-type return (`fn(): { a: A; b: B }`) has a
-                            // synthesized member-bearing `{fn}$Ret` interface (from the
-                            // object-literal return). Type its members from the annotation
-                            // and route the return THROUGH `$Ret`, so member access /
-                            // destructuring of the call result resolves on the real members
-                            // rather than a member-less inline-object-type string.
-                            let synth = format!("{}$Ret", sym.qualified_name);
-                            for (mname, mtype) in parse_object_type_members(obj) {
-                                let mqname = format!("{synth}.{mname}");
-                                if !self.by_qname.contains_key(&mqname) {
-                                    continue;
-                                }
-                                let resolved = resolve_type_name_in_scope(
-                                    &mtype,
-                                    sym.scope_path.as_deref(),
-                                    &self.by_qname,
-                                );
-                                let rid = self.arena.intern_type_str(&resolved);
-                                let mti = self.type_info.entry(mqname.clone()).or_default();
-                                if mti.field_type_id.is_none() {
-                                    mti.field_type_id = Some(rid);
-                                }
-                                if let Some(&mid) =
-                                    symbol_id_map.by_key().get(&(pf.path.clone(), mqname))
-                                {
-                                    let mtid = self.type_info_by_id.entry(mid).or_default();
-                                    if mtid.field_type_id.is_none() {
-                                        mtid.field_type_id = Some(rid);
-                                    }
-                                }
-                            }
-                            let sid = self.arena.class(&synth);
-                            // Override both stores: the extractor mirrored the inline
-                            // object-type return onto both the qname and id slots
-                            // (above), and the id slot — read first by the resolver and
-                            // COALESCEd over the qname slot on persist — would otherwise
-                            // keep the member-less string. `set_return_both` forces both.
-                            self.set_return_both(&sym.qualified_name, synth.clone(), sid);
-                            Some((synth, Some(sid)))
-                        } else if matches!(sig_rt.as_deref(), Some("this") | Some("Self")) {
-                            // A fluent self-returning method (`m(fn: P): this`)
-                            // yields the receiver. Its `this` return emits no
-                            // TypeRef, so the `type_refs.last()` arm below would
-                            // otherwise pick the LAST PARAMETER type — capture
-                            // `this` verbatim so the chain walker's self-head rebind
-                            // returns the receiver instead.
-                            let rid = self.arena.intern_type_str("this");
-                            Some(("this".to_string(), Some(rid)))
-                        } else if let Some(rt) = sig_rt.as_deref().filter(|s| {
+                    let computed: Option<(String, Option<TypeId>)> = if let Some(obj) = sig_rt
+                        .as_deref()
+                        .filter(|s| {
                             let t = s.trim();
-                            t.starts_with('[') && t.ends_with(']')
+                            t.starts_with('{') && t.ends_with('}')
+                        })
+                        .filter(|_| {
+                            self.by_qname
+                                .contains_key(&format!("{}$Ret", sym.qualified_name))
                         }) {
-                            // A tuple return (`useState(): [S, Dispatch<…>]`) interns
-                            // directly as `Type::Tuple`; `parse_type_head_and_args`
-                            // (the `sig_generic` arm) would mis-read the `[A, B]` as a
-                            // generic application and drop the positional structure a
-                            // destructure binding indexes.
-                            let rid = self.arena.intern_type_str(rt);
-                            Some((self.arena.format_type(rid), Some(rid)))
-                        } else if let Some((tb, fb)) =
-                            sig_rt.as_deref().and_then(parse_top_level_conditional)
-                        {
-                            // A conditional return (`… extends … ? A : B`) is
-                            // undecidable here; carry its BRANCHES, not its check —
-                            // the member-lookup semantics an undecidable conditional
-                            // ALIAS already gets. A `never` branch carries no members
-                            // and is dropped; both live branches join as an
-                            // Intersection so a member declared on whichever branch
-                            // applies still resolves. Each branch's head is
-                            // scope-qualified like every other return head, so a
-                            // package-local name binds its declaration.
-                            let intern_branch = |branch: &str| -> TypeId {
-                                let (head, args) = parse_type_head_and_args(branch);
-                                let head_is_name = !head.is_empty()
-                                    && head.chars().all(|c| {
-                                        c.is_alphanumeric() || c == '_' || c == '.'
-                                    });
-                                if !head_is_name {
-                                    return self.arena.intern_type_str(branch);
-                                }
-                                let resolved = resolve_type_name_in_scope(
-                                    head,
-                                    sym.scope_path.as_deref(),
-                                    &self.by_qname,
-                                );
-                                let args: Vec<String> =
-                                    args.iter().map(|s| s.to_string()).collect();
-                                intern_head_and_args(&self.arena, &resolved, &args)
-                            };
-                            let t_id = (tb.trim() != "never").then(|| intern_branch(&tb));
-                            let f_id = (fb.trim() != "never").then(|| intern_branch(&fb));
-                            let rid = match (t_id, f_id) {
-                                (Some(t), Some(f)) => {
-                                    self.arena.intern(Type::Intersection(vec![t, f]))
-                                }
-                                (Some(t), None) => t,
-                                (None, Some(f)) => f,
-                                (None, None) => self.arena.intern_type_str("never"),
-                            };
-                            Some((self.arena.format_type(rid), Some(rid)))
-                        } else if let Some((head, args)) = sig_generic {
-                            let resolved = resolve_type_name_in_scope(
-                                &head,
-                                sym.scope_path.as_deref(),
-                                &self.by_qname,
-                            );
-                            let rid = intern_head_and_args(&self.arena, &resolved, &args);
-                            Some((resolved, Some(rid)))
-                        } else if let Some(&(last, _)) = type_refs.last().filter(|&&(last, _)| {
-                            // The trailing TypeRef is the return type only when it
-                            // NAMES the signature's return. A return whose annotation
-                            // emits no TypeRef — a bare generic param (`(t: Token<T>):
-                            // T`), a conditional, an indexed access — leaves the last
-                            // PARAMETER's ref trailing, and recording that as the
-                            // return types every call site with an argument type.
-                            match sig_rt.as_deref().map(str::trim) {
-                                Some(rt) => {
-                                    last == rt || {
-                                        let (head, _) = parse_type_head_and_args(rt);
-                                        !head.is_empty() && last == head
-                                    }
-                                }
-                                // No annotated return: an inferred-return callable's
-                                // last TypeRef is its return only when the signature
-                                // carries no params at all (otherwise it is the last
-                                // parameter type).
-                                None => sym
-                                    .signature
-                                    .as_deref()
-                                    .and_then(parse_param_types_from_signature)
-                                    .map_or(true, |params| params.is_empty()),
+                        // An inline object-type return (`fn(): { a: A; b: B }`) has a
+                        // synthesized member-bearing `{fn}$Ret` interface (from the
+                        // object-literal return). Type its members from the annotation
+                        // and route the return THROUGH `$Ret`, so member access /
+                        // destructuring of the call result resolves on the real members
+                        // rather than a member-less inline-object-type string.
+                        let synth = format!("{}$Ret", sym.qualified_name);
+                        for (mname, mtype) in parse_object_type_members(obj) {
+                            let mqname = format!("{synth}.{mname}");
+                            if !self.by_qname.contains_key(&mqname) {
+                                continue;
                             }
-                        }) {
                             let resolved = resolve_type_name_in_scope(
-                                last,
+                                &mtype,
                                 sym.scope_path.as_deref(),
                                 &self.by_qname,
                             );
                             let rid = self.arena.intern_type_str(&resolved);
-                            Some((resolved, Some(rid)))
-                        } else if let Some(rt) = &sig_rt {
+                            let mti = self.type_info.entry(mqname.clone()).or_default();
+                            if mti.field_type_id.is_none() {
+                                mti.field_type_id = Some(rid);
+                            }
+                            if let Some(&mid) =
+                                symbol_id_map.by_key().get(&(pf.path.clone(), mqname))
+                            {
+                                let mtid = self.type_info_by_id.entry(mid).or_default();
+                                if mtid.field_type_id.is_none() {
+                                    mtid.field_type_id = Some(rid);
+                                }
+                            }
+                        }
+                        let sid = self.arena.class(&synth);
+                        // Override both stores: the extractor mirrored the inline
+                        // object-type return onto both the qname and id slots
+                        // (above), and the id slot — read first by the resolver and
+                        // COALESCEd over the qname slot on persist — would otherwise
+                        // keep the member-less string. `set_return_both` forces both.
+                        self.set_return_both(&sym.qualified_name, synth.clone(), sid);
+                        Some((synth, Some(sid)))
+                    } else if matches!(sig_rt.as_deref(), Some("this") | Some("Self")) {
+                        // A fluent self-returning method (`m(fn: P): this`)
+                        // yields the receiver. Its `this` return emits no
+                        // TypeRef, so the `type_refs.last()` arm below would
+                        // otherwise pick the LAST PARAMETER type — capture
+                        // `this` verbatim so the chain walker's self-head rebind
+                        // returns the receiver instead.
+                        let rid = self.arena.intern_type_str("this");
+                        Some(("this".to_string(), Some(rid)))
+                    } else if let Some(rt) = sig_rt.as_deref().filter(|s| {
+                        let t = s.trim();
+                        t.starts_with('[') && t.ends_with(']')
+                    }) {
+                        // A tuple return (`useState(): [S, Dispatch<…>]`) interns
+                        // directly as `Type::Tuple`; `parse_type_head_and_args`
+                        // (the `sig_generic` arm) would mis-read the `[A, B]` as a
+                        // generic application and drop the positional structure a
+                        // destructure binding indexes.
+                        let rid = self.arena.intern_type_str(rt);
+                        Some((self.arena.format_type(rid), Some(rid)))
+                    } else if let Some((tb, fb)) =
+                        sig_rt.as_deref().and_then(parse_top_level_conditional)
+                    {
+                        // A conditional return (`… extends … ? A : B`) is
+                        // undecidable here; carry its BRANCHES, not its check —
+                        // the member-lookup semantics an undecidable conditional
+                        // ALIAS already gets. A `never` branch carries no members
+                        // and is dropped; both live branches join as an
+                        // Intersection so a member declared on whichever branch
+                        // applies still resolves. Each branch's head is
+                        // scope-qualified like every other return head, so a
+                        // package-local name binds its declaration.
+                        let intern_branch = |branch: &str| -> TypeId {
+                            let (head, args) = parse_type_head_and_args(branch);
+                            let head_is_name = !head.is_empty()
+                                && head
+                                    .chars()
+                                    .all(|c| c.is_alphanumeric() || c == '_' || c == '.');
+                            if !head_is_name {
+                                return self.arena.intern_type_str(branch);
+                            }
                             let resolved = resolve_type_name_in_scope(
-                                rt,
+                                head,
                                 sym.scope_path.as_deref(),
                                 &self.by_qname,
                             );
-                            let rid = self.arena.intern_type_str(&resolved);
-                            Some((resolved, Some(rid)))
-                        } else {
-                            None
+                            let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+                            intern_head_and_args(&self.arena, &resolved, &args)
                         };
+                        let t_id = (tb.trim() != "never").then(|| intern_branch(&tb));
+                        let f_id = (fb.trim() != "never").then(|| intern_branch(&fb));
+                        let rid = match (t_id, f_id) {
+                            (Some(t), Some(f)) => self.arena.intern(Type::Intersection(vec![t, f])),
+                            (Some(t), None) => t,
+                            (None, Some(f)) => f,
+                            (None, None) => self.arena.intern_type_str("never"),
+                        };
+                        Some((self.arena.format_type(rid), Some(rid)))
+                    } else if let Some((head, args)) = sig_generic {
+                        let resolved = resolve_type_name_in_scope(
+                            &head,
+                            sym.scope_path.as_deref(),
+                            &self.by_qname,
+                        );
+                        let rid = intern_head_and_args(&self.arena, &resolved, &args);
+                        Some((resolved, Some(rid)))
+                    } else if let Some(&(last, _)) = type_refs.last().filter(|&&(last, _)| {
+                        // The trailing TypeRef is the return type only when it
+                        // NAMES the signature's return. A return whose annotation
+                        // emits no TypeRef — a bare generic param (`(t: Token<T>):
+                        // T`), a conditional, an indexed access — leaves the last
+                        // PARAMETER's ref trailing, and recording that as the
+                        // return types every call site with an argument type.
+                        match sig_rt.as_deref().map(str::trim) {
+                            Some(rt) => {
+                                last == rt || {
+                                    let (head, _) = parse_type_head_and_args(rt);
+                                    !head.is_empty() && last == head
+                                }
+                            }
+                            // No annotated return: an inferred-return callable's
+                            // last TypeRef is its return only when the signature
+                            // carries no params at all (otherwise it is the last
+                            // parameter type).
+                            None => sym
+                                .signature
+                                .as_deref()
+                                .and_then(parse_param_types_from_signature)
+                                .map_or(true, |params| params.is_empty()),
+                        }
+                    }) {
+                        let resolved = resolve_type_name_in_scope(
+                            last,
+                            sym.scope_path.as_deref(),
+                            &self.by_qname,
+                        );
+                        let rid = self.arena.intern_type_str(&resolved);
+                        Some((resolved, Some(rid)))
+                    } else if let Some(rt) = &sig_rt {
+                        let resolved = resolve_type_name_in_scope(
+                            rt,
+                            sym.scope_path.as_deref(),
+                            &self.by_qname,
+                        );
+                        let rid = self.arena.intern_type_str(&resolved);
+                        Some((resolved, Some(rid)))
+                    } else {
+                        None
+                    };
                     // A function that returns an object literal (no signature
                     // return type) yields its synthesized `{fn}$Ret` object type,
                     // materialized at parse time — so a call resolves the object's
@@ -1426,7 +1475,10 @@ impl Compilation {
                     });
                     if let Some((_, rid)) = computed {
                         // Qname slot — first-writer-wins (unchanged).
-                        let ti = self.type_info.entry(sym.qualified_name.clone()).or_default();
+                        let ti = self
+                            .type_info
+                            .entry(sym.qualified_name.clone())
+                            .or_default();
                         if ti.return_type_id.is_none() {
                             ti.return_type_id = rid;
                         }
@@ -1444,13 +1496,14 @@ impl Compilation {
                 SymbolKind::Class => {
                     // Constructor call yields the class itself.
                     let class_id = self.arena.class(&sym.qualified_name);
-                    let ti = self.type_info.entry(sym.qualified_name.clone()).or_default();
+                    let ti = self
+                        .type_info
+                        .entry(sym.qualified_name.clone())
+                        .or_default();
                     if ti.return_type_id.is_none() {
                         ti.return_type_id = Some(class_id);
                     }
-                    if let Some(id) =
-                        symbol_id_map.id_of(&pf.path, sym_idx, &sym.qualified_name)
-                    {
+                    if let Some(id) = symbol_id_map.id_of(&pf.path, sym_idx, &sym.qualified_name) {
                         let tid = self.type_info_by_id.entry(id).or_default();
                         if tid.return_type_id.is_none() {
                             tid.return_type_id = Some(class_id);
@@ -1487,11 +1540,7 @@ impl Compilation {
             let mut default_ids = Vec::with_capacity(gparams.len());
             for (n, b, d) in gparams {
                 let bound = b.as_deref().map(|s| self.arena.intern_type_str(s));
-                let gp_id = self.arena.intern_generic(GenericParamData {
-                    name: n,
-                    owner_symbol_index: 0,
-                    bound,
-                });
+                let gp_id = self.arena.intern_type_parameter(n, 0, bound);
                 param_ids.push(gp_id);
                 default_ids.push(d.map(|s| self.arena.intern_type_str(&s)));
             }
@@ -1511,9 +1560,7 @@ impl Compilation {
             // (path,qname) map resolves an overload set to its
             // implementation id, co-locating the overloads' params with
             // the return the resolver reads there.
-            if let Some(id) =
-                symbol_id_map.id_of(&pf.path, sym_idx, &sym.qualified_name)
-            {
+            if let Some(id) = symbol_id_map.id_of(&pf.path, sym_idx, &sym.qualified_name) {
                 let tid = self.type_info_by_id.entry(id).or_default();
                 if tid.generic_param_ids.is_empty() {
                     tid.generic_param_ids = param_ids.clone();
@@ -1625,8 +1672,7 @@ impl Compilation {
             if ti.return_type_id.is_some() {
                 continue;
             }
-            ti.return_type_id =
-                ty_id.or_else(|| Some(intern_head_and_args(&self.arena, &ty, &[])));
+            ti.return_type_id = ty_id.or_else(|| Some(intern_head_and_args(&self.arena, &ty, &[])));
         }
     }
 
@@ -1703,140 +1749,6 @@ impl Compilation {
         }
     }
 
-    /// Infer a function's return type from a `return <call>` whose value IS the
-    /// call's return: `function usePost() { return useQuery(...) }` makes
-    /// `usePost`'s return `useQuery`'s. `flow.flow_return_lhs` links the returned
-    /// call's ref to its enclosing function; this resolves that call's return in
-    /// the function's own import scope (so the right package's overload is read)
-    /// and fills the function's return slot. The call-return mirror of
-    /// `infer_bare_identifier_returns` (a returned IDENTIFIER), folded through the
-    /// same cross-owner agreement gate. Only fills a genuine gap, and only for a
-    /// DIRECT call return — a chained `return a.b()` is left to the chain walker.
-    pub(crate) fn infer_call_wrapper_returns(&mut self, parsed: &[ParsedFile]) {
-        let mut candidates: Vec<(String, String, Option<TypeId>, Vec<String>)> = Vec::new();
-        for pf in parsed.iter().filter(|p| !p.path.starts_with("ext:")) {
-            if pf.flow.flow_return_lhs.is_empty() {
-                continue;
-            }
-            let imports: Vec<ImportEntry> = pf
-                .refs
-                .iter()
-                .filter(|r| r.is_import_binding)
-                .filter_map(|r| {
-                    let module = r.module.clone()?;
-                    Some(ImportEntry {
-                        imported_name: r.target_name.clone(),
-                        module_path: Some(module),
-                        alias: None,
-                        is_wildcard: r.target_name == "*",
-                    })
-                })
-                .collect();
-            let file_ctx = FileContext {
-                file_path: pf.path.clone(),
-                language: pf.language.clone(),
-                imports,
-                file_namespace: None,
-            };
-            for (ref_idx, fn_idx) in &pf.flow.flow_return_lhs {
-                let Some(fn_sym) = pf.symbols.get(*fn_idx) else {
-                    continue;
-                };
-                // A declared/extractor return annotation wins. An already-INFERRED
-                // slot does NOT short-circuit: a factory's object-literal-builder
-                // return (`{…}$Ret`) is authoritative and overrides a slot
-                // mis-inferred from a param (`Record`) / body (`Promise`) — decided
-                // in the grouping pass below.
-                if fn_sym.return_type.is_some() {
-                    continue;
-                }
-                let Some(call_ref) = pf.refs.get(*ref_idx) else {
-                    continue;
-                };
-                // Direct call only; a chained `return a.b()` (multi-segment) is
-                // the chain walker's job, not this single-callee inference.
-                if call_ref.chain.as_ref().map(|c| c.segments.len()).unwrap_or(1) > 1 {
-                    continue;
-                }
-                let Some(ret_id) = super::chain::callee_return_type_in_scope(
-                    self,
-                    &self.arena,
-                    &file_ctx,
-                    &call_ref.target_name,
-                    &fn_sym.qualified_name,
-                ) else {
-                    continue;
-                };
-                let s = self.arena.format_type(ret_id);
-                if s.is_empty() || s.eq_ignore_ascii_case("unknown") {
-                    continue;
-                }
-                candidates.push((fn_sym.qualified_name.clone(), s, Some(ret_id), Vec::new()));
-            }
-        }
-        // Group candidates by function. Object-literal-builder returns (`{…}$Ret`)
-        // are authoritative: a factory returning one or more local builders HAS
-        // that (union of) object shape(s) as its return, overriding any stored
-        // return mis-inferred from a param/body. A non-builder single return keeps
-        // the agreement-gated, slot-respecting behaviour.
-        let mut by_fn: FxHashMap<String, Vec<(String, Option<TypeId>, Vec<String>)>> =
-            FxHashMap::default();
-        for (qname, ty, ty_id, type_args) in candidates {
-            by_fn.entry(qname).or_default().push((ty, ty_id, type_args));
-        }
-        for (qname, variants) in by_fn {
-            // Distinct return-type strings, first occurrence kept.
-            let mut distinct: Vec<(String, Option<TypeId>, Vec<String>)> = Vec::new();
-            for v in variants {
-                if !distinct.iter().any(|d| d.0 == v.0) {
-                    distinct.push(v);
-                }
-            }
-            let mut ret_branches: Vec<String> = distinct
-                .iter()
-                .filter(|d| d.0.ends_with("$Ret"))
-                .map(|d| d.0.clone())
-                .collect();
-            if !ret_branches.is_empty() {
-                let (ret_str, ret_id) = if ret_branches.len() == 1 {
-                    let n = ret_branches.pop().unwrap();
-                    let id = self.arena.class(&n);
-                    (n, id)
-                } else {
-                    ret_branches.sort(); // member-on-all-branches is order-free
-                    ret_branches.dedup();
-                    let union_name = format!("{qname}$Ret");
-                    self.alias_target.insert(
-                        union_name.clone(),
-                        intern_alias_target(&self.arena, &AliasTarget::Union(ret_branches)),
-                    );
-                    let id = self.arena.class(&union_name);
-                    (union_name, id)
-                };
-                self.set_return_both(&qname, ret_str, ret_id);
-                self.mirror_ret_interface_member(&qname, ret_id);
-                continue;
-            }
-            // No object-literal builder branch: keep a single agreed non-synthetic
-            // return, not overriding an existing slot (the wrapper-hook case).
-            if self
-                .type_info
-                .get(&qname)
-                .and_then(|ti| ti.return_type_id)
-                .is_some()
-            {
-                continue;
-            }
-            if distinct.len() == 1 {
-                let (ty, ty_id, type_args) = distinct.into_iter().next().unwrap();
-                let rid = ty_id.unwrap_or_else(|| intern_head_and_args(&self.arena, &ty, &type_args));
-                let ti = self.type_info.entry(qname.clone()).or_default();
-                ti.return_type_id = Some(rid);
-                self.mirror_ret_interface_member(&qname, rid);
-            }
-        }
-    }
-
     /// Mirror a wrapped method's inferred return onto its `{scope}$Ret.{member}`
     /// synthetic sibling, when one exists. The object-literal-return member
     /// synthesis (`{fn}$Ret` in `parse_file.rs`) creates that sibling carrying
@@ -1907,6 +1819,7 @@ impl Compilation {
         &mut self,
         parsed: &[ParsedFile],
         profiles: &FxHashMap<&'static str, &'static LanguageProfile>,
+        ids: &SymbolIds,
     ) {
         let mut updates: Vec<(String, Option<i64>, TypeId)> = Vec::new();
         for pf in parsed.iter().filter(|p| !p.path.starts_with("ext:")) {
@@ -1915,49 +1828,66 @@ impl Compilation {
                 .map(|p| p.async_wrappers)
                 .unwrap_or_default();
             let file_ctx = init_pass_file_ctx(pf);
-            // Per field symbol, the outermost (leftmost) call/new ref = its
-            // initializer. A chained initializer's leftmost ref is multi-segment;
-            // skip it (the chain walker types those).
-            let mut field_init: FxHashMap<usize, &crate::types::ExtractedRef> = FxHashMap::default();
-            for r in &pf.refs {
-                if !matches!(r.kind, EdgeKind::Calls | EdgeKind::Instantiates) {
-                    continue;
+            // Syntax-migrated files identify the whole initializer by source
+            // address. Class fields need not emit a separate TypeRef marker.
+            // Only the legacy path below uses leftmost-call attribution.
+            let mut field_init: FxHashMap<usize, &crate::types::ExtractedRef> =
+                source_call_initializers(pf)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .collect();
+            if pf.flow.lexical.is_none() {
+                for r in &pf.refs {
+                    if !matches!(r.kind, EdgeKind::Calls | EdgeKind::Instantiates) {
+                        continue;
+                    }
+                    if r.chain.as_ref().is_some_and(|c| c.segments.len() > 1) {
+                        continue;
+                    }
+                    let Some(sym) = pf.symbols.get(r.source_symbol_index) else {
+                        continue;
+                    };
+                    if !matches!(
+                        sym.kind,
+                        SymbolKind::Property | SymbolKind::Field | SymbolKind::Variable
+                    ) {
+                        continue;
+                    }
+                    field_init
+                        .entry(r.source_symbol_index)
+                        .and_modify(|cur| {
+                            if r.byte_offset < cur.byte_offset {
+                                *cur = r;
+                            }
+                        })
+                        .or_insert(r);
                 }
-                if r.chain.as_ref().map(|c| c.segments.len()).unwrap_or(1) > 1 {
-                    continue;
-                }
-                let Some(sym) = pf.symbols.get(r.source_symbol_index) else {
-                    continue;
-                };
-                if !matches!(
-                    sym.kind,
-                    SymbolKind::Property | SymbolKind::Field | SymbolKind::Variable
-                ) {
-                    continue;
-                }
-                field_init
-                    .entry(r.source_symbol_index)
-                    .and_modify(|cur| {
-                        if r.byte_offset < cur.byte_offset {
-                            *cur = r;
-                        }
-                    })
-                    .or_insert(r);
             }
+            if field_init.is_empty() {
+                continue;
+            }
+            let scoped = super::file_lookup::FileLookup::for_file(self, pf, ids);
             for (field_idx, r) in field_init {
                 let field = &pf.symbols[field_idx];
-                if field.declared_type.is_some() {
+                if !matches!(
+                    field.kind,
+                    SymbolKind::Property | SymbolKind::Field | SymbolKind::Variable
+                ) || field.declared_type.is_some()
+                {
                     continue;
                 }
                 // The guard and the write are keyed by THIS file's declaration
                 // id — sibling packages repeat qnames (`useBaseQuery.observer`
                 // in four adapters), and a shared qname slot would let the
                 // first package processed suppress and mis-type the rest.
-                let field_id = self
-                    .all_by_qualified_name(&field.qualified_name)
-                    .iter()
-                    .find(|s| &*s.file_path == pf.path.as_str())
-                    .map(|s| s.id);
+                let field_id = if pf.flow.lexical.is_some() {
+                    ids.row_id(&pf.path, field_idx)
+                } else {
+                    ids.id_of(&pf.path, field_idx, &field.qualified_name)
+                };
+                if pf.flow.lexical.is_some() && field_id.is_none() {
+                    continue;
+                }
                 if let Some(id) = field_id {
                     if self
                         .type_info_by_id
@@ -1975,20 +1905,44 @@ impl Compilation {
                 {
                     continue;
                 }
-                let ty_id = match r.kind {
-                    // `new X()` — the field is the INSTANCE `X` builds. `X`
-                    // may name a VALUE in scope (a constructor-typed
-                    // parameter), whose constructor type carries the instance;
-                    // otherwise it scope-resolves as the class itself.
-                    EdgeKind::Instantiates => Some(self.instantiated_type(
-                        &r.target_name,
-                        field.scope_path.as_deref(),
-                        &pf.path,
-                    )),
-                    // `call(...)` — the field is the callee's return, with the
-                    // call's argument types bound into any generic parameter
-                    // the return names.
-                    _ => super::chain::init_call_return_type(self, &self.arena, &file_ctx, r),
+                scoped.set_cursor(r.byte_offset);
+                let ty_id = if r.chain.as_ref().is_some_and(|c| c.segments.len() > 1) {
+                    let Some(profile) = profiles.get(pf.language.as_str()) else {
+                        continue;
+                    };
+                    let ref_ctx = RefContext {
+                        extracted_ref: r,
+                        source_symbol: field,
+                        scope_chain: build_scope_chain(field.scope_path.as_deref()),
+                        file_package_id: pf.package_id,
+                        source_symbol_id: field_id,
+                    };
+                    super::chain::bind_member_access(&ref_ctx, &file_ctx, &scoped, profile)
+                        .ok()
+                        .and_then(|res| res.resolved_yield_type)
+                } else {
+                    match r.kind {
+                        // `new X()` — the field is the INSTANCE `X` builds. `X`
+                        // may name a VALUE in scope (a constructor-typed
+                        // parameter), whose constructor type carries the instance;
+                        // otherwise it scope-resolves as the class itself.
+                        EdgeKind::Instantiates => match scoped.local_reference(r.byte_offset) {
+                            Some(local) => {
+                                super::lexical_value::yield_type(&local, &scoped, &self.arena, true)
+                            }
+                            None => Some(self.instantiated_type(
+                                &r.target_name,
+                                field.scope_path.as_deref(),
+                                &pf.path,
+                            )),
+                        },
+                        // `call(...)` — the field is the callee's return, with the
+                        // call's argument types bound into any generic parameter
+                        // the return names.
+                        _ => {
+                            super::chain::init_call_return_type(&scoped, &self.arena, &file_ctx, r)
+                        }
+                    }
                 };
                 let Some(id) = ty_id else {
                     continue;
@@ -1998,8 +1952,7 @@ impl Compilation {
                 } else {
                     id
                 };
-                let s = self.arena.format_type(id);
-                if s.is_empty() || s.eq_ignore_ascii_case("unknown") {
+                if matches!(self.arena.get(id), Type::Unknown) {
                     continue;
                 }
                 updates.push((field.qualified_name.clone(), field_id, id));
@@ -2028,22 +1981,35 @@ impl Compilation {
     /// bindings are processed in declaration order within a file so a later
     /// chain roots on an earlier chain's result.
     ///
-    /// The trigger is the chain-bearing TypeRef the extractor emits ONLY for
-    /// an annotation-less initializer, so the yield is authoritative: it
+    /// A source-owned call occurrence, or the legacy chain-bearing TypeRef,
+    /// identifies an annotation-less initializer, so its yield is authoritative: it
     /// OVERWRITES the id-keyed slot, where a name-derived pass could only
     /// have recorded a type read off the initializer's parts.
     pub(crate) fn infer_chain_init_types(
         &mut self,
         parsed: &[ParsedFile],
         profiles: &FxHashMap<&'static str, &'static LanguageProfile>,
+        ids: &SymbolIds,
     ) {
         for pf in parsed.iter().filter(|p| !p.path.starts_with("ext:")) {
             let Some(profile) = profiles.get(pf.language.as_str()) else {
                 continue;
             };
-            let mut candidates: Vec<(usize, &crate::types::ExtractedRef)> = Vec::new();
+            let mut candidates = source_call_initializers(pf).unwrap_or_default();
+            candidates.retain(|(slot, r)| {
+                r.kind == EdgeKind::Calls
+                    && r.chain.as_ref().is_some_and(|c| c.segments.len() > 1)
+                    && pf.symbols[*slot].declared_type.is_none()
+            });
             for r in &pf.refs {
-                if r.kind != EdgeKind::TypeRef {
+                if r.kind != EdgeKind::TypeRef
+                    || pf.flow.lexical.as_ref().is_some_and(|graph| {
+                        graph
+                            .types
+                            .call_initializers
+                            .contains_key(&r.source_symbol_index)
+                    })
+                {
                     continue;
                 }
                 if r.chain.as_ref().map(|c| c.segments.len()).unwrap_or(0) < 2 {
@@ -2075,12 +2041,17 @@ impl Compilation {
                 .unwrap_or_default();
             for (field_idx, r) in candidates {
                 let field = &pf.symbols[field_idx];
-                let field_id = self
-                    .all_by_qualified_name(&field.qualified_name)
-                    .iter()
-                    .find(|s| &*s.file_path == pf.path.as_str())
-                    .map(|s| s.id);
+                let field_id = if pf.flow.lexical.is_some() {
+                    ids.row_id(&pf.path, field_idx)
+                } else {
+                    ids.id_of(&pf.path, field_idx, &field.qualified_name)
+                };
+                if pf.flow.lexical.is_some() && field_id.is_none() {
+                    continue;
+                }
                 let yield_id = {
+                    let scoped = super::file_lookup::FileLookup::for_file(self, pf, ids);
+                    scoped.set_cursor(r.byte_offset);
                     let ref_ctx = RefContext {
                         extracted_ref: r,
                         source_symbol: field,
@@ -2088,7 +2059,7 @@ impl Compilation {
                         file_package_id: pf.package_id,
                         source_symbol_id: field_id,
                     };
-                    match super::chain::bind_member_access(&ref_ctx, &file_ctx, self, profile) {
+                    match super::chain::bind_member_access(&ref_ctx, &file_ctx, &scoped, profile) {
                         Ok(res) => res.resolved_yield_type,
                         Err(_) => None,
                     }
@@ -2101,20 +2072,62 @@ impl Compilation {
                 } else {
                     id
                 };
-                let s = self.arena.format_type(id);
-                if s.is_empty() || s.eq_ignore_ascii_case("unknown") {
+                if matches!(self.arena.get(id), Type::Unknown) {
                     continue;
                 }
                 if let Some(sym_id) = field_id {
-                    self.type_info_by_id.entry(sym_id).or_default().field_type_id = Some(id);
+                    self.type_info_by_id
+                        .entry(sym_id)
+                        .or_default()
+                        .field_type_id = Some(id);
                 }
-                let ti = self.type_info.entry(field.qualified_name.clone()).or_default();
+                let ti = self
+                    .type_info
+                    .entry(field.qualified_name.clone())
+                    .or_default();
                 if ti.field_type_id.is_none() {
                     ti.field_type_id = Some(id);
                 }
             }
         }
     }
+}
+
+/// The syntax-owned initializer can be attributed to an enclosing function by
+/// the legacy call extractor. Join its physical occurrence to the captured
+/// declaration slot, never recover ownership from the call's source symbol.
+fn source_call_initializers(pf: &ParsedFile) -> Option<Vec<(usize, &crate::types::ExtractedRef)>> {
+    let graph = pf.flow.lexical.as_ref()?;
+    let mut calls = FxHashMap::default();
+    for r in &pf.refs {
+        if !matches!(r.kind, EdgeKind::Calls | EdgeKind::Instantiates) {
+            continue;
+        }
+        let selector = r
+            .chain
+            .as_ref()
+            .and_then(|c| c.segments.last())
+            .map(|s| s.byte_offset)
+            .unwrap_or(r.byte_offset);
+        calls.entry((r.byte_offset, selector)).or_insert(r);
+    }
+    Some(
+        graph
+            .types
+            .call_initializers
+            .iter()
+            .filter_map(|(&slot, address)| {
+                let field = pf.symbols.get(slot)?;
+                if !matches!(
+                    field.kind,
+                    SymbolKind::Property | SymbolKind::Field | SymbolKind::Variable
+                ) {
+                    return None;
+                }
+                Some((slot, *calls.get(address)?))
+            })
+            .collect(),
+    )
 }
 
 /// The import surface of one parsed file, as the `FileContext` the
@@ -2153,30 +2166,36 @@ impl Compilation {
     fn canon_id(&self, id: i64) -> i64 {
         self.merge_canonical.get(&id).copied().unwrap_or(id)
     }
-
 }
-
-impl Compilation {
-    /// The identity finishing pass every ingest path runs: canonicalize
-    /// declaration-merge sets over the id-keyed indexes. Stored-head binding
-    /// happens at read time via `head_bind` — see `bind_stored_heads`.
-    /// Idempotent per batch.
-    fn finish_identity_passes(&mut self) {
-        self.merge_canonical = super::merge_canonical::compute(&self.merge_groups);
-        super::merge_canonical::apply(
-            &self.merge_canonical,
-            &mut self.members_by_id,
-            &mut self.inherits_by_id,
-            &mut self.inherits_args_by_pair,
-            &mut self.enclosing_type_by_id,
-        );
-        super::merge_canonical::fold_type_info(&self.merge_canonical, &mut self.type_info_by_id);
-    }
-}
-
-impl crate::indexer::resolve::engine::contract::FlowCacheLookup for Compilation {}
 
 impl SymbolLookup for Compilation {
+    fn bound_import_overloads(
+        &self,
+        file: &str,
+        binding: crate::indexer::lexical::BindingId,
+    ) -> &[i64] {
+        self.modules.overloads(file, binding)
+    }
+    fn bound_import_namespace(
+        &self,
+        file: &str,
+        binding: crate::indexer::lexical::BindingId,
+    ) -> bool {
+        self.modules
+            .binding(file, binding, false)
+            .namespace()
+            .is_some()
+    }
+    fn bound_import(
+        &self,
+        file: &str,
+        binding: crate::indexer::lexical::BindingId,
+        type_space: bool,
+    ) -> Option<i64> {
+        self.modules
+            .binding(file, binding, type_space)
+            .declaration()
+    }
     fn by_name(&self, name: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(
             self.by_name
@@ -2215,9 +2234,7 @@ impl SymbolLookup for Compilation {
 
     fn members_of_id(&self, parent_id: i64) -> SymbolSet<'_> {
         match self.members_by_id.get(&self.canon_id(parent_id)) {
-            Some(ids) => {
-                SymbolSet::Owned(ids.iter().filter_map(|id| self.by_id.get(id)).collect())
-            }
+            Some(ids) => SymbolSet::Owned(ids.iter().filter_map(|id| self.by_id.get(id)).collect()),
             None => SymbolSet::empty(),
         }
     }
@@ -2311,6 +2328,20 @@ impl SymbolLookup for Compilation {
         )
     }
 
+    fn member_index(&self) -> Option<&super::member_index::MemberIndex> {
+        Some(&self.member_index)
+    }
+
+    fn canonical_type_info(&self, symbol_id: i64) -> Option<&TypeInfo> {
+        self.type_info_by_id.get(&symbol_id)
+    }
+    fn generic_return_of(
+        &self,
+        id: i64,
+    ) -> Option<&super::contract::generic_return::GenericReturn> {
+        self.type_info_by_id.get(&id)?.generic_return.as_ref()
+    }
+
     fn generic_param_defaults_of(&self, symbol_id: i64) -> Option<Vec<Option<String>>> {
         let ti = self.type_info_by_id.get(&symbol_id)?;
         if ti.generic_param_ids.is_empty() {
@@ -2357,13 +2388,20 @@ impl SymbolLookup for Compilation {
     }
 
     fn resolve_module_via_language_resolver(
-        &self, language: &str, source_file: &str, spec: &str,
+        &self,
+        language: &str,
+        source_file: &str,
+        spec: &str,
     ) -> Option<String> {
         module_specifier::resolve_via_module_resolver(
-            language, source_file, spec, self.package_id_for_file(source_file),
+            language,
+            source_file,
+            spec,
+            self.package_id_for_file(source_file),
             &self.workspace_pkg_by_declared_name,
             self.module_specifier.go_module_path.as_deref(),
-            &self.module_specifier.workspace_packages, &self.module_specifier.file_paths,
+            &self.module_specifier.workspace_packages,
+            &self.module_specifier.file_paths,
         )
     }
 
@@ -2381,8 +2419,16 @@ impl SymbolLookup for Compilation {
         // calling rule re-checks edge-kind (`candidate_with_compatible_kind`), so an
         // accept-any gate here is sound.
         let entry = self.module_entry.get(module)?;
-        super::support::follow_reexports(entry, target, EdgeKind::TypeRef, &|_, _| true, self, 0, &["index"])
-            .map(|info| info.target_symbol_id)
+        super::support::follow_reexports(
+            entry,
+            target,
+            EdgeKind::TypeRef,
+            &|_, _| true,
+            self,
+            0,
+            &["index"],
+        )
+        .map(|info| info.target_symbol_id)
     }
 
     fn reexport_alias_target(&self, qname: &str) -> Option<&Symbol> {
@@ -2423,7 +2469,10 @@ impl SymbolLookup for Compilation {
     }
 
     fn parent_class_qnames(&self, class_qname: &str) -> &[String] {
-        self.inherits.get(class_qname).map(|v| v.as_slice()).unwrap_or(&[])
+        self.inherits
+            .get(class_qname)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
 
     fn parent_class_id(&self, child_id: i64) -> Option<i64> {
@@ -2434,7 +2483,10 @@ impl SymbolLookup for Compilation {
     }
 
     fn parent_class_ids(&self, child_id: i64) -> Vec<i64> {
-        self.inherits_by_id.get(&self.canon_id(child_id)).cloned().unwrap_or_default()
+        self.inherits_by_id
+            .get(&self.canon_id(child_id))
+            .cloned()
+            .unwrap_or_default()
     }
 
     fn parent_class_args(&self, child_head: &str, parent_head: &str) -> &[String] {
@@ -2461,9 +2513,7 @@ impl SymbolLookup for Compilation {
     }
 
     fn enclosing_type_qname(&self, source_qname: &str) -> Option<&str> {
-        self.enclosing_type
-            .get(source_qname)
-            .map(|s| s.as_str())
+        self.enclosing_type.get(source_qname).map(|s| s.as_str())
     }
 
     fn enclosing_type_id_of(&self, source_symbol_id: i64) -> Option<i64> {
@@ -2548,11 +2598,17 @@ impl SymbolLookup for Compilation {
 
     fn dep_rename(&self, consumer_pkg: Option<i64>, alias: &str) -> Option<&str> {
         let renames = self.dep_renames_by_pkg.get(&consumer_pkg?)?;
-        renames.iter().find(|(a, _)| a == alias).map(|(_, pkg)| pkg.as_str())
+        renames
+            .iter()
+            .find(|(a, _)| a == alias)
+            .map(|(_, pkg)| pkg.as_str())
     }
 
     fn package_id_for_file(&self, file_path: &str) -> Option<i64> {
-        self.by_file.get(file_path).and_then(|v| v.first()).and_then(|s| s.package_id)
+        self.by_file
+            .get(file_path)
+            .and_then(|v| v.first())
+            .and_then(|s| s.package_id)
     }
 
     fn symbols_in_package(&self, package_id: i64) -> SymbolSet<'_> {
@@ -2570,7 +2626,6 @@ impl SymbolLookup for Compilation {
 // ---------------------------------------------------------------------------
 
 impl Compilation {
-
     /// Load every DB symbol — and its persisted type metadata — into the store,
     /// skipping qnames already present from the freshly-parsed batch. The
     /// incremental complement of `build_with_context`: changed files come from
@@ -2591,7 +2646,7 @@ impl Compilation {
         // The freshly-parsed (changed) symbols, captured before DB symbols are
         // folded in. Their type_info is authoritative from this parse, so a stale
         // persisted row must NOT resurrect type info the edit removed.
-        let parsed_qnames: HashSet<String> = self.by_qname.keys().cloned().collect();
+        let parsed_ids: FxHashSet<i64> = self.by_id.keys().copied().collect();
 
         // 1) Symbols + structural indexes.
         let Ok(mut stmt) = conn.prepare(
@@ -2618,8 +2673,19 @@ impl Compilation {
         }) else {
             return id_map;
         };
-        for (id, name, qname, kind, path, scope_path, visibility, package_id, signature, containing_id, language) in
-            rows.flatten()
+        for (
+            id,
+            name,
+            qname,
+            kind,
+            path,
+            scope_path,
+            visibility,
+            package_id,
+            signature,
+            containing_id,
+            language,
+        ) in rows.flatten()
         {
             // Every DB symbol contributes to the id map, even ones the parsed
             // batch already owns.
@@ -2632,7 +2698,7 @@ impl Compilation {
             }
 
             // The freshly-parsed batch wins for the structural indexes.
-            if self.by_qname.contains_key(&qname) {
+            if self.by_id.contains_key(&id) {
                 continue;
             }
             let file_arc: std::sync::Arc<str> = std::sync::Arc::from(path.as_str());
@@ -2647,28 +2713,44 @@ impl Compilation {
                 package_id,
                 signature,
             };
-            self.by_name.entry(name.clone()).or_default().push(info.clone());
-            self.by_qname_all.entry(qname.clone()).or_default().push(info.clone());
-            self.by_qname.entry(qname.clone()).or_insert_with(|| info.clone());
+            self.by_name
+                .entry(name.clone())
+                .or_default()
+                .push(info.clone());
+            self.by_qname_all
+                .entry(qname.clone())
+                .or_default()
+                .push(info.clone());
+            self.by_qname
+                .entry(qname.clone())
+                .or_insert_with(|| info.clone());
             self.by_file.entry(path).or_default().push(info.clone());
             self.by_id.entry(id).or_insert_with(|| info.clone());
             if let Some(pkg) = package_id {
                 self.by_package.entry(pkg).or_default().push(info.clone());
             }
             if is_type_like(&kind) {
-                self.types_by_name.entry(name).or_default().push(info.clone());
+                self.types_by_name
+                    .entry(name)
+                    .or_default()
+                    .push(info.clone());
             }
             let parent_key = match qname.rfind('.') {
                 Some(dot) => qname[..dot].to_string(),
                 None => String::new(),
             };
-            self.members_by_parent.entry(parent_key).or_default().push(info);
+            self.members_by_parent
+                .entry(parent_key)
+                .or_default()
+                .push(info);
 
             // Id-keyed membership from the DB's structural-parent edge (the real
             // parent symbol id), keeping same-qname parents distinct — the same
             // identity index Pass 1 builds for freshly-parsed symbols.
             if let Some(parent_id) = containing_id {
                 self.members_by_id.entry(parent_id).or_default().push(id);
+                self.member_index
+                    .record(parent_id, &self.by_id[&id].name, id);
             }
 
             // Declaration-merging bucket for DB-loaded rows — the incremental
@@ -2682,7 +2764,13 @@ impl Compilation {
                 let file = sym.file_path.to_string();
                 let pkg = sym.package_id;
                 let sym = sym.clone();
-                super::merge_canonical::record(&mut self.merge_groups, merge_scope, &sym, &file, pkg);
+                super::merge_canonical::record(
+                    &mut self.merge_groups,
+                    merge_scope,
+                    &sym,
+                    &file,
+                    pkg,
+                );
             }
         }
 
@@ -2722,7 +2810,7 @@ impl Compilation {
                 {
                     // A changed symbol's type_info is the fresh parse's, not the
                     // last index's persisted (possibly stale) row.
-                    if parsed_qnames.contains(&qname) {
+                    if parsed_ids.contains(&symbol_id) {
                         continue;
                     }
                     let param_names = parse_json_string_array(generic_params_j.as_deref());
@@ -2731,13 +2819,7 @@ impl Compilation {
                     // precise data for symbols whose TypeIds survived the arena reload).
                     let interned_ids: Vec<GenericParamId> = param_names
                         .iter()
-                        .map(|n| {
-                            self.arena.intern_generic(GenericParamData {
-                                name: n.clone(),
-                                owner_symbol_index: 0,
-                                bound: None,
-                            })
-                        })
+                        .map(|n| self.arena.intern_type_parameter(n.clone(), 0, None))
                         .collect();
 
                     let ti = self.type_info.entry(qname.clone()).or_default();
@@ -2804,18 +2886,28 @@ impl Compilation {
             }
         }
 
-        // `members_by_id` was built directly from each DB symbol's `containing_id`
-        // (its real parent id) in the loop above, alongside Pass 1's id-keyed
-        // membership for the freshly-parsed symbols — same-qname parents stay
-        // distinct, so no qname-keyed rebuild here.
+        // DB containment restores receiver ancestry before merge/extension passes.
+        super::enclosing::restore_enclosing_types(
+            &self.by_id,
+            &self.members_by_id,
+            &parsed_ids,
+            &mut self.enclosing_type_by_id,
+        );
 
         // Id-keyed inherits over the now-complete maps (parsed batch + DB rows).
+        if let Ok(ids) = crate::db::lexical_visibility::read(conn) {
+            self.lexical_only.extend(ids);
+            self.expand_lexical_visibility();
+        }
+        if let Err(error) = self.load_lexical_type_info(conn, &parsed_ids) {
+            tracing::warn!(%error, "Could not restore canonical type metadata");
+        }
         self.rebuild_inherits_by_id();
 
-        // Fold merge sets discovered from DB rows into the canonical view —
-        // idempotent over what the parsed-batch ingest already applied.
-        self.finish_identity_passes();
-
+        if let Err(error) = self.load_module_bindings(conn) {
+            tracing::warn!(%error, "Could not restore module binding metadata");
+        }
+        super::contract::generic_return::capture_all(&self.arena, &mut self.type_info_by_id);
         id_map
     }
 }
@@ -2879,7 +2971,10 @@ fn intern_head_and_args(arena: &TypeArena, head: &str, args: &[String]) -> TypeI
         base
     } else {
         let arg_ids = args.iter().map(|a| arena.intern_type_str(a)).collect();
-        arena.intern(Type::Apply { base, args: arg_ids })
+        arena.intern(Type::Apply {
+            base,
+            args: arg_ids,
+        })
     }
 }
 
@@ -2899,7 +2994,6 @@ fn is_bare_type_identifier(s: &str) -> bool {
     }
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
-
 
 /// Test-only re-export of the type-like predicate so `tree_tests.rs` can
 /// assert that `types_by_name` only surfaces type-like symbols without

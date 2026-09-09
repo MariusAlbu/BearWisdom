@@ -14,15 +14,17 @@ pub mod concepts;
 pub mod context;
 pub mod coverage;
 pub mod dead_code;
-pub mod drain_audit;
-pub mod flow_stats;
 pub mod diagnostics;
+pub mod drain_audit;
 pub mod entry_points;
+pub mod flow_stats;
 pub mod full_trace;
 pub mod hierarchy;
 pub mod hierarchy_drill;
 pub mod hierarchy_workspace;
 pub mod investigate;
+pub mod occurrence_census;
+pub mod oracle_evidence;
 pub mod pattern;
 #[cfg(test)]
 #[path = "pattern_tests.rs"]

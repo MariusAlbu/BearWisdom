@@ -1,0 +1,12 @@
+[
+  {"name":"empty_object_is_not_unknown","syntax":"{}","shape":["object"]},
+  {"name":"property_modifiers_and_outer_parameters","syntax":"{ value: T; readonly item?: K }","shape":["object",["value",false,false,["param","outer",0]],["item",true,true,["param","outer",1]]]},
+  {"name":"mapped_indexed_value","syntax":"{ [P in K]: T[P] }","shape":["mapped","preserve","preserve",["param","outer",1],null,["index",["param","outer",0],["param","mapped0",0]]]},
+  {"name":"mapped_modifier_removal","syntax":"{ -readonly [P in keyof T]-?: T[P] }","shape":["mapped","remove","remove",["keyof",["param","outer",0]],null,["index",["param","outer",0],["param","mapped0",0]]]},
+  {"name":"mapped_modifier_addition_and_key_remap","syntax":"{ +readonly [P in K as 'selected']+?: T[P] }","shape":["mapped","add","add",["param","outer",1],["string","selected"],["index",["param","outer",0],["param","mapped0",0]]]},
+  {"name":"mapped_constraint_self_reference_is_not_outer_namesake","syntax":"{ [K in K]: T[K] }","diagnosticCodes":[2313,2536],"shape":["mapped","preserve","preserve",["param","mapped0",0],null,["index",["param","outer",0],["param","mapped0",0]]]},
+  {"name":"nested_mapped_self_reference_does_not_borrow_outer_binder","syntax":"{ [P in K]: { [P in P]: T[P] } }","diagnosticCodes":[2313,2536],"shape":["mapped","preserve","preserve",["param","outer",1],null,["mapped","preserve","preserve",["param","mapped1",0],null,["index",["param","outer",0],["param","mapped1",0]]]]},
+  {"name":"mapped_structural_intersection","syntax":"T & { [P in K]: {} }","shape":["intersection",["param","outer",0],["mapped","preserve","preserve",["param","outer",1],null,["object"]]]},
+  {"name":"nested_mapped_distinct_binders_share_outer_constraint","syntax":"{ [P in K]: { [Q in P]: T[Q] } }","shape":["mapped","preserve","preserve",["param","outer",1],null,["mapped","preserve","preserve",["param","mapped0",0],null,["index",["param","outer",0],["param","mapped1",0]]]]},
+  {"name":"remap_uses_its_own_binder","syntax":"{ [P in K as P]: T[P] }","shape":["mapped","preserve","preserve",["param","outer",1],["param","mapped0",0],["index",["param","outer",0],["param","mapped0",0]]]}
+]

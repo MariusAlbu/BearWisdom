@@ -1,0 +1,436 @@
+[
+  {
+    "name": "concrete_true",
+    "source": "interface Payload { touch(): number } interface Other { touch(): string } interface Box<T> { read(): T } type Result = \"x\" extends string ? Box<Payload> : Box<Other>; declare const x: Result; function run() { x.read().touch(); }",
+    "supported": true,
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "x.read()",
+        "declaration": "read(): T",
+        "result": "Payload"
+      },
+      {
+        "expression": "x.read().touch()",
+        "declaration": "touch(): number",
+        "result": "number"
+      }
+    ]
+  },
+  {
+    "name": "concrete_false",
+    "source": "interface Payload { touch(): number } interface Other { touch(): string } interface Box<T> { read(): T } type Result = number extends string ? Box<Payload> : Box<Other>; declare const x: Result; function run() { x.read().touch(); }",
+    "supported": true,
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "x.read()",
+        "declaration": "read(): T",
+        "result": "Other"
+      },
+      {
+        "expression": "x.read().touch()",
+        "declaration": "touch(): string",
+        "result": "string"
+      }
+    ]
+  },
+  {
+    "name": "source_parameter_true",
+    "source": "interface Payload { touch(): number } interface Other { touch(): string } interface Box<T> { read(): T } type Choose<T> = T extends string ? Box<Payload> : Box<Other>; type Result = Choose<string>; declare const x: Result; function run() { x.read().touch(); }",
+    "supported": true,
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "x.read()",
+        "declaration": "read(): T",
+        "result": "Payload"
+      },
+      {
+        "expression": "x.read().touch()",
+        "declaration": "touch(): number",
+        "result": "number"
+      }
+    ]
+  },
+  {
+    "name": "source_parameter_false",
+    "source": "interface Payload { touch(): number } interface Other { touch(): string } interface Box<T> { read(): T } type Choose<T> = T extends string ? Box<Payload> : Box<Other>; type Result = Choose<number>; declare const x: Result; function run() { x.read().touch(); }",
+    "supported": true,
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "x.read()",
+        "declaration": "read(): T",
+        "result": "Other"
+      },
+      {
+        "expression": "x.read().touch()",
+        "declaration": "touch(): string",
+        "result": "string"
+      }
+    ]
+  },
+  {
+    "name": "source_parameter_default",
+    "source": "interface Payload { touch(): number } interface Other { touch(): string } interface Box<T> { read(): T } type Choose<T = string> = T extends string ? Box<Payload> : Box<Other>; type Result = Choose; declare const x: Result; function run() { x.read().touch(); }",
+    "supported": true,
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "x.read()",
+        "declaration": "read(): T",
+        "result": "Payload"
+      },
+      {
+        "expression": "x.read().touch()",
+        "declaration": "touch(): number",
+        "result": "number"
+      }
+    ]
+  },
+  {
+    "name": "constraint_valid",
+    "source": "interface Payload { touch(): number } interface Other { touch(): string } interface Box<T> { read(): T } type Choose<T extends string> = T extends string ? Box<Payload> : Box<Other>; type Result = Choose<\"x\">; declare const x: Result; function run() { x.read().touch(); }",
+    "supported": true,
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "x.read()",
+        "declaration": "read(): T",
+        "result": "Payload"
+      },
+      {
+        "expression": "x.read().touch()",
+        "declaration": "touch(): number",
+        "result": "number"
+      }
+    ]
+  },
+  {
+    "name": "nested_argument",
+    "source": "interface Payload { touch(): number } interface Other { touch(): string } interface Box<T> { read(): T } type Choose<T> = T extends string ? Payload : Other; type Result = Box<Choose<string>>; declare const x: Result; function run() { x.read().touch(); }",
+    "supported": true,
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "x.read()",
+        "declaration": "read(): T",
+        "result": "Payload"
+      },
+      {
+        "expression": "x.read().touch()",
+        "declaration": "touch(): number",
+        "result": "number"
+      }
+    ]
+  },
+  {
+    "name": "infer_property",
+    "source": "interface Payload { touch(): number } interface Other { touch(): string } interface Box<T> { read(): T } type Choose<T> = T extends { value: infer U } ? Box<U> : never; type Result = Choose<{ value: Payload }>; declare const x: Result; function run() { x.read().touch(); }",
+    "supported": true,
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "x.read()",
+        "declaration": "read(): T",
+        "result": "Payload"
+      },
+      {
+        "expression": "x.read().touch()",
+        "declaration": "touch(): number",
+        "result": "number"
+      }
+    ]
+  },
+  {
+    "name": "nested_alias",
+    "source": "interface Payload { touch(): number } interface Other { touch(): string } interface Box<T> { read(): T } type Choose<T> = T extends string ? Box<Payload> : Box<Other>; type Wrapped<T> = Choose<T>; type Result = Wrapped<string>; declare const x: Result; function run() { x.read().touch(); }",
+    "supported": true,
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "x.read()",
+        "declaration": "read(): T",
+        "result": "Payload"
+      },
+      {
+        "expression": "x.read().touch()",
+        "declaration": "touch(): number",
+        "result": "number"
+      }
+    ]
+  },
+  {
+    "name": "selected_recursive_alternate",
+    "source": "interface Payload { touch(): number } interface Other { touch(): string } interface Box<T> { read(): T } type Choose<T> = T extends string ? Box<Payload> : Box<Other>; type Result = string extends string ? Choose<string> : Result; declare const x: Result; function run() { x.read().touch(); }",
+    "supported": true,
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "x.read()",
+        "declaration": "read(): T",
+        "result": "Payload"
+      },
+      {
+        "expression": "x.read().touch()",
+        "declaration": "touch(): number",
+        "result": "number"
+      }
+    ]
+  },
+  {
+    "name": "tuple_wrapped",
+    "source": "interface Payload { touch(): number } interface Other { touch(): string } interface Box<T> { read(): T } type Choose<T> = [T] extends [string] ? Box<Payload> : Box<Other>; type Result = Choose<string>; declare const x: Result; function run() { x.read().touch(); }",
+    "supported": true,
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "x.read()",
+        "declaration": "read(): T",
+        "result": "Payload"
+      },
+      {
+        "expression": "x.read().touch()",
+        "declaration": "touch(): number",
+        "result": "number"
+      }
+    ]
+  },
+  {
+    "name": "member_return",
+    "source": "interface Payload { touch(): number } interface Other { touch(): string } interface Box<T> { read(): T } interface Conditional<T> { read(): T extends string ? Payload : Other } type Result = Conditional<string>; declare const x: Result; function run() { x.read().touch(); }",
+    "supported": true,
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "x.read()",
+        "declaration": "read(): T extends string ? Payload : Other",
+        "result": "Payload"
+      },
+      {
+        "expression": "x.read().touch()",
+        "declaration": "touch(): number",
+        "result": "number"
+      }
+    ]
+  },
+  {
+    "name": "property_receiver",
+    "source": "interface Payload { touch(): number } interface Other { touch(): string } interface Box<T> { read(): T } type Choose<T> = T extends string ? Box<Payload> : Box<Other>; type Result = Choose<string>; interface Holder { value: Result } declare const holder: Holder; function run() { holder.value.read().touch(); }",
+    "supported": true,
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "holder.value.read()",
+        "declaration": "read(): T",
+        "result": "Payload"
+      },
+      {
+        "expression": "holder.value.read().touch()",
+        "declaration": "touch(): number",
+        "result": "number"
+      }
+    ]
+  },
+  {
+    "name": "optional_receiver",
+    "source": "interface Payload { touch(): number } interface Other { touch(): string } interface Box<T> { read(): T } type Choose<T> = T extends string ? Box<Payload> : Box<Other>; type Result = Choose<string>; declare const x: Result | undefined; function run() { x?.read()?.touch(); }",
+    "supported": true,
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "x?.read()",
+        "declaration": "read(): T",
+        "result": "Payload | undefined"
+      },
+      {
+        "expression": "x?.read()?.touch()",
+        "declaration": "touch(): number",
+        "result": "number | undefined"
+      }
+    ]
+  },
+  {
+    "name": "constraint_invalid",
+    "source": "interface Payload { touch(): number } interface Other { touch(): string } interface Box<T> { read(): T } type Choose<T extends string> = T extends string ? Box<Payload> : Box<Other>; type Result = Choose<number>; declare const x: Result; function run() { x.read().touch(); }",
+    "supported": false,
+    "diagnosticCodes": [
+      2344
+    ],
+    "calls": [
+      {
+        "expression": "x.read()",
+        "declaration": "read(): T",
+        "result": "Other"
+      },
+      {
+        "expression": "x.read().touch()",
+        "declaration": "touch(): string",
+        "result": "string"
+      }
+    ]
+  },
+  {
+    "name": "missing_argument",
+    "source": "interface Payload { touch(): number } interface Other { touch(): string } interface Box<T> { read(): T } type Choose<T> = T extends string ? Box<Payload> : Box<Other>; type Result = Choose; declare const x: Result; function run() { x.read().touch(); }",
+    "supported": false,
+    "diagnosticCodes": [
+      2314
+    ],
+    "calls": [
+      {
+        "expression": "x.read()"
+      },
+      {
+        "expression": "x.read().touch()"
+      }
+    ]
+  },
+  {
+    "name": "unbound_generic",
+    "source": "interface Payload { touch(): number } interface Other { touch(): string } interface Box<T> { read(): T } type Choose<T> = T extends string ? Box<Payload> : Box<Payload>; function run<T>(x: Choose<T>) { x.read().touch(); }",
+    "supported": false,
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "x.read()",
+        "declaration": "read(): T",
+        "result": "Payload"
+      },
+      {
+        "expression": "x.read().touch()",
+        "declaration": "touch(): number",
+        "result": "number"
+      }
+    ]
+  },
+  {
+    "name": "any_condition",
+    "source": "interface Payload { touch(): number } interface Other { touch(): string } interface Box<T> { read(): T } type Choose<T> = T extends string ? Box<Payload> : Box<Payload>; type Result = Choose<any>; declare const x: Result; function run() { x.read().touch(); }",
+    "supported": false,
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "x.read()",
+        "declaration": "read(): T",
+        "result": "Payload"
+      },
+      {
+        "expression": "x.read().touch()",
+        "declaration": "touch(): number",
+        "result": "number"
+      }
+    ]
+  },
+  {
+    "name": "distributed_union",
+    "source": "interface Payload { touch(): number } interface Other { touch(): string } interface Box<T> { read(): T } type Choose<T> = T extends string ? Box<Payload> : Box<Payload>; type Result = Choose<string | number>; declare const x: Result; function run() { x.read().touch(); }",
+    "supported": false,
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "x.read()",
+        "declaration": "read(): T",
+        "result": "Payload"
+      },
+      {
+        "expression": "x.read().touch()",
+        "declaration": "touch(): number",
+        "result": "number"
+      }
+    ]
+  },
+  {
+    "name": "unknown_condition",
+    "source": "interface Payload { touch(): number } interface Other { touch(): string } interface Box<T> { read(): T } type Choose<T> = T extends string ? Box<Payload> : Box<Other>; type Result = Choose<unknown>; declare const x: Result; function run() { x.read().touch(); }",
+    "supported": false,
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "x.read()",
+        "declaration": "read(): T",
+        "result": "Other"
+      },
+      {
+        "expression": "x.read().touch()",
+        "declaration": "touch(): string",
+        "result": "string"
+      }
+    ]
+  },
+  {
+    "name": "growing_recursion",
+    "source": "interface Payload { touch(): number } interface Other { touch(): string } interface Box<T> { read(): T } type Loop<T> = T extends string ? Loop<[T]> : Loop<T>; type Result = Loop<string>; declare const x: Result; function run() { x.read().touch(); }",
+    "supported": false,
+    "diagnosticCodes": [
+      2589
+    ],
+    "calls": [
+      {
+        "expression": "x.read()"
+      },
+      {
+        "expression": "x.read().touch()"
+      }
+    ]
+  },
+  {
+    "name": "missing_check",
+    "source": "interface Payload { touch(): number } interface Other { touch(): string } interface Box<T> { read(): T } type Result = Missing extends string ? Box<Payload> : Box<Payload>; declare const x: Result; function run() { x.read().touch(); }",
+    "supported": false,
+    "diagnosticCodes": [
+      2304
+    ],
+    "calls": [
+      {
+        "expression": "x.read()",
+        "declaration": "read(): T",
+        "result": "Payload"
+      },
+      {
+        "expression": "x.read().touch()",
+        "declaration": "touch(): number",
+        "result": "number"
+      }
+    ]
+  },
+  {
+    "name": "missing_pattern",
+    "source": "interface Payload { touch(): number } interface Other { touch(): string } interface Box<T> { read(): T } type Result = string extends Missing ? Box<Payload> : Box<Payload>; declare const x: Result; function run() { x.read().touch(); }",
+    "supported": false,
+    "diagnosticCodes": [
+      2304
+    ],
+    "calls": [
+      {
+        "expression": "x.read()",
+        "declaration": "read(): T",
+        "result": "Payload"
+      },
+      {
+        "expression": "x.read().touch()",
+        "declaration": "touch(): number",
+        "result": "number"
+      }
+    ]
+  },
+  {
+    "name": "callable_condition",
+    "source": "interface Payload { touch(): number } interface Other { touch(): string } interface Box<T> { read(): T } type Result = (() => string) extends number ? Box<Other> : Box<Payload>; declare const x: Result; function run() { x.read().touch(); }",
+    "supported": false,
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "x.read()",
+        "declaration": "read(): T",
+        "result": "Payload"
+      },
+      {
+        "expression": "x.read().touch()",
+        "declaration": "touch(): number",
+        "result": "number"
+      }
+    ]
+  }
+]

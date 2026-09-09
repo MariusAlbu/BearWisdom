@@ -15,6 +15,11 @@ use crate::type_checker::profile::language_profile::{
 };
 use crate::types::{EdgeKind, SymbolKind, Visibility};
 
+pub(crate) const RECEIVER_NODES: &[(&str, crate::types::SegmentKind)] = &[
+    ("this", crate::types::SegmentKind::SelfRef),
+    ("super", crate::types::SegmentKind::BaseRef),
+];
+
 /// Kind-compatibility table for TypeScript.
 ///
 /// Encodes which symbol kinds are valid resolution targets per edge kind:
@@ -124,6 +129,7 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     has_generics: true,
     has_sum_types: true,
     look_through_optional: true,
+    reference_member_projection: false,
     // TS preserves literal types in strict-mode `const` declarations but
     // widens elsewhere. The engine's literal-narrowing path is opt-in;
     // leaving it off avoids over-narrowing untyped JS callsites.
@@ -176,7 +182,8 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
             crate::type_checker::profile::language_profile::ModuleAnchorBind::NameExactKind,
         ),
         module_anchor_terminal: false,
-        relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::DotSlashPrefix,
+        relative_marker:
+            crate::type_checker::profile::language_profile::RelativeMarker::DotSlashPrefix,
         external_by_import: None,
         module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
         wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,

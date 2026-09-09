@@ -32,6 +32,7 @@ mod symbols_fields;
 mod symbols_variables;
 mod types;
 
+mod expressions;
 pub mod extract;
 mod reexports;
 pub(crate) mod selectors;
@@ -180,7 +181,6 @@ impl LanguagePlugin for TypeScriptPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&TYPESCRIPT_PROFILE)
     }
-
 
     // TODO(routes-dispatch): wire `connectors::discover_nestjs_routes` and
     // `connectors::discover_nextjs_routes` into the indexer route-population

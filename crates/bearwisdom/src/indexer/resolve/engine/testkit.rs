@@ -36,6 +36,7 @@ pub(crate) struct Lookup {
     /// Id-keyed members: parent symbol id → member symbols. The id-keyed
     /// counterpart of `members`, exercising the chain walker's identity path.
     members_by_id: FxHashMap<i64, Vec<Symbol>>,
+    member_index: super::member_index::MemberIndex,
     generics: FxHashMap<String, Vec<String>>,
     field_types: FxHashMap<String, String>,
     field_type_ids: FxHashMap<String, TypeId>,
@@ -87,7 +88,6 @@ fn is_type_like(kind: &str) -> bool {
         || matches!(kind, "trait" | "type" | "object" | "record")
 }
 
-
 impl SymbolLookup for Lookup {
     fn by_name(&self, name: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(self.by_name.get(name).map(|v| v.as_slice()).unwrap_or(&[]))
@@ -122,6 +122,9 @@ impl SymbolLookup for Lookup {
                 .unwrap_or(&self.empty),
         )
     }
+    fn member_index(&self) -> Option<&super::member_index::MemberIndex> {
+        Some(&self.member_index)
+    }
     fn types_by_name(&self, name: &str) -> SymbolSet<'_> {
         match self.by_name.get(name) {
             Some(v) => SymbolSet::Owned(v.iter().filter(|s| is_type_like(&s.kind)).collect()),
@@ -137,9 +140,7 @@ impl SymbolLookup for Lookup {
     }
     fn has_in_namespace(&self, namespace: &str) -> bool {
         let prefix = format!("{namespace}.");
-        self.by_qname
-            .keys()
-            .any(|q| q.starts_with(&prefix))
+        self.by_qname.keys().any(|q| q.starts_with(&prefix))
     }
     fn in_file(&self, _: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(&self.empty)
@@ -159,10 +160,16 @@ impl SymbolLookup for Lookup {
             .map(|s| self.arena.intern_type_str(s))
     }
     fn parent_class_qname(&self, class_qname: &str) -> Option<&str> {
-        self.parents.get(class_qname).and_then(|v| v.first()).map(|s| s.as_str())
+        self.parents
+            .get(class_qname)
+            .and_then(|v| v.first())
+            .map(|s| s.as_str())
     }
     fn parent_class_qnames(&self, class_qname: &str) -> &[String] {
-        self.parents.get(class_qname).map(|v| v.as_slice()).unwrap_or(&[])
+        self.parents
+            .get(class_qname)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
     fn generic_params_of(&self, symbol_id: i64) -> Option<Vec<String>> {
         self.generics_of.get(&symbol_id).cloned()
@@ -176,10 +183,16 @@ impl SymbolLookup for Lookup {
     }
 
     fn parent_class_id(&self, child_id: i64) -> Option<i64> {
-        self.parents_by_id.get(&child_id).and_then(|v| v.first()).copied()
+        self.parents_by_id
+            .get(&child_id)
+            .and_then(|v| v.first())
+            .copied()
     }
     fn parent_class_ids(&self, child_id: i64) -> Vec<i64> {
-        self.parents_by_id.get(&child_id).cloned().unwrap_or_default()
+        self.parents_by_id
+            .get(&child_id)
+            .cloned()
+            .unwrap_or_default()
     }
     fn parent_class_args(&self, child_head: &str, parent_head: &str) -> &[String] {
         self.inherits_args
@@ -209,7 +222,12 @@ impl SymbolLookup for Lookup {
         false
     }
     fn ambient_symbols(&self, name: &str) -> SymbolSet<'_> {
-        SymbolSet::Borrowed(self.ambient.get(name).map(|v| v.as_slice()).unwrap_or(&self.empty))
+        SymbolSet::Borrowed(
+            self.ambient
+                .get(name)
+                .map(|v| v.as_slice())
+                .unwrap_or(&self.empty),
+        )
     }
     fn type_arena(&self) -> Option<&TypeArena> {
         Some(&self.arena)

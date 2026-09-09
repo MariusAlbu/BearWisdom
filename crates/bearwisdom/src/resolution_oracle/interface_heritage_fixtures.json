@@ -1,0 +1,99 @@
+[
+  {
+    "name":"merged_generic_interface_inherits_return_and_callback_types",
+    "diagnosticCodes":[],
+    "files":[
+      {"path":"base.d.ts","source":"interface Root<T> { /*@decl:1:method*/first(): T; /*@decl:2:method*/forEach(callback: (item: T) => void): void; }"},
+      {"path":"heritage.d.ts","source":"interface Registry<T> extends Root<T> {}"},
+      {"path":"index.d.ts","source":"interface Registry<T> { [index: number]: T; }"},
+      {"path":"main.ts","source":"export {}; class Doc { /*@decl:3:method*/touch(): void {} } function run(value: Registry<Doc>) { value./*@ref:1*/first()./*@ref:2*/touch(); value./*@ref:3*/forEach(item => item./*@ref:4*/touch()); }"}
+    ],
+    "labels":[[1,1],[2,3],[3,2],[4,3]]
+  },
+  {
+    "name":"isolated_interface_uses_type_only_import_not_value_namesake",
+    "diagnosticCodes":[],
+    "files":[
+      {"path":"base.ts","source":"export interface Root<T> { /*@decl:1:method*/read(): T; }"},
+      {"path":"main.ts","source":"import type { Root } from './base'; class Doc { /*@decl:2:method*/touch(): void {} } interface Child<T> extends Root<T> {} function run(value: Child<Doc>) { value./*@ref:1*/read()./*@ref:2*/touch(); }"},
+      {"path":"namesake.d.ts","source":"declare function Root(): number;"}
+    ],
+    "labels":[[1,1],[2,2]]
+  },
+  {
+    "name":"qualified_type_alias_base_preserves_generic_composition",
+    "diagnosticCodes":[],
+    "files":[
+      {"path":"base.ts","source":"export interface Root<T> { /*@decl:1:method*/read(): T; } export type Alias<T> = Root<T>;"},
+      {"path":"main.ts","source":"import type * as api from './base'; class Doc { /*@decl:2:method*/touch(): void {} } interface Child<T> extends api.Alias<T> {} function run(value: Child<Doc>) { value./*@ref:1*/read()./*@ref:2*/touch(); }"}
+    ],
+    "labels":[[1,1],[2,2]]
+  },
+  {
+    "name":"multiple_interface_bases_preserve_both_member_environments",
+    "diagnosticCodes":[],
+    "files":[
+      {"path":"main.ts","source":"export {}; class Doc { /*@decl:1:method*/touch(): void {} } interface Left<T> { /*@decl:2:method*/read(): T; } interface Right<T> { /*@decl:3:method*/forEach(callback: (item: T) => void): void; } interface Child<T> extends Left<T>, Right<T> {} function run(value: Child<Doc>) { value./*@ref:1*/read()./*@ref:2*/touch(); value./*@ref:3*/forEach(item => item./*@ref:4*/touch()); }"}
+    ],
+    "labels":[[1,2],[2,1],[3,3],[4,1]]
+  },
+  {
+    "name":"diamond_reaches_one_declaration_with_equal_generic_arguments",
+    "diagnosticCodes":[],
+    "files":[
+      {"path":"main.ts","source":"export {}; class Doc { /*@decl:1:method*/touch(): void {} } interface Root<T> { /*@decl:2:method*/read(): T; } interface Left<T> extends Root<T> {} interface Right<T> extends Root<T> {} interface Child<T> extends Left<T>, Right<T> {} function run(value: Child<Doc>) { value./*@ref:1*/read()./*@ref:2*/touch(); }"}
+    ],
+    "labels":[[1,2],[2,1]]
+  },
+  {
+    "name":"own_relative_index_signature_is_compatible_with_generic_base",
+    "diagnosticCodes":[],
+    "files":[
+      {"path":"base.d.ts","source":"interface Relative<T> { at(index: number): T | undefined; /*@decl:1:method*/read(): T; }"},
+      {"path":"left.d.ts","source":"interface Registry<T> { /*@decl:2:method*/at(index: number): T | undefined; }"},
+      {"path":"right.d.ts","source":"interface Registry<T> extends Relative<T> {}"},
+      {"path":"main.ts","source":"export {}; class Doc { /*@decl:3:method*/touch(): void {} } function run(value: Registry<Doc>) { value./*@ref:1*/at(0); value./*@ref:2*/read()./*@ref:3*/touch(); }"}
+    ],
+    "labels":[[1,2],[2,1],[3,3]]
+  },
+  {
+    "name":"nested_interface_base_is_scoped_by_type_binding_id",
+    "diagnosticCodes":[],
+    "files":[
+      {"path":"main.ts","source":"export {}; interface Root { wrong(): void; } function run() { class Doc { /*@decl:1:method*/touch(): void {} } interface Root<T> { /*@decl:2:method*/read(): T; } interface Child<T> extends Root<T> {} function use(value: Child<Doc>) { value./*@ref:1*/read()./*@ref:2*/touch(); } }"}
+    ],
+    "labels":[[1,2],[2,1]]
+  },
+  {
+    "name":"compatible_inherited_members_follow_declared_base_order_not_global_depth",
+    "diagnosticCodes":[],
+    "files":[
+      {"path":"main.ts","source":"export {}; class Doc { /*@decl:1:method*/touch(): void {} } interface Top { /*@decl:2:method*/read(): Doc; } interface Left extends Top {} interface Right { /*@decl:3:method*/read(): Doc; } interface First extends Left, Right {} interface Second extends Right, Left {} function run(a: First, b: Second) { a./*@ref:1*/read()./*@ref:2*/touch(); b./*@ref:3*/read()./*@ref:4*/touch(); }"}
+    ],
+    "labels":[[1,2],[2,1],[3,3],[4,1]]
+  },
+  {
+    "name":"inherited_overload_sets_are_not_compared_as_conflicting_single_signatures",
+    "diagnosticCodes":[],
+    "files":[
+      {"path":"main.ts","source":"export {}; class Doc { /*@decl:1:method*/touch(): void {} } interface Root<T> { pick(value: string): string; pick(value: number): number; /*@decl:2:method*/read(): T; } interface Child<T> extends Root<T> { pick(value: string): string; pick(value: number): number; pick(value: boolean): boolean; } function run(value: Child<Doc>) { value./*@ref:1*/read()./*@ref:2*/touch(); }"}
+    ],
+    "labels":[[1,2],[2,1]]
+  },
+  {
+    "name":"interface_default_arguments_and_dependent_defaults_reach_inherited_returns",
+    "diagnosticCodes":[],
+    "files":[
+      {"path":"main.ts","source":"export {}; class Doc { /*@decl:1:method*/touch(): void {} } interface Root<T = Doc, U = T> { /*@decl:2:method*/read(): U; } interface Child extends Root {} interface Generic<T = Doc> extends Root<T> {} function run(a: Child, b: Generic) { a./*@ref:1*/read()./*@ref:2*/touch(); b./*@ref:3*/read()./*@ref:4*/touch(); }"}
+    ],
+    "labels":[[1,2],[2,1],[3,2],[4,1]]
+  },
+  {
+    "name":"interface_constraints_follow_source_generic_parameter_ids",
+    "diagnosticCodes":[],
+    "files":[
+      {"path":"main.ts","source":"export {}; interface Root<T extends string> { /*@decl:1:method*/read(): T; } interface Child<U extends string> extends Root<U> {} function run(value: Child<'literal'>) { value./*@ref:1*/read(); }"}
+    ],
+    "labels":[[1,1]]
+  }
+]

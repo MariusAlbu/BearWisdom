@@ -33,13 +33,30 @@ pub(super) fn walk_member(
     recv: Receiver,
     member: &str,
     profile: &LanguageProfile,
-) -> Option<Symbol> {
-    lookup_member_on(lookup, arena, recv, member, &|_kind| true).or_else(|| {
-        if recv.id.is_none() {
-            return None;
+) -> Result<Option<Symbol>, super::member_selection::Selection> {
+    // Keep declared access/ambiguity failures distinct from a miss across every
+    // outer retry (implicit roots, deref, extensions and alternative yields).
+    use super::member_selection::{self, Selection};
+    if let Some(owner) = recv.id {
+        if !lookup.declaration_accessible(owner) {
+            return Err(Selection::Inaccessible);
         }
-        member_on_implicit_root(lookup, member, profile.implicit_root_types)
-    })
+        if let Some(name) = lookup.member_index().and_then(|index| index.name(member)) {
+            match member_selection::select_typed(lookup, arena, recv, name, &|_| true) {
+                Selection::Unique(id) => return Ok(lookup.symbol_by_id(id).cloned()),
+                Selection::Missing => {}
+                denied => return Err(denied),
+            }
+        }
+    }
+    Ok(
+        lookup_member_on(lookup, arena, recv, member, &|_kind| true).or_else(|| {
+            if recv.id.is_none() {
+                return None;
+            }
+            member_on_implicit_root(lookup, member, profile.implicit_root_types)
+        }),
+    )
 }
 
 /// Resolve `member` on the declaration one of `roots` names, climbing that

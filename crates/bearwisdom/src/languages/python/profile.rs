@@ -87,6 +87,7 @@ pub const PYTHON_PROFILE: LanguageProfile = LanguageProfile {
     // Optional[T] = Union[T, None]; engine peeling matches static-type
     // intent even when the runtime checks rely on `is None`.
     look_through_optional: true,
+    reference_member_projection: false,
     literal_narrowing: false,
     // Both stdlib (coroutines via `async def`) and asyncio.Future wrap
     // values for `await`.
@@ -113,7 +114,8 @@ pub const PYTHON_PROFILE: LanguageProfile = LanguageProfile {
     imports: crate::type_checker::profile::language_profile::ImportAxes {
         decline_qualified_when_prefix_imported: false,
         import_resolution: None,
-        import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
+        import_module_path:
+            crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
         // A module-carrying ref binds by anchor: a relative `.foo`/`..bar` module
         // resolves via `in_module_from` and binds the bare name there; an absolute
         // `models`-style module maps to a directory and accepts any kind-compatible

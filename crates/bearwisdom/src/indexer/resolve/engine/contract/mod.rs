@@ -11,7 +11,11 @@
 pub mod chain_walker;
 pub mod flow_cache;
 pub mod generic_clause;
+pub mod generic_return;
 pub mod lookup;
+mod lookup_display;
+mod lookup_nominal;
+pub mod member_applicability;
 pub mod symbol_set;
 pub mod types;
 pub mod util;
@@ -20,8 +24,7 @@ pub use flow_cache::FlowCacheLookup;
 pub use lookup::SymbolLookup;
 pub use symbol_set::SymbolSet;
 pub use types::{
-    FileContext, ImportEntry, RefContext, SymbolInfo, Symbol, TypeInfo,
-    RESOLVED_CONFIDENCE,
+    FileContext, ImportEntry, RefContext, Symbol, SymbolInfo, TypeInfo, RESOLVED_CONFIDENCE,
 };
 
 /// Backward-compatible alias: the old engine used `Resolution`; the engine
@@ -30,13 +33,12 @@ pub type Resolution = SymbolInfo;
 pub use util::{build_scope_chain, camel_to_kebab, lexical_normalize};
 
 pub(crate) use chain_walker::{
-    first_generic_arg, is_jvm_language,
-    is_plain_type_name, parse_declared_type_from_signature_for_lang,
-    parse_object_type_members, parse_param_types_from_signature,
-    parse_return_type_from_jvm_descriptor, parse_return_type_from_signature,
-    parse_return_type_positional, parse_return_type_trailing, parse_top_level_conditional,
-    parse_type_head_and_args,
-    parse_type_head_and_args_bracket, resolve_type_name_in_scope,
+    first_generic_arg, is_jvm_language, is_plain_type_name,
+    parse_declared_type_from_signature_for_lang, parse_object_type_members,
+    parse_param_types_from_signature, parse_return_type_from_jvm_descriptor,
+    parse_return_type_from_signature, parse_return_type_positional, parse_return_type_trailing,
+    parse_top_level_conditional, parse_type_head_and_args, parse_type_head_and_args_bracket,
+    resolve_type_name_in_scope,
 };
 pub(crate) use generic_clause::signature_generic_params;
 pub(crate) use util::{

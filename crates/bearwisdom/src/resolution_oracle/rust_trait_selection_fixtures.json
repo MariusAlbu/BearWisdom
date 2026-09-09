@@ -1,0 +1,38 @@
+[
+  {
+    "name":"trait_self_output_preserves_implementor_identity",
+    "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:1:method*/pub fn touch(&self) {} } pub trait Dup { /*@decl:2:method*/fn duplicate(&self)->Self; } impl Dup for Doc { fn duplicate(&self)->Self { Doc } } pub fn f(p:&Doc) { p./*@ref:11*/duplicate()./*@ref:12*/touch(); }\n"}],
+    "labels":[[11,2],[12,1]]
+  },
+  {
+    "name":"satisfied_blanket_obligation_preserves_generic_output",
+    "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub trait Marker {} pub struct Doc; impl Marker for Doc {} impl Doc { /*@decl:1:method*/pub fn touch(&self) {} } pub struct Wrap<T>(T); pub trait Get<T> { /*@decl:2:method*/fn get(&self)->&T; } impl<T:Marker> Get<T> for Wrap<T> { fn get(&self)->&T { &self.0 } } pub fn f(p:&Wrap<Doc>) { p./*@ref:11*/get()./*@ref:12*/touch(); }\n"}],
+    "labels":[[11,2],[12,1]]
+  },
+  {
+    "name":"owned_generic_receiver_uses_bound_trait",
+    "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub trait Save { /*@decl:1:method*/fn save(&self); } pub fn f<T:Save>(p:T) { p./*@ref:11*/save(); }\n"}],
+    "labels":[[11,1]]
+  },
+  {
+    "name":"owned_trait_receiver_precedes_shared_inherent",
+    "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct Doc; impl Doc { pub fn save(&self) {} } pub trait Save { /*@decl:1:method*/fn save(self); } impl Save for Doc { fn save(self) {} } pub fn f(p:Doc) { p./*@ref:11*/save(); }\n"}],
+    "labels":[[11,1]]
+  },
+  {
+    "name":"owned_self_output_elision_uses_ordinary_input_region",
+    "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:1:method*/pub fn touch(&self) {} } pub struct C; pub trait Take { /*@decl:2:method*/fn take(self, p:&Doc)->&Doc; } impl Take for C { fn take(self, p:&Doc)->&Doc { p } } pub fn f(c:C, p:&Doc) { c./*@ref:11*/take(p)./*@ref:12*/touch(); }\n"}],
+    "labels":[[11,2],[12,1]]
+  },
+  {
+    "name":"unsatisfied_method_where_bound_is_not_callable",
+    "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"trait Marker {} trait Save { fn save(&self) where Self:Marker {} } struct Doc; impl Save for Doc {} fn f(p:Doc) { p./*@ref:11*/save(); }\n"}],
+    "labels":[[11,null]],"diagnostics":[[11,"E0277"]]
+  }
+]

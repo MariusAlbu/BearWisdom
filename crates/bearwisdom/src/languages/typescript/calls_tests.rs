@@ -3,6 +3,97 @@
 use super::calls::replace_template_substitutions;
 use crate::types::CallArg;
 
+#[test]
+fn nested_named_declarations_do_not_emit_calls_for_the_outer_owner() {
+    let source = "function outer() { own(); function inner() { nested(); } class Local { method() { member(); } } }";
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into())
+        .unwrap();
+    let tree = parser.parse(source, None).unwrap();
+    let body = tree
+        .root_node()
+        .named_child(0)
+        .unwrap()
+        .child_by_field_name("body")
+        .unwrap();
+    let mut refs = Vec::new();
+    super::calls::extract_calls(&body, source.as_bytes(), 7, &mut refs);
+    let calls: Vec<_> = refs
+        .iter()
+        .filter(|r| r.kind == crate::types::EdgeKind::Calls)
+        .collect();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].byte_offset, source.find("own()").unwrap() as u32);
+    assert_eq!(calls[0].source_symbol_index, 7);
+}
+
+#[test]
+fn constructor_has_separate_expression_and_identifier_anchors() {
+    let source = "new Channel<Alpha>();";
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into())
+        .unwrap();
+    let tree = parser.parse(source, None).unwrap();
+    let node = tree
+        .root_node()
+        .named_child(0)
+        .unwrap()
+        .named_child(0)
+        .unwrap();
+    let mut refs = Vec::new();
+    super::calls::emit_new_ref(&node, source.as_bytes(), 0, &mut refs);
+    assert_eq!(refs.len(), 1);
+    assert_eq!(refs[0].byte_offset, 0);
+    assert_eq!(refs[0].chain.as_ref().unwrap().segments[0].byte_offset, 4);
+}
+
+#[test]
+fn repeated_member_calls_keep_distinct_selector_addresses() {
+    let source = "factory.make<Factory>().make<Model>().save();";
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into())
+        .unwrap();
+    let tree = parser.parse(source, None).unwrap();
+    let call = tree
+        .root_node()
+        .named_child(0)
+        .unwrap()
+        .named_child(0)
+        .unwrap();
+    let chain = super::calls::build_chain(
+        call.child_by_field_name("function").unwrap(),
+        source.as_bytes(),
+    )
+    .unwrap();
+    let addresses: Vec<_> = chain
+        .segments
+        .iter()
+        .skip(1)
+        .map(|s| s.byte_offset)
+        .collect();
+    assert_eq!(addresses, vec![8, 24, 38]);
+}
+
+fn callback_parameters<'a>(source: &'a str, args: &[CallArg]) -> Vec<Vec<&'a str>> {
+    args.iter()
+        .filter_map(|arg| match arg {
+            CallArg::LambdaAt { params } => Some(
+                params
+                    .iter()
+                    .map(|span| {
+                        span.map(|s| &source[s.start as usize..s.end as usize])
+                            .unwrap_or("")
+                    })
+                    .collect(),
+            ),
+            _ => None,
+        })
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // replace_template_substitutions
 // ---------------------------------------------------------------------------
@@ -111,15 +202,16 @@ function caller() { fetch(`/api/users/${id}`); }
 }
 
 #[test]
-fn call_args_identifier_becomes_ident_variant() {
+fn call_args_identifier_preserves_the_use_span_not_the_declaration_span() {
     let src = r#"
 function caller(url) { fetch(url); }
 "#;
     let args = parse_call_args(src);
     assert!(
         args.iter()
-            .any(|a| matches!(a, CallArg::Ident(s) if s == "url")),
-        "expected Ident(\"url\"), got: {args:?}"
+            .any(|a| matches!(a, CallArg::IdentAt(span)
+                if span.start as usize == src.rfind("url").unwrap() && &src[span.start as usize..span.end as usize] == "url")),
+        "expected the exact url argument span, got: {args:?}"
     );
 }
 
@@ -132,8 +224,7 @@ function caller(arr) { arr.map(x => x.foo); }
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter()
-            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["x"])),
+        callback_parameters(src, &args).contains(&vec!["x"]),
         "expected Lambda {{ params: [\"x\"] }}, got: {args:?}"
     );
 }
@@ -146,8 +237,7 @@ function caller(arr) { arr.reduce((a, b) => a + b); }
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter()
-            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["a", "b"])),
+        callback_parameters(src, &args).contains(&vec!["a", "b"]),
         "expected Lambda {{ params: [\"a\", \"b\"] }}, got: {args:?}"
     );
 }
@@ -160,8 +250,7 @@ function caller(arr) { arr.forEach(function (v) { use(v); }); }
 "#;
     let args = parse_call_args(src);
     assert!(
-        args.iter()
-            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["v"])),
+        callback_parameters(src, &args).contains(&vec!["v"]),
         "expected Lambda {{ params: [\"v\"] }}, got: {args:?}"
     );
 }

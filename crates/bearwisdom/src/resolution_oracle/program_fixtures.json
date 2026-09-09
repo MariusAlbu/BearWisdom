@@ -1,0 +1,49 @@
+[
+  {
+    "name": "profile_array_syntax_uses_the_program_generic_owner",
+    "diagnosticCodes": [],
+    "files": [
+      { "path": "a.d.ts", "source": "interface Array<T> { /*@decl:1:method*/first(): T; }" },
+      { "path": "b.d.ts", "source": "interface Array<T> { /*@decl:2:method*/each(callback: (item: T) => void): void; }" },
+      { "path": "main.ts", "source": "export {}; class Doc { /*@decl:3:method*/touch() {} } function run(list: Doc[]) { list./*@ref:1*/first()./*@ref:2*/touch(); list./*@ref:3*/each(item => item./*@ref:4*/touch()); }" }
+    ],
+    "labels": [[1,1],[2,3],[3,2],[4,3]]
+  },
+  {
+    "name": "source_bound_global_function_infers_argument_and_return_ids",
+    "diagnosticCodes": [],
+    "files": [
+      { "path": "a.d.ts", "source": "/*@decl:1:function*/declare function make<T>(value: T): T;" },
+      { "path": "main.ts", "source": "export {}; class Doc { /*@decl:2:method*/touch() {} } function run(value: Doc) { /*@ref:1*/make(value)./*@ref:2*/touch(); }" }
+    ],
+    "labels": [[1,1],[2,2]]
+  },
+  {
+    "name": "module_local_type_does_not_shadow_a_configured_global_value",
+    "diagnosticCodes": [],
+    "files": [
+      { "path": "a.d.ts", "source": "interface Service { /*@decl:1:method*/run(): void; } declare var Portal: Service;" },
+      { "path": "main.ts", "source": "export {}; interface Portal { nope(): void; } Portal./*@ref:1*/run();" }
+    ],
+    "labels": [[1,1]]
+  },
+  {
+    "name": "local_value_still_shadows_a_configured_global_value",
+    "diagnosticCodes": [],
+    "files": [
+      { "path": "a.d.ts", "source": "interface Service { run(): void; } declare var Portal: Service;" },
+      { "path": "main.ts", "source": "export {}; interface Other { /*@decl:1:method*/nope(): void; } function run(Portal: Other) { Portal./*@ref:1*/nope(); }" }
+    ],
+    "labels": [[1,1]]
+  },
+  {
+    "name": "explicit_global_augmentation_shares_the_source_generic_owner",
+    "diagnosticCodes": [],
+    "files": [
+      { "path": "a.d.ts", "source": "interface Catalog<T> { /*@decl:1:method*/first(): T; }" },
+      { "path": "augmentation.ts", "source": "export {}; declare global { interface Catalog<T> { /*@decl:2:method*/each(callback: (item: T) => void): void; } }" },
+      { "path": "main.ts", "source": "export {}; class Doc { /*@decl:3:method*/touch() {} } function run(list: Catalog<Doc>) { list./*@ref:1*/first()./*@ref:2*/touch(); list./*@ref:3*/each(item => item./*@ref:4*/touch()); }" }
+    ],
+    "labels": [[1,1],[2,3],[3,2],[4,3]]
+  }
+]

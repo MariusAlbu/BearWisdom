@@ -8,6 +8,7 @@ fn sample() -> (ParsedFile, TypeArena) {
     let vec_doc = arena.intern_type_str("Vec<tantivy.Document>");
     let u64_ty = arena.class("u64");
     let t_param = arena.intern_generic(GenericParamData {
+        kind: Default::default(),
         name: "T".into(),
         owner_symbol_index: 0,
         bound: Some(arena.class("Ord")),
@@ -258,7 +259,10 @@ fn symbol_roundtrip_preserves_every_field_and_type() {
     );
     let data = dst.generic_param(param);
     assert_eq!(data.name, "T");
-    assert_eq!(dst.get(data.bound.expect("bound survives")), Type::Class("Ord".into()));
+    assert_eq!(
+        dst.get(data.bound.expect("bound survives")),
+        Type::Class("Ord".into())
+    );
 }
 
 #[test]

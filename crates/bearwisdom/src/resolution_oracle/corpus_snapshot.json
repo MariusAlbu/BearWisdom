@@ -1,0 +1,33 @@
+{
+  "typescript": {
+    "revision": [253,27,0,64,168,60,190,223,156,115,18,22,253,40,28,191,148,101,116,105,42,45,223,117,27,190,45,230,72,153,167,175],
+    "observations": [
+      {"site":{"file":1,"byte_offset":94,"kind":"calls"},"binding":{"resolved":{"file":1,"line":4,"col":0,"kind":"method"}}},
+      {"site":{"file":1,"byte_offset":108,"kind":"calls"},"binding":{"resolved":{"file":1,"line":4,"col":0,"kind":"method"}}},
+      {"site":{"file":1,"byte_offset":155,"kind":"calls"},"binding":{"resolved":{"file":1,"line":4,"col":0,"kind":"method"}}},
+      {"site":{"file":1,"byte_offset":169,"kind":"calls"},"binding":{"resolved":{"file":1,"line":4,"col":0,"kind":"method"}}}
+    ]
+  },
+  "javascript": {
+    "revision": [173,27,218,217,63,220,44,110,181,23,228,123,100,231,163,32,30,31,232,245,239,94,238,30,240,130,216,10,221,166,175,1],
+    "observations": [
+      {"site":{"file":1,"byte_offset":41,"kind":"calls"},"binding":{"resolved":{"file":1,"line":0,"col":0,"kind":"function"}}},
+      {"site":{"file":1,"byte_offset":51,"kind":"calls"},"binding":{"resolved":{"file":1,"line":0,"col":0,"kind":"function"}}},
+      {"site":{"file":1,"byte_offset":61,"kind":"calls"},"binding":"unresolved"}
+    ]
+  },
+  "python": {
+    "revision": [224,35,242,159,11,242,21,185,160,24,20,144,33,192,8,37,102,7,255,227,2,102,131,211,85,241,234,206,237,230,165,167],
+    "observations": [
+      {"site":{"file":1,"byte_offset":42,"kind":"calls"},"binding":{"resolved":{"file":1,"line":0,"col":0,"kind":"function"}}},
+      {"site":{"file":1,"byte_offset":52,"kind":"calls"},"binding":{"resolved":{"file":1,"line":0,"col":0,"kind":"function"}}}
+    ]
+  },
+  "csharp": {
+    "revision": [224,87,47,25,29,103,133,42,192,76,107,80,86,213,66,138,183,4,168,33,244,231,207,67,226,174,39,170,87,84,121,82],
+    "observations": [
+      {"site":{"file":1,"byte_offset":74,"kind":"calls"},"binding":{"resolved":{"file":1,"line":1,"col":0,"kind":"method"}}},
+      {"site":{"file":1,"byte_offset":84,"kind":"calls"},"binding":{"resolved":{"file":1,"line":1,"col":0,"kind":"method"}}}
+    ]
+  }
+}

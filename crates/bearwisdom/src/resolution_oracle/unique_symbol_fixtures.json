@@ -1,0 +1,17 @@
+[
+  {"source":"declare const key: unique symbol;","diagnostics":[],"ownerStarts":[14]},
+  {"source":"declare let key: unique symbol;","diagnostics":[1332],"ownerStarts":[]},
+  {"source":"declare var key: unique symbol;","diagnostics":[1332],"ownerStarts":[]},
+  {"source":"interface Keys { readonly key: unique symbol; }","diagnostics":[],"ownerStarts":[17]},
+  {"source":"interface Keys { key: unique symbol; }","diagnostics":[1330],"ownerStarts":[]},
+  {"source":"declare class Keys { static readonly key: unique symbol; }","diagnostics":[],"ownerStarts":[21]},
+  {"source":"declare class Keys { readonly key: unique symbol; }","diagnostics":[1331],"ownerStarts":[]},
+  {"source":"declare class Keys { static key: unique symbol; }","diagnostics":[1331],"ownerStarts":[]},
+  {"source":"declare function key(): unique symbol;","diagnostics":[1335],"ownerStarts":[]},
+  {"source":"type Key = unique symbol;","diagnostics":[1335],"ownerStarts":[]},
+  {"source":"interface Keys { readonly key?: unique symbol; }","diagnostics":[],"ownerStarts":[17]},
+  {"source":"declare const key: (unique symbol);","diagnostics":[],"ownerStarts":[14]},
+  {"source":"type Keys = { readonly key: unique symbol; };","diagnostics":[],"ownerStarts":[14]},
+  {"source":"declare class Keys { private static readonly key: unique symbol; }","diagnostics":[],"ownerStarts":[21]},
+  {"source":"declare const key: (/* type comment */ unique symbol);","diagnostics":[],"ownerStarts":[14]}
+]

@@ -1,0 +1,19 @@
+[package]
+name = "tree-sitter-typescript-local"
+version = "0.23.2"
+edition = "2021"
+license = "MIT"
+publish = false
+description = "Pinned TypeScript/TSX grammar with BearWisdom provider syntax repairs"
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+tree-sitter-language = "0.1"
+
+[dev-dependencies]
+tree-sitter = { workspace = true }
+
+[build-dependencies]
+cc = "1"

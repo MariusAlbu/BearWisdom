@@ -73,25 +73,25 @@ const RUST_KIND_TABLE: KindTable = &[
     ),
 ];
 
-const RUST_PRIMITIVES: &[(&str, PrimKind)] = &[
+pub(super) const RUST_PRIMITIVES: &[(&str, PrimKind)] = &[
     ("bool", PrimKind::Bool),
-    ("char", PrimKind::Str),
+    ("char", PrimKind::Char),
     ("str", PrimKind::Str),
     ("String", PrimKind::Str),
-    ("i8", PrimKind::Int),
-    ("i16", PrimKind::Int),
-    ("i32", PrimKind::Int),
-    ("i64", PrimKind::Int),
-    ("i128", PrimKind::Int),
-    ("isize", PrimKind::Int),
-    ("u8", PrimKind::Int),
-    ("u16", PrimKind::Int),
-    ("u32", PrimKind::Int),
-    ("u64", PrimKind::Int),
-    ("u128", PrimKind::Int),
-    ("usize", PrimKind::Int),
-    ("f32", PrimKind::Float),
-    ("f64", PrimKind::Float),
+    ("i8", PrimKind::Signed(8)),
+    ("i16", PrimKind::Signed(16)),
+    ("i32", PrimKind::Signed(32)),
+    ("i64", PrimKind::Signed(64)),
+    ("i128", PrimKind::Signed(128)),
+    ("isize", PrimKind::Isize),
+    ("u8", PrimKind::Unsigned(8)),
+    ("u16", PrimKind::Unsigned(16)),
+    ("u32", PrimKind::Unsigned(32)),
+    ("u64", PrimKind::Unsigned(64)),
+    ("u128", PrimKind::Unsigned(128)),
+    ("usize", PrimKind::Usize),
+    ("f32", PrimKind::FloatWidth(32)),
+    ("f64", PrimKind::FloatWidth(64)),
     ("()", PrimKind::Unit),
     ("!", PrimKind::Never),
 ];
@@ -143,6 +143,7 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     // absent too — they expose a GUARD's members via `.borrow()`/`.lock()`, not
     // the inner's, so peeling them to the inner would be unsound.
     single_inner_wrappers: &["Box", "Rc", "Arc", "Pin", "Cow"],
+    reference_member_projection: true,
     // Built-in containers whose missed member lookups retry on their Deref
     // target's member set, keeping the applied args: `Vec<T>` reheads to
     // `slice<T>` (std's inherent slice methods are qualified under `slice`),
@@ -183,7 +184,8 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
         // symbol whose file path contains `crate-name/` (after hyphen→underscore
         // normalization, since Cargo uses hyphens in directory names while Rust
         // module paths use underscores).
-        import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
+        import_module_path:
+            crate::type_checker::profile::language_profile::ImportModulePath::FromModuleField,
         // A qualified call (`DbPool::new()`) carries the importing module path on
         // `r.module` in its verbatim `::` form (`crate::db`). `ByNameUnderModuleDir`
         // maps the path separators to `/`, probes the `{module}{sep}{target}` qname

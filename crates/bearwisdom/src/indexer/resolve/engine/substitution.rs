@@ -58,6 +58,11 @@ pub(crate) fn substitute_through(
     receiver: TypeId,
     recv_id: Option<i64>,
 ) -> TypeId {
+    let ids = super::bound_call::receiver_bindings(lookup, arena, receiver, recv_id);
+    let yielded = super::contract::generic_return::substitute(arena, yielded, &ids);
+    if super::inherited_bindings::captured(lookup, arena, receiver, recv_id) {
+        return yielded;
+    }
     let map = receiver_env(lookup, arena, receiver, recv_id);
     if map.is_empty() {
         return yielded;
@@ -90,6 +95,11 @@ pub(crate) fn substitute_supertype_args(
     receiver: TypeId,
     recv_id: Option<i64>,
 ) -> TypeId {
+    if super::inherited_bindings::captured(lookup, arena, receiver, recv_id) {
+        return super::inherited_bindings::for_member(lookup, arena, receiver, recv_id, member.id)
+            .map(|env| super::contract::generic_return::substitute(arena, yielded, &env))
+            .unwrap_or_else(|| arena.intern(crate::type_checker::core::types::Type::Unknown));
+    }
     let Some(recv_head) = head_qname(arena, receiver) else {
         return yielded;
     };

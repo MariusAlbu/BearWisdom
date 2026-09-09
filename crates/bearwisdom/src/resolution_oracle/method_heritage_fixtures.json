@@ -1,0 +1,230 @@
+[
+  {
+    "name": "recursive_return",
+    "source": "interface Base { self(): Base } interface Catalog extends Base { self(): Catalog; touch(): void }",
+    "admitted": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "generic_recursive_return",
+    "source": "interface Base<T> { self(): Base<T>; read(): T } interface Catalog<T> extends Base<T> { self(): Catalog<T> }",
+    "admitted": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "aliased_generic_ancestor",
+    "source": "interface Base<T> { self(): Base<T>; read(): T } type Parent<T> = Base<T>; interface Middle<T> extends Parent<T> {} interface Catalog<T> extends Middle<T> { self(): Catalog<T> }",
+    "admitted": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "computed_recursive_return",
+    "source": "declare const key: unique symbol; interface Base<T> { [key](): Base<T>; read(): T } interface Catalog<T> extends Base<T> { [key](): Catalog<T> }",
+    "admitted": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "invalid_sibling_override",
+    "source": "interface Base { self(): Base; value: string } interface Catalog extends Base { self(): Catalog; value: number }",
+    "admitted": false,
+    "diagnosticCodes": [
+      2430
+    ]
+  },
+  {
+    "name": "invalid_referenced_return",
+    "source": "interface Base { self(): Base; value: string } interface Wrong extends Base { value: number } interface Catalog extends Base { self(): Wrong }",
+    "admitted": false,
+    "diagnosticCodes": [
+      2430,
+      2430
+    ]
+  },
+  {
+    "name": "wrong_scalar_return",
+    "source": "interface Base { self(): Base; value: string } interface Catalog extends Base { self(): number }",
+    "admitted": false,
+    "diagnosticCodes": [
+      2430
+    ]
+  },
+  {
+    "name": "widened_return",
+    "source": "interface Base { read(): string } interface Catalog extends Base { read(): string | number }",
+    "admitted": false,
+    "diagnosticCodes": [
+      2430
+    ]
+  },
+  {
+    "name": "narrowed_return",
+    "source": "interface Base { read(): string | number } interface Catalog extends Base { read(): string }",
+    "admitted": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "fewer_parameters",
+    "source": "interface Base { read(a: string, b: number): string } interface Catalog extends Base { read(a: string): string }",
+    "admitted": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "added_required_parameter",
+    "source": "interface Base { read(a: string): string } interface Catalog extends Base { read(a: string, b: number): string }",
+    "admitted": false,
+    "diagnosticCodes": [
+      2430
+    ]
+  },
+  {
+    "name": "added_optional_parameter",
+    "source": "interface Base { read(a: string): string } interface Catalog extends Base { read(a: string, b?: number): string }",
+    "admitted": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "required_from_optional_method",
+    "source": "interface Base { read(a?: string): string } interface Catalog extends Base { read(a: string): string }",
+    "admitted": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "method_parameter_narrowing",
+    "source": "interface Base { read(a: string | number): string } interface Catalog extends Base { read(a: string): string }",
+    "admitted": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "method_parameter_widening",
+    "source": "interface Base { read(a: string): string } interface Catalog extends Base { read(a: string | number): string }",
+    "admitted": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "disjoint_parameters",
+    "source": "interface Base { read(a: string): string } interface Catalog extends Base { read(a: number): string }",
+    "admitted": false,
+    "diagnosticCodes": [
+      2430
+    ]
+  },
+  {
+    "name": "required_method_becomes_optional",
+    "source": "interface Base { read(): string } interface Catalog extends Base { read?(): string }",
+    "admitted": false,
+    "diagnosticCodes": [
+      2430
+    ]
+  },
+  {
+    "name": "optional_method_becomes_required",
+    "source": "interface Base { read?(): string | number } interface Catalog extends Base { read(): string }",
+    "admitted": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "alpha_renamed_method_generic",
+    "source": "interface Base { read<T>(a: T): T } interface Catalog extends Base { read<U>(a: U): U }",
+    "admitted": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "matching_method_constraints",
+    "source": "interface Base { read<T extends string>(a: T): T } interface Catalog extends Base { read<U extends string>(a: U): U }",
+    "admitted": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "wrong_method_generic_return",
+    "source": "interface Base { read<T>(a: T): T } interface Catalog extends Base { read<U>(a: U): number }",
+    "admitted": false,
+    "diagnosticCodes": [
+      2430
+    ]
+  },
+  {
+    "name": "callback_parameters_stay_directional",
+    "source": "interface Base { read(cb: (v: string) => void): void } interface Catalog extends Base { read(cb: (v: string | number) => void): void }",
+    "admitted": false,
+    "diagnosticCodes": [
+      2430
+    ]
+  },
+  {
+    "name": "callback_parameters_widened",
+    "source": "interface Base { read(cb: (v: string | number) => void): void } interface Catalog extends Base { read(cb: (v: string) => void): void }",
+    "admitted": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "callback_return_bivariance",
+    "source": "interface Base { read(cb: () => string): void } interface Catalog extends Base { read(cb: () => string | number): void }",
+    "admitted": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "all_base_overloads_covered",
+    "source": "interface Base { read(a: string): string; read(a: number): number } interface Catalog extends Base { read(a: string): string; read(a: number): number }",
+    "admitted": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "base_overload_missing",
+    "source": "interface Base { read(a: string): string; read(a: number): number } interface Catalog extends Base { read(a: string): string }",
+    "admitted": false,
+    "diagnosticCodes": [
+      2430
+    ]
+  },
+  {
+    "name": "multiple_bases_keep_equality",
+    "source": "interface Base { read(): string | number } interface Other { read(): string } interface Catalog extends Base, Other {}",
+    "admitted": false,
+    "diagnosticCodes": [
+      2320
+    ]
+  },
+  {
+    "name": "cyclic_declared_ancestry",
+    "source": "interface Base extends Catalog { self(): Base } interface Catalog extends Base { self(): Catalog }",
+    "admitted": false,
+    "diagnosticCodes": [
+      2310,
+      2310
+    ]
+  },
+  {
+    "name": "wrong_instantiation_not_same_head",
+    "source": "interface Base<T> { self(): Base<T>; value: T } interface Catalog extends Base<string> { self(): Base<number> }",
+    "admitted": false,
+    "diagnosticCodes": [
+      2430
+    ]
+  },
+  {
+    "name": "tuple_rest_parameters",
+    "source": "interface Base { read(...a: [string, number?]): string | number } interface Catalog extends Base { read(a: string): string }",
+    "admitted": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "generic_self_return_cascade",
+    "source": "interface Payload { touch(): void } interface Base<T> { self(): Base<T>; read(): T } interface Catalog<T> extends Base<T> { self(): Catalog<T> } declare const catalog: Catalog<Payload>; function run() { catalog.self().read().touch(); }",
+    "admitted": true,
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "catalog.self()",
+        "declaration": "self(): Catalog<T>"
+      },
+      {
+        "expression": "catalog.self().read()",
+        "declaration": "read(): T"
+      },
+      {
+        "expression": "catalog.self().read().touch()",
+        "declaration": "touch(): void"
+      }
+    ]
+  }
+]

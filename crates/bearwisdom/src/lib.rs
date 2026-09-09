@@ -22,12 +22,15 @@ pub mod connectors;
 pub mod containment;
 pub mod db;
 pub mod ecosystem;
+mod flow_meta;
 pub mod indexer;
 pub mod languages;
 pub mod memory_cap;
+pub mod occurrence;
 pub mod panic_hook;
 pub mod parser;
 pub mod query;
+pub mod resolution_oracle;
 pub mod search;
 pub mod symbol_key;
 pub mod type_checker;
@@ -42,12 +45,12 @@ pub use db::audit::{AuditRecord, AuditSessionSummary, AuditStats};
 pub use db::metrics::{QueryMetrics, QueryStats};
 pub use db::{db_exists, resolve_db_path, Database, DbPool, PoolGuard};
 pub use indexer::full::{full_index, full_index_engine, ProgressFn};
-pub use indexer::resolve::engine::trace;
-pub use indexer::resolve_diff::{resolve_diff, EdgeKey, ResolveDiff};
 pub use indexer::incremental::{
     git_reindex, incremental_index, reindex_files, ChangeKind, FileChangeEvent,
 };
 pub use indexer::post_index::embed_chunks;
+pub use indexer::resolve::engine::trace;
+pub use indexer::resolve_diff::{resolve_diff, EdgeKey, ResolveDiff};
 pub use indexer::service::{
     last_indexed_at_ms, IndexService, IndexServiceOptions, ReindexStats, LAST_INDEXED_AT_MS_KEY,
 };
@@ -76,6 +79,7 @@ pub use query::hierarchy::{
     hierarchical_graph, Breadcrumb, HierarchyEdge, HierarchyNode, HierarchyResult,
 };
 pub use query::investigate::{BlastRadiusSlim, InvestigateOptions, InvestigateResult, SlimSymbol};
+pub use query::occurrence_census::{occurrence_census, OccurrenceCensus};
 pub use query::pattern::{pattern_search, PatternMatch};
 pub use query::search::SearchResult;
 pub use query::subgraph::{GraphEdge, GraphNode, SubgraphResult};

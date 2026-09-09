@@ -34,6 +34,9 @@ pub type FileIdMap = HashMap<String, i64>;
 pub type SymbolIdMap = HashMap<(String, String), i64>;
 
 pub use super::symbol_ids::SymbolIds;
+#[path = "write_identity.rs"]
+mod identity;
+use identity::write_containment_and_locations;
 
 fn symbol_insert_sql(rows: usize) -> String {
     // Pre-sized: 14 vars per row, one tuple plus a separator of 3 chars,
@@ -187,71 +190,8 @@ fn insert_symbols_batched(
         start = end;
     }
     write_containment_and_locations(tx, file_id, pf, &id_by_idx)?;
+    identity::write_visibility(tx, file_id, pf, &id_by_idx)?;
     symbol_ids.set_rows(pf.path.clone(), id_by_idx);
-    Ok(())
-}
-
-/// Write the structural containment edge (`containing_id`) and a declaration
-/// location per symbol. `id_by_idx[k]` is the row id of `pf.symbols[k]`.
-///
-/// Containment is intra-file here: a symbol's `parent_index` points within the
-/// same file's symbol vec, so the parent's id is already known. A member whose
-/// parent lives in another file (a Rust `impl` method, a C# partial member
-/// declared apart from its class) keeps `containing_id` NULL until the
-/// survivor-matching pass can resolve it through the global key→id map.
-fn write_containment_and_locations(
-    tx: &rusqlite::Transaction<'_>,
-    file_id: i64,
-    pf: &ParsedFile,
-    id_by_idx: &[i64],
-) -> Result<()> {
-    // One declaration location per symbol (mergeable multi-location merging is
-    // a survivor-matching concern; on the churn path each file owns its row).
-    {
-        const LOC_COLS: usize = 4;
-        const LOC_BATCH_ROWS: usize = 256;
-        let total = id_by_idx.len();
-        let mut start = 0;
-        while start < total {
-            let end = (start + LOC_BATCH_ROWS).min(total);
-            let rows = end - start;
-            let mut sql = String::with_capacity(96 + rows * 12);
-            sql.push_str(
-                "INSERT OR IGNORE INTO symbol_locations (symbol_id, file_id, line, col) VALUES ",
-            );
-            for i in 0..rows {
-                if i > 0 {
-                    sql.push(',');
-                }
-                sql.push_str("(?,?,?,?)");
-            }
-            let mut params: Vec<Value> = Vec::with_capacity(rows * LOC_COLS);
-            for i in start..end {
-                let sym = &pf.symbols[i];
-                params.push(Value::Integer(id_by_idx[i]));
-                params.push(Value::Integer(file_id));
-                params.push(Value::Integer(sym.start_line as i64));
-                params.push(Value::Integer(sym.start_col as i64));
-            }
-            tx.prepare_cached(&sql)
-                .context("Failed to prepare symbol_locations insert")?
-                .execute(rusqlite::params_from_iter(params.iter()))
-                .context("Failed to insert symbol_locations")?;
-            start = end;
-        }
-    }
-
-    // Containment edge for the symbols that have an in-file parent.
-    let mut upd = tx
-        .prepare_cached("UPDATE symbols SET containing_id = ?1 WHERE id = ?2")
-        .context("Failed to prepare containing_id update")?;
-    for (i, sym) in pf.symbols.iter().enumerate() {
-        if let Some(p) = sym.parent_index {
-            if p < id_by_idx.len() {
-                upd.execute(rusqlite::params![id_by_idx[p], id_by_idx[i]])?;
-            }
-        }
-    }
     Ok(())
 }
 
@@ -616,6 +556,7 @@ fn survivor_match_file(
     clear_outgoing_refs(tx, &id_by_idx)?;
 
     write_containment(tx, pf, &id_by_idx)?;
+    identity::write_visibility(tx, file_id, pf, &id_by_idx)?;
     symbol_ids.set_rows(pf.path.clone(), id_by_idx);
     Ok(())
 }

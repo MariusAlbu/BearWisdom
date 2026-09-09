@@ -9,7 +9,6 @@
 // =============================================================================
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 use crate::type_checker::core::types::{TypeArena, TypeId};
 
@@ -404,7 +403,10 @@ pub enum AliasTarget {
 /// variable name, not a type expression.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AliasTargetIds {
-    Application { root: TypeId, args: Vec<TypeId> },
+    Application {
+        root: TypeId,
+        args: Vec<TypeId>,
+    },
     Union(Vec<TypeId>),
     Intersection(Vec<TypeId>),
     Tuple(Vec<TypeId>),
@@ -416,8 +418,14 @@ pub enum AliasTargetIds {
     Object,
     Typeof(String),
     Keyof(TypeId),
-    IndexedAccess { object: TypeId, key: String },
-    Mapped { source: TypeId, value_template: String },
+    IndexedAccess {
+        object: TypeId,
+        key: String,
+    },
+    Mapped {
+        source: TypeId,
+        value_template: String,
+    },
     Conditional {
         check: TypeId,
         extends: TypeId,
@@ -442,19 +450,21 @@ pub fn intern_alias_target(arena: &TypeArena, t: &AliasTarget) -> AliasTargetIds
         AliasTarget::Union(branches) => {
             AliasTargetIds::Union(branches.iter().map(|b| arena.intern_type_str(b)).collect())
         }
-        AliasTarget::Intersection(branches) => {
-            AliasTargetIds::Intersection(branches.iter().map(|b| arena.intern_type_str(b)).collect())
-        }
+        AliasTarget::Intersection(branches) => AliasTargetIds::Intersection(
+            branches.iter().map(|b| arena.intern_type_str(b)).collect(),
+        ),
         AliasTarget::Tuple(elems) => {
             AliasTargetIds::Tuple(elems.iter().map(|e| arena.intern_type_str(e)).collect())
         }
-        AliasTarget::IntersectionMapped { branches, source, value_template } => {
-            AliasTargetIds::IntersectionMapped {
-                branches: branches.iter().map(|b| arena.intern_type_str(b)).collect(),
-                source: arena.intern_type_str(source),
-                value_template: value_template.clone(),
-            }
-        }
+        AliasTarget::IntersectionMapped {
+            branches,
+            source,
+            value_template,
+        } => AliasTargetIds::IntersectionMapped {
+            branches: branches.iter().map(|b| arena.intern_type_str(b)).collect(),
+            source: arena.intern_type_str(source),
+            value_template: value_template.clone(),
+        },
         AliasTarget::Object => AliasTargetIds::Object,
         AliasTarget::Typeof(s) => AliasTargetIds::Typeof(s.clone()),
         AliasTarget::Keyof(s) => AliasTargetIds::Keyof(arena.intern_type_str(s)),
@@ -462,19 +472,26 @@ pub fn intern_alias_target(arena: &TypeArena, t: &AliasTarget) -> AliasTargetIds
             object: arena.intern_type_str(object),
             key: key.clone(),
         },
-        AliasTarget::Mapped { source, value_template } => AliasTargetIds::Mapped {
+        AliasTarget::Mapped {
+            source,
+            value_template,
+        } => AliasTargetIds::Mapped {
             source: arena.intern_type_str(source),
             value_template: value_template.clone(),
         },
-        AliasTarget::Conditional { check, extends, true_branch, false_branch, infer_binding } => {
-            AliasTargetIds::Conditional {
-                check: arena.intern_type_str(check),
-                extends: arena.intern_type_str(extends),
-                true_branch: arena.intern_type_str(true_branch),
-                false_branch: arena.intern_type_str(false_branch),
-                infer_binding: infer_binding.clone(),
-            }
-        }
+        AliasTarget::Conditional {
+            check,
+            extends,
+            true_branch,
+            false_branch,
+            infer_binding,
+        } => AliasTargetIds::Conditional {
+            check: arena.intern_type_str(check),
+            extends: arena.intern_type_str(extends),
+            true_branch: arena.intern_type_str(true_branch),
+            false_branch: arena.intern_type_str(false_branch),
+            infer_binding: infer_binding.clone(),
+        },
         AliasTarget::Other => AliasTargetIds::Other,
     }
 }
@@ -525,8 +542,10 @@ pub struct ExtractedSymbol {
 /// The semantic role of a segment in a member access chain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SegmentKind {
-    /// `this` / `self` / `base` — receiver referencing the enclosing type.
+    /// `this` / `self` — receiver referencing the enclosing type.
     SelfRef,
+    /// Source-attested receiver referencing the enclosing type's direct base.
+    BaseRef,
     /// A plain identifier: variable, parameter, function name, package name.
     Identifier,
     /// A property/field access: `obj.prop`.
@@ -590,77 +609,9 @@ pub struct MemberChain {
 // Extracted types (parser output, pre-resolution)
 // ---------------------------------------------------------------------------
 
-/// A single argument in a call expression, captured at extract time.
-///
-/// Populated only for call-site refs (`EdgeKind::Calls`, `EdgeKind::Imports`)
-/// when the extractor walks the argument list. The `Other` arm covers any
-/// argument shape not worth preserving: function references, complex
-/// expressions, spread elements, etc.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum CallArg {
-    /// Plain string literal: `"users"`, `'users'`.
-    StringLit(String),
-    /// Template literal with interpolation holes replaced by `{}`:
-    /// `` `/api/users/${id}` `` → `"/api/users/{}"`.
-    TemplateLit(String),
-    /// Bare identifier reference — carries the name so the consumer can
-    /// chase it to the binding's own `call_args`.
-    Ident(String),
-    /// Tagged template: `` gql`query Foo { users { id } }` ``.
-    /// `tag` is the tag identifier (`"gql"`, `"sql"`, `"html"`).
-    /// `body` is the raw inner text with interpolation holes removed.
-    TaggedTemplate { tag: String, body: String },
-    /// Numeric, boolean, null, or simple array/object literal — stored as
-    /// its source text.
-    Literal(String),
-    /// Object literal whose property names are statically determinable, e.g.
-    /// `{ template: 'welcome', subject: s }`. Captured as the ordered list of
-    /// `(key, optional string-literal value)` pairs. The value is `Some(_)`
-    /// only when the property's value is a plain string or template literal
-    /// (no interpolation) — identifiers, function references, computed
-    /// expressions all produce `None`. Used by mailer detectors that need
-    /// the `template:` value AND by handler-registration detectors that only
-    /// need the keys (`server.addService(SvcDef, { m1: h, m2: h })`).
-    ObjectKeys(Vec<(String, Option<String>)>),
-    /// Conditional (ternary) expression: `cond ? then_branch : else_branch`.
-    /// The condition is discarded; both value branches are preserved for
-    /// downstream typing of the result type.
-    Ternary {
-        then_branch: Box<CallArg>,
-        else_branch: Box<CallArg>,
-    },
-    /// Array literal: `[elem0, elem1, ...]`. Each element is a nested `CallArg`
-    /// so spread elements inside are represented as `Spread` children.
-    ArrayLiteral { elements: Vec<CallArg> },
-    /// Awaited expression: `await expr`. Carries the inner expression so the
-    /// resolver can unwrap the promise type.
-    Await { expr: Box<CallArg> },
-    /// Spread element: `...expr`. Carries the inner expression.
-    Spread { expr: Box<CallArg> },
-    /// Subscript / index access: `container[index]`.
-    IndexAccess {
-        container: Box<CallArg>,
-        index: Box<CallArg>,
-    },
-    /// Binary expression: `left op right`. `op` is the operator source text
-    /// (e.g. `"+"`, `"&&"`).
-    Binary {
-        op: String,
-        left: Box<CallArg>,
-        right: Box<CallArg>,
-    },
-    /// Arrow-function or function-expression argument (`x => x.foo`,
-    /// `function (a, b) { ... }`). `params` are the lambda's own positional
-    /// parameter identifiers in declaration order. A parameter whose binding
-    /// is not a plain identifier (destructuring / rest pattern) contributes an
-    /// empty string in its slot so positions stay aligned with the callback
-    /// signature. Carries the names only — they are the keys the chain walker
-    /// seeds the local-type cache under after typing each param from the
-    /// higher-order method's callback-parameter signature.
-    Lambda { params: Vec<String> },
-    /// Any argument shape not covered by the above variants.
-    Other,
-}
+#[path = "call_arg.rs"]
+mod call_arg;
+pub use call_arg::{CallArg, SourceSpan};
 
 /// An unresolved reference from one symbol to a named target.
 ///
@@ -1077,51 +1028,7 @@ pub struct DiscriminantNarrowing {
 ///   site in the source. Empty means "unknown — treat as 0" (used as a
 ///   cursor when looking up narrowings). Same convention as
 ///   `symbol_origin_languages`.
-#[derive(Debug, Default, Clone)]
-pub struct FlowMeta {
-    pub narrowings: Vec<Narrowing>,
-    pub discriminant_narrowings: Vec<DiscriminantNarrowing>,
-    pub flow_binding_lhs: HashMap<usize, usize>,
-    /// Destructured bindings of an RHS expression: `const { a, b: c } = f()`.
-    /// Maps the RHS `ref_idx` to each binding's `(lhs_symbol_idx, field_key)` —
-    /// `a` → `(idx_a, "a")`, `b: c` → `(idx_c, "b")`. Distinct from
-    /// `flow_binding_lhs` because each binding types from the named FIELD on the
-    /// RHS's yield type (`R["a"]`), not from the whole object `R`. A single RHS
-    /// ref carries one entry per destructured binding.
-    pub flow_binding_destructure: HashMap<usize, Vec<(usize, String)>>,
-    /// Set of `ref_idx` (the destructure RHS's own ref, the same key
-    /// `flow_binding_destructure` uses) whose initializer is an `await`
-    /// expression: `const { data } = await p.refetch()`. Unlike
-    /// `flow_binding_await` — keyed per LHS symbol, one binding — a destructure
-    /// RHS is shared across every bound field, so the await flag is recorded
-    /// once per ref rather than per binding. The resolver strips one
-    /// async-wrapper layer off the RHS's yield type before projecting each
-    /// destructured field, the same peel `flow_binding_await` drives for a
-    /// single-identifier binding.
-    pub flow_binding_destructure_await: std::collections::HashSet<usize>,
-    pub flow_binding_decl_type: HashMap<usize, String>,
-    pub flow_binding_unwrap: std::collections::HashSet<usize>,
-    pub flow_binding_await: std::collections::HashSet<usize>,
-    pub flow_return_lhs: HashMap<usize, usize>,
-    /// `(fn_symbol_idx, identifier)` for a `return <bare-identifier>` whose
-    /// expression carries no ref — `return queryClient` / `return client`. The
-    /// ref-based `flow_return_lhs` misses these (a bare param/local read emits no
-    /// ref), so the resolver types the identifier against the function's
-    /// parameters / locals and records the result as a return-type candidate.
-    pub flow_return_ident: Vec<(usize, String)>,
-    /// `(fn_symbol_idx, member_names)` for a function whose body returns an object
-    /// literal (`return { info, error }`). A synthetic `{fn}$Ret` object type
-    /// carrying these members is materialized post-extract, and a call to the
-    /// function yields that type — so `fn().info` resolves to the synthesized member.
-    pub flow_return_object: Vec<(usize, Vec<String>)>,
-    pub ref_byte_offsets: Vec<u32>,
-    /// Per-function control-flow graphs for the file, built at extract time
-    /// from the same tree the query runner uses. Empty when the language has
-    /// no `CfgNodeKinds` table wired yet — the consumer falls back to the
-    /// interval `narrowings` path. Queried by `LocalTypeCache::lookup` via
-    /// `fact_string_at(name, cursor)`.
-    pub cfg: crate::indexer::flow_cfg::FileCfg,
-}
+pub use crate::flow_meta::FlowMeta;
 
 /// Everything extracted from a single source file.
 #[derive(Debug)]

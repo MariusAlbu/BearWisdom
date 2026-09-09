@@ -12,88 +12,35 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 
+pub(super) use super::async_yield::unwrap_async_yield_id;
+use super::async_yield::unwrap_async_yield_str;
 use super::file_context::{self, build_file_context, build_plugin_lookup, build_profiles};
 use super::file_lookup::FileLookup;
-use super::flush::{Edge, RefLog, Unresolved, flush_to_db};
+use super::flush::{flush_to_db, Edge, RefLog, Unresolved};
+use super::occurrence_census::FileCensus;
+use crate::occurrence::Disposition;
 
 use crate::db::Database;
 use crate::ecosystem::symbol_index::SymbolLocationIndex;
 use crate::indexer::plugin_state::PluginStateBag;
-use crate::indexer::write::SymbolIds;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::contract::{FlowCacheLookup, RefContext, SymbolLookup};
-use crate::indexer::resolve::engine::contract::chain_walker::parse_type_head_and_args;
 use crate::indexer::resolve::engine::cause::CauseKind;
-use crate::indexer::resolve::engine::{
-    semantic_model::{SemanticModel, SolveOutcome},
-    compilation::Compilation,
-};
+use crate::indexer::resolve::engine::contract::{FlowCacheLookup, RefContext, SymbolLookup};
 use crate::indexer::resolve::engine::trace;
+use crate::indexer::resolve::engine::{
+    compilation::Compilation,
+    semantic_model::{SemanticModel, SolveOutcome},
+};
 use crate::indexer::resolve::ResolutionStats;
+use crate::indexer::write::SymbolIds;
 use crate::languages::LanguagePlugin;
-use crate::type_checker::core::types::{Type, TypeArena, TypeId};
+use crate::type_checker::core::types::{TypeArena, TypeId};
 use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::{EdgeKind, ParsedFile};
 
 use crate::indexer::resolve::engine::contract::build_scope_chain;
-
-// ---------------------------------------------------------------------------
-// Async-wrapper unwrap helper
-// ---------------------------------------------------------------------------
-
-/// Peel one async-wrapper layer from `yield_id` when the binding was `await`-ed.
-///
-/// Handles two forms:
-///   - `Type::Apply { base: <wrapper-class>, args: [T] }` where the wrapper
-///     class name is in `profile.async_wrappers` — returns `args[0]` (T).
-///   - Bare wrapper head with no applied arg — returns `yield_id` unchanged.
-///
-/// The unwrap fires ONLY at the binding seed (the binding's await flag gates it);
-/// a non-awaited `Promise<T>` variable is never touched.
-pub(super) fn unwrap_async_yield_id(
-    yield_id: TypeId,
-    arena: &TypeArena,
-    async_wrappers: &[&str],
-) -> TypeId {
-    if async_wrappers.is_empty() {
-        return yield_id;
-    }
-    if let Type::Apply { base, args } = arena.get(yield_id) {
-        if !args.is_empty() {
-            if let Type::Class(head) = arena.get(base) {
-                if async_wrappers.contains(&head.as_str()) {
-                    return args[0];
-                }
-            }
-        }
-    }
-    yield_id
-}
-
-/// Peel one async-wrapper layer from a type string (the String seed path).
-///
-/// `"Promise<Response>"` → `"Response"` when `"Promise"` is in `async_wrappers`.
-/// Returns `None` when the string has no wrapper head or the first arg is empty,
-/// so the caller keeps the original string unchanged.
-fn unwrap_async_yield_str<'a>(ty: &'a str, async_wrappers: &[&str]) -> Option<&'a str> {
-    if async_wrappers.is_empty() {
-        return None;
-    }
-    let (head, args) = parse_type_head_and_args(ty);
-    if args.is_empty() {
-        return None;
-    }
-    if async_wrappers.contains(&head) {
-        let inner = args[0].trim();
-        if !inner.is_empty() {
-            return Some(inner);
-        }
-    }
-    None
-}
 
 // ---------------------------------------------------------------------------
 // Public entry point
@@ -118,7 +65,7 @@ pub fn resolve_from_tree(
     let plugins = build_plugin_lookup();
     let plugin_state = project_ctx.map(|c| &c.plugin_state);
 
-    super::inference_prelude::run(&mut tree, parsed, &profiles);
+    super::inference_prelude::run(&mut tree, parsed, symbol_id_map, &profiles);
 
     let solver = SemanticModel::production();
 
@@ -126,19 +73,32 @@ pub fn resolve_from_tree(
     // RESOLVED (child, parent) ids into the inheritance map, so every member
     // walk in the main sweep climbs the parents resolution actually chose —
     // identity, never string re-derivation.
-    let (pre_edges, _, _) = {
+    let (pre_edges, _, _, _) = {
         let _t = crate::indexer::phase_timer::scope("resolve.inherits_prepass");
         super::parallel_pass::run(
-            parsed, &tree, &profiles, &plugins, plugin_state, &solver, symbol_id_map,
+            parsed,
+            &tree,
+            &profiles,
+            &plugins,
+            plugin_state,
+            &solver,
+            symbol_id_map,
             Some(super::parallel_pass::INHERIT_KINDS),
         )
     };
     tree.apply_resolved_inherits(pre_edges.iter().map(|e| (e.0, e.1)));
 
-    let (edges, unresolved, ref_log) = {
+    let (edges, unresolved, ref_log, censuses) = {
         let _t = crate::indexer::phase_timer::scope("resolve.main_sweep");
         super::parallel_pass::run(
-            parsed, &tree, &profiles, &plugins, plugin_state, &solver, symbol_id_map, None,
+            parsed,
+            &tree,
+            &profiles,
+            &plugins,
+            plugin_state,
+            &solver,
+            symbol_id_map,
+            None,
         )
     };
 
@@ -149,7 +109,7 @@ pub fn resolve_from_tree(
     // Write: replace all four resolution tables atomically.
     {
         let _t = crate::indexer::phase_timer::scope("resolve.flush");
-        flush_to_db(db, &edges, &unresolved, &ref_log, true)?;
+        flush_to_db(db, &edges, &unresolved, &ref_log, &censuses, true)?;
     }
     // Persist the resolved type metadata so an incremental pass can load it back
     // exactly, instead of re-deriving a lossier version from signatures alone.
@@ -224,18 +184,31 @@ pub fn resolve_incremental_pass(
     let profiles = build_profiles();
     let plugins = build_plugin_lookup();
     let plugin_state = project_ctx.map(|c| &c.plugin_state);
-    super::inference_prelude::run(&mut tree, parsed, &profiles);
+    super::inference_prelude::run(&mut tree, parsed, symbol_id_map, &profiles);
 
     let solver = SemanticModel::production();
 
-    let (pre_edges, _, _) = super::parallel_pass::run(
-        parsed, &tree, &profiles, &plugins, plugin_state, &solver, &full_id_map,
+    let (pre_edges, _, _, _) = super::parallel_pass::run(
+        parsed,
+        &tree,
+        &profiles,
+        &plugins,
+        plugin_state,
+        &solver,
+        &full_id_map,
         Some(super::parallel_pass::INHERIT_KINDS),
     );
     tree.apply_resolved_inherits(pre_edges.iter().map(|e| (e.0, e.1)));
 
-    let (edges, unresolved, ref_log) = super::parallel_pass::run(
-        parsed, &tree, &profiles, &plugins, plugin_state, &solver, &full_id_map, None,
+    let (edges, unresolved, ref_log, censuses) = super::parallel_pass::run(
+        parsed,
+        &tree,
+        &profiles,
+        &plugins,
+        plugin_state,
+        &solver,
+        &full_id_map,
+        None,
     );
 
     let mut stats = ResolutionStats::default();
@@ -244,7 +217,9 @@ pub fn resolve_incremental_pass(
 
     // Insert-only: do NOT clear the tables — only the changed files' rows were
     // dropped upstream; everything else must survive.
-    flush_to_db(db, &edges, &unresolved, &ref_log, false)?;
+    flush_to_db(db, &edges, &unresolved, &ref_log, &censuses, false)?;
+    tree.persist_type_info(db.conn())
+        .context("Failed to persist incremental type and module metadata")?;
 
     Ok(stats)
 }
@@ -255,8 +230,8 @@ pub fn resolve_incremental_pass(
 /// concurrently over the read-only `tree`. `only_kinds` narrows the sweep to
 /// a ref-kind subset (the inherits pre-pass); `None` visits every ref.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn resolve_one_file(
-    pf: &ParsedFile,
+pub(super) fn resolve_one_file<'a>(
+    pf: &'a ParsedFile,
     tree: &Compilation,
     profiles: &FxHashMap<&'static str, &'static LanguageProfile>,
     plugins: &FxHashMap<&'static str, &'static dyn LanguagePlugin>,
@@ -264,13 +239,19 @@ pub(super) fn resolve_one_file(
     solver: &SemanticModel,
     symbol_id_map: &SymbolIds,
     only_kinds: Option<&[EdgeKind]>,
-) -> (Vec<Edge>, Vec<Unresolved>, Vec<RefLog>) {
+) -> (Vec<Edge>, Vec<Unresolved>, Vec<RefLog>, FileCensus<'a>) {
     let mut edges: Vec<Edge> = Vec::new();
     let mut unresolved: Vec<Unresolved> = Vec::new();
     let mut ref_log: Vec<RefLog> = Vec::new();
+    let mut census = FileCensus::new(pf);
 
     let Some(&profile) = profiles.get(pf.language.as_str()) else {
-        return (edges, unresolved, ref_log);
+        for (i, r) in pf.refs.iter().enumerate() {
+            if only_kinds.is_none_or(|kinds| kinds.contains(&r.kind)) {
+                census.record(i, Disposition::UnsupportedLanguage);
+            }
+        }
+        return (edges, unresolved, ref_log, census);
     };
 
     let plugin = plugins.get(pf.language.as_str()).copied();
@@ -278,26 +259,18 @@ pub(super) fn resolve_one_file(
 
     // Fresh per-file flow cache: local bindings from earlier refs in this file
     // are visible to later refs in the same file only.
-    let file_lookup = FileLookup::new(tree, &pf.language);
+    let file_lookup = FileLookup::for_file(tree, pf, symbol_id_map);
 
-    // Seed locals whose type is declared at the binding site — an explicit
-    // annotation (`const x: Array<T> = …`) or a bare literal initializer
-    // (`const x = []`). Neither form produces a resolvable RHS ref, so the
-    // ref-driven forward inference below would never type them. Seeded before
-    // the ref loop so a ref-driven binding for the same name encountered later
-    // in the loop still wins (record_local_type overwrites the seeded entry).
-    // Ascending lhs order is load-bearing: `flow_binding_decl_type` is a HashMap
-    // whose iteration order varies per process, and `record_local_type` is
-    // last-writer-wins keyed by name. When a file declares the same name in two
-    // sibling scopes (two functions each with an `options` parameter), an
-    // unordered walk lets a different declaration win each run, so the surviving
-    // type — and every member ref rooted on that name — flips between index runs.
-    let mut decl_seeds: Vec<(&usize, &String)> =
-        pf.flow.flow_binding_decl_type.iter().collect();
-    decl_seeds.sort_unstable_by_key(|&(idx, _)| *idx);
-    for (&lhs_idx, decl_ty) in decl_seeds {
-        if let Some(sym) = pf.symbols.get(lhs_idx) {
-            file_lookup.record_local_type(sym.name.clone(), decl_ty.clone());
+    // Migrated files already seed declarations by BindingId in LexicalCache.
+    // Unmigrated files retain deterministic legacy name seeding; ordering avoids
+    // HashMap nondeterminism but does not fix their same-name scope collisions.
+    if pf.flow.lexical.is_none() {
+        let mut decl_seeds: Vec<_> = pf.flow.flow_binding_decl_type.iter().collect();
+        decl_seeds.sort_unstable_by_key(|&(idx, _)| *idx);
+        for (&lhs_idx, decl_ty) in decl_seeds {
+            if let Some(sym) = pf.symbols.get(lhs_idx) {
+                file_lookup.record_local_type(sym.name.clone(), decl_ty.clone());
+            }
         }
     }
 
@@ -318,31 +291,57 @@ pub(super) fn resolve_one_file(
     // byte_offset keeps distinct same-name refs on one line separate.
     let mut seen_sites = FxHashSet::default();
 
-    for (ref_idx, r) in pf.refs.iter().enumerate() {
+    let mut ordered_refs: Vec<_> = pf.refs.iter().enumerate().collect();
+    if pf.flow.lexical.is_some() {
+        ordered_refs.sort_by_key(|(_, r)| {
+            (
+                r.byte_offset,
+                r.chain
+                    .as_ref()
+                    .and_then(|c| c.segments.last())
+                    .map(|s| s.byte_offset)
+                    .unwrap_or(r.byte_offset),
+            )
+        });
+    }
+    for (ref_idx, r) in ordered_refs {
+        file_lookup.set_cursor(r.byte_offset);
         if only_kinds.is_some_and(|ks| !ks.contains(&r.kind)) {
             continue;
         }
         if !seen_sites.insert((
             r.source_symbol_index,
             r.kind,
-            r.target_name.as_str(),
+            if pf.flow.lexical.is_some() && r.kind == EdgeKind::Calls {
+                None // Syntax-addressed calls do not use spelling as identity.
+            } else {
+                Some(r.target_name.as_str())
+            },
             r.line,
             r.byte_offset,
+            r.chain
+                .as_ref()
+                .and_then(|c| c.segments.last())
+                .map(|s| s.byte_offset),
         )) {
+            census.record(ref_idx, Disposition::Duplicate);
             continue;
         }
         let Some(source_sym) = pf.symbols.get(r.source_symbol_index) else {
+            census.record(ref_idx, Disposition::MissingSourceSymbol);
             continue;
         };
         let Some(source_id) =
             symbol_id_map.id_of(&pf.path, r.source_symbol_index, &source_sym.qualified_name)
         else {
+            census.record(ref_idx, Disposition::MissingSourceId);
             continue;
         };
 
         // Synthetic primitive-type marker emitted by the extractor — not a
         // resolvable symbol, so it is neither an edge nor an unresolved ref.
         if r.target_name == "_primitive" {
+            census.record(ref_idx, Disposition::Primitive);
             continue;
         }
 
@@ -371,11 +370,14 @@ pub(super) fn resolve_one_file(
         // Activate per-ref tracing when any filter matches this file + line + target.
         // Ref lines are 0-based tree-sitter rows; accept the editor's 1-based line
         // too so either convention matches.
-        if trace_filters.iter().any(|(suffix, filter_line, filter_target)| {
-            pf.path.ends_with(suffix.as_str())
-                && (r.line == *filter_line || r.line + 1 == *filter_line)
-                && (filter_target.is_empty() || r.target_name == *filter_target)
-        }) {
+        if trace_filters
+            .iter()
+            .any(|(suffix, filter_line, filter_target)| {
+                pf.path.ends_with(suffix.as_str())
+                    && (r.line == *filter_line || r.line + 1 == *filter_line)
+                    && (filter_target.is_empty() || r.target_name == *filter_target)
+            })
+        {
             // Install the collector first so the REF header lands in it.
             trace::begin_ref();
             let chain_desc = r.chain.as_ref().map(|c| {
@@ -403,6 +405,7 @@ pub(super) fn resolve_one_file(
 
         match solver.get_symbol_info(&ref_ctx, &file_ctx, &file_lookup, profile) {
             SolveOutcome::Resolved(mut res) => {
+                census.record(ref_idx, Disposition::Resolved);
                 // A chain-less call (`const x = makeThing(user)`) never enters the
                 // chain walker — it needs a receiver segment plus a member, so a
                 // call with fewer than two segments is bound by the bare ladder
@@ -410,26 +413,43 @@ pub(super) fn resolve_one_file(
                 // yet. Do it here against the resolved callee, filling the
                 // return's open parameters from the argument types.
                 let bare_call = r.chain.as_ref().is_none_or(|c| c.segments.len() < 2);
-                if bare_call && !r.call_args.is_empty() {
+                // Navigation binds the lexical declaration; existing callable
+                // provenance is a separate ID used for yield and graph edges.
+                let callee_id = (bare_call && r.kind == EdgeKind::Calls)
+                    .then(|| {
+                        file_lookup
+                            .local_reference(r.byte_offset)
+                            .and_then(|local| local.callable)
+                    })
+                    .flatten()
+                    .unwrap_or(res.target_symbol_id);
+                if callee_id != res.target_symbol_id {
+                    res.resolved_yield_type = res
+                        .resolved_yield_type
+                        .or_else(|| tree.return_type_id_of(callee_id));
+                }
+                if bare_call && matches!(r.kind, EdgeKind::Calls | EdgeKind::Instantiates) {
                     if let (Some(arena), Some(callee)) =
-                        (tree.type_arena(), tree.symbol_by_id(res.target_symbol_id))
+                        (tree.type_arena(), tree.symbol_by_id(callee_id))
                     {
-                        if let Some(y) = res
+                        let yielded = res
                             .resolved_yield_type
-                            .or_else(|| tree.return_type_id_of(res.target_symbol_id))
-                        {
-                            let arg_types = crate::indexer::resolve::engine::arg_types::
-                                resolve_arg_types(&file_lookup, arena, &r.call_args);
-                            res.resolved_yield_type = Some(
-                                crate::indexer::resolve::engine::generics::fill_yield_from_args(
-                                    &file_lookup,
-                                    arena,
-                                    callee,
-                                    &arg_types,
-                                    y,
-                                ),
-                            );
-                        }
+                            .or_else(|| tree.return_type_id_of(callee_id));
+                        res.resolved_yield_type = super::chain::apply_call_args(
+                            &file_lookup,
+                            arena,
+                            callee,
+                            r.byte_offset,
+                            &r.call_args,
+                            &file_lookup
+                                .local_reference(r.byte_offset)
+                                .map(|local| local.type_args)
+                                .unwrap_or_default(),
+                            arena.intern(crate::type_checker::core::types::Type::Unknown),
+                            None,
+                            yielded,
+                            profile.delegate_wrappers,
+                        );
                     }
                 }
                 // Forward inference: when this ref is the RHS of a local binding,
@@ -482,7 +502,7 @@ pub(super) fn resolve_one_file(
                                 final_id,
                                 is_awaited,
                             );
-                            file_lookup.record_local_type_id(lhs_sym.name.clone(), final_id);
+                            file_lookup.record_rhs_type(ref_idx, &lhs_sym.name, final_id);
                         } else {
                             // No TypeId from the resolver — derive one from the target
                             // symbol's id-keyed type metadata. Recover the symbol by id
@@ -516,7 +536,7 @@ pub(super) fn resolve_one_file(
                                     final_id,
                                     is_awaited,
                                 );
-                                file_lookup.record_local_type_id(lhs_sym.name.clone(), final_id);
+                                file_lookup.record_rhs_type(ref_idx, &lhs_sym.name, final_id);
                             } else {
                                 // Id-keyed metadata absent (id-less external, or a class
                                 // whose return slot the index didn't populate) — fall
@@ -549,7 +569,7 @@ pub(super) fn resolve_one_file(
                                     if final_ty.is_some() { "String" } else { "nothing" },
                                 );
                                 if let Some(ty) = final_ty {
-                                    file_lookup.record_local_type(lhs_sym.name.clone(), ty);
+                                    file_lookup.record_rhs_text(ref_idx, &lhs_sym.name, ty);
                                 } else {
                                     // Nothing seeded this binding's type at all —
                                     // `target_id` (the initializer's callee/value)
@@ -563,8 +583,9 @@ pub(super) fn resolve_one_file(
                                     } else {
                                         CauseKind::UncapturedField
                                     };
-                                    file_lookup.record_root_cause_hint(
-                                        lhs_sym.name.clone(),
+                                    file_lookup.record_rhs_cause(
+                                        ref_idx,
+                                        &lhs_sym.name,
                                         crate::indexer::resolve::engine::cause::Cause::new(
                                             Some(target_id),
                                             cause_kind,
@@ -592,7 +613,10 @@ pub(super) fn resolve_one_file(
                             .as_ref()
                             .and_then(|c| c.segments.last())
                             .map(|s| {
-                                s.type_args.iter().map(|t| arena.intern_type_str(t)).collect()
+                                s.type_args
+                                    .iter()
+                                    .map(|t| arena.intern_type_str(t))
+                                    .collect()
                             })
                             .unwrap_or_default();
                         // When the call carries explicit type args (`useQuery<Movie>()`),
@@ -628,7 +652,8 @@ pub(super) fn resolve_one_file(
                         // destructured field, mirroring the single-identifier peel
                         // above (`unwrap_async_yield_id` gated by `is_awaited`).
                         let recv_ty = if pf.flow.flow_binding_destructure_await.contains(&ref_idx) {
-                            recv_ty.map(|id| unwrap_async_yield_id(id, arena, profile.async_wrappers))
+                            recv_ty
+                                .map(|id| unwrap_async_yield_id(id, arena, profile.async_wrappers))
                         } else {
                             recv_ty
                         };
@@ -651,10 +676,13 @@ pub(super) fn resolve_one_file(
                                         lhs_sym.name,
                                         field_key,
                                     );
-                                    file_lookup
-                                        .record_local_type_id(lhs_sym.name.clone(), field_ty);
-                                } else if let Some(qname) =
-                                    crate::indexer::resolve::engine::chain::callable_member_qname_on(
+                                    file_lookup.record_symbol_type(
+                                        *lhs_idx,
+                                        &lhs_sym.name,
+                                        field_ty,
+                                    );
+                                } else if let Some(target_id) =
+                                    crate::indexer::resolve::engine::chain::callable_member_id_on(
                                         &file_lookup,
                                         arena,
                                         recv_ty,
@@ -670,10 +698,13 @@ pub(super) fn resolve_one_file(
                                         "SEED destructure lhs='{}' field='{}' -> recorded=CallableHead({})",
                                         lhs_sym.name,
                                         field_key,
-                                        qname,
+                                        target_id,
                                     );
-                                    file_lookup
-                                        .record_local_callable_head(lhs_sym.name.clone(), qname);
+                                    file_lookup.record_symbol_callable(
+                                        *lhs_idx,
+                                        &lhs_sym.name,
+                                        target_id,
+                                    );
                                 }
                             }
                         }
@@ -682,25 +713,16 @@ pub(super) fn resolve_one_file(
 
                 edges.push((
                     source_id,
-                    res.target_symbol_id,
+                    callee_id,
                     kind_str,
                     r.line,
                     res.confidence,
                     res.strategy,
                 ));
-                ref_log.push((
-                    source_id,
-                    r.target_name.clone(),
-                    kind_str,
-                    r.line,
-                    r.col,
-                    "resolved",
-                    Some(res.target_symbol_id),
-                    Some(res.confidence),
-                    Some(res.strategy),
-                ));
+                ref_log.push(RefLog::resolved(source_id, r, &res));
             }
             SolveOutcome::Drained => {
+                census.record(ref_idx, Disposition::Drained);
                 // A rule positively identified the target as a language builtin
                 // or other non-project construct — write the row so it stays
                 // diagnosable, but tag it drained so it leaves the rate
@@ -719,19 +741,10 @@ pub(super) fn resolve_one_file(
                     None,
                     None,
                 ));
-                ref_log.push((
-                    source_id,
-                    r.target_name.clone(),
-                    kind_str,
-                    r.line,
-                    r.col,
-                    "drained",
-                    None,
-                    None,
-                    None,
-                ));
+                ref_log.push(RefLog::unresolved(source_id, r, true));
             }
             SolveOutcome::Unresolved(cause) => {
+                file_lookup.record_failed_write(ref_idx, cause);
                 // A type annotation naming a language primitive (`: string`) is a
                 // builtin, not a missing symbol: it's captured as the binding's
                 // field type (the compilation pass reads the TypeRef) but must not
@@ -742,8 +755,10 @@ pub(super) fn resolve_one_file(
                         .iter()
                         .any(|(name, _)| *name == r.target_name);
                 if is_primitive_type {
+                    census.record(ref_idx, Disposition::Primitive);
                     crate::tracef!("RESULT PRIMITIVE (builtin, not unresolved)");
                 } else {
+                    census.record(ref_idx, Disposition::Unresolved);
                     crate::tracef!(
                         "RESULT UNRESOLVED cause={}",
                         cause
@@ -762,17 +777,7 @@ pub(super) fn resolve_one_file(
                         cause.and_then(|c| c.symbol_id),
                         cause.map(|c| c.kind.as_db_str()),
                     ));
-                    ref_log.push((
-                        source_id,
-                        r.target_name.clone(),
-                        kind_str,
-                        r.line,
-                        r.col,
-                        "unresolved",
-                        None,
-                        None,
-                        None,
-                    ));
+                    ref_log.push(RefLog::unresolved(source_id, r, false));
                 }
             }
         }
@@ -789,9 +794,8 @@ pub(super) fn resolve_one_file(
         }
     }
 
-    (edges, unresolved, ref_log)
+    (edges, unresolved, ref_log, census)
 }
-
 
 // ---------------------------------------------------------------------------
 // EdgeKind → &'static str

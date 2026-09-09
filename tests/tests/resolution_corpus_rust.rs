@@ -47,6 +47,30 @@ fn count_unresolved(db: &Database, file_suffix: &str, kind: &str, target_name: &
     .unwrap()
 }
 
+/// Check the constructor AND its downstream member against physical declaration
+/// IDs. A correctly guessed downstream receiver must not hide a wrong constructor.
+fn assert_call_identity(db: &Database, source: &str, callee: &str, target_file: &str, owner: &str) {
+    let expected: i64 = db.query_row(
+        "SELECT member.id FROM symbols member JOIN symbols owner ON member.containing_id=owner.id
+         JOIN files f ON member.file_id=f.id WHERE f.path=?1 AND member.name=?2 AND owner.qualified_name LIKE ?3",
+        params![target_file, callee, owner], |r| r.get(0),
+    ).unwrap();
+    let mut statement = db.prepare(
+        "SELECT e.target_id FROM edges e JOIN symbols s ON e.source_id=s.id JOIN files f ON s.file_id=f.id
+         JOIN symbols t ON e.target_id=t.id WHERE f.path=?1 AND e.kind='calls' AND t.name=?2 ORDER BY e.target_id",
+    ).unwrap();
+    let actual: Vec<i64> = statement
+        .query_map(params![source, callee], |r| r.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(
+        actual,
+        vec![expected],
+        "{source}: {callee} must bind to the exact {target_file} owner {owner}"
+    );
+}
+
 /// Count resolved `calls` edges for `callee` in the file ending `file_suffix`,
 /// whose resolved target has the given `origin` (`'internal'` | `'external'`).
 fn count_resolved_with_origin(db: &Database, file_suffix: &str, callee: &str, origin: &str) -> i64 {
@@ -153,6 +177,16 @@ fn seed_cargo_registry() -> TempDir {
         .join("registry/src/index.crates.io/somecrate-0.1.0/src");
     fs::create_dir_all(&crate_src).unwrap();
     fs::write(
+        crate_src.parent().unwrap().join("Cargo.toml"),
+        "[package]\nname='somecrate'\nversion='0.1.0'\n[dependencies]\ngadgetcrate='0.1.0'",
+    )
+    .unwrap();
+    fs::write(
+        crate_src.parent().unwrap().join(".cargo-checksum.json"),
+        format!("{{\"package\":\"{}\",\"files\":{{}}}}", "a".repeat(64)),
+    )
+    .unwrap();
+    fs::write(
         crate_src.join("lib.rs"),
         r#"pub struct Thing;
 impl Thing {
@@ -204,6 +238,16 @@ impl AliasDoc {
         .path()
         .join("registry/src/index.crates.io/gadgetcrate-0.1.0/src");
     fs::create_dir_all(&gadget_src).unwrap();
+    fs::write(
+        gadget_src.parent().unwrap().join("Cargo.toml"),
+        "[package]\nname='gadgetcrate'\nversion='0.1.0'",
+    )
+    .unwrap();
+    fs::write(
+        gadget_src.parent().unwrap().join(".cargo-checksum.json"),
+        format!("{{\"package\":\"{}\",\"files\":{{}}}}", "b".repeat(64)),
+    )
+    .unwrap();
     fs::write(
         gadget_src.join("lib.rs"),
         r#"pub struct Gadget;
@@ -306,14 +350,22 @@ impl OwnedBytes {
         r#"version = 3
 
 [[package]]
+name = "resolution-corpus-rust"
+version = "0.0.1"
+dependencies = ["somecrate"]
+
+[[package]]
 name = "somecrate"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+dependencies = ["gadgetcrate"]
 
 [[package]]
 name = "gadgetcrate"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 "#,
     );
 
@@ -749,8 +801,12 @@ impl Thing {
     );
     project.add_file(
         "src/lib.rs",
-        r#"mod thing;
+        r#"mod external_crate;
+mod external_second_hop;
+mod thing;
 pub use thing::Thing;
+mod self_import;
+pub use self_import::{SelfProbe, selfmod};
 mod glob_probe;
 pub use glob_probe::GlobProbe;
 pub mod inner;
@@ -1199,6 +1255,41 @@ pub fn check() {
 
     let mut db = TestProject::in_memory_db();
     let result = full_index(&mut db, project.path(), None, None, None);
+    assert_call_identity(
+        &db,
+        "benches/bench_self_import_nested.rs",
+        "new",
+        "src/self_import.rs",
+        "%selfmod.SelfProbe",
+    );
+    assert_call_identity(
+        &db,
+        "benches/bench_self_import_nested.rs",
+        "poke",
+        "src/self_import.rs",
+        "%selfmod.SelfProbe",
+    );
+    assert_call_identity(
+        &db,
+        "benches/bench_alias_reexport.rs",
+        "new",
+        "src/real.rs",
+        "%RealDoc",
+    );
+    assert_call_identity(
+        &db,
+        "benches/bench_alias_reexport.rs",
+        "touch",
+        "src/real.rs",
+        "%RealDoc",
+    );
+    assert_call_identity(
+        &db,
+        "src/field_chain_scoped.rs",
+        "poke",
+        "src/field_chain_scoped.rs",
+        "%holder_mod.ScopedGadget",
+    );
 
     unsafe {
         match prior_sysroot {
@@ -1257,7 +1348,9 @@ pub fn check() {
     println!("  stub core::Option indexed (BEARWISDOM_RUST_SYSROOT): {stub_option}");
     println!("  stub external crate Thing indexed (CARGO_HOME): {stub_thing}");
     println!("  stub core::macros::assert! indexed (BEARWISDOM_RUST_SYSROOT): {stub_assert_macro}");
-    println!("  stub second-hop external crate Gadget indexed (return-type-only reach): {stub_gadget}");
+    println!(
+        "  stub second-hop external crate Gadget indexed (return-type-only reach): {stub_gadget}"
+    );
 
     // Candidate probes — KNOWN-RED, diagnostic only (not asserted). Root
     // cause (traced):
@@ -1268,28 +1361,6 @@ pub fn check() {
     //     `flow_binding_await` but not `flow_binding_unwrap`). `seg` seeds as
     //     the unpeeled `Result<Segment>` (head "Result"), which has no
     //     `exists` member — `Segment` does, one unwrap layer down.
-    //   field-typed-chain-scoped-path — `Holder.inner`'s declared type is a
-    //     path (`holder_mod::ScopedGadget`). `extract_struct_fields` now
-    //     attributes the field's TypeRef to the field's own symbol index
-    //     (`rust_lang/symbols.rs`), but `populate_return_type_ids`
-    //     (`languages/common.rs`) runs first at extract time and unconditionally
-    //     interns the field's raw `"name: Type"` signature text verbatim —
-    //     `sym.declared_type` is set to the literal string `"holder_mod::
-    //     ScopedGadget"` before the TypeRef-derived, scope-aware Phase B
-    //     (`derive_type_info_from_refs` in `compilation.rs`) ever runs, and
-    //     Phase B only fills slots Phase A left empty. A `::`-embedded type
-    //     never matches `by_qname` (dot-joined) or `types_by_name` (keyed on
-    //     the bare short name), so the field never types. Stripping the
-    //     module-path prefix in the shared signature parser
-    //     (`chain_walker.rs`'s `parse_declared_type_from_signature_for_lang`)
-    //     fixes this probe but regresses the real tantivy corpus net negative
-    //     (84.31%→83.70%, 1279 newly-unresolved vs 530 newly-resolved) — that
-    //     parser is shared by every language's Field/Property/Variable/
-    //     Parameter declared-type derivation, not just Rust struct fields, so
-    //     a blanket fix there shifts candidate-tie outcomes corpus-wide. A
-    //     correctly scoped fix needs to intern the field's type directly at
-    //     extract time (bypassing the shared naive-text fallback for Rust
-    //     specifically) rather than post-processing the shared parser.
     //   external-second-hop-member-bind — `t.make()`'s return type
     //     (`gadgetcrate::Gadget`) MATERIALIZES (asserted below). But
     //     `.spin()` still fails to BIND, because Phase B's `resolve_type_
@@ -1310,11 +1381,6 @@ pub fn check() {
         "  result-unwrap  seg.exists() resolved-to-Segment={} unresolved={}",
         count_resolved_to(&db, "result_unwrap.rs", "exists", "%Segment%"),
         count_unresolved(&db, "result_unwrap.rs", "calls", "exists")
-    );
-    println!(
-        "  field-typed-chain-scoped-path  h.inner.poke() resolved-to-ScopedGadget={} unresolved={}",
-        count_resolved_to(&db, "field_chain_scoped.rs", "poke", "%ScopedGadget%"),
-        count_unresolved(&db, "field_chain_scoped.rs", "calls", "poke")
     );
     println!(
         "  external-second-hop-member-bind  t.make().spin() resolved-to-Gadget={} unresolved={}",
@@ -1347,8 +1413,7 @@ pub fn check() {
         count_unresolved(&db, "bench_glob_import.rs", "type_ref", "GlobProbe");
     let glob_import_nested_innerprobe_unresolved =
         count_unresolved(&db, "bench_glob_import_nested.rs", "type_ref", "InnerProbe");
-    let std_macro_assert =
-        count_resolved_with_origin(&db, "std_macros.rs", "assert", "external");
+    let std_macro_assert = count_resolved_with_origin(&db, "std_macros.rs", "assert", "external");
     let crate_reexport_thing_unresolved =
         count_unresolved(&db, "crate_reexport.rs", "type_ref", "Thing");
     let crate_direct_thing_unresolved =
@@ -1390,11 +1455,21 @@ pub fn check() {
     let marker_import_unresolved = count_unresolved(&db, "marker/tests.rs", "imports", "Marker");
     let marker_typeref_unresolved = count_unresolved(&db, "marker/tests.rs", "type_ref", "Marker");
 
-    let macro_arg_assert_poke = count_resolved_to(&db, "macro_arg_method_call.rs", "poke", "%Widget%");
+    let macro_arg_assert_poke =
+        count_resolved_to(&db, "macro_arg_method_call.rs", "poke", "%Widget%");
     let macro_arg_println_render =
         count_resolved_to(&db, "macro_arg_method_call.rs", "render", "%Widget%");
 
+    // Former known-red probe: source type recipes now bind the field head by
+    // namespace/declaration ID, without stripping its path or re-finding a name.
+    let scoped_field = count_resolved_to(&db, "field_chain_scoped.rs", "poke", "%ScopedGadget%");
+    let scoped_field_missing = count_unresolved(&db, "field_chain_scoped.rs", "calls", "poke");
     let checks = [
+        (
+            "scoped field type  h.inner.poke() -> holder_mod.ScopedGadget.poke",
+            scoped_field == 1 && scoped_field_missing == 0,
+            format!("bound-ID edges = {scoped_field}, unresolved = {scoped_field_missing}"),
+        ),
         (
             "UFCS assoc call  Index::exists(idx, d) -> Index.exists",
             assoc_call_exists >= 1,

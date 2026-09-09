@@ -91,6 +91,7 @@ fn m3_collect_package_dep_rows_emits_one_row_per_declared_dep() {
     by_package.insert(2, pkg2_manifests);
 
     let ctx = super::super::project_context::ProjectContext {
+        programs: None,
         project_root: std::path::PathBuf::new(),
         manifests: HashMap::new(),
         by_package,
@@ -302,7 +303,7 @@ fn robot_root_selection_matches_declared_and_framework() {
         .collect();
     let roots = vec![
         mk_pypi_root("SeleniumLibrary"),
-        mk_pypi_root("robot"), // framework package — always included
+        mk_pypi_root("robot"),    // framework package — always included
         mk_pypi_root("requests"), // undeclared — must NOT be selected
     ];
     let selected = super::select_robot_library_roots(&declared, &roots);
@@ -318,8 +319,7 @@ fn robot_root_selection_matches_declared_and_framework() {
 #[test]
 fn robot_root_selection_is_case_insensitive() {
     use std::collections::HashSet;
-    let declared: HashSet<String> =
-        ["seleniumlibrary"].iter().map(|s| s.to_string()).collect();
+    let declared: HashSet<String> = ["seleniumlibrary"].iter().map(|s| s.to_string()).collect();
     let roots = vec![mk_pypi_root("SeleniumLibrary")];
     let selected = super::select_robot_library_roots(&declared, &roots);
     assert_eq!(selected.len(), 1, "case-insensitive name match");
@@ -328,8 +328,7 @@ fn robot_root_selection_is_case_insensitive() {
 #[test]
 fn robot_root_selection_ignores_non_python_ecosystems() {
     use std::collections::HashSet;
-    let declared: HashSet<String> =
-        ["SeleniumLibrary"].iter().map(|s| s.to_string()).collect();
+    let declared: HashSet<String> = ["SeleniumLibrary"].iter().map(|s| s.to_string()).collect();
     let mut npm_root = mk_pypi_root("SeleniumLibrary");
     npm_root.ecosystem = "npm";
     let roots = [npm_root];
@@ -524,5 +523,8 @@ fn non_git_project_still_excludes_vendor_dir_at_the_walker() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(file_count, 0, "vendor/ must not be walked without a .git dir");
+    assert_eq!(
+        file_count, 0,
+        "vendor/ must not be walked without a .git dir"
+    );
 }

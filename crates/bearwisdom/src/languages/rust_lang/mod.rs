@@ -3,6 +3,7 @@
 mod calls;
 mod calls_args;
 mod calls_imports;
+mod calls_local_items;
 mod calls_macros;
 pub(crate) mod decorators;
 mod derives;
@@ -11,10 +12,12 @@ pub mod extract;
 pub(crate) mod flow;
 mod helpers;
 pub(crate) mod keywords;
+pub(crate) mod namespaces;
+mod owners;
 mod patterns;
-mod symbols;
 mod predicates;
 pub(crate) mod profile;
+mod symbols;
 pub use profile::RUST_PROFILE;
 
 #[cfg(test)]
@@ -142,7 +145,6 @@ impl LanguagePlugin for RustLangPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::RUST_PROFILE)
     }
-
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::RUST_FLOW_CONFIG)

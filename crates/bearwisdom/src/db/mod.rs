@@ -14,9 +14,11 @@
 // =============================================================================
 
 pub mod audit;
+pub(crate) mod lexical_visibility;
 pub mod metrics;
 mod migrations;
 mod pool;
+mod resolution_schema;
 pub mod schema;
 
 use crate::indexer::ref_cache::RefCache;
@@ -234,6 +236,5 @@ impl Database {
         })
     }
 }
-
 
 pub use pool::{DbPool, PoolGuard};

@@ -4,13 +4,39 @@ use std::sync::{Arc, Mutex};
 use crate::indexer::resolve::engine::trace;
 use crate::type_checker::core::types::TypeArena;
 use crate::types::{
-    EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, MemberChain, ChainSegment,
-    ParsedFile, SegmentKind, SymbolKind, Visibility,
+    ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, MemberChain, ParsedFile,
+    SegmentKind, SymbolKind, Visibility,
 };
 
 // Global mutex so trace tests, which share process-global atomic state, never
 // run concurrently with each other inside the same test binary.
 static TRACE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+#[test]
+fn disabled_trace_macro_does_not_evaluate_diagnostic_operands() {
+    let _guard = TRACE_TEST_LOCK.lock().unwrap();
+    trace::deactivate();
+    let evaluated = std::cell::Cell::new(0);
+    crate::tracef!("argument={}", {
+        evaluated.set(evaluated.get() + 1);
+        "expensive diagnostic"
+    });
+    assert_eq!(
+        evaluated.get(),
+        0,
+        "Disabled tracing must not clone/format semantic types"
+    );
+    trace::activate();
+    trace::begin_ref();
+    crate::tracef!("argument={}", {
+        evaluated.set(evaluated.get() + 1);
+        "enabled"
+    });
+    let collected = trace::take_ref();
+    trace::deactivate();
+    assert_eq!(evaluated.get(), 1);
+    assert_eq!(collected, ["argument=enabled"]);
+}
 
 fn esym(name: &str, qname: &str, kind: SymbolKind) -> ExtractedSymbol {
     ExtractedSymbol {
@@ -75,18 +101,11 @@ fn trace_captures_untypable_root_and_unresolved_result() {
     let _guard = TRACE_TEST_LOCK.lock().unwrap();
     // Two symbols: a function host and a method we want to call.
     let symbols = vec![
-        esym("host", "host", SymbolKind::Function),        // 0
+        esym("host", "host", SymbolKind::Function),            // 0
         esym("NoSuchClass", "NoSuchClass", SymbolKind::Class), // 1 — not in scope of `a`
     ];
     // One chain ref: `a.b()` where `a` has no type. Root is UNTYPABLE.
-    let refs = vec![chain_ref(
-        0,
-        "b",
-        vec![
-            cseg("a", false),
-            cseg("b", true),
-        ],
-    )];
+    let refs = vec![chain_ref(0, "b", vec![cseg("a", false), cseg("b", true)])];
     let pf = ParsedFile {
         path: "trace_test.ts".into(),
         language: "typescript".into(),
@@ -114,7 +133,10 @@ fn trace_captures_untypable_root_and_unresolved_result() {
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
     id_map.insert(("trace_test.ts".to_string(), "host".to_string()), 1i64);
-    id_map.insert(("trace_test.ts".to_string(), "NoSuchClass".to_string()), 2i64);
+    id_map.insert(
+        ("trace_test.ts".to_string(), "NoSuchClass".to_string()),
+        2i64,
+    );
 
     let arena = Arc::new(TypeArena::new());
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
@@ -153,11 +175,15 @@ fn trace_captures_untypable_root_and_unresolved_result() {
         .collect();
 
     assert!(
-        all_lines.iter().any(|l| l.contains("ROOT") && l.contains("UNTYPABLE")),
+        all_lines
+            .iter()
+            .any(|l| l.contains("ROOT") && l.contains("UNTYPABLE")),
         "expected a ROOT UNTYPABLE line; got: {all_lines:?}"
     );
     assert!(
-        all_lines.iter().any(|l| l.contains("RESULT") && l.contains("UNRESOLVED")),
+        all_lines
+            .iter()
+            .any(|l| l.contains("RESULT") && l.contains("UNRESOLVED")),
         "expected a RESULT UNRESOLVED line; got: {all_lines:?}"
     );
 }
@@ -168,8 +194,8 @@ fn trace_captures_untypable_root_and_unresolved_result() {
 fn trace_captures_resolved_ref_and_seed_none() {
     let _guard = TRACE_TEST_LOCK.lock().unwrap();
     let symbols = vec![
-        esym("caller", "caller", SymbolKind::Function),   // 0
-        esym("Target", "Target", SymbolKind::Class),       // 1
+        esym("caller", "caller", SymbolKind::Function), // 0
+        esym("Target", "Target", SymbolKind::Class),    // 1
     ];
     // A bare TypeRef from `caller` to `Target`.
     let refs = vec![ExtractedRef {
@@ -213,8 +239,14 @@ fn trace_captures_resolved_ref_and_seed_none() {
     };
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
-    id_map.insert(("trace_resolved.ts".to_string(), "caller".to_string()), 10i64);
-    id_map.insert(("trace_resolved.ts".to_string(), "Target".to_string()), 20i64);
+    id_map.insert(
+        ("trace_resolved.ts".to_string(), "caller".to_string()),
+        10i64,
+    );
+    id_map.insert(
+        ("trace_resolved.ts".to_string(), "Target".to_string()),
+        20i64,
+    );
 
     let arena = Arc::new(TypeArena::new());
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
@@ -242,10 +274,7 @@ fn trace_captures_resolved_ref_and_seed_none() {
     let collected = trace::drain_collected();
     trace::clear_filter();
 
-    assert!(
-        !collected.is_empty(),
-        "expected at least one traced ref"
-    );
+    assert!(!collected.is_empty(), "expected at least one traced ref");
 
     let all_lines: Vec<&str> = collected
         .iter()
@@ -253,15 +282,21 @@ fn trace_captures_resolved_ref_and_seed_none() {
         .collect();
 
     assert!(
-        all_lines.iter().any(|l| l.contains("REF") && l.contains("Target")),
+        all_lines
+            .iter()
+            .any(|l| l.contains("REF") && l.contains("Target")),
         "expected a REF header line for Target; got: {all_lines:?}"
     );
     assert!(
-        all_lines.iter().any(|l| l.contains("RESULT") && l.contains("resolved")),
+        all_lines
+            .iter()
+            .any(|l| l.contains("RESULT") && l.contains("resolved")),
         "expected a RESULT resolved line; got: {all_lines:?}"
     );
     assert!(
-        all_lines.iter().any(|l| l.contains("SEED") && l.contains("none")),
+        all_lines
+            .iter()
+            .any(|l| l.contains("SEED") && l.contains("none")),
         "expected a SEED none line; got: {all_lines:?}"
     );
 }
@@ -285,7 +320,10 @@ fn trace_inactive_produces_no_lines() {
     assert!(lines.is_empty(), "take_ref without begin_ref must be empty");
     // drain_collected must be empty when nothing was pushed.
     let collected = trace::drain_collected();
-    assert!(collected.is_empty(), "drain_collected must be empty when trace was never active");
+    assert!(
+        collected.is_empty(),
+        "drain_collected must be empty when trace was never active"
+    );
 }
 
 /// Two filters over distinct refs are both honored in one resolve pass — a
@@ -380,6 +418,12 @@ fn trace_batch_filters_collect_multiple_refs() {
         collected.len()
     );
     let targets: Vec<&str> = collected.iter().map(|t| t.target.as_str()).collect();
-    assert!(targets.contains(&"TargetA"), "missing TargetA trace; got {targets:?}");
-    assert!(targets.contains(&"TargetB"), "missing TargetB trace; got {targets:?}");
+    assert!(
+        targets.contains(&"TargetA"),
+        "missing TargetA trace; got {targets:?}"
+    );
+    assert!(
+        targets.contains(&"TargetB"),
+        "missing TargetB trace; got {targets:?}"
+    );
 }

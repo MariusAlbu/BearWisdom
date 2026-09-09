@@ -1,0 +1,9 @@
+[
+  {"files":[{"path":"main.ts","source":"export {}; declare const token: unique symbol; interface Root<T> { key: T; } interface Extra { unrelated: string; } interface Child<T> extends Root<T>, Extra {} declare const value: Child<typeof token>; declare const alias: typeof value.key; interface Uses { [alias](): void; }"}],
+   "keys":[{"path":"main.ts","expression":"[alias]","ownerPath":"main.ts","owner":"token: unique symbol"}]},
+  {"files":[{"path":"base.ts","source":"export interface Root<T> { key: T; }"},{"path":"main.ts","source":"import type { Root } from './base'; declare const token: unique symbol; interface Mid<T> extends Root<T> {} interface Child extends Mid<typeof token> {} declare const value: Child; declare const alias: typeof value.key; interface Uses { [alias](): void; }"}],
+   "keys":[{"path":"main.ts","expression":"[alias]","ownerPath":"main.ts","owner":"token: unique symbol"}]},
+  {"files":[{"path":"main.ts","source":"export {}; declare const token: unique symbol; interface Base { value: string; } interface Invalid extends Base { value: number; key: typeof token; } declare const invalid: Invalid; interface Uses { [invalid.key](): void; }"}],
+   "diagnostics":[2430],
+   "keys":[{"path":"main.ts","expression":"[invalid.key]","ownerPath":"main.ts","owner":"token: unique symbol","unsupported":true,"diagnosticOwner":"interface Invalid"}]}
+]

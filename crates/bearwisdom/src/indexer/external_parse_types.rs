@@ -14,7 +14,8 @@ use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::type_checker::core::types::{
-    GenericParamData, GenericParamId, LitValue, PrimKind, Type, TypeArena, TypeId,
+    GenericParamData, GenericParamId, GenericParamKind, Indirection, Intrinsic, Lifetime, LitValue,
+    Mutability, PrimKind, Type, TypeArena, TypeId,
 };
 
 #[cfg(test)]
@@ -28,6 +29,8 @@ mod tests;
 pub(crate) enum CachedType {
     Class(String),
     Primitive(PrimKind),
+    Intrinsic(Intrinsic),
+    Operator(Box<crate::type_checker::core::types::TypeOperator<Self>>),
     Function {
         params: Vec<CachedType>,
         return_: Box<CachedType>,
@@ -40,6 +43,12 @@ pub(crate) enum CachedType {
         args: Vec<CachedType>,
     },
     Generic(usize),
+    Region(CachedLifetime),
+    Indirect {
+        kind: CachedIndirection,
+        mutability: Mutability,
+        inner: Box<CachedType>,
+    },
     Optional(Box<CachedType>),
     AsyncWrapper(Box<CachedType>),
     Iterator(Box<CachedType>),
@@ -54,9 +63,23 @@ pub(crate) enum CachedType {
 /// in extraction order).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct CachedGenericParam {
+    #[serde(default)]
+    pub kind: GenericParamKind,
     pub name: String,
     pub owner_symbol_index: usize,
     pub bound: Option<CachedType>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub(crate) enum CachedLifetime {
+    Static,
+    Parameter(usize),
+    Unknown,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub(crate) enum CachedIndirection {
+    Reference(CachedLifetime),
+    Pointer,
 }
 
 /// Converts arena `TypeId`s into `CachedType` trees, accumulating the
@@ -86,9 +109,21 @@ impl<'a> TypeExporter<'a> {
         match self.arena.get(id) {
             Type::Class(q) => CachedType::Class(q),
             // The parse cache is content-keyed and outlives any one index run;
-            // symbol ids do not. A bound nominal degrades to its name.
-            Type::Decl { qname, .. } => CachedType::Class(qname),
+            // symbol ids do not. An unconfigured nominal retains its legacy name.
+            Type::Decl {
+                qname,
+                context: None,
+                ..
+            } => CachedType::Class(qname),
+            // Program-owned nominals must be recaptured from source; their
+            // display cannot become unconfigured name-resolution authority.
+            Type::Decl {
+                context: Some(_), ..
+            } => CachedType::Unknown,
+            Type::UniqueSymbol(_) | Type::Callable(_) | Type::Object(_) => CachedType::Unknown,
             Type::Primitive(p) => CachedType::Primitive(p),
+            Type::Intrinsic(p) => CachedType::Intrinsic(p),
+            Type::Operator(op) => CachedType::Operator(Box::new(op.map(|ty| self.export(*ty)))),
             Type::Function { params, return_ } => CachedType::Function {
                 params: params.iter().map(|&p| self.export(p)).collect(),
                 return_: Box::new(self.export(return_)),
@@ -107,12 +142,37 @@ impl<'a> TypeExporter<'a> {
                 args: args.iter().map(|&a| self.export(a)).collect(),
             },
             Type::Generic { param } => CachedType::Generic(self.export_param(param)),
+            Type::Region(region) => CachedType::Region(self.export_region(region)),
+            Type::Indirect {
+                kind,
+                mutability,
+                inner,
+            } => CachedType::Indirect {
+                kind: match kind {
+                    Indirection::Reference(region) => {
+                        CachedIndirection::Reference(self.export_region(region))
+                    }
+                    Indirection::Pointer => CachedIndirection::Pointer,
+                },
+                mutability,
+                inner: Box::new(self.export(inner)),
+            },
             Type::Optional(inner) => CachedType::Optional(Box::new(self.export(inner))),
             Type::AsyncWrapper(inner) => CachedType::AsyncWrapper(Box::new(self.export(inner))),
             Type::Iterator(inner) => CachedType::Iterator(Box::new(self.export(inner))),
             Type::Constructor(inner) => CachedType::Constructor(Box::new(self.export(inner))),
             Type::Literal(v) => CachedType::Literal(v),
             Type::Unknown => CachedType::Unknown,
+        }
+    }
+
+    fn export_region(&mut self, region: Lifetime) -> CachedLifetime {
+        // Content-only parse payloads have no declaration-ID remapper. Runtime
+        // borrow variables must be recaptured from source, not exported as IDs.
+        match region {
+            Lifetime::Static => CachedLifetime::Static,
+            Lifetime::Unknown | Lifetime::Inference { .. } => CachedLifetime::Unknown,
+            Lifetime::Parameter(param) => CachedLifetime::Parameter(self.export_param(param)),
         }
     }
 
@@ -125,6 +185,7 @@ impl<'a> TypeExporter<'a> {
         }
         let i = self.params.len();
         self.params.push(CachedGenericParam {
+            kind: GenericParamKind::Type,
             name: String::new(),
             owner_symbol_index: 0,
             bound: None,
@@ -133,6 +194,7 @@ impl<'a> TypeExporter<'a> {
         let data = self.arena.generic_param(gp);
         let bound = data.bound.map(|b| self.export(b));
         self.params[i] = CachedGenericParam {
+            kind: data.kind,
             name: data.name,
             owner_symbol_index: data.owner_symbol_index,
             bound,
@@ -169,6 +231,11 @@ impl<'a> TypeImporter<'a> {
             // populated the same way the fresh extraction path populates it.
             CachedType::Class(q) => self.arena.class(q),
             CachedType::Primitive(p) => self.arena.primitive(*p),
+            CachedType::Intrinsic(p) => self.arena.intern(Type::Intrinsic(*p)),
+            CachedType::Operator(op) => {
+                let op = op.map(|ty| self.import(ty));
+                self.arena.intern(Type::Operator(op))
+            }
             CachedType::Function { params, return_ } => {
                 let params = params.iter().map(|p| self.import(p)).collect();
                 let return_ = self.import(return_);
@@ -199,6 +266,28 @@ impl<'a> TypeImporter<'a> {
                 let inner = self.import(inner);
                 self.arena.intern(Type::Optional(inner))
             }
+            CachedType::Region(region) => {
+                let region = self.import_region(*region);
+                self.arena.intern(Type::Region(region))
+            }
+            CachedType::Indirect {
+                kind,
+                mutability,
+                inner,
+            } => {
+                let inner = self.import(inner);
+                let kind = match kind {
+                    CachedIndirection::Reference(region) => {
+                        Indirection::Reference(self.import_region(*region))
+                    }
+                    CachedIndirection::Pointer => Indirection::Pointer,
+                };
+                self.arena.intern(Type::Indirect {
+                    kind,
+                    mutability: *mutability,
+                    inner,
+                })
+            }
             CachedType::AsyncWrapper(inner) => {
                 let inner = self.import(inner);
                 self.arena.intern(Type::AsyncWrapper(inner))
@@ -216,6 +305,22 @@ impl<'a> TypeImporter<'a> {
         }
     }
 
+    fn import_region(&mut self, region: CachedLifetime) -> Lifetime {
+        match region {
+            CachedLifetime::Static => Lifetime::Static,
+            CachedLifetime::Unknown => Lifetime::Unknown,
+            CachedLifetime::Parameter(index)
+                if self
+                    .params
+                    .get(index)
+                    .is_some_and(|p| p.kind == GenericParamKind::Lifetime) =>
+            {
+                Lifetime::Parameter(self.import_param(index))
+            }
+            CachedLifetime::Parameter(_) => Lifetime::Unknown,
+        }
+    }
+
     pub(crate) fn import_param(&mut self, i: usize) -> GenericParamId {
         if let Some(id) = self.slots.get(i).copied().flatten() {
             return id;
@@ -225,6 +330,7 @@ impl<'a> TypeImporter<'a> {
         // corrupt cache row.
         if i >= self.params.len() {
             return self.arena.intern_generic(GenericParamData {
+                kind: GenericParamKind::Type,
                 name: String::new(),
                 owner_symbol_index: 0,
                 bound: None,
@@ -247,6 +353,7 @@ impl<'a> TypeImporter<'a> {
             b
         };
         let id = self.arena.intern_generic(GenericParamData {
+            kind: self.params[i].kind,
             name: self.params[i].name.clone(),
             owner_symbol_index: self.params[i].owner_symbol_index,
             bound,

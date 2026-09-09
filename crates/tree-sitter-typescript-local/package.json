@@ -1,0 +1,14 @@
+{
+  "name": "bearwisdom-typescript-grammar",
+  "version": "0.23.2-bw.1",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "generate": "node generate.mjs"
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "0.25.10",
+    "tree-sitter-javascript": "0.23.1",
+    "tree-sitter-typescript": "0.23.2"
+  }
+}

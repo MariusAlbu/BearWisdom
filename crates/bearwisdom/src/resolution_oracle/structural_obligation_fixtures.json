@@ -1,0 +1,13 @@
+[
+  {"name":"valid_scalar_constraint","preamble":"type Box<T extends string> = { value: T };","from":"Box<'x'>","to":"{ value: 'x' }","proved":true,"diagnosticCodes":[]},
+  {"name":"invalid_scalar_constraint","preamble":"type Box<T extends string> = { value: T };","from":"Box<number>","to":"{ value: number }","proved":false,"diagnosticCodes":[2344]},
+  {"name":"valid_structural_constraint","preamble":"type Wrap<T extends { x: string }> = T;","from":"Wrap<{ x: string; y: number }>","to":"{ x: string }","proved":true,"diagnosticCodes":[]},
+  {"name":"invalid_structural_constraint","preamble":"type Wrap<T extends { x: string }> = T;","from":"Wrap<{ x: number }>","to":"{ x: number }","proved":false,"diagnosticCodes":[2344]},
+  {"name":"valid_dependent_key_constraint","preamble":"type Picked<T, K extends keyof T> = { [P in K]: T[P] };","from":"Picked<{ a: string; b: number }, 'a'>","to":"{ a: string }","proved":true,"diagnosticCodes":[]},
+  {"name":"invalid_dependent_key_constraint","preamble":"type Picked<T, K extends keyof T> = { [P in K]: T[P] };","from":"Picked<{ a: string }, 'b'>","to":"{}","proved":false,"diagnosticCodes":[2344]},
+  {"name":"default_argument_constraint","preamble":"type Box<T extends string = 'x'> = { value: T };","from":"Box","to":"{ value: 'x' }","proved":true,"diagnosticCodes":[]},
+  {"name":"dependent_default_argument","preamble":"type Box<T extends string, U extends T = T> = { value: U };","from":"Box<'x'>","to":"{ value: 'x' }","proved":true,"diagnosticCodes":[]},
+  {"name":"valid_recursive_source_abstains","preamble":"type Loop<T> = { value: Loop<T> };","from":"Loop<string>","to":"{}","proved":false,"diagnosticCodes":[]},
+  {"name":"growing_recursive_source_abstains","preamble":"type Loop<T> = { value: Loop<[T]> };","from":"Loop<string>","to":"{}","proved":false,"diagnosticCodes":[]},
+  {"name":"self_referential_mapped_constraint","preamble":"","from":"{ [K in K]: K }","to":"{}","proved":false,"diagnosticCodes":[2313]}
+]

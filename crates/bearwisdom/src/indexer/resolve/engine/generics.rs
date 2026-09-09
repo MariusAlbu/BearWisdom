@@ -16,9 +16,7 @@
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::indexer::resolve::engine::contract::{
-    Symbol, SymbolLookup,
-};
+use crate::indexer::resolve::engine::contract::{Symbol, SymbolLookup};
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 
 use super::chain::head_qname;
@@ -158,7 +156,9 @@ fn pattern_head_constructs(lookup: &dyn SymbolLookup, arena: &TypeArena, base: T
             _ => Vec::new(),
         };
         for arm in arm_ids {
-            let Some(arm_head) = head_qname(arena, arm) else { continue };
+            let Some(arm_head) = head_qname(arena, arm) else {
+                continue;
+            };
             let arm_simple = arm_head.rsplit('.').next().unwrap_or(&arm_head);
             if lookup
                 .types_by_name(arm_simple)
@@ -210,13 +210,20 @@ pub(crate) fn bindable_params(lookup: &dyn SymbolLookup, callee: &Symbol) -> FxH
     out
 }
 
-/// `callee`'s declared parameter types, interned as canonical TypeIds in
-/// declaration order. Parsed from the stored signature — the same text
-/// `languages::common::populate_return_type_ids` interns from at extract time —
-/// so a callee reached through any index path (parsed batch, DB reload,
-/// external cache) exposes the same patterns. Empty when the signature carries
-/// no parameter list.
-pub(crate) fn param_patterns(arena: &TypeArena, callee: &Symbol) -> Vec<TypeId> {
+/// Read the callee's source-bound parameter TypeIds by declaration identity.
+/// Only unmigrated input without canonical parameter metadata parses the legacy
+/// stored signature. Persisted source-bound lists take exactly the same ID path.
+pub(crate) fn param_patterns(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    callee: &Symbol,
+) -> Vec<TypeId> {
+    if let Some(patterns) = lookup
+        .canonical_type_info(callee.id)
+        .and_then(|info| info.parameter_type_ids.as_ref())
+    {
+        return patterns.clone();
+    }
     let lang = lang_for_symbol_path(&callee.file_path);
     callee
         .signature
@@ -259,7 +266,10 @@ pub(crate) fn bind_arg_generics(
     if params.is_empty() {
         return env;
     }
-    for (pattern, actual) in param_patterns(arena, callee).iter().zip(arg_types.iter()) {
+    for (pattern, actual) in param_patterns(lookup, arena, callee)
+        .iter()
+        .zip(arg_types.iter())
+    {
         unify_into(lookup, arena, *pattern, *actual, &params, &mut env);
     }
     env
@@ -287,6 +297,17 @@ pub(crate) fn fill_yield_from_args(
     arg_types: &[TypeId],
     yielded: TypeId,
 ) -> TypeId {
+    if let Some(env) = super::bound_call::environment(
+        lookup,
+        arena,
+        callee,
+        arena.intern(Type::Unknown),
+        None,
+        &[],
+        arg_types,
+    ) {
+        return super::contract::generic_return::substitute(arena, yielded, &env);
+    }
     let env = bind_arg_generics(lookup, arena, callee, arg_types);
     substitute_env(arena, yielded, &env)
 }

@@ -1,0 +1,182 @@
+[
+  {
+    "name": "negated_method_operand",
+    "source": "interface Item { ready(): boolean } declare const context: (value: Item) => unknown; interface Narrowed<T> { read(): T; narrowed(): void } interface Ordinary<T> { read(): T; ordinary(): void } interface API { pick<S extends Item>(callback: (value: Item) => value is S): Narrowed<S>; pick(callback: (value: Item) => unknown): Ordinary<Item>; } declare const api: API; const result = api.pick(value => !value.ready()); declare const expected: boolean; declare const expectedResult: Ordinary<Item>;",
+    "supported": true,
+    "predicate": false,
+    "diagnosticCodes": [],
+    "selected": "pick(callback:"
+  },
+  {
+    "name": "double_negated_method_operand",
+    "source": "interface Item { ready(): boolean } declare const context: (value: Item) => unknown; interface Narrowed<T> { read(): T; narrowed(): void } interface Ordinary<T> { read(): T; ordinary(): void } interface API { pick<S extends Item>(callback: (value: Item) => value is S): Narrowed<S>; pick(callback: (value: Item) => unknown): Ordinary<Item>; } declare const api: API; const result = api.pick(value => !!value.ready()); declare const expected: boolean; declare const expectedResult: Ordinary<Item>;",
+    "supported": true,
+    "predicate": false,
+    "diagnosticCodes": [],
+    "selected": "pick(callback:"
+  },
+  {
+    "name": "block_parenthesized_negation",
+    "source": "interface Item { ready(): boolean } declare const context: (value: Item) => unknown; interface Narrowed<T> { read(): T; narrowed(): void } interface Ordinary<T> { read(): T; ordinary(): void } interface API { pick<S extends Item>(callback: (value: Item) => value is S): Narrowed<S>; pick(callback: (value: Item) => unknown): Ordinary<Item>; } declare const api: API; const result = api.pick(value => { return !(value.ready()); }); declare const expected: boolean; declare const expectedResult: Ordinary<Item>;",
+    "supported": true,
+    "predicate": false,
+    "diagnosticCodes": [],
+    "selected": "pick(callback:"
+  },
+  {
+    "name": "negated_typeof_predicate",
+    "source": " declare const context: (value: string | number) => unknown; interface Narrowed<T> { read(): T; narrowed(): void } interface Ordinary<T> { read(): T; ordinary(): void } interface API { pick<S extends string | number>(callback: (value: string | number) => value is S): Narrowed<S>; pick(callback: (value: string | number) => unknown): Ordinary<string | number>; } declare const api: API; const result = api.pick(value => !(typeof value === 'string')); declare const expected: number; declare const expectedResult: Narrowed<number>;",
+    "supported": true,
+    "predicate": true,
+    "diagnosticCodes": [],
+    "selected": "pick<S extends"
+  },
+  {
+    "name": "double_negated_typeof_predicate",
+    "source": " declare const context: (value: string | number) => unknown; interface Narrowed<T> { read(): T; narrowed(): void } interface Ordinary<T> { read(): T; ordinary(): void } interface API { pick<S extends string | number>(callback: (value: string | number) => value is S): Narrowed<S>; pick(callback: (value: string | number) => unknown): Ordinary<string | number>; } declare const api: API; const result = api.pick(value => !!(typeof value === 'string')); declare const expected: string; declare const expectedResult: Narrowed<string>;",
+    "supported": true,
+    "predicate": true,
+    "diagnosticCodes": [],
+    "selected": "pick<S extends"
+  },
+  {
+    "name": "negated_typeof_inequality",
+    "source": " declare const context: (value: string | number) => unknown; interface Narrowed<T> { read(): T; narrowed(): void } interface Ordinary<T> { read(): T; ordinary(): void } interface API { pick<S extends string | number>(callback: (value: string | number) => value is S): Narrowed<S>; pick(callback: (value: string | number) => unknown): Ordinary<string | number>; } declare const api: API; const result = api.pick(value => !(typeof value !== 'number')); declare const expected: number; declare const expectedResult: Narrowed<number>;",
+    "supported": true,
+    "predicate": true,
+    "diagnosticCodes": [],
+    "selected": "pick<S extends"
+  },
+  {
+    "name": "boolean_parameter_has_no_predicate",
+    "source": " declare const context: (value: boolean) => unknown; interface Narrowed<T> { read(): T; narrowed(): void } interface Ordinary<T> { read(): T; ordinary(): void } interface API { pick<S extends boolean>(callback: (value: boolean) => value is S): Narrowed<S>; pick(callback: (value: boolean) => unknown): Ordinary<boolean>; } declare const api: API; const result = api.pick(value => !value); declare const expected: boolean; declare const expectedResult: Ordinary<boolean>;",
+    "supported": true,
+    "predicate": false,
+    "diagnosticCodes": [],
+    "selected": "pick(callback:"
+  },
+  {
+    "name": "number_truthiness_has_no_predicate",
+    "source": " declare const context: (value: number | undefined) => unknown; interface Narrowed<T> { read(): T; narrowed(): void } interface Ordinary<T> { read(): T; ordinary(): void } interface API { pick<S extends number | undefined>(callback: (value: number | undefined) => value is S): Narrowed<S>; pick(callback: (value: number | undefined) => unknown): Ordinary<number | undefined>; } declare const api: API; const result = api.pick(value => !value); declare const expected: boolean; declare const expectedResult: Ordinary<number | undefined>;",
+    "supported": true,
+    "predicate": false,
+    "diagnosticCodes": [],
+    "selected": "pick(callback:"
+  },
+  {
+    "name": "string_truthiness_has_no_predicate",
+    "source": " declare const context: (value: string | undefined) => unknown; interface Narrowed<T> { read(): T; narrowed(): void } interface Ordinary<T> { read(): T; ordinary(): void } interface API { pick<S extends string | undefined>(callback: (value: string | undefined) => value is S): Narrowed<S>; pick(callback: (value: string | undefined) => unknown): Ordinary<string | undefined>; } declare const api: API; const result = api.pick(value => !!value); declare const expected: boolean; declare const expectedResult: Ordinary<string | undefined>;",
+    "supported": true,
+    "predicate": false,
+    "diagnosticCodes": [],
+    "selected": "pick(callback:"
+  },
+  {
+    "name": "object_falsy_partition",
+    "source": " declare const context: (value: object | undefined) => unknown; interface Narrowed<T> { read(): T; narrowed(): void } interface Ordinary<T> { read(): T; ordinary(): void } interface API { pick<S extends object | undefined>(callback: (value: object | undefined) => value is S): Narrowed<S>; pick(callback: (value: object | undefined) => unknown): Ordinary<object | undefined>; } declare const api: API; const result = api.pick(value => !value); declare const expected: undefined; declare const expectedResult: Narrowed<undefined>;",
+    "supported": true,
+    "predicate": true,
+    "diagnosticCodes": [],
+    "selected": "pick<S extends"
+  },
+  {
+    "name": "object_truthy_partition",
+    "source": " declare const context: (value: object | null) => unknown; interface Narrowed<T> { read(): T; narrowed(): void } interface Ordinary<T> { read(): T; ordinary(): void } interface API { pick<S extends object | null>(callback: (value: object | null) => value is S): Narrowed<S>; pick(callback: (value: object | null) => unknown): Ordinary<object | null>; } declare const api: API; const result = api.pick(value => !!value); declare const expected: object; declare const expectedResult: Narrowed<object>;",
+    "supported": true,
+    "predicate": true,
+    "diagnosticCodes": [],
+    "selected": "pick<S extends"
+  },
+  {
+    "name": "literal_falsy_partition",
+    "source": " declare const context: (value: 0 | 2) => unknown; interface Narrowed<T> { read(): T; narrowed(): void } interface Ordinary<T> { read(): T; ordinary(): void } interface API { pick<S extends 0 | 2>(callback: (value: 0 | 2) => value is S): Narrowed<S>; pick(callback: (value: 0 | 2) => unknown): Ordinary<0 | 2>; } declare const api: API; const result = api.pick(value => !value); declare const expected: 0; declare const expectedResult: Narrowed<0>;",
+    "supported": true,
+    "predicate": true,
+    "diagnosticCodes": [],
+    "selected": "pick<S extends"
+  },
+  {
+    "name": "literal_string_truthy_partition",
+    "source": " declare const context: (value: '' | 'yes') => unknown; interface Narrowed<T> { read(): T; narrowed(): void } interface Ordinary<T> { read(): T; ordinary(): void } interface API { pick<S extends '' | 'yes'>(callback: (value: '' | 'yes') => value is S): Narrowed<S>; pick(callback: (value: '' | 'yes') => unknown): Ordinary<'' | 'yes'>; } declare const api: API; const result = api.pick(value => !!value); declare const expected: 'yes'; declare const expectedResult: Narrowed<'yes'>;",
+    "supported": true,
+    "predicate": true,
+    "diagnosticCodes": [],
+    "selected": "pick<S extends"
+  },
+  {
+    "name": "boolean_union_partition",
+    "source": " declare const context: (value: boolean | undefined) => unknown; interface Narrowed<T> { read(): T; narrowed(): void } interface Ordinary<T> { read(): T; ordinary(): void } interface API { pick<S extends boolean | undefined>(callback: (value: boolean | undefined) => value is S): Narrowed<S>; pick(callback: (value: boolean | undefined) => unknown): Ordinary<boolean | undefined>; } declare const api: API; const result = api.pick(value => !value); declare const expected: false | undefined; declare const expectedResult: Narrowed<false | undefined>;",
+    "supported": true,
+    "predicate": true,
+    "diagnosticCodes": [],
+    "selected": "pick<S extends"
+  },
+  {
+    "name": "true_nullable_partition",
+    "source": " declare const context: (value: true | undefined) => unknown; interface Narrowed<T> { read(): T; narrowed(): void } interface Ordinary<T> { read(): T; ordinary(): void } interface API { pick<S extends true | undefined>(callback: (value: true | undefined) => value is S): Narrowed<S>; pick(callback: (value: true | undefined) => unknown): Ordinary<true | undefined>; } declare const api: API; const result = api.pick(value => !value); declare const expected: undefined; declare const expectedResult: Narrowed<undefined>;",
+    "supported": true,
+    "predicate": true,
+    "diagnosticCodes": [],
+    "selected": "pick<S extends"
+  },
+  {
+    "name": "unknown_has_no_predicate",
+    "source": " declare const context: (value: unknown) => unknown; interface Narrowed<T> { read(): T; narrowed(): void } interface Ordinary<T> { read(): T; ordinary(): void } interface API { pick<S extends unknown>(callback: (value: unknown) => value is S): Narrowed<S>; pick(callback: (value: unknown) => unknown): Ordinary<unknown>; } declare const api: API; const result = api.pick(value => !value); declare const expected: boolean; declare const expectedResult: Ordinary<unknown>;",
+    "supported": true,
+    "predicate": false,
+    "diagnosticCodes": [],
+    "selected": "pick(callback:"
+  },
+  {
+    "name": "any_has_no_predicate",
+    "source": " declare const context: (value: any) => unknown; interface Narrowed<T> { read(): T; narrowed(): void } interface Ordinary<T> { read(): T; ordinary(): void } interface API { pick<S extends any>(callback: (value: any) => value is S): Narrowed<S>; pick(callback: (value: any) => unknown): Ordinary<any>; } declare const api: API; const result = api.pick(value => !value); declare const expected: boolean; declare const expectedResult: Ordinary<any>;",
+    "supported": true,
+    "predicate": false,
+    "diagnosticCodes": [],
+    "selected": "pick(callback:"
+  },
+  {
+    "name": "never_has_no_predicate",
+    "source": " declare const context: (value: never) => unknown; interface Narrowed<T> { read(): T; narrowed(): void } interface Ordinary<T> { read(): T; ordinary(): void } interface API { pick<S extends never>(callback: (value: never) => value is S): Narrowed<S>; pick(callback: (value: never) => unknown): Ordinary<never>; } declare const api: API; const result = api.pick(value => !value); declare const expected: boolean; declare const expectedResult: Ordinary<never>;",
+    "supported": true,
+    "predicate": false,
+    "diagnosticCodes": [],
+    "selected": "pick(callback:"
+  },
+  {
+    "name": "explicit_return_annotation",
+    "source": " declare const context: (value: object | undefined) => unknown; interface Narrowed<T> { read(): T; narrowed(): void } interface Ordinary<T> { read(): T; ordinary(): void } interface API { pick<S extends object | undefined>(callback: (value: object | undefined) => value is S): Narrowed<S>; pick(callback: (value: object | undefined) => unknown): Ordinary<object | undefined>; } declare const api: API; const result = api.pick((value): boolean => !value); declare const expected: boolean; declare const expectedResult: Ordinary<object | undefined>;",
+    "supported": true,
+    "predicate": false,
+    "diagnosticCodes": [],
+    "selected": "pick(callback:"
+  },
+  {
+    "name": "private_negated_operand",
+    "source": "declare class Item { private ready(): boolean } declare const context: (value: Item) => unknown; interface Narrowed<T> { read(): T; narrowed(): void } interface Ordinary<T> { read(): T; ordinary(): void } interface API { pick<S extends Item>(callback: (value: Item) => value is S): Narrowed<S>; pick(callback: (value: Item) => unknown): Ordinary<Item>; } declare const api: API; const result = api.pick(value => !value.ready()); declare const expected: boolean; declare const expectedResult: Ordinary<Item>;",
+    "supported": false,
+    "predicate": false,
+    "diagnosticCodes": [
+      2341
+    ],
+    "selected": "pick(callback:"
+  },
+  {
+    "name": "missing_negated_operand",
+    "source": "interface Item { other(): boolean } declare const context: (value: Item) => unknown; interface Narrowed<T> { read(): T; narrowed(): void } interface Ordinary<T> { read(): T; ordinary(): void } interface API { pick<S extends Item>(callback: (value: Item) => value is S): Narrowed<S>; pick(callback: (value: Item) => unknown): Ordinary<Item>; } declare const api: API; const result = api.pick(value => !value.ready()); declare const expected: boolean; declare const expectedResult: Ordinary<Item>;",
+    "supported": false,
+    "predicate": false,
+    "diagnosticCodes": [
+      2339
+    ],
+    "selected": "pick(callback:"
+  },
+  {
+    "name": "captured_negated_method_operand",
+    "source": "interface Item { ready(value: number): boolean } declare const item: Item; declare const context: (value: number) => unknown; interface Narrowed<T> { read(): T; narrowed(): void } interface Ordinary<T> { read(): T; ordinary(): void } interface API { pick<S extends number>(callback: (value: number) => value is S): Narrowed<S>; pick(callback: (value: number) => unknown): Ordinary<number>; } declare const api: API; const result = api.pick(value => !item.ready(value)); declare const expected: boolean; declare const expectedResult: Ordinary<number>;",
+    "supported": true,
+    "predicate": false,
+    "diagnosticCodes": [],
+    "selected": "pick(callback:"
+  }
+]

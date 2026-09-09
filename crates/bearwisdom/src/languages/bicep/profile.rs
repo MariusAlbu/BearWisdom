@@ -55,6 +55,7 @@ pub const BICEP_PROFILE: LanguageProfile = LanguageProfile {
     has_generics: false,
     has_sum_types: false,
     look_through_optional: false,
+    reference_member_projection: false,
     literal_narrowing: false,
     async_wrappers: &[],
     container_accessors: &[],
@@ -100,10 +101,12 @@ pub const BICEP_PROFILE: LanguageProfile = LanguageProfile {
     // the vendored `list` builtin (the family base shipped in the namespace
     // surface). Anchored `list` + uppercase, so `list`/`listener`/`listing`
     // don't fold.
-    wildcard_builtins: &[crate::type_checker::profile::language_profile::WildcardBuiltin {
-        prefix: "list",
-        fold_to: "list",
-    }],
+    wildcard_builtins: &[
+        crate::type_checker::profile::language_profile::WildcardBuiltin {
+            prefix: "list",
+            fold_to: "list",
+        },
+    ],
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
     delegate_wrappers: &[],
     overload_pick_all: false,

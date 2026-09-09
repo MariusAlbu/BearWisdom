@@ -1,0 +1,156 @@
+[
+  {
+    "name": "property_inference",
+    "source": "interface Target<T> { item:T } interface Source { item:string } interface Result<T> { read(): T } interface Factory { new<U>(input: Target<U>): Result<U> } declare const Build: Factory; declare const input: Source; class Holder { value = new Build(input) } declare const expected: Result<string>;",
+    "supported": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "method_return_inference",
+    "source": "interface Target<T> { read():T } interface Source { read():string } interface Result<T> { read(): T } interface Factory { new<U>(input: Target<U>): Result<U> } declare const Build: Factory; declare const input: Source; class Holder { value = new Build(input) } declare const expected: Result<string>;",
+    "supported": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "recursive_property_inference",
+    "source": "interface Target<T> { item:T; next:Target<T> } interface Source { item:string; next:Source } interface Result<T> { read(): T } interface Factory { new<U>(input: Target<U>): Result<U> } declare const Build: Factory; declare const input: Source; class Holder { value = new Build(input) } declare const expected: Result<string>;",
+    "supported": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "recursive_return_inference",
+    "source": "interface Target<T> { read():T; next():Target<T> } interface Source { read():string; next():Source } interface Result<T> { read(): T } interface Factory { new<U>(input: Target<U>): Result<U> } declare const Build: Factory; declare const input: Source; class Holder { value = new Build(input) } declare const expected: Result<string>;",
+    "supported": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "computed_iterator_inference",
+    "source": "declare const key: unique symbol; interface Yield<T> { done?: false; item: T } interface End<R> { done: true; item: R } type Step<T,R> = Yield<T> | End<R>; interface Cursor<T,R=any,N=any> { next(...args: [] | [N]): Step<T,R>; finish?(item?: R): Step<T,R>; fail?(error?: any): Step<T,R> } interface SelfCursor<T,R,N> extends Cursor<T,R,N> { [key](): SelfCursor<T,R,N> } interface VectorCursor<T> extends SelfCursor<T,undefined,unknown> { [key](): VectorCursor<T> } interface Sequence<T> { [key](): Cursor<T> } interface Vector<T> { [key](): VectorCursor<T> } interface Result<T> { read(): T } interface Factory { new<U>(input: Sequence<U> | null): Result<U> } declare const Build: Factory; declare const input: Vector<string>; class Holder { value = new Build(input) } declare const expected: Result<string>;",
+    "supported": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "optional_method_absent",
+    "source": "interface Target<T> { read():T; close?():void } interface Source { read():string } interface Result<T> { read(): T } interface Factory { new<U>(input: Target<U>): Result<U> } declare const Build: Factory; declare const input: Source; class Holder { value = new Build(input) } declare const expected: Result<string>;",
+    "supported": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "optional_method_present",
+    "source": "interface Target<T> { read():T; close?():void } interface Source { read():string; close():void } interface Result<T> { read(): T } interface Factory { new<U>(input: Target<U>): Result<U> } declare const Build: Factory; declare const input: Source; class Holder { value = new Build(input) } declare const expected: Result<string>;",
+    "supported": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "optional_required_negative",
+    "source": "interface Target<T> { read():T } interface Source { read?():string } interface Result<T> { read(): T } interface Factory { new<U>(input: Target<U>): Result<U> } declare const Build: Factory; declare const input: Source; class Holder { value = new Build<string>(input) } declare const expected: Result<string>;",
+    "supported": false,
+    "diagnosticCodes": [
+      2345
+    ]
+  },
+  {
+    "name": "missing_method_negative",
+    "source": "interface Target<T> { read():T; close():void } interface Source { read():string } interface Result<T> { read(): T } interface Factory { new<U>(input: Target<U>): Result<U> } declare const Build: Factory; declare const input: Source; class Holder { value = new Build<string>(input) } declare const expected: Result<string>;",
+    "supported": false,
+    "diagnosticCodes": [
+      2345
+    ]
+  },
+  {
+    "name": "wrong_method_return_negative",
+    "source": "interface Target<T> { read():T } interface Source { read():number } interface Result<T> { read(): T } interface Factory { new<U>(input: Target<U>): Result<U> } declare const Build: Factory; declare const input: Source; class Holder { value = new Build<string>(input) } declare const expected: Result<string>;",
+    "supported": false,
+    "diagnosticCodes": [
+      2345
+    ]
+  },
+  {
+    "name": "callable_property_inference",
+    "source": "interface Target<T> { read:()=>T } interface Source { read:()=>string } interface Result<T> { read(): T } interface Factory { new<U>(input: Target<U>): Result<U> } declare const Build: Factory; declare const input: Source; class Holder { value = new Build(input) } declare const expected: Result<string>;",
+    "supported": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "method_parameter_variance",
+    "source": "interface Target<T> { item:T; put(item:string|number):void } interface Source { item:string; put(item:string):void } interface Result<T> { read(): T } interface Factory { new<U>(input: Target<U>): Result<U> } declare const Build: Factory; declare const input: Source; class Holder { value = new Build(input) } declare const expected: Result<string>;",
+    "supported": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "property_parameter_variance_negative",
+    "source": "interface Target<T> { item:T; put:(item:string|number)=>void } interface Source { item:string; put:(item:string)=>void } interface Result<T> { read(): T } interface Factory { new<U>(input: Target<U>): Result<U> } declare const Build: Factory; declare const input: Source; class Holder { value = new Build<string>(input) } declare const expected: Result<string>;",
+    "supported": false,
+    "diagnosticCodes": [
+      2345
+    ]
+  },
+  {
+    "name": "tuple_rest_variants",
+    "source": "interface Target<T> { item:T; put(...args: [] | [string]):void } interface Source { item:string; put(...args:[]|[string|number]):void } interface Result<T> { read(): T } interface Factory { new<U>(input: Target<U>): Result<U> } declare const Build: Factory; declare const input: Source; class Holder { value = new Build(input) } declare const expected: Result<string>;",
+    "supported": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "tuple_rest_correlation_negative",
+    "source": "interface Target<T> { item:T; put(...args: [\"a\",number] | [\"b\",string]):void } interface Source { item:string; put(...args:[\"a\",string]|[\"b\",number]):void } interface Result<T> { read(): T } interface Factory { new<U>(input: Target<U>): Result<U> } declare const Build: Factory; declare const input: Source; class Holder { value = new Build<string>(input) } declare const expected: Result<string>;",
+    "supported": false,
+    "diagnosticCodes": [
+      2345
+    ]
+  },
+  {
+    "name": "overload_coverage",
+    "source": "interface Target<T> { item:T; put(x:string):void; put(x:number):void } interface Source { item:string; put(x:string|number):void } interface Result<T> { read(): T } interface Factory { new<U>(input: Target<U>): Result<U> } declare const Build: Factory; declare const input: Source; class Holder { value = new Build(input) } declare const expected: Result<string>;",
+    "supported": true,
+    "diagnosticCodes": []
+  },
+  {
+    "name": "overload_missing_negative",
+    "source": "interface Target<T> { item:T; put(x:string):void; put(x:number):void } interface Source { item:string; put(x:string):void } interface Result<T> { read(): T } interface Factory { new<U>(input: Target<U>): Result<U> } declare const Build: Factory; declare const input: Source; class Holder { value = new Build<string>(input) } declare const expected: Result<string>;",
+    "supported": false,
+    "diagnosticCodes": [
+      2345
+    ]
+  },
+  {
+    "name": "hidden_call_signature_negative",
+    "source": "interface Target<T> { item:T; ():void } interface Source { item:string } interface Result<T> { read(): T } interface Factory { new<U>(input: Target<U>): Result<U> } declare const Build: Factory; declare const input: Source; class Holder { value = new Build<string>(input) } declare const expected: Result<string>;",
+    "supported": false,
+    "diagnosticCodes": [
+      2345
+    ]
+  },
+  {
+    "name": "hidden_construct_signature_negative",
+    "source": "interface Target<T> { item:T; new():object } interface Source { item:string } interface Result<T> { read(): T } interface Factory { new<U>(input: Target<U>): Result<U> } declare const Build: Factory; declare const input: Source; class Holder { value = new Build<string>(input) } declare const expected: Result<string>;",
+    "supported": false,
+    "diagnosticCodes": [
+      2345
+    ]
+  },
+  {
+    "name": "recursive_wrong_leaf_negative",
+    "source": "interface Target<T> { item:T; next:Target<T> } interface Source { item:number; next:Source } interface Result<T> { read(): T } interface Factory { new<U>(input: Target<U>): Result<U> } declare const Build: Factory; declare const input: Source; class Holder { value = new Build<string>(input) } declare const expected: Result<string>;",
+    "supported": false,
+    "diagnosticCodes": [
+      2345
+    ]
+  },
+  {
+    "name": "computed_iterator_cascade",
+    "source": "declare const key: unique symbol; interface Yield<T> { done?: false; item: T } interface End<R> { done: true; item: R } type Step<T,R> = Yield<T> | End<R>; interface Cursor<T,R=any,N=any> { next(...args: [] | [N]): Step<T,R>; finish?(item?: R): Step<T,R>; fail?(error?: any): Step<T,R> } interface SelfCursor<T,R,N> extends Cursor<T,R,N> { [key](): SelfCursor<T,R,N> } interface VectorCursor<T> extends SelfCursor<T,undefined,unknown> { [key](): VectorCursor<T> } interface Sequence<T> { [key](): Cursor<T> } interface Vector<T> { [key](): VectorCursor<T> } interface Result<T> { read(): T } interface Factory { new<U>(input: Sequence<U> | null): Result<U> } declare const Build: Factory; declare const input: Vector<Payload>; class Holder { value = new Build(input) } declare const expected: Result<Payload>; interface Payload { touch(): void } declare const holder: Holder; function run() { holder.value.read().touch(); }",
+    "supported": true,
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "holder.value.read()",
+        "declaration": "read(): T"
+      },
+      {
+        "expression": "holder.value.read().touch()",
+        "declaration": "touch(): void"
+      }
+    ]
+  }
+]

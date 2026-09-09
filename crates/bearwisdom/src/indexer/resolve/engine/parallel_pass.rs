@@ -12,18 +12,17 @@
 // climb — identity from resolution, not string re-derivation.
 // =============================================================================
 
-use std::collections::HashMap;
-
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
 
+use crate::indexer::write::SymbolIds;
 use crate::languages::LanguagePlugin;
 use crate::type_checker::profile::language_profile::LanguageProfile;
-use crate::indexer::write::SymbolIds;
 use crate::types::{EdgeKind, ParsedFile};
 
 use super::compilation::Compilation;
 use super::flush::{Edge, RefLog, Unresolved};
+use super::occurrence_census::FileCensus;
 use super::pipeline::resolve_one_file;
 use super::semantic_model::SemanticModel;
 use crate::indexer::plugin_state::PluginStateBag;
@@ -32,8 +31,8 @@ use crate::indexer::plugin_state::PluginStateBag;
 pub(super) const INHERIT_KINDS: &[EdgeKind] = &[EdgeKind::Inherits, EdgeKind::Implements];
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn run(
-    parsed: &[ParsedFile],
+pub(super) fn run<'a>(
+    parsed: &'a [ParsedFile],
     tree: &Compilation,
     profiles: &FxHashMap<&'static str, &'static LanguageProfile>,
     plugins: &FxHashMap<&'static str, &'static dyn LanguagePlugin>,
@@ -41,8 +40,8 @@ pub(super) fn run(
     solver: &SemanticModel,
     symbol_id_map: &SymbolIds,
     only_kinds: Option<&[EdgeKind]>,
-) -> (Vec<Edge>, Vec<Unresolved>, Vec<RefLog>) {
-    let per_file: Vec<(Vec<Edge>, Vec<Unresolved>, Vec<RefLog>)> = parsed
+) -> (Vec<Edge>, Vec<Unresolved>, Vec<RefLog>, Vec<FileCensus<'a>>) {
+    let per_file: Vec<_> = parsed
         .par_iter()
         .filter(|pf| !pf.path.starts_with("ext:"))
         .map(|pf| {
@@ -62,10 +61,12 @@ pub(super) fn run(
     let mut edges: Vec<Edge> = Vec::new();
     let mut unresolved: Vec<Unresolved> = Vec::new();
     let mut ref_log: Vec<RefLog> = Vec::new();
-    for (e, u, r) in per_file {
+    let mut censuses = Vec::with_capacity(per_file.len());
+    for (e, u, r, census) in per_file {
         edges.extend(e);
         unresolved.extend(u);
         ref_log.extend(r);
+        censuses.push(census);
     }
-    (edges, unresolved, ref_log)
+    (edges, unresolved, ref_log, censuses)
 }

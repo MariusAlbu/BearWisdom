@@ -12,6 +12,21 @@
 use crate::types::CallArg;
 use tree_sitter::Node;
 
+#[cfg(test)]
+#[path = "call_args_tests.rs"]
+mod tests;
+
+#[path = "callback_spans.rs"]
+mod callback_spans;
+
+#[path = "borrow_syntax.rs"]
+mod borrow_syntax;
+pub(crate) use borrow_syntax::BorrowSyntax;
+
+#[path = "place_syntax.rs"]
+mod place_syntax;
+pub(crate) use place_syntax::{Place, PlaceSyntax};
+
 /// Maximum nesting depth for recursive `CallArg` construction. Arguments
 /// deeper than this collapse to `CallArg::Other` rather than recursing further.
 const MAX_ARG_DEPTH: u32 = 32;
@@ -32,22 +47,66 @@ fn node_text(node: Node, src: &[u8]) -> String {
 /// recursive expression shapes (ternary, array, await, spread, subscript,
 /// binary). Recursion is capped at `MAX_ARG_DEPTH` levels.
 pub fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
+    extract_call_args_with_borrows(call_node, src, None)
+}
+
+pub(crate) fn extract_call_args_with_borrows(
+    call_node: &Node,
+    src: &[u8],
+    borrows: Option<&BorrowSyntax>,
+) -> Vec<CallArg> {
+    extract_call_args_with_places(call_node, src, borrows, None)
+}
+
+pub(crate) fn extract_call_args_with_places(
+    call_node: &Node,
+    src: &[u8],
+    borrows: Option<&BorrowSyntax>,
+    places: Option<&PlaceSyntax>,
+) -> Vec<CallArg> {
     let Some(args_node) = call_node.child_by_field_name("arguments") else {
         return Vec::new();
     };
     let mut result = Vec::new();
     let mut cursor = args_node.walk();
-    for child in args_node.named_children(&mut cursor) {
-        result.push(extract_arg(&child, src, 0));
+    for child in args_node
+        .named_children(&mut cursor)
+        .filter(|n| !n.is_extra())
+    {
+        result.push(extract_arg(&child, src, 0, borrows, places));
     }
     result
 }
 
 /// Convert a single AST expression node to a `CallArg`, recursing for composite
 /// expression kinds up to `MAX_ARG_DEPTH`.
-fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
+fn extract_arg(
+    node: &Node,
+    src: &[u8],
+    depth: u32,
+    borrows: Option<&BorrowSyntax>,
+    places: Option<&PlaceSyntax>,
+) -> CallArg {
     if depth >= MAX_ARG_DEPTH {
         return CallArg::Other;
+    }
+    if places.is_some_and(|forms| forms.recognizes(*node)) {
+        return CallArg::ValueAt(crate::types::SourceSpan {
+            start: node.start_byte() as u32,
+            end: node.end_byte() as u32,
+        });
+    }
+    if let Some(form) = borrows.filter(|form| form.node == node.kind()) {
+        return form
+            .capture(*node)
+            .map(|(operand, _)| CallArg::BorrowAt {
+                span: crate::types::SourceSpan {
+                    start: node.start_byte() as u32,
+                    end: node.end_byte() as u32,
+                },
+                expr: Box::new(extract_arg(&operand, src, depth + 1, borrows, places)),
+            })
+            .unwrap_or(CallArg::Other);
     }
     match node.kind() {
         "string" => {
@@ -89,7 +148,10 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
                 .unwrap_or_default();
             CallArg::TaggedTemplate { tag, body }
         }
-        "identifier" => CallArg::Ident(node_text(*node, src)),
+        "identifier" | "self" => CallArg::IdentAt(crate::types::SourceSpan {
+            start: node.start_byte() as u32,
+            end: node.end_byte() as u32,
+        }),
         "number" => CallArg::Literal(node_text(*node, src)),
         "true" | "false" | "null" | "undefined" => CallArg::Literal(node.kind().to_string()),
         "object" => {
@@ -107,10 +169,10 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
             let then_node = node.child_by_field_name("consequence");
             let else_node = node.child_by_field_name("alternative");
             let then_branch = then_node
-                .map(|n| extract_arg(&n, src, depth + 1))
+                .map(|n| extract_arg(&n, src, depth + 1, borrows, places))
                 .unwrap_or(CallArg::Other);
             let else_branch = else_node
-                .map(|n| extract_arg(&n, src, depth + 1))
+                .map(|n| extract_arg(&n, src, depth + 1, borrows, places))
                 .unwrap_or(CallArg::Other);
             CallArg::Ternary {
                 then_branch: Box::new(then_branch),
@@ -123,16 +185,21 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
             let mut cursor = node.walk();
             let elements = node
                 .named_children(&mut cursor)
-                .map(|child| extract_arg(&child, src, depth + 1))
+                .filter(|n| !n.is_extra())
+                .map(|child| extract_arg(&child, src, depth + 1, borrows, places))
                 .collect();
             CallArg::ArrayLiteral { elements }
         }
-        "await_expression" => {
-            // `await expr` — recurse on the awaited expression.
+        "await_expression" | "parenthesized_expression" => {
+            let mut cursor = node.walk();
             let inner = node
-                .child_by_field_name("value")
-                .map(|n| extract_arg(&n, src, depth + 1))
+                .named_children(&mut cursor)
+                .find(|n| !n.is_extra())
+                .map(|n| extract_arg(&n, src, depth + 1, borrows, places))
                 .unwrap_or(CallArg::Other);
+            if node.kind() == "parenthesized_expression" {
+                return inner;
+            }
             CallArg::Await {
                 expr: Box::new(inner),
             }
@@ -141,7 +208,7 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
             // `...expr` — recurse on the spread operand.
             let inner = node
                 .named_child(0)
-                .map(|n| extract_arg(&n, src, depth + 1))
+                .map(|n| extract_arg(&n, src, depth + 1, borrows, places))
                 .unwrap_or(CallArg::Other);
             CallArg::Spread {
                 expr: Box::new(inner),
@@ -151,11 +218,11 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
             // `container[index]` — recurse on both sides.
             let container = node
                 .child_by_field_name("object")
-                .map(|n| extract_arg(&n, src, depth + 1))
+                .map(|n| extract_arg(&n, src, depth + 1, borrows, places))
                 .unwrap_or(CallArg::Other);
             let index = node
                 .child_by_field_name("index")
-                .map(|n| extract_arg(&n, src, depth + 1))
+                .map(|n| extract_arg(&n, src, depth + 1, borrows, places))
                 .unwrap_or(CallArg::Other);
             CallArg::IndexAccess {
                 container: Box::new(container),
@@ -170,11 +237,11 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
                 .unwrap_or_default();
             let left = node
                 .child_by_field_name("left")
-                .map(|n| extract_arg(&n, src, depth + 1))
+                .map(|n| extract_arg(&n, src, depth + 1, borrows, places))
                 .unwrap_or(CallArg::Other);
             let right = node
                 .child_by_field_name("right")
-                .map(|n| extract_arg(&n, src, depth + 1))
+                .map(|n| extract_arg(&n, src, depth + 1, borrows, places))
                 .unwrap_or(CallArg::Other);
             CallArg::Binary {
                 op,
@@ -183,47 +250,15 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
             }
         }
         // `x => ...`, `(a, b) => ...`, `function (a) { ... }` — capture the
-        // lambda's own parameter names so the chain walker can type them from
+        // lambda's exact parameter spans so the chain walker can type them from
         // the higher-order method's callback-parameter signature.
         "arrow_function" | "function_expression" | "function_declaration" | "function" => {
-            CallArg::Lambda {
-                params: lambda_param_names(node, src),
+            CallArg::LambdaAt {
+                params: callback_spans::parameters(node),
             }
         }
         _ => CallArg::Other,
     }
-}
-
-/// Collect the positional parameter identifier names of an arrow / function
-/// argument. Handles the bare single-param arrow (`x => ...`, whose param is a
-/// direct `parameter`-field identifier with no `formal_parameters` wrapper) and
-/// the parenthesized form (`(a, b) => ...`, params under the `parameters`
-/// field). A parameter whose binding is not a plain identifier (destructuring,
-/// rest) yields an empty slot so positions stay aligned with the signature.
-fn lambda_param_names(node: &Node, src: &[u8]) -> Vec<String> {
-    // Bare single-param arrow: `x => ...`. The param is the `parameter` field,
-    // an identifier with no `formal_parameters` wrapper.
-    if let Some(p) = node.child_by_field_name("parameter") {
-        if p.kind() == "identifier" {
-            return vec![node_text(p, src)];
-        }
-    }
-    let Some(params) = node.child_by_field_name("parameters") else {
-        return Vec::new();
-    };
-    let mut cursor = params.walk();
-    params
-        .named_children(&mut cursor)
-        .map(|param| match param.kind() {
-            "required_parameter" | "optional_parameter" => param
-                .child_by_field_name("pattern")
-                .filter(|n| n.kind() == "identifier")
-                .map(|n| node_text(n, src))
-                .unwrap_or_default(),
-            "identifier" => node_text(param, src),
-            _ => String::new(),
-        })
-        .collect()
 }
 
 /// Replace `${...}` spans in a raw template literal text with `{}` placeholders.

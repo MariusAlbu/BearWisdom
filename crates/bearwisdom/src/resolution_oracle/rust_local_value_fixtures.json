@@ -1,0 +1,47 @@
+[
+  {
+    "name":"shared_borrow_local_and_generic_return_cascade", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } /*@decl:1:function*/pub fn identity<T>(x:T)->T { x } pub fn f(p:Doc) { let r=&p; r./*@ref:11*/touch(); let x=/*@ref:12*/identity(r); x./*@ref:13*/touch(); }\n"}],
+    "labels":[[11,2],[12,1],[13,2]]
+  },
+  {
+    "name":"mutable_borrow_local_and_generic_return_cascade", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&mut self) {} } /*@decl:1:function*/pub fn identity<T>(x:T)->T { x } pub fn f(mut p:Doc) { let r=&mut p; r./*@ref:11*/touch(); let x=/*@ref:12*/identity(r); x./*@ref:13*/touch(); }\n"}],
+    "labels":[[11,2],[12,1],[13,2]]
+  },
+  {
+    "name":"nested_borrow_locals_and_position_correct_copies", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } /*@decl:1:function*/pub fn identity<T>(x:T)->T { x } pub fn f(p:Doc) { let r=(&p); let n=&r; let copy=n; /*@ref:11*/identity(copy)./*@ref:12*/touch(); n./*@ref:13*/touch(); }\n"}],
+    "labels":[[11,1],[12,2],[13,2]]
+  },
+  {
+    "name":"borrow_initializer_shadowing_and_sibling_namesake_types", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub mod a { pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } } pub mod b { pub struct Doc; impl Doc { /*@decl:3:method*/pub fn touch(&self) {} } } /*@decl:1:function*/pub fn identity<T>(x:T)->T { x } pub fn first(p:a::Doc) { let p=&p; let r=p; /*@ref:11*/identity(r)./*@ref:12*/touch(); } pub fn second(p:b::Doc) { let p=&p; let r=p; /*@ref:13*/identity(r)./*@ref:14*/touch(); }\n"}],
+    "labels":[[11,1],[12,2],[13,1],[14,3]]
+  },
+  {
+    "name":"borrow_local_reads_prior_call_produced_binding", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:3:method*/pub fn touch(&self) {} } /*@decl:1:function*/pub fn make()->Doc { Doc } /*@decl:2:function*/pub fn identity<T>(x:T)->T { x } pub fn f() { let owned=/*@ref:11*/make(); let r=&owned; let x=/*@ref:12*/identity(r); x./*@ref:13*/touch(); }\n"}],
+    "labels":[[11,1],[12,2],[13,3]]
+  },
+  {
+    "name":"borrow_local_qualified_receiver_uses_imported_identity", "entry":"lib.rs",
+    "files":[{"path":"api.rs","source":"pub struct Input; pub trait Keep { /*@decl:1:method*/fn keep(&self)->&Self { self } } impl Keep for Input {} impl Input { /*@decl:2:method*/pub fn touch(&self) {} }\n"},{"path":"lib.rs","source":"pub mod api; use api::{Input as Alias,Keep as Trait}; pub fn f(p:Alias) { let r=&p; let x=<Alias as Trait>::/*@ref:11*/keep(r); x./*@ref:12*/touch(); }\n"}],
+    "labels":[[11,1],[12,2]]
+  },
+  {
+    "name":"borrow_local_from_self_preserves_nested_receiver_type", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"/*@decl:1:function*/pub fn identity<T>(x:T)->T { x } pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} pub fn run(&self) { let r=&self; /*@ref:11*/identity(r)./*@ref:12*/touch(); } }\n"}],
+    "labels":[[11,1],[12,2]]
+  },
+  {
+    "name":"annotated_borrow_local_preserves_declared_nominal_identity", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub mod a { pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } } pub mod b { pub struct Doc; impl Doc { pub fn touch(&self) {} } } /*@decl:1:function*/pub fn identity<T>(x:T)->T { x } pub fn f(p:a::Doc) { let r:&a::Doc=&p; let x=/*@ref:11*/identity(r); x./*@ref:12*/touch(); }\n"}],
+    "labels":[[11,1],[12,2]]
+  },
+  {
+    "name":"raw_pointer_local_never_inherits_reference_members", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct Doc; impl Doc { pub fn touch(&self) {} } pub fn f(p:Doc) { let r=&raw const p; r./*@ref:11*/touch(); }\n"}],
+    "labels":[[11,null]], "diagnostics":[[11,"E0599"]]
+  }
+]

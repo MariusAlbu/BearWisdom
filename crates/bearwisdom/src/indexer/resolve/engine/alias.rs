@@ -22,6 +22,9 @@ use crate::types::AliasTargetIds;
 use super::alias_gate::{head_names_nominal_type, uncontested_alias_target};
 use super::chain::{apply_args, callable_named_return, head_qname};
 use super::contract::SymbolLookup;
+#[path = "alias_bound.rs"]
+mod bound;
+use bound::application_target;
 
 /// Upper bound on alias-of-alias chaining; guards against a cyclic alias.
 const MAX_ALIAS_DEPTH: usize = 8;
@@ -46,7 +49,22 @@ pub(crate) fn expand_with_id(
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
 ) -> TypeId {
+    if lookup.nominal_context().is_some() {
+        return super::contract::member_applicability::expand(lookup, arena, ty)
+            .unwrap_or_else(|| arena.intern(Type::Unknown));
+    }
     for _ in 0..MAX_ALIAS_DEPTH {
+        if !lookup.accepts_type_context(arena, ty) {
+            return arena.intern(Type::Unknown);
+        }
+        if let Some(next) = bound::step(ty, recv_id, lookup, arena) {
+            if next == ty {
+                break;
+            }
+            ty = next;
+            recv_id = None;
+            continue;
+        }
         let Some(head) = head_qname(arena, ty) else {
             break;
         };
@@ -80,7 +98,10 @@ pub(crate) fn expand_with_id(
         if head == "ReturnType" {
             if let [arg] = apply_args(arena, ty)[..] {
                 let formatted = arena.format_type(arg);
-                let arg_str = formatted.strip_prefix("typeof ").unwrap_or(&formatted).trim();
+                let arg_str = formatted
+                    .strip_prefix("typeof ")
+                    .unwrap_or(&formatted)
+                    .trim();
                 // Only an UNAMBIGUOUS callee name resolves context-free —
                 // several same-named callables need the use site's import
                 // scope, which expansion does not carry. Stopping keeps the
@@ -123,8 +144,7 @@ pub(crate) fn expand_with_id(
             // return is required; an uncaptured one (`break`) leaves the alias
             // unresolved rather than dereferencing a dead `ReturnType` class.
             Some(AliasTargetIds::Application { root, args })
-                if head_qname(arena, *root).as_deref() == Some("ReturnType")
-                    && args.len() == 1 =>
+                if head_qname(arena, *root).as_deref() == Some("ReturnType") && args.len() == 1 =>
             {
                 let arg_str = arena.format_type(args[0]);
                 match callable_named_return(lookup, arena, &arg_str) {
@@ -193,14 +213,16 @@ pub(crate) fn expand_with_id(
                 }) {
                     captured
                 } else {
-                match decide_conditional(arena, &params, &arg_ids, *check, *extends) {
-                    Some(true) => *true_branch,
-                    Some(false) => *false_branch,
-                    None => match transparent_alias_target(lookup, arena, &head) {
-                        Some(t) => t,
-                        None => arena.intern(Type::Intersection(vec![*true_branch, *false_branch])),
-                    },
-                }
+                    match decide_conditional(arena, &params, &arg_ids, *check, *extends) {
+                        Some(true) => *true_branch,
+                        Some(false) => *false_branch,
+                        None => match transparent_alias_target(lookup, arena, &head) {
+                            Some(t) => t,
+                            None => {
+                                arena.intern(Type::Intersection(vec![*true_branch, *false_branch]))
+                            }
+                        },
+                    }
                 }
             }
             _ => match transparent_alias_target(lookup, arena, &head) {
@@ -330,7 +352,10 @@ fn literal_extends(arena: &TypeArena, check: TypeId, extends: TypeId) -> Option<
     // Everything is assignable to a top type: `T extends any` / `T extends
     // unknown` is the distributive-conditional idiom and always takes the true
     // branch, whatever `T` bound to.
-    if head_qname(arena, extends).as_deref().is_some_and(|n| n == "any" || n == "unknown") {
+    if head_qname(arena, extends)
+        .as_deref()
+        .is_some_and(|n| n == "any" || n == "unknown")
+    {
         return Some(true);
     }
     // Identical nominal heads are assignable (structural id equality).
@@ -340,22 +365,15 @@ fn literal_extends(arena: &TypeArena, check: TypeId, extends: TypeId) -> Option<
     // Distinct boolean-literal types are non-assignable. A bool literal interns
     // as `Class("true")`/`Class("false")` — its identity IS the value — so this is
     // a literal-value check, not a type-shape string.
-    let is_bool_lit =
-        |id: TypeId| head_qname(arena, id).as_deref().is_some_and(|n| n == "true" || n == "false");
+    let is_bool_lit = |id: TypeId| {
+        head_qname(arena, id)
+            .as_deref()
+            .is_some_and(|n| n == "true" || n == "false")
+    };
     if is_bool_lit(check) && is_bool_lit(extends) {
         return Some(false);
     }
     None
-}
-
-/// The `Application` alias target `root<args…>` as a TypeId. Both `root` and
-/// each element of `args` are already interned TypeIds from the Compilation map.
-fn application_target(arena: &TypeArena, root: TypeId, args: &[TypeId]) -> TypeId {
-    if args.is_empty() {
-        root
-    } else {
-        arena.intern(Type::Apply { base: root, args: args.to_vec() })
-    }
 }
 
 /// The next hop for a transparent (non-`Application`) alias: its flattened RHS
@@ -382,7 +400,10 @@ fn transparent_alias_target(
     if !lookup.members_of_id(id).is_empty() {
         return None;
     }
-    if let Some(t) = lookup.field_type_id_of(id).or_else(|| lookup.field_type_id(head)) {
+    if let Some(t) = lookup
+        .field_type_id_of(id)
+        .or_else(|| lookup.field_type_id(head))
+    {
         return Some(t);
     }
     lookup

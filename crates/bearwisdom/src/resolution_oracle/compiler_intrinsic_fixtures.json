@@ -1,0 +1,321 @@
+[
+  {
+    "name": "intrinsic_constructor_return_cascade",
+    "options": { "strict": true },
+    "source": "type BuiltinIteratorReturn = intrinsic; interface Payload { touch(): void } interface Box<T> { read(): T } interface Factory { new(value: BuiltinIteratorReturn): Box<Payload> } declare const Build: Factory; declare const input: undefined; class Holder { value = new Build(input); } declare const holder: Holder; function run() { holder.value.read().touch(); }",
+    "diagnosticCodes": [],
+    "types": [["type BuiltinIteratorReturn", "undefined"]],
+    "calls": [
+      { "expression": "holder.value.read()", "declaration": "read(): T" },
+      { "expression": "holder.value.read().touch()", "declaration": "touch(): void" }
+    ]
+  },
+  {
+    "name": "intrinsic_conditional_return_cascade",
+    "options": { "strict": true },
+    "source": "type BuiltinIteratorReturn = intrinsic; interface Payload { touch(): void } interface Box<T> { read(): T } type Result = BuiltinIteratorReturn extends undefined ? Box<Payload> : never; declare const box: Result; function run() { box.read().touch(); }",
+    "diagnosticCodes": [],
+    "types": [["type BuiltinIteratorReturn", "undefined"]],
+    "calls": [
+      { "expression": "box.read()", "declaration": "read(): T" },
+      { "expression": "box.read().touch()", "declaration": "touch(): void" }
+    ]
+  },
+  {
+    "diagnosticCodes": [],
+    "name": "strict_inheritance",
+    "options": {
+      "strict": true
+    },
+    "source": "type BuiltinIteratorReturn = intrinsic; type Result = BuiltinIteratorReturn;",
+    "types": [
+      [
+        "type BuiltinIteratorReturn",
+        "undefined"
+      ],
+      [
+        "type Result",
+        "undefined"
+      ]
+    ]
+  },
+  {
+    "diagnosticCodes": [],
+    "name": "default_non_strict",
+    "options": {},
+    "source": "type BuiltinIteratorReturn = intrinsic;",
+    "types": [
+      [
+        "type BuiltinIteratorReturn",
+        "any"
+      ]
+    ]
+  },
+  {
+    "diagnosticCodes": [],
+    "name": "explicit_enable",
+    "options": {
+      "strict": false,
+      "strictBuiltinIteratorReturn": true
+    },
+    "source": "type BuiltinIteratorReturn = intrinsic;",
+    "types": [
+      [
+        "type BuiltinIteratorReturn",
+        "undefined"
+      ]
+    ]
+  },
+  {
+    "diagnosticCodes": [],
+    "name": "explicit_disable",
+    "options": {
+      "strict": true,
+      "strictBuiltinIteratorReturn": false
+    },
+    "source": "type BuiltinIteratorReturn = intrinsic;",
+    "types": [
+      [
+        "type BuiltinIteratorReturn",
+        "any"
+      ]
+    ]
+  },
+  {
+    "diagnosticCodes": [],
+    "name": "strict_nulls_independent",
+    "options": {
+      "strict": true,
+      "strictNullChecks": false
+    },
+    "source": "type BuiltinIteratorReturn = intrinsic;",
+    "types": [
+      [
+        "type BuiltinIteratorReturn",
+        "undefined"
+      ]
+    ]
+  },
+  {
+    "diagnosticCodes": [],
+    "name": "ordinary_namesake",
+    "options": {
+      "strict": true
+    },
+    "source": "type BuiltinIteratorReturn = string; type Result = BuiltinIteratorReturn;",
+    "types": [
+      [
+        "type BuiltinIteratorReturn",
+        "string"
+      ],
+      [
+        "type Result",
+        "string"
+      ]
+    ]
+  },
+  {
+    "diagnosticCodes": [],
+    "name": "ordinary_generic_namesake",
+    "options": {
+      "strict": true
+    },
+    "source": "type BuiltinIteratorReturn<T> = T; type Result = BuiltinIteratorReturn<number>;",
+    "types": [
+      [
+        "type Result",
+        "number"
+      ]
+    ]
+  },
+  {
+    "diagnosticCodes": [],
+    "name": "namespace_intrinsic",
+    "options": {
+      "strict": true
+    },
+    "source": "declare namespace N { type BuiltinIteratorReturn = intrinsic; type Result = BuiltinIteratorReturn; }",
+    "types": [
+      [
+        "type BuiltinIteratorReturn",
+        "undefined"
+      ],
+      [
+        "type Result",
+        "undefined"
+      ]
+    ]
+  },
+  {
+    "diagnosticCodes": [],
+    "name": "namespace_isolation",
+    "options": {
+      "strict": true
+    },
+    "source": "type BuiltinIteratorReturn = intrinsic; declare namespace N { type BuiltinIteratorReturn = string; type Local = BuiltinIteratorReturn; } type Result = BuiltinIteratorReturn;",
+    "types": [
+      [
+        "type BuiltinIteratorReturn = intrinsic",
+        "undefined"
+      ],
+      [
+        "type BuiltinIteratorReturn = string",
+        "string"
+      ],
+      [
+        "type Local",
+        "string"
+      ],
+      [
+        "type Result",
+        "undefined"
+      ]
+    ]
+  },
+  {
+    "diagnosticCodes": [],
+    "name": "local_intrinsic_outer_ordinary",
+    "options": {
+      "strict": true
+    },
+    "source": "type BuiltinIteratorReturn = number; declare namespace N { type BuiltinIteratorReturn = intrinsic; type Local = BuiltinIteratorReturn; } type Result = BuiltinIteratorReturn;",
+    "types": [
+      [
+        "type BuiltinIteratorReturn = number",
+        "number"
+      ],
+      [
+        "type BuiltinIteratorReturn = intrinsic",
+        "undefined"
+      ],
+      [
+        "type Local",
+        "undefined"
+      ],
+      [
+        "type Result",
+        "number"
+      ]
+    ]
+  },
+  {
+    "diagnosticCodes": [],
+    "name": "keyword_shadows_named_type",
+    "options": {
+      "strict": true
+    },
+    "source": "type intrinsic = string; type BuiltinIteratorReturn = intrinsic;",
+    "types": [
+      [
+        "type intrinsic",
+        "string"
+      ],
+      [
+        "type BuiltinIteratorReturn",
+        "undefined"
+      ]
+    ]
+  },
+  {
+    "diagnosticCodes": [],
+    "name": "parenthesized_named_type",
+    "options": {
+      "strict": true
+    },
+    "source": "type intrinsic = string; type BuiltinIteratorReturn = (intrinsic);",
+    "types": [
+      [
+        "type intrinsic",
+        "string"
+      ],
+      [
+        "type BuiltinIteratorReturn",
+        "string"
+      ]
+    ]
+  },
+  {
+    "diagnosticCodes": [
+      2795
+    ],
+    "name": "wrong_intrinsic_name",
+    "options": {
+      "strict": true
+    },
+    "source": "type Wrong = intrinsic;",
+    "unknown": [
+      "type Wrong"
+    ]
+  },
+  {
+    "diagnosticCodes": [
+      2795
+    ],
+    "name": "wrong_intrinsic_arity",
+    "options": {
+      "strict": true
+    },
+    "source": "type BuiltinIteratorReturn<T> = intrinsic;",
+    "unknown": [
+      "type BuiltinIteratorReturn"
+    ]
+  },
+  {
+    "diagnosticCodes": [
+      2795
+    ],
+    "name": "wrong_keyword_name_with_namesake",
+    "options": {
+      "strict": true
+    },
+    "source": "type intrinsic = string; type Wrong = intrinsic;",
+    "unknown": [
+      "type Wrong"
+    ]
+  },
+  {
+    "diagnosticCodes": [
+      2304
+    ],
+    "name": "parenthesized_missing_reference",
+    "options": {
+      "strict": true
+    },
+    "source": "type BuiltinIteratorReturn = (intrinsic);",
+    "unknown": [
+      "type BuiltinIteratorReturn"
+    ]
+  },
+  {
+    "diagnosticCodes": [],
+    "name": "supported_compiler_unmodeled_string_intrinsic",
+    "options": {
+      "strict": true
+    },
+    "source": "declare namespace N { type Uppercase<S extends string> = intrinsic; }",
+    "types": [
+      [
+        "type Uppercase",
+        "intrinsic"
+      ]
+    ],
+    "unsupported": [
+      "type Uppercase"
+    ]
+  },
+  {
+    "diagnosticCodes": [
+      2300,
+      2300
+    ],
+    "name": "duplicate_intrinsic_alias",
+    "options": {
+      "strict": true
+    },
+    "source": "type BuiltinIteratorReturn = intrinsic; type BuiltinIteratorReturn = string;",
+    "rejected": [
+      "type BuiltinIteratorReturn = intrinsic",
+      "type BuiltinIteratorReturn = string"
+    ]
+  }
+]

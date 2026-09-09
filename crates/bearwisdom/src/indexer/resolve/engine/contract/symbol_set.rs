@@ -115,6 +115,20 @@ impl<'a> From<Vec<&'a Symbol>> for SymbolSet<'a> {
     }
 }
 
+/// Construct an empty or singleton borrowed candidate set without allocation.
+impl<'a> From<Option<&'a Symbol>> for SymbolSet<'a> {
+    fn from(symbol: Option<&'a Symbol>) -> Self {
+        match symbol {
+            Some(symbol) => Self::Borrowed(std::slice::from_ref(symbol)),
+            None => Self::empty(),
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "symbol_set_tests.rs"]
+mod tests;
+
 // --- iteration -------------------------------------------------------------
 
 /// Borrowing iterator over a `SymbolSet`, yielding `&Symbol` uniformly

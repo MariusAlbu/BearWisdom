@@ -1,0 +1,51 @@
+[
+  {
+    "name": "inherited_instance_members_keep_each_ancestor_generic_environment",
+    "diagnosticCodes": [],
+    "files": [
+      {"path":"main.ts","source":"export {}; class Doc { /*@decl:1:method*/touch(): void {} } class Parent<T> { item!: T; /*@decl:2:method*/next(): T { return this.item; } /*@decl:3:method*/map(f: (x: T) => T): T { return f(this.item); } } class Middle<U> extends Parent<U> {} class Child extends Middle<Doc> {} function run(child: Child) { child./*@ref:1*/next()./*@ref:2*/touch(); child.item./*@ref:3*/touch(); child./*@ref:4*/map(x => { x./*@ref:5*/touch(); return x; })./*@ref:6*/touch(); }"}
+    ],
+    "labels": [[1,2],[2,1],[3,1],[4,3],[5,1],[6,1]]
+  },
+  {
+    "name": "configured_ambient_base_arguments_belong_to_the_consuming_source",
+    "diagnosticCodes": [],
+    "files": [
+      {"path":"provider.d.ts","source":"declare module 'provider' { class Doc { wrong(): void; } class Base<T> { /*@decl:1:method*/next(): T; } }"},
+      {"path":"main.ts","source":"import { Base } from 'provider'; class Doc { /*@decl:2:method*/touch(): void {} } type Wrapped = Doc; class Child extends Base<Wrapped> {} function run(child: Child) { child./*@ref:1*/next()./*@ref:2*/touch(); }"}
+    ],
+    "labels": [[1,1],[2,2]]
+  },
+  {
+    "name": "private_named_namespace_base_has_numeric_source_owner",
+    "diagnosticCodes": [],
+    "files": [
+      {"path":"main.ts","source":"export {}; class Doc { /*@decl:1:method*/touch(): void {} } namespace API { export class Base<T> { /*@decl:2:method*/next(): T { throw 0; } } } class Child extends API.Base<Doc> {} function run(child: Child) { child./*@ref:1*/next()./*@ref:2*/touch(); }"}
+    ],
+    "labels": [[1,2],[2,1]]
+  },
+  {
+    "name": "configured_private_fields_preserve_nested_call_cascades",
+    "diagnosticCodes": [],
+    "files": [
+      {"path":"main.ts","source":"export {}; class Doc { /*@decl:1:method*/touch(): void {} } class Service { /*@decl:2:method*/next(): Doc { throw 0; } } class Parent<T> { /*@decl:3:method*/read(): T { throw 0; } } class Child extends Parent<Doc> { #service!: Service; #doc!: Doc; run() { this.#service./*@ref:1*/next()./*@ref:2*/touch(); this.#doc./*@ref:3*/touch(); this./*@ref:4*/read()./*@ref:5*/touch(); } }"}
+    ],
+    "labels": [[1,2],[2,1],[3,1],[4,3],[5,1]]
+  },
+  {
+    "name": "private_field_brands_follow_lexical_declarations_not_nearest_receiver_members",
+    "diagnosticCodes": [],
+    "files": [
+      {"path":"main.ts","source":"export {}; class Doc { /*@decl:1:method*/touch(): void {} } class Other { /*@decl:2:method*/wrong(): void {} } class Parent { #item!: Doc; run(value: Child) { value.#item./*@ref:1*/touch(); } } class Child extends Parent { #item!: Other; local() { this.#item./*@ref:2*/wrong(); } }"}
+    ],
+    "labels": [[1,1],[2,2]]
+  },
+  {
+    "name": "configured_inherited_missing_member_cannot_borrow_namesake",
+    "diagnosticCodes": [2339],
+    "files": [
+      {"path":"main.ts","source":"export {}; class Unrelated { touch(): void {} } class Parent {} class Child extends Parent {} function run(child: Child) { child./*@ref:1*/touch(); }"}
+    ],
+    "labels": [[1,null]]
+  }
+]

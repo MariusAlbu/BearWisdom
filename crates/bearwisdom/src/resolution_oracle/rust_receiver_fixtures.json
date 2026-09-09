@@ -1,0 +1,41 @@
+[
+  {
+    "name": "owned_receiver_zero_arguments_and_local_yields",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub struct Doc; pub struct Item<T>{inner:T} type Alias<'a> = Item<&'a Doc>;\nimpl<'a> Alias<'a> { /*@decl:1:method*/pub fn touch(&self) {} }\npub struct C; impl C { /*@decl:2:method*/pub fn make(&self) -> Alias<'_> { loop {} } }\npub fn f(p:C) { p./*@ref:11*/make()./*@ref:12*/touch(); let q = p./*@ref:13*/make(); q./*@ref:14*/touch(); }\n"}],
+    "labels": [[11,2],[12,1],[13,2],[14,1]]
+  },
+  {
+    "name": "owned_mutable_explicit_self_region",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub struct Doc; pub struct Item<T>{inner:T} type Alias<'a> = Item<&'a Doc>;\nimpl<'a> Alias<'a> { /*@decl:1:method*/pub fn touch(&self) {} }\npub struct C; impl C { /*@decl:2:method*/pub fn make<'a>(self: &'a mut Self, other: &Doc) -> Alias<'a> { loop {} } }\npub fn f(mut p:C, other:&Doc) { p./*@ref:11*/make(other)./*@ref:12*/touch(); let q = p./*@ref:13*/make(other); q./*@ref:14*/touch(); }\n"}],
+    "labels": [[11,2],[12,1],[13,2],[14,1]]
+  },
+  {
+    "name": "owned_receiver_generic_output_namesake_type_ids",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"mod a { pub struct Doc; impl Doc { /*@decl:1:method*/pub fn save(&self) {} } }\nmod b { pub struct Doc; impl Doc { /*@decl:2:method*/pub fn save(&self) {} } }\npub struct Item<T>{inner:T} type Alias<'a,T> = Item<&'a T>;\nimpl<'a,T> Alias<'a,T> { /*@decl:3:method*/pub fn get(&self) -> &'a T { self.inner } }\npub struct C; impl C { /*@decl:4:method*/pub fn make<T>(&self) -> Alias<'_,T> { loop {} } }\npub fn f(p:C) { p./*@ref:11*/make::<a::Doc>()./*@ref:12*/get()./*@ref:13*/save(); p./*@ref:14*/make::<b::Doc>()./*@ref:15*/get()./*@ref:16*/save(); }\n"}],
+    "labels": [[11,4],[12,3],[13,1],[14,4],[15,3],[16,2]]
+  },
+  {
+    "name": "owned_alias_receiver_and_nested_call_selectors",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub struct Doc; pub struct Item<T>{inner:T} type Alias<'a> = Item<&'a Doc>;\nimpl<'a> Alias<'a> { /*@decl:1:method*/pub fn touch(&self) {} }\npub struct C; type Receiver = C; impl Receiver { /*@decl:2:method*/pub fn next(&self) -> Self { loop {} } /*@decl:3:method*/pub fn make(&self) -> Alias<'_> { loop {} } }\npub fn f(p:Receiver) { p./*@ref:11*/next()./*@ref:12*/next()./*@ref:13*/make()./*@ref:14*/touch(); }\n"}],
+    "labels": [[11,2],[12,2],[13,3],[14,1]]
+  },
+  {
+    "name": "owned_factory_receiver_output_field_cascade",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:1:method*/pub fn save(&self) {} }\npub struct Item<T>{inner:T} type Alias<'a> = Item<&'a Doc>;\npub struct C; impl C { /*@decl:2:method*/pub fn make(&self) -> Alias<'_> { loop {} } }\n/*@decl:3:function*/pub fn build() -> C { loop {} }\npub fn f() { /*@ref:11*/build()./*@ref:12*/make().inner./*@ref:13*/save(); }\n"}],
+    "labels": [[11,3],[12,2],[13,1]]
+  },
+  {
+    "name": "owned_cross_file_receiver_output_identity",
+    "entry": "lib.rs",
+    "files": [
+      {"path":"lib.rs","source":"mod api; use api::C; pub fn f(p:C) { p./*@ref:11*/make()./*@ref:12*/touch(); }\n"},
+      {"path":"api.rs","source":"pub struct Doc; pub struct Item<T>{inner:T} type Alias<'a> = Item<&'a Doc>;\nimpl<'a> Alias<'a> { /*@decl:1:method*/pub fn touch(&self) {} }\npub struct C; impl C { /*@decl:2:method*/pub fn make(&self) -> Alias<'_> { loop {} } }\n"}
+    ],
+    "labels": [[11,2],[12,1]]
+  }
+]

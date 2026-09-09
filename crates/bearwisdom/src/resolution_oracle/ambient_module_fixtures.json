@@ -1,0 +1,67 @@
+[
+  {
+    "name": "ambient_provider_factory_return_keeps_its_declaration_owner",
+    "diagnosticCodes": [],
+    "files": [
+      { "path": "provider.d.ts", "source": "declare module 'provider' { class Doc { /*@decl:1:method*/touch(): void; } /*@decl:2:function*/function make(): Doc; }" },
+      { "path": "main.ts", "source": "import { make } from 'provider'; /*@ref:1*/make()./*@ref:2*/touch();" }
+    ],
+    "labels": [[1,2],[2,1]]
+  },
+  {
+    "name": "ambient_namespace_selectors_and_generic_returns_use_program_ids",
+    "diagnosticCodes": [],
+    "files": [
+      { "path": "provider.d.ts", "source": "declare module 'provider' { /*@decl:1:function*/function identity<T>(value: T): T; }" },
+      { "path": "main.ts", "source": "import * as API from 'provider'; class Doc { /*@decl:2:method*/touch() {} } function run(value: Doc) { API./*@ref:1*/identity(value)./*@ref:2*/touch(); }" }
+    ],
+    "labels": [[1,1],[2,2]]
+  },
+  {
+    "name": "ambient_provider_parts_combine_disjoint_export_surfaces",
+    "diagnosticCodes": [],
+    "files": [
+      { "path": "left.d.ts", "source": "declare module 'provider' { /*@decl:1:function*/function left(): void; }" },
+      { "path": "right.d.ts", "source": "declare module 'provider' { /*@decl:2:function*/function right(): void; }" },
+      { "path": "main.ts", "source": "import { left, right } from 'provider'; /*@ref:1*/left(); /*@ref:2*/right();" }
+    ],
+    "labels": [[1,1],[2,2]]
+  },
+  {
+    "name": "nested_global_augmentation_contributes_to_the_configured_program",
+    "diagnosticCodes": [],
+    "files": [
+      { "path": "base.d.ts", "source": "interface Catalog<T> { /*@decl:1:method*/first(): T; }" },
+      { "path": "provider.d.ts", "source": "declare module 'provider' { global { interface Catalog<T> { /*@decl:2:method*/each(callback: (value: T) => void): void; } } }" },
+      { "path": "main.ts", "source": "export {}; class Doc { /*@decl:3:method*/touch() {} } function run(list: Catalog<Doc>) { list./*@ref:1*/first()./*@ref:2*/touch(); list./*@ref:3*/each(value => value./*@ref:4*/touch()); }" }
+    ],
+    "labels": [[1,1],[2,3],[3,2],[4,3]]
+  },
+  {
+    "name": "ambient_module_functions_do_not_leak_into_global_value_lookup",
+    "diagnosticCodes": [2304],
+    "files": [
+      { "path": "provider.d.ts", "source": "declare module 'provider' { function make(): void; }" },
+      { "path": "main.ts", "source": "export {}; /*@ref:1*/make();" }
+    ],
+    "labels": [[1,null]]
+  },
+  {
+    "name": "missing_provider_cannot_borrow_another_modules_same_named_export",
+    "diagnosticCodes": [2307],
+    "files": [
+      { "path": "provider.d.ts", "source": "declare module 'provider' { function make(): void; }" },
+      { "path": "main.ts", "source": "import { make } from 'other'; /*@ref:1*/make();" }
+    ],
+    "labels": [[1,null]]
+  },
+  {
+    "name": "sibling_ambient_factories_keep_distinct_nominal_return_owners",
+    "diagnosticCodes": [],
+    "files": [
+      { "path": "provider.d.ts", "source": "declare module 'left' { class Doc { /*@decl:1:method*/left(): void; } /*@decl:2:function*/function make(): Doc; } declare module 'right' { class Doc { /*@decl:3:method*/right(): void; } /*@decl:4:function*/function make(): Doc; }" },
+      { "path": "main.ts", "source": "import { make as Left } from 'left'; import { make as Right } from 'right'; /*@ref:1*/Left()./*@ref:2*/left(); /*@ref:3*/Right()./*@ref:4*/right();" }
+    ],
+    "labels": [[1,2],[2,1],[3,4],[4,3]]
+  }
+]

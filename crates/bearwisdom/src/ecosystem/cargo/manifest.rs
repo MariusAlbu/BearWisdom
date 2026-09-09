@@ -4,6 +4,11 @@
 
 use std::path::{Path, PathBuf};
 
+#[path = "module_manifest.rs"]
+mod module_manifest;
+#[path = "registry_modules.rs"]
+mod registry_modules;
+
 use crate::ecosystem::manifest::{ManifestData, ManifestKind, ManifestReader, ReaderEntry};
 
 /// `CargoManifest` reads `Cargo.toml` + `Cargo.lock` per-package during
@@ -25,6 +30,8 @@ impl ManifestReader for CargoManifest {
         }
         let mut data = ManifestData::default();
         for e in &entries {
+            data.module_packages
+                .extend(e.data.module_packages.iter().cloned());
             data.dependencies
                 .extend(e.data.dependencies.iter().cloned());
         }
@@ -35,37 +42,16 @@ impl ManifestReader for CargoManifest {
         let mut paths = Vec::new();
         collect_cargo_tomls(project_root, &mut paths, 0);
 
-        let mut out = Vec::new();
-        for manifest_path in paths {
-            let Ok(content) = std::fs::read_to_string(&manifest_path) else {
-                continue;
-            };
-
-            let mut data = ManifestData::default();
-            for name in parse_cargo_dependencies(&content) {
-                data.dependencies.insert(name);
-            }
-            for key in parse_cargo_path_dependencies(&content) {
-                if !data.project_refs.contains(&key) {
-                    data.project_refs.push(key);
-                }
-            }
-            data.dep_renames = parse_cargo_dep_renames(&content);
-
-            let name = parse_cargo_package_name(&content);
-            let package_dir = manifest_path
-                .parent()
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(|| project_root.to_path_buf());
-
-            out.push(ReaderEntry {
-                package_dir,
-                manifest_path,
-                data,
-                name,
-            });
-        }
-        out
+        let mut entries: Vec<_> = paths
+            .into_iter()
+            .filter_map(|path| module_manifest::entry(path, project_root))
+            .collect();
+        registry_modules::extend(
+            &mut entries,
+            project_root,
+            &super::discovery::cargo_registry_src_dirs(),
+        );
+        entries
     }
 }
 
@@ -189,7 +175,9 @@ pub fn parse_cargo_dep_renames(content: &str) -> Vec<(String, String)> {
             .trim()
             .to_string();
         if key.is_empty()
-            || !key.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+            || !key
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
         {
             continue;
         }

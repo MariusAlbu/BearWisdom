@@ -1,0 +1,180 @@
+[
+  {
+    "name": "qualified_self_return_cascades",
+    "entry": "lib.rs",
+    "files": [
+      {
+        "path": "lib.rs",
+        "source": "pub trait Keep { /*@decl:1:method*/fn keep(self) -> Self; }\npub struct Doc; impl Keep for Doc { fn keep(self)->Self { self } } impl Doc { /*@decl:2:method*/pub fn touch(&self) {} }\npub fn f(p:Doc,q:Doc) { <Doc as Keep>::/*@ref:11*/keep(p)./*@ref:12*/touch(); let x=<Doc as Keep>::/*@ref:13*/keep(q); x./*@ref:14*/touch(); }\n"
+      }
+    ],
+    "labels": [
+      [
+        11,
+        1
+      ],
+      [
+        12,
+        2
+      ],
+      [
+        13,
+        1
+      ],
+      [
+        14,
+        2
+      ]
+    ]
+  },
+  {
+    "name": "qualified_receiver_argument_and_output_region",
+    "entry": "lib.rs",
+    "files": [
+      {
+        "path": "lib.rs",
+        "source": "pub struct Noise; pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} }\npub trait Keep { /*@decl:1:method*/fn keep<'a>(&'a self,other:&Noise)->&'a Self { self } } impl Keep for Doc {}\npub fn f(p:&Doc,other:&Noise) { <Doc as Keep>::/*@ref:11*/keep(p,other)./*@ref:12*/touch(); }\n"
+      }
+    ],
+    "labels": [
+      [
+        11,
+        1
+      ],
+      [
+        12,
+        2
+      ]
+    ]
+  },
+  {
+    "name": "qualified_generic_method_argument_identity",
+    "entry": "lib.rs",
+    "files": [
+      {
+        "path": "lib.rs",
+        "source": "pub mod real { pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } } pub mod twin { pub struct Doc; impl Doc { pub fn touch(&self) {} } }\npub struct Input; pub trait Choose { /*@decl:1:method*/fn choose<U>(&self,item:U)->U { item } } impl Choose for Input {}\npub fn f(p:&Input,x:real::Doc,y:real::Doc) { <Input as Choose>::/*@ref:11*/choose::<real::Doc>(p,x)./*@ref:12*/touch(); <Input as Choose>::/*@ref:13*/choose(p,y)./*@ref:14*/touch(); }\n"
+      }
+    ],
+    "labels": [
+      [
+        11,
+        1
+      ],
+      [
+        12,
+        2
+      ],
+      [
+        13,
+        1
+      ],
+      [
+        14,
+        2
+      ]
+    ]
+  },
+  {
+    "name": "qualified_trait_arguments_and_static_return",
+    "entry": "lib.rs",
+    "files": [
+      {
+        "path": "lib.rs",
+        "source": "pub mod real { pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } } pub mod twin { pub struct Doc; impl Doc { pub fn touch(&self) {} } }\npub struct Input; pub trait Load<U> { /*@decl:1:method*/fn load()->U; } impl Load<real::Doc> for Input { fn load()->real::Doc { real::Doc } }\npub fn f() { <Input as Load<real::Doc>>::/*@ref:11*/load()./*@ref:12*/touch(); }\n"
+      }
+    ],
+    "labels": [
+      [
+        11,
+        1
+      ],
+      [
+        12,
+        2
+      ]
+    ]
+  },
+  {
+    "name": "qualified_generic_bound_and_self",
+    "entry": "lib.rs",
+    "files": [
+      {
+        "path": "lib.rs",
+        "source": "pub trait Save { /*@decl:1:method*/fn save(&self) {} } pub struct Doc; impl Save for Doc {}\nimpl Doc { pub fn inner(&self) { <Self as Save>::/*@ref:11*/save(self); } }\npub fn f<T:Save>(p:&T) { <T as Save>::/*@ref:12*/save(p); }\n"
+      }
+    ],
+    "labels": [
+      [
+        11,
+        1
+      ],
+      [
+        12,
+        1
+      ]
+    ]
+  },
+  {
+    "name": "qualified_disambiguation_ignores_trait_scope_competitors",
+    "entry": "lib.rs",
+    "files": [
+      {
+        "path": "lib.rs",
+        "source": "pub mod a { pub trait Save { /*@decl:1:method*/fn save(&self) {} } } pub mod b { pub trait Save { /*@decl:2:method*/fn save(&self) {} } }\npub struct Doc; impl a::Save for Doc {} impl b::Save for Doc {} impl Doc { pub fn save(&self) {} }\npub fn f(p:&Doc) { <Doc as a::Save>::/*@ref:11*/save(p); <Doc as b::Save>::/*@ref:12*/save(p); }\n"
+      }
+    ],
+    "labels": [
+      [
+        11,
+        1
+      ],
+      [
+        12,
+        2
+      ]
+    ]
+  },
+  {
+    "name": "qualified_static_self_return",
+    "entry": "lib.rs",
+    "files": [
+      {
+        "path": "lib.rs",
+        "source": "pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } pub trait Create { /*@decl:1:method*/fn make()->Self; } impl Create for Doc { fn make()->Self { Doc } }\npub fn f() { <Doc as Create>::/*@ref:11*/make()./*@ref:12*/touch(); }\n"
+      }
+    ],
+    "labels": [
+      [
+        11,
+        1
+      ],
+      [
+        12,
+        2
+      ]
+    ]
+  },
+  {
+    "name": "qualified_missing_member_cannot_use_inherent_namesake",
+    "entry": "lib.rs",
+    "files": [
+      {
+        "path": "lib.rs",
+        "source": "pub trait Empty {} pub struct Doc; impl Empty for Doc {} impl Doc { pub fn absent(&self) {} }\npub fn f(p:&Doc) { <Doc as Empty>::/*@ref:11*/absent(p); }\n"
+      }
+    ],
+    "labels": [
+      [
+        11,
+        null
+      ]
+    ],
+    "diagnostics": [
+      [
+        11,
+        "E0576"
+      ]
+    ]
+  }
+]

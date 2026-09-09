@@ -1,0 +1,373 @@
+[
+  {
+    "name": "named_imports_keep_distinct_type_and_callable_declarations",
+    "files": [
+      {
+        "path": "left.ts",
+        "source": "class Model { /*@decl:1:method*/save(): void {} }\n/*@decl:2:function*/function make(): Model { throw 0; }\nexport { Model, make };\n"
+      },
+      {
+        "path": "right.ts",
+        "source": "class Model { /*@decl:3:method*/save(): void {} }\n/*@decl:4:function*/function make(): Model { throw 0; }\nexport { Model, make };\n"
+      },
+      {
+        "path": "use.ts",
+        "source": "import { Model as Left, make as left } from './left';\nimport { Model as Right, make as right } from './right';\nfunction f(a: Left, b: Right) { a./*@ref:11*/save(); b./*@ref:12*/save(); /*@ref:13*/left()./*@ref:14*/save(); /*@ref:15*/right()./*@ref:16*/save(); }\n"
+      }
+    ],
+    "labels": [
+      [
+        11,
+        1
+      ],
+      [
+        12,
+        3
+      ],
+      [
+        13,
+        2
+      ],
+      [
+        14,
+        1
+      ],
+      [
+        15,
+        4
+      ],
+      [
+        16,
+        3
+      ]
+    ]
+  },
+  {
+    "name": "imported_class_and_function_arguments_keep_generic_ids",
+    "files": [
+      {
+        "path": "model.ts",
+        "source": "class Model { /*@decl:1:method*/save(): void {} }\nfunction make(): Model { throw 0; }\nexport { Model, make };\n"
+      },
+      {
+        "path": "use.ts",
+        "source": "import { Model as Item, make as create } from './model';\nfunction identity<T>(value: T): T { return value; }\nfunction invoke<T>(callback: () => T): T { return callback(); }\nfunction f() { const Copy = identity(Item); new Copy()./*@ref:11*/save(); invoke(create)./*@ref:12*/save(); }\n"
+      }
+    ],
+    "labels": [
+      [
+        11,
+        1
+      ],
+      [
+        12,
+        1
+      ]
+    ]
+  },
+  {
+    "name": "renamed_reexports_and_local_export_aliases_keep_identity",
+    "files": [
+      {
+        "path": "model.ts",
+        "source": "class Model { /*@decl:1:method*/save(): void {} }\nexport { Model };\n"
+      },
+      {
+        "path": "barrel.ts",
+        "source": "export { Model as Public } from './model';\n"
+      },
+      {
+        "path": "bridge.ts",
+        "source": "import { Public as Local } from './barrel';\nexport { Local as Item };\n"
+      },
+      {
+        "path": "use.ts",
+        "source": "import { Item } from './bridge';\nfunction f(item: Item) { item./*@ref:11*/save(); }\n"
+      }
+    ],
+    "labels": [
+      [
+        11,
+        1
+      ]
+    ]
+  },
+  {
+    "name": "non_exported_declarations_cannot_be_imported_by_name",
+    "files": [
+      {
+        "path": "model.ts",
+        "source": "class Hidden { save(): void {} }\nclass Public { /*@decl:1:method*/save(): void {} }\nexport { Public };\n"
+      },
+      {
+        "path": "use.ts",
+        "source": "import { Hidden, Public } from './model';\nfunction f(hidden: Hidden, visible: Public) { hidden./*@ref:11*/save(); visible./*@ref:12*/save(); }\n"
+      }
+    ],
+    "labels": [
+      [
+        11,
+        null
+      ],
+      [
+        12,
+        1
+      ]
+    ]
+  },
+  {
+    "name": "relative_module_paths_do_not_borrow_same_basename_files",
+    "files": [
+      {
+        "path": "left/model.ts",
+        "source": "export class Model { /*@decl:1:method*/save(): void {} }\n"
+      },
+      {
+        "path": "right/model.ts",
+        "source": "export class Model { /*@decl:2:method*/save(): void {} }\n"
+      },
+      {
+        "path": "right/use.ts",
+        "source": "import { Model } from './model.js';\nfunction f(model: Model) { model./*@ref:11*/save(); }\n"
+      },
+      {
+        "path": "missing/use.ts",
+        "source": "import { Model } from './model';\nfunction f(model: Model) { model./*@ref:12*/save(); }\n"
+      }
+    ],
+    "labels": [
+      [
+        11,
+        2
+      ],
+      [
+        12,
+        null
+      ]
+    ]
+  },
+  {
+    "name": "wildcard_cycles_terminate_and_explicit_exports_win",
+    "files": [
+      {
+        "path": "a.ts",
+        "source": "export class Model { /*@decl:1:method*/save(): void {} }\n"
+      },
+      {
+        "path": "b.ts",
+        "source": "export class Model { /*@decl:2:method*/save(): void {} }\n"
+      },
+      {
+        "path": "barrel.ts",
+        "source": "export * from './loop';\nexport * from './a';\nexport { Model } from './b';\n"
+      },
+      {
+        "path": "loop.ts",
+        "source": "export * from './barrel';\n"
+      },
+      {
+        "path": "use.ts",
+        "source": "import { Model } from './loop';\nfunction f(model: Model) { model./*@ref:11*/save(); }\n"
+      }
+    ],
+    "labels": [
+      [
+        11,
+        2
+      ]
+    ]
+  },
+  {
+    "name": "named_default_exports_and_type_only_imports_keep_type_identity",
+    "files": [
+      {
+        "path": "model.ts",
+        "source": "class Model { /*@decl:1:method*/save(): void {} }\nexport default Model;\nexport { Model };\n"
+      },
+      {
+        "path": "use.ts",
+        "source": "import Item from './model';\nimport type { Model as Shape } from './model';\nfunction f(item: Shape) { item./*@ref:11*/save(); new Item()./*@ref:12*/save(); }\n"
+      }
+    ],
+    "labels": [
+      [
+        11,
+        1
+      ],
+      [
+        12,
+        1
+      ]
+    ]
+  },
+  {
+    "name": "local_values_shadow_import_aliases_without_retargeting_types",
+    "files": [
+      {
+        "path": "model.ts",
+        "source": "export class Model { /*@decl:1:method*/save(): void {} }\n"
+      },
+      {
+        "path": "use.ts",
+        "source": "import { Model as Item } from './model';\nclass Other { /*@decl:2:method*/save(): void {} }\nfunction f(Item: Other, typed: Item) { Item./*@ref:11*/save(); typed./*@ref:12*/save(); }\n"
+      }
+    ],
+    "labels": [
+      [
+        11,
+        2
+      ],
+      [
+        12,
+        1
+      ]
+    ]
+  },
+  {
+    "name": "exported_aliases_and_callback_signatures_keep_imported_type_ids",
+    "files": [
+      { "path": "model.ts", "source": "export class Model { /*@decl:1:method*/save(): void {} }\n" },
+      { "path": "api.ts", "source": "import { Model as Item } from './model';\nexport type View = Item;\nexport function create(): Item { throw 0; }\nexport function consume(callback: (value: Item) => void): void {}\n" },
+      { "path": "use.ts", "source": "import { View, create, consume } from './api';\nfunction f(view: View) { view./*@ref:11*/save(); create()./*@ref:12*/save(); consume(value => value./*@ref:13*/save()); }\n" }
+    ],
+    "labels": [[11, 1], [12, 1], [13, 1]]
+  },
+  {
+    "name": "default_and_namespace_exports_do_not_leak_wildcard_members",
+    "files": [
+      { "path": "model.ts", "source": "class Model { save(): void {} }\nexport default Model;\n" },
+      { "path": "barrel.ts", "source": "export * from './model';\nexport * as NS from './model';\n" },
+      { "path": "use.ts", "source": "import Item, { Model } from './barrel';\nfunction f(model: Model) { new Item()./*@ref:11*/save(); model./*@ref:12*/save(); }\n" }
+    ],
+    "labels": [[11, null], [12, null]]
+  },
+  {
+    "name": "broken_explicit_reexport_cannot_borrow_a_wildcard_namesake",
+    "files": [
+      { "path": "model.ts", "source": "export class Model { save(): void {} }\n" },
+      { "path": "barrel.ts", "source": "export * from './model';\nexport { Absent as Model } from './model';\n" },
+      { "path": "use.ts", "source": "import { Model } from './barrel';\nfunction f(model: Model) { model./*@ref:11*/save(); }\n" }
+    ],
+    "labels": [[11, null]]
+  },
+  {
+    "name": "declaration_file_exports_preserve_callable_and_value_signatures",
+    "files": [
+      { "path": "api.d.ts", "source": "export interface Result { /*@decl:1:method*/refetch(): void; }\nexport interface Api { make(): Result; }\nexport declare function create(): Result;\nexport declare const api: Api;\n" },
+      { "path": "use.ts", "source": "import { create, api } from './api';\nfunction wrapped() { return create(); }\nfunction f() { wrapped()./*@ref:11*/refetch(); api.make()./*@ref:12*/refetch(); }\n" }
+    ],
+    "labels": [[11, 1], [12, 1]]
+  },
+  {
+    "name": "imported_overload_groups_preserve_shared_return_members_without_selecting_a_target",
+    "files": [
+      { "path": "api.d.ts", "source": "export interface Result<T = unknown> { data: T; /*@decl:1:method*/refetch(): void; }\nexport declare function create<T = unknown>(options: { defined: true }): Result<T>;\nexport declare function create<T = unknown>(options: { defined?: false }): Result<T>;\n" },
+      { "path": "use.ts", "source": "import { create } from './api';\nfunction wrapped() { return create({ defined: true }); }\nfunction f() { wrapped()./*@ref:11*/refetch(); create({ defined: false })./*@ref:12*/refetch(); }\n" }
+    ],
+    "labels": [[11, 1], [12, 1]]
+  },
+  {
+    "name": "namespace_import_calls_and_returns_keep_exact_export_identity",
+    "files": [
+      { "path": "left.ts", "source": "class Model { /*@decl:1:method*/save(): void {} }\n/*@decl:2:function*/function create(): Model { throw 0; }\nexport { Model, create };\n" },
+      { "path": "right.ts", "source": "class Model { /*@decl:3:method*/save(): void {} }\n/*@decl:4:function*/function create(): Model { throw 0; }\nexport { Model, create };\n" },
+      { "path": "use.ts", "source": "import * as left from './left'; import * as right from './right';\nfunction f() { left./*@ref:11*/create(); right./*@ref:12*/create(); left.create()./*@ref:13*/save(); right.create()./*@ref:14*/save(); new left.Model()./*@ref:15*/save(); }\n" }
+    ],
+    "labels": [[11, 2], [12, 4], [13, 1], [14, 3], [15, 1]]
+  },
+  {
+    "name": "namespace_qualified_types_and_aliases_keep_declaration_identity",
+    "files": [
+      { "path": "left.ts", "source": "export class Model { /*@decl:1:method*/save(): void {} }\n" },
+      { "path": "right.ts", "source": "export class Model { /*@decl:2:method*/save(): void {} }\n" },
+      { "path": "api.ts", "source": "import * as left from './left'; import type * as right from './right';\nexport type View = left.Model;\nexport function create(): right.Model { throw 0; }\n" },
+      { "path": "use.ts", "source": "import * as left from './left'; import * as right from './right'; import { View, create } from './api';\nfunction f(a: left.Model, b: right.Model, c: View) { a./*@ref:11*/save(); b./*@ref:12*/save(); c./*@ref:13*/save(); create()./*@ref:14*/save(); }\n" }
+    ],
+    "labels": [[11, 1], [12, 2], [13, 1], [14, 2]]
+  },
+  {
+    "name": "nested_namespace_reexports_keep_module_identity",
+    "files": [
+      { "path": "model.ts", "source": "class Model { /*@decl:1:method*/save(): void {} }\n/*@decl:2:function*/function create(): Model { throw 0; }\nexport { Model, create };\n" },
+      { "path": "inner.ts", "source": "export * as models from './model';\n" },
+      { "path": "barrel.ts", "source": "import * as nested from './inner'; export { nested };\n" },
+      { "path": "use.ts", "source": "import * as api from './barrel'; import { nested } from './barrel';\nfunction f(x: api.nested.models.Model) { api.nested.models./*@ref:11*/create(); nested.models.create()./*@ref:12*/save(); x./*@ref:13*/save(); }\n" }
+    ],
+    "labels": [[11, 2], [12, 1], [13, 1]]
+  },
+  {
+    "name": "namespace_private_missing_and_type_only_values_cannot_borrow_targets",
+    "files": [
+      { "path": "model.ts", "source": "class Hidden { save(): void {} } export class Model { save(): void {} }\nfunction create(): Model { throw 0; }\n" },
+      { "path": "use.ts", "source": "import * as api from './model'; import * as absent from './absent'; import type * as types from './model';\nfunction create() {}\nfunction f() { api./*@ref:11*/create(); absent./*@ref:12*/create(); }\nfunction hidden(x: api.Hidden) { x./*@ref:13*/save(); }\n" }
+    ],
+    "labels": [[11, null], [12, null], [13, null]]
+  },
+  {
+    "name": "namespace_value_shadows_do_not_retarget_type_space",
+    "files": [
+      { "path": "model.ts", "source": "export class Model { /*@decl:1:method*/save(): void {} }\nexport function create(): Model { throw 0; }\n" },
+      { "path": "use.ts", "source": "import * as api from './model';\nclass Other { /*@decl:2:method*/create(): void {} }\nfunction f(api: Other, item: api.Model) { api./*@ref:11*/create(); item./*@ref:12*/save(); }\n" }
+    ],
+    "labels": [[11, 2], [12, 1]]
+  },
+  {
+    "name": "namespace_generic_calls_keep_explicit_inferred_and_callback_type_ids",
+    "files": [
+      { "path": "left.ts", "source": "export class Model { /*@decl:1:method*/save(): void {} }\n" },
+      { "path": "right.ts", "source": "export class Model { /*@decl:2:method*/save(): void {} }\n" },
+      { "path": "api.ts", "source": "export function make<T>(): T { throw 0; }\nexport function identity<T>(x: T): T { return x; }\nexport function consume<T>(x: T, callback: (value: T) => void): void {}\n" },
+      { "path": "use.ts", "source": "import * as api from './api'; import * as left from './left'; import * as right from './right';\nfunction f(x: right.Model) { api.make<left.Model>()./*@ref:11*/save(); api.identity(x)./*@ref:12*/save(); api.consume(x, value => value./*@ref:13*/save()); api.consume<left.Model>(x, value => value./*@ref:14*/save()); }\n" }
+    ],
+    "labels": [[11, 1], [12, 2], [13, 2], [14, 1]]
+  },
+  {
+    "name": "scoped_merge_interfaces_preserve_both_member_declarations",
+    "files": [
+      { "path": "api.ts", "source": "export interface Model { /*@decl:1:method*/save(): void; }\nexport interface Model { /*@decl:2:method*/reload(): void; }\nexport function create(): Model { throw 0; }\nexport function consume(callback: (value: Model) => void): void {}\nfunction local(x: Model) { x./*@ref:11*/save(); x./*@ref:12*/reload(); }\n" },
+      { "path": "barrel.ts", "source": "export { Model as Item, create, consume } from './api';" },
+      { "path": "use.ts", "source": "import { Item, create, consume } from './barrel'; import * as api from './api';\nfunction f(x: Item, y: api.Model) { x./*@ref:13*/save(); x./*@ref:14*/reload(); create()./*@ref:15*/reload(); consume(value => value./*@ref:16*/save()); y./*@ref:17*/reload(); }" }
+    ],
+    "labels": [[11, 1], [12, 2], [13, 1], [14, 2], [15, 2], [16, 1], [17, 2]]
+  },
+  {
+    "name": "scoped_merge_class_interface_is_independent_of_declaration_order",
+    "files": [
+      { "path": "left.ts", "source": "export interface Model { /*@decl:1:method*/reload(): void; }\nexport class Model { /*@decl:2:method*/save(): void {} }\n" },
+      { "path": "right.ts", "source": "export class Model { /*@decl:3:method*/save(): void {} }\nexport interface Model { /*@decl:4:method*/reload(): void; }\n" },
+      { "path": "use.ts", "source": "import { Model as Left } from './left'; import { Model as Right } from './right';\nfunction f(x: Left, y: Right) { x./*@ref:11*/reload(); y./*@ref:12*/reload(); new Left()./*@ref:13*/reload(); new Right()./*@ref:14*/reload(); new Left()./*@ref:15*/save(); new Right()./*@ref:16*/save(); }" }
+    ],
+    "labels": [[11, 1], [12, 4], [13, 1], [14, 4], [15, 2], [16, 3]]
+  },
+  {
+    "name": "scoped_merge_block_namesakes_cannot_share_members",
+    "files": [
+      { "path": "use.ts", "source": "export function f() {\n{ interface Model { /*@decl:1:method*/save(): void; } interface Model { /*@decl:2:method*/reload(): void; } function first(x: Model) { x./*@ref:11*/save(); x./*@ref:12*/reload(); x./*@ref:13*/erase(); } }\n{ interface Model { /*@decl:3:method*/save(): void; } interface Model { /*@decl:4:method*/erase(): void; } function second(x: Model) { x./*@ref:14*/save(); x./*@ref:15*/erase(); x./*@ref:16*/reload(); } }\n}" }
+    ],
+    "labels": [[11, 1], [12, 2], [13, null], [14, 3], [15, 4], [16, null]]
+  },
+  {
+    "name": "scoped_merge_generic_parameters_follow_group_identity",
+    "files": [
+      { "path": "api.ts", "source": "export interface Box<T> { get(): T; }\nexport interface Box<T> { other(): T; consume(callback: (value: T) => void): void; }\nexport function create<T>(): Box<T> { throw 0; }" },
+      { "path": "use.ts", "source": "import { Box, create } from './api';\nclass Model { /*@decl:1:method*/save(): void {} }\nfunction f(x: Box<Model>) { x.get()./*@ref:11*/save(); x.other()./*@ref:12*/save(); x.consume(value => value./*@ref:13*/save()); create<Model>().other()./*@ref:14*/save(); }" }
+    ],
+    "labels": [[11, 1], [12, 1], [13, 1], [14, 1]]
+  },
+  {
+    "name": "scoped_merge_type_and_value_exports_remain_separate",
+    "files": [
+      { "path": "api.ts", "source": "export interface Model { /*@decl:1:method*/save(): void; }\nexport interface Model { /*@decl:2:method*/reload(): void; }\nclass Other { /*@decl:3:method*/save(): void {} }\nexport function Model(): Other { throw 0; }" },
+      { "path": "use.ts", "source": "import { Model } from './api'; import * as api from './api';\nfunction f(x: Model, y: api.Model) { x./*@ref:11*/reload(); Model()./*@ref:12*/save(); api.Model()./*@ref:13*/save(); y./*@ref:14*/save(); }" }
+    ],
+    "labels": [[11, 2], [12, 3], [13, 3], [14, 1]]
+  },
+  {
+    "name": "scoped_merge_constructor_names_do_not_grant_instance_members",
+    "files": [
+      { "path": "api.d.ts", "source": "export interface Model { save(): void; }\nexport interface ModelConstructor { create(): void; }\nexport interface RealFactory { /*@decl:1:method*/build(): void; }\nexport declare const Model: RealFactory;" },
+      { "path": "use.ts", "source": "import { Model } from './api'; function f(x: Model) { Model./*@ref:11*/build(); x./*@ref:12*/create(); x./*@ref:13*/build(); }" }
+    ],
+    "labels": [[11, 1], [12, null], [13, null]]
+  }
+]

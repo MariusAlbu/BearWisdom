@@ -30,6 +30,7 @@ mod drain_audit_report;
 mod quality_recapture;
 mod recapture_entry;
 mod recapture_requests;
+mod resolution_gate_report;
 
 #[cfg(test)]
 #[path = "main_tests.rs"]
@@ -893,14 +894,21 @@ fn run(command: Commands, full: bool) -> Result<String> {
             cmd_low_confidence_edges(&path, threshold)
         }
         Commands::UnresolvedClassify { path, samples } => cmd_unresolved_classify(&path, samples),
-        Commands::Unresolved { path, by_cause, top, samples } => {
-            cmd_unresolved(&path, by_cause, top, samples)
-        }
+        Commands::Unresolved {
+            path,
+            by_cause,
+            top,
+            samples,
+        } => cmd_unresolved(&path, by_cause, top, samples),
         Commands::ResolutionGate { path } => cmd_resolution_gate(&path),
         Commands::FlowDiagnostics { path } => cmd_flow_diagnostics(&path),
-        Commands::WhyUnresolved { path, file, line, target, refs_file } => {
-            cmd_why_unresolved(&path, file.as_deref(), line, &target, refs_file.as_deref())
-        }
+        Commands::WhyUnresolved {
+            path,
+            file,
+            line,
+            target,
+            refs_file,
+        } => cmd_why_unresolved(&path, file.as_deref(), line, &target, refs_file.as_deref()),
     }
 }
 
@@ -2025,9 +2033,7 @@ fn cmd_quality_check(
         );
     }
     for (class, edges, unresolved, rate) in &corpus_class_rates {
-        eprintln!(
-            "  corpus[{class}]: {rate:.2}% ({edges} edges / {unresolved} unresolved)",
-        );
+        eprintln!("  corpus[{class}]: {rate:.2}% ({edges} edges / {unresolved} unresolved)",);
     }
     eprintln!("QUALITY CHECK {}", if passed { "PASSED" } else { "FAILED" });
 
@@ -2198,7 +2204,12 @@ fn cmd_unresolved_classify(project_path: &str, samples: usize) -> Result<String>
 /// Group unresolved references by root cause (`--by-cause`) or, when the
 /// flag is absent, fall back to the surface-shape classifier — the same
 /// question `unresolved-classify` answers, kept reachable under one command.
-fn cmd_unresolved(project_path: &str, by_cause: bool, top: usize, samples: usize) -> Result<String> {
+fn cmd_unresolved(
+    project_path: &str,
+    by_cause: bool,
+    top: usize,
+    samples: usize,
+) -> Result<String> {
     let db = open_existing_db(project_path)?;
     if by_cause {
         let report = bearwisdom::unresolved_by_cause(&db, top, samples)
@@ -2224,25 +2235,8 @@ fn cmd_flow_diagnostics(project_path: &str) -> Result<String> {
 }
 
 fn cmd_resolution_gate(project_path: &str) -> Result<String> {
-    use bearwisdom::query::dead_code::{find_dead_code, DeadCodeOptions};
     let db = open_existing_db(project_path)?;
-    let breakdown = bearwisdom::resolution_breakdown(&db).context("resolution_breakdown failed")?;
-    // Dead-code report is the carrier for `ResolutionHealth.trust_tier` and
-    // is computed off the same `CODE_REF_FILTER`-aware metric as the
-    // breakdown, so the two sides agree on the rate.
-    let dead = find_dead_code(
-        &db,
-        &DeadCodeOptions {
-            max_results: 0, // we want the health summary, not the candidate list
-            ..Default::default()
-        },
-    )
-    .context("find_dead_code failed")?;
-    let payload = serde_json::json!({
-        "breakdown": breakdown,
-        "health": dead.resolution_health,
-    });
-    ok_json(payload)
+    ok_json(resolution_gate_report::build(&db)?)
 }
 
 // ---------------------------------------------------------------------------

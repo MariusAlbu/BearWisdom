@@ -84,7 +84,8 @@ const RULES: &[(&str, HighlightKind)] = &[
 ];
 
 /// Capture names in `RULES` order, handed to `HighlightConfiguration::configure`.
-static NAMES: Lazy<Vec<String>> = Lazy::new(|| RULES.iter().map(|(n, _)| (*n).to_string()).collect());
+static NAMES: Lazy<Vec<String>> =
+    Lazy::new(|| RULES.iter().map(|(n, _)| (*n).to_string()).collect());
 
 /// Per-language highlight configs, built and `configure`d once. `None` is cached for
 /// languages with no grammar/query or a query that fails to compile, so a bad language
@@ -153,7 +154,11 @@ pub fn highlight(source: &str, lang: &str) -> Vec<Token> {
                         continue;
                     }
                 }
-                tokens.push(Token { start: start as u32, end: end as u32, kind });
+                tokens.push(Token {
+                    start: start as u32,
+                    end: end as u32,
+                    kind,
+                });
             }
             Err(_) => break,
         }
@@ -212,7 +217,11 @@ fn collect_md_tokens(
             let name = &query.capture_names()[cap.index as usize];
             if let Some(kind) = md_kind_for(name) {
                 let r = cap.node.byte_range();
-                out.push(Token { start: r.start as u32, end: r.end as u32, kind });
+                out.push(Token {
+                    start: r.start as u32,
+                    end: r.end as u32,
+                    kind,
+                });
             }
         }
     }
@@ -400,10 +409,19 @@ mod tests {
     fn highlights_rust_keyword_and_string() {
         let toks = highlight("fn main() { let s = \"hi\"; }", "rust");
         assert!(!toks.is_empty(), "expected highlight tokens for rust");
-        assert!(toks.iter().any(|t| t.kind == HighlightKind::Keyword), "expected a keyword");
-        assert!(toks.iter().any(|t| t.kind == HighlightKind::String), "expected a string");
+        assert!(
+            toks.iter().any(|t| t.kind == HighlightKind::Keyword),
+            "expected a keyword"
+        );
+        assert!(
+            toks.iter().any(|t| t.kind == HighlightKind::String),
+            "expected a string"
+        );
         // Tokens are ordered and non-overlapping.
-        assert!(toks.windows(2).all(|w| w[0].end <= w[1].start), "tokens overlap or unsorted");
+        assert!(
+            toks.windows(2).all(|w| w[0].end <= w[1].start),
+            "tokens overlap or unsorted"
+        );
     }
 
     #[test]
@@ -435,7 +453,9 @@ mod tests {
         let title_start = src.find("Title").unwrap() as u32;
         let title_end = title_start + "Title".len() as u32;
         assert!(
-            toks.iter().any(|t| t.kind == HighlightKind::Type && t.start <= title_start && t.end >= title_end),
+            toks.iter().any(|t| t.kind == HighlightKind::Type
+                && t.start <= title_start
+                && t.end >= title_end),
             "expected a Type token covering 'Title'; got: {toks:?}",
         );
     }
@@ -449,7 +469,9 @@ mod tests {
         let bold_end = bold_start + "bold".len() as u32;
         // The Keyword token must overlap the interior "bold" text at minimum.
         assert!(
-            toks.iter().any(|t| t.kind == HighlightKind::Keyword && t.start <= bold_start && t.end >= bold_end),
+            toks.iter().any(|t| t.kind == HighlightKind::Keyword
+                && t.start <= bold_start
+                && t.end >= bold_end),
             "expected a Keyword token covering bold content; got: {toks:?}",
         );
     }
@@ -462,7 +484,8 @@ mod tests {
         let x_start = src.find('`').unwrap() as u32;
         let x_end = src.rfind('`').unwrap() as u32 + 1;
         assert!(
-            toks.iter().any(|t| t.kind == HighlightKind::String && t.start <= x_start && t.end >= x_end),
+            toks.iter()
+                .any(|t| t.kind == HighlightKind::String && t.start <= x_start && t.end >= x_end),
             "expected a String token covering inline code; got: {toks:?}",
         );
     }
@@ -474,7 +497,8 @@ mod tests {
         md_sorted_and_non_overlapping(&toks);
         // Must have at least a Func (URL) or Prop (link text) token.
         assert!(
-            toks.iter().any(|t| t.kind == HighlightKind::Func || t.kind == HighlightKind::Prop),
+            toks.iter()
+                .any(|t| t.kind == HighlightKind::Func || t.kind == HighlightKind::Prop),
             "expected a Func or Prop token for a link; got: {toks:?}",
         );
     }

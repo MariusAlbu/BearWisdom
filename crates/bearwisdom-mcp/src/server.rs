@@ -1203,15 +1203,18 @@ impl BearWisdomServer {
     /// refs changed outcome between two index runs — edge-count deltas alone
     /// can't distinguish a resolution gain from a same-count retarget.
     #[tool(name = "bw_resolve_diff")]
-    fn resolve_diff(&self, Parameters(params): Parameters<ResolveDiffParams>) -> Result<String, String> {
+    fn resolve_diff(
+        &self,
+        Parameters(params): Parameters<ResolveDiffParams>,
+    ) -> Result<String, String> {
         self.run_tool(
             "bw_resolve_diff",
             &params,
             params.project.as_deref(),
             |db, _| {
-                let old = bearwisdom::query::ref_snapshot::read_snapshot_jsonl(std::path::Path::new(
-                    &params.old_snapshot,
-                ))
+                let old = bearwisdom::query::ref_snapshot::read_snapshot_jsonl(
+                    std::path::Path::new(&params.old_snapshot),
+                )
                 .map_err(|e| error_response("INVALID_INPUT", &format!("{e:#}")))?;
                 let cap = params.samples.unwrap_or(20);
                 bearwisdom::query::resolve_diff::diff_against_db(db, &old, cap)

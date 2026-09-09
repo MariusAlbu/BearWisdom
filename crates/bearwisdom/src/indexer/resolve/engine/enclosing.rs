@@ -12,6 +12,69 @@ use crate::indexer::write::SymbolIds;
 use crate::types::{ExtractedSymbol, ParsedFile};
 
 use super::contract::is_type_like_kind as is_type_like;
+use super::contract::Symbol;
+
+#[cfg(test)]
+#[path = "enclosing_tests.rs"]
+mod tests;
+
+/// DB reload has physical parent edges but no ParsedFile ancestry. Reconstruct
+/// only the missing snapshot's enclosing IDs; fresh declarations remain final.
+/// No display name can rescue absent, conflicting or cyclic parent evidence.
+pub(super) fn restore_enclosing_types(
+    symbols: &FxHashMap<i64, Symbol>,
+    members: &FxHashMap<i64, Vec<i64>>,
+    fresh: &FxHashSet<i64>,
+    enclosing: &mut FxHashMap<i64, i64>,
+) {
+    let mut parents = FxHashMap::default();
+    for (&parent, children) in members {
+        for &child in children {
+            parents
+                .entry(child)
+                .and_modify(|old| {
+                    if *old != Some(parent) {
+                        *old = None;
+                    }
+                })
+                .or_insert(Some(parent));
+        }
+    }
+    let mut cache = FxHashMap::default();
+    for &source in symbols.keys().filter(|id| !fresh.contains(id)) {
+        let mut current = source;
+        let mut visited = FxHashSet::default();
+        let owner = loop {
+            if !visited.insert(current) {
+                break None;
+            }
+            if let Some(&known) = cache.get(&current) {
+                break known;
+            }
+            let Some(parent) = parents.get(&current).copied().flatten() else {
+                break None;
+            };
+            if visited.contains(&parent) {
+                break None;
+            }
+            let Some(symbol) = symbols.get(&parent) else {
+                break None;
+            };
+            if is_type_like(&symbol.kind) {
+                break Some(parent);
+            }
+            current = parent;
+        };
+        for id in visited {
+            cache.insert(id, owner);
+        }
+        if let Some(owner) = owner {
+            enclosing.insert(source, owner);
+        } else {
+            enclosing.remove(&source);
+        }
+    }
+}
 
 /// Derive every symbol's nearest enclosing type / namespace for one file and
 /// insert into the given maps.

@@ -1,0 +1,18 @@
+[
+  {"name":"nominal_required_key_absence_selects_false","preamble":"interface Registry {} type Choose = Registry extends { value: infer U } ? U : string;","from":"Choose","to":"string","assignable":true,"diagnosticCodes":[]},
+  {"name":"nominal_property_infers_source_value","preamble":"interface Registry { value: number } type Choose = Registry extends { value: infer U } ? U : string;","from":"Choose","to":"number","assignable":true,"diagnosticCodes":[]},
+  {"name":"generic_nominal_property_infers_substituted_value","preamble":"interface Registry<T> { value: T } type Choose<T> = Registry<T> extends { value: infer U } ? U : string;","from":"Choose<number>","to":"number","assignable":true,"diagnosticCodes":[]},
+  {"name":"infer_name_does_not_shadow_false_branch","preamble":"type Choose<U, T> = T extends { value: infer U } ? U : U;","from":"Choose<string, {}>","to":"string","assignable":true,"diagnosticCodes":[]},
+  {"name":"infer_name_shadows_outer_true_branch","preamble":"type Choose<U, T> = T extends { value: infer U } ? U : U;","from":"Choose<string, { value: number }>","to":"number","assignable":true,"diagnosticCodes":[]},
+  {"name":"required_pattern_rejects_optional_nominal_member","preamble":"interface Registry { value?: number } type Choose = Registry extends { value: infer U } ? U : string;","from":"Choose","to":"string","assignable":true,"diagnosticCodes":[]},
+  {"name":"constrained_infer_accepts_string","preamble":"type Choose<T> = T extends { value: infer U extends string } ? U : number;","from":"Choose<{ value: 'ok' }>","to":"'ok'","assignable":true,"diagnosticCodes":[]},
+  {"name":"constrained_infer_rejects_number","preamble":"type Choose<T> = T extends { value: infer U extends string } ? U : number;","from":"Choose<{ value: boolean }>","to":"number","assignable":true,"diagnosticCodes":[]},
+  {"name":"nested_conditional_uses_inferred_value","preamble":"type Choose<T> = T extends { value: infer U } ? U extends string ? U : boolean : number;","from":"Choose<{ value: 'ok' }>","to":"'ok'","assignable":true,"diagnosticCodes":[]},
+  {"name":"plain_scalar_conditional_true","preamble":"type Choose<T> = T extends string ? number : boolean;","from":"Choose<'ok'>","to":"number","assignable":true,"diagnosticCodes":[]},
+  {"name":"plain_scalar_conditional_false","preamble":"type Choose<T> = T extends string ? number : boolean;","from":"Choose<bigint>","to":"boolean","assignable":true,"diagnosticCodes":[]},
+  {"name":"inferred_value_is_not_outer_namesake","preamble":"type Choose<U, T> = T extends { value: infer U } ? U : U;","from":"Choose<string, { value: number }>","to":"string","assignable":false,"diagnosticCodes":[2322]},
+  {"name":"missing_key_does_not_select_true","preamble":"interface Registry {} type Choose = Registry extends { value: infer U } ? U : string;","from":"Choose","to":"number","assignable":false,"diagnosticCodes":[2322]},
+  {"name":"unselected_branch_does_not_force_recursive_alias","preamble":"type Loop<T> = { value: Loop<T> }; interface Registry {} type Choose = Registry extends { value: infer U } ? Loop<U> : string;","from":"Choose","to":"string","assignable":true,"diagnosticCodes":[]},
+  {"name":"undefined_extends_void","preamble":"","from":"undefined extends void ? string : number","to":"string","assignable":true,"diagnosticCodes":[]},
+  {"name":"explicit_boolean_conditional_does_not_distribute","preamble":"","from":"boolean extends true ? number : string","to":"string","assignable":true,"diagnosticCodes":[]}
+]

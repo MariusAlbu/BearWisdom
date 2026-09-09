@@ -71,6 +71,7 @@ pub const SCALA_PROFILE: LanguageProfile = LanguageProfile {
     has_generics: true,
     has_sum_types: true,
     look_through_optional: true,
+    reference_member_projection: false,
     literal_narrowing: false,
     async_wrappers: &["Future", "IO", "Task"],
     container_accessors: &[],

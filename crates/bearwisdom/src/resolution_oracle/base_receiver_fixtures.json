@@ -1,0 +1,269 @@
+[
+  {
+    "name": "base_dispatch_skips_child_override_and_preserves_this",
+    "files": [
+      {
+        "path": "a.ts",
+        "source": "class Parent { /*@decl:1:method*/save() {} } class Child extends Parent { /*@decl:2:method*/save() {} run() { super./*@ref:1*/save(); this./*@ref:2*/save(); } }"
+      }
+    ],
+    "labels": [
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        2
+      ]
+    ]
+  },
+  {
+    "name": "base_return_and_field_cascades_keep_generic_arguments",
+    "files": [
+      {
+        "path": "a.ts",
+        "source": "class Doc { /*@decl:1:method*/touch() {} } class Parent<T> { item!: T; /*@decl:2:method*/next(): T { return this.item; } } class Child extends Parent<Doc> { run() { super./*@ref:1*/next()./*@ref:2*/touch(); } }"
+      }
+    ],
+    "labels": [
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        1
+      ]
+    ]
+  },
+  {
+    "name": "renamed_base_import_cannot_borrow_namesake_methods",
+    "files": [
+      {
+        "path": "a.ts",
+        "source": "export class Parent { /*@decl:1:method*/save() {} }"
+      },
+      {
+        "path": "b.ts",
+        "source": "export class Parent { /*@decl:2:method*/save() {} }"
+      },
+      {
+        "path": "caller.ts",
+        "source": "import { Parent as Base } from './b'; class Child extends Base { save() {} run() { super./*@ref:1*/save(); } }"
+      }
+    ],
+    "labels": [
+      [
+        1,
+        2
+      ]
+    ]
+  },
+  {
+    "name": "namespace_base_import_keeps_physical_target",
+    "files": [
+      {
+        "path": "a.ts",
+        "source": "export class Parent { /*@decl:1:method*/save() {} }"
+      },
+      {
+        "path": "caller.ts",
+        "source": "import * as API from './a'; class Child extends API.Parent { save() {} run() { super./*@ref:1*/save(); } }"
+      }
+    ],
+    "labels": [
+      [
+        1,
+        1
+      ]
+    ]
+  },
+  {
+    "name": "base_missing_member_cannot_retry_child_or_global",
+    "files": [
+      {
+        "path": "a.ts",
+        "source": "class Parent {} function save() {} class Child extends Parent { save() {} run() { super./*@ref:1*/save(); } }"
+      }
+    ],
+    "labels": [
+      [
+        1,
+        null
+      ]
+    ]
+  },
+  {
+    "name": "base_chain_walks_grandparent_without_child_override",
+    "files": [
+      {
+        "path": "a.ts",
+        "source": "class Ancestor { /*@decl:1:method*/save() {} } class Parent extends Ancestor {} class Child extends Parent { save() {} run() { super./*@ref:1*/save(); } }"
+      }
+    ],
+    "labels": [
+      [
+        1,
+        1
+      ]
+    ]
+  },
+  {
+    "name": "grandparent_generic_cascade_keeps_each_base_application",
+    "files": [
+      {
+        "path": "a.ts",
+        "source": "class Doc { /*@decl:1:method*/touch() {} } class Ancestor<T> { item!: T; /*@decl:2:method*/next(): T { return this.item; } } class Parent<U> extends Ancestor<U> {} class Child extends Parent<Doc> { run() { super./*@ref:1*/next()./*@ref:2*/touch(); } }"
+      }
+    ],
+    "labels": [
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        1
+      ]
+    ]
+  },
+  {
+    "name": "missing_base_provider_cannot_borrow_global_namesake",
+    "files": [
+      {
+        "path": "a.ts",
+        "source": "import { Parent as Base } from './absent'; class Parent { save() {} } class Child extends Base { save() {} run() { super./*@ref:1*/save(); } }"
+      }
+    ],
+    "labels": [
+      [
+        1,
+        null
+      ]
+    ]
+  },
+  {
+    "name": "static_base_dispatch_keeps_parent_declaration",
+    "files": [
+      {
+        "path": "a.ts",
+        "source": "class Parent { /*@decl:1:method*/static save() {} } class Child extends Parent { /*@decl:2:method*/static save() {} static run() { super./*@ref:1*/save(); this./*@ref:2*/save(); } }"
+      }
+    ],
+    "labels": [
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        2
+      ]
+    ]
+  },
+  {
+    "name": "base_callback_and_inherited_field_use_owner_generic_ids",
+    "files": [
+      {
+        "path": "a.ts",
+        "source": "class Doc { /*@decl:1:method*/touch() {} } class Ancestor<T> { item!: T; /*@decl:2:method*/map(f: (x: T) => T): T { return f(this.item); } } class Parent<U> extends Ancestor<U> {} class Child extends Parent<Doc> { run() { super./*@ref:1*/map(x => { x./*@ref:2*/touch(); return x; })./*@ref:3*/touch(); this.item./*@ref:4*/touch(); } }"
+      }
+    ],
+    "labels": [
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        3,
+        1
+      ],
+      [
+        4,
+        1
+      ]
+    ]
+  },
+  {
+    "name": "base_method_generic_shadowing_keeps_its_own_parameter",
+    "files": [
+      {
+        "path": "a.ts",
+        "source": "class Doc { /*@decl:1:method*/touch() {} } class Wrong { wrong() {} } class Ancestor<T> { /*@decl:2:method*/make<T>(value: T): T { return value; } } class Parent<T> extends Ancestor<T> {} class Child extends Parent<Wrong> { run(doc: Doc) { super./*@ref:1*/make(doc)./*@ref:2*/touch(); } }"
+      }
+    ],
+    "labels": [
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        1
+      ]
+    ]
+  },
+  {
+    "name": "imported_generic_base_cascade_keeps_namesake_type_arguments",
+    "files": [
+      {
+        "path": "a.ts",
+        "source": "export class Doc { wrong() {} } export class Parent<T> { wrong() {} }"
+      },
+      {
+        "path": "b.ts",
+        "source": "export class Doc { /*@decl:1:method*/touch() {} } export class Ancestor<T> { /*@decl:2:method*/next(): T { throw 0; } } export class Parent<U> extends Ancestor<U> {}"
+      },
+      {
+        "path": "caller.ts",
+        "source": "import { Doc, Parent as Base } from './b'; class Child extends Base<Doc> { run() { super./*@ref:1*/next()./*@ref:2*/touch(); } }"
+      }
+    ],
+    "labels": [
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        1
+      ]
+    ]
+  },
+  {
+    "name": "abstract_base_exports_bind_value_and_generic_type_domains",
+    "files": [
+      {
+        "path": "parent.ts",
+        "source": "export class Doc { /*@decl:1:method*/touch() {} } export abstract class Parent<T> { /*@decl:2:method*/next(): T { throw 0; } /*@decl:3:method*/protected save() {} }"
+      },
+      {
+        "path": "caller.ts",
+        "source": "import { Doc, Parent } from './parent'; class Child extends Parent<Doc> { run() { super./*@ref:1*/next()./*@ref:2*/touch(); this./*@ref:3*/save(); super./*@ref:4*/save(); } }"
+      }
+    ],
+    "labels": [
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        3,
+        3
+      ],
+      [
+        4,
+        3
+      ]
+    ]
+  }
+]

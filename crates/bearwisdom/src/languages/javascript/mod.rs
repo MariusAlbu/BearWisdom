@@ -1,6 +1,7 @@
 //! javascript language plugin.
 
 mod calls;
+pub(crate) mod chains;
 pub mod extract;
 pub(crate) mod flow;
 mod globals;

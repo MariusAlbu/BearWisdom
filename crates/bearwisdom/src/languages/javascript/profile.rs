@@ -9,6 +9,9 @@ use crate::type_checker::profile::language_profile::{
 };
 use crate::types::{EdgeKind, SymbolKind};
 
+pub(crate) const RECEIVER_NODES: &[(&str, crate::types::SegmentKind)] =
+    super::super::typescript::profile::RECEIVER_NODES;
+
 const JS_KIND_TABLE: KindTable = &[
     (
         EdgeKind::Calls,
@@ -53,6 +56,7 @@ pub const JAVASCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     has_generics: false,
     has_sum_types: false,
     look_through_optional: true,
+    reference_member_projection: false,
     literal_narrowing: false,
     async_wrappers: &["Promise"],
     // JS carries no type annotations, so a value rarely acquires an `Apply`
@@ -77,7 +81,8 @@ pub const JAVASCRIPT_PROFILE: LanguageProfile = LanguageProfile {
             crate::type_checker::profile::language_profile::ModuleAnchorBind::NameExactKind,
         ),
         module_anchor_terminal: false,
-        relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::DotSlashPrefix,
+        relative_marker:
+            crate::type_checker::profile::language_profile::RelativeMarker::DotSlashPrefix,
         external_by_import: None,
         module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
         wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,

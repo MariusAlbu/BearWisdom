@@ -1,0 +1,8 @@
+[
+  {"name":"rich_interface_signatures", "source":"interface Catalog<T> { (item: T): T; new<U>(item: U): Catalog<U>; [index: number]: T; [Keys.iterator](): T; read(): T; read(value: T): T; }"},
+  {"name":"lexical_computed_and_dynamic_keys", "source":"declare const Keys: any; interface Catalog { [Keys.iterator](): void; [factory()](): void; ['literal'](): void; }"},
+  {"name":"modifiers_and_generic_signatures", "source":"interface Catalog { readonly value?: string; read<T extends object = {}>(value?: T, ...rest: T[]): T; get count(): number; set count(value: number); }"},
+  {"name":"unicode_and_literal_keys", "source":"// λ🙂\ninterface Catalog { 'é': number; 12: string; [Keys.é](): void; readonly iterator: unique symbol; }"},
+  {"name":"class_field_and_accessors", "source":"abstract class Catalog { protected readonly value = new Box<Item>(); static #brand: object; abstract read(): string; get count(): number { return 0; } set count(value: number) {} constructor(value: number) {} }"},
+  {"name":"nested_signatures_stay_inside_their_member", "source":"interface Catalog { field: { read(): string }; run(callback: <T>(value: T) => T): { item: number }; }"}
+]

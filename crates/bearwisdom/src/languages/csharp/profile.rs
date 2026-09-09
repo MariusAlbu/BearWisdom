@@ -85,6 +85,7 @@ pub const CSHARP_PROFILE: LanguageProfile = LanguageProfile {
     // unwrap it. Reference-type Nullable annotations (`string?`) are
     // metadata only.
     look_through_optional: false,
+    reference_member_projection: false,
     literal_narrowing: false,
     async_wrappers: &["Task", "ValueTask"],
     container_accessors: &[],

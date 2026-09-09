@@ -842,7 +842,7 @@ fn check_chain_001(
     }
 }
 
-/// CHAIN-002: first segment kind in {SelfRef, Identifier, TypeAccess,
+/// CHAIN-002: first segment kind in {SelfRef, BaseRef, Identifier, TypeAccess,
 /// NamespaceAccess, Construction}.
 fn check_chain_002(
     file: &ParsedFile,
@@ -857,6 +857,7 @@ fn check_chain_002(
     let ok = matches!(
         first.kind,
         SegmentKind::SelfRef
+            | SegmentKind::BaseRef
             | SegmentKind::Identifier
             | SegmentKind::TypeAccess
             | SegmentKind::NamespaceAccess
@@ -866,7 +867,7 @@ fn check_chain_002(
         out.push(ContractViolation {
             code: "CHAIN-002",
             message: format!(
-                "first chain segment '{}' has kind {:?}; must be SelfRef / Identifier / TypeAccess / NamespaceAccess / Construction",
+                "first chain segment '{}' has kind {:?}; must be SelfRef / BaseRef / Identifier / TypeAccess / NamespaceAccess / Construction",
                 first.name, first.kind,
             ),
             location: ref_loc(file, idx, r),

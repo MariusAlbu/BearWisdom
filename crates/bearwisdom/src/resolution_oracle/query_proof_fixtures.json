@@ -1,0 +1,52 @@
+[
+  {
+    "name": "repeated_property_alias_key_cascade",
+    "source": "declare const token: unique symbol; interface Keys { tag: typeof token; } interface Keys { tag: typeof token; } declare const keys: Keys; type Tag = typeof keys.tag; declare const selected: Tag; interface Uses { [selected](): void; } interface Uses { keep(): void; }",
+    "diagnosticCodes": [], "admitted": true, "key": "[selected]", "origin": "token"
+  },
+  {
+    "name": "dependent_repeated_groups_require_multiple_rounds",
+    "source": "declare const token: unique symbol; interface Keys { tag: typeof token; } interface Keys { tag: typeof token; } declare const keys: Keys; interface Next { tag: typeof keys.tag; } interface Next { tag: typeof keys.tag; } declare const next: Next; interface Uses { [next.tag](): void; } interface Uses { keep(): void; }",
+    "diagnosticCodes": [], "admitted": true, "key": "[next.tag]", "origin": "token"
+  },
+  {
+    "name": "receiver_required_refinement_supplies_query_value",
+    "source": "declare const token: unique symbol; interface Base<T> { tag?: T; } type RequiredTag<T> = Base<T> & { tag: T }; interface Keys extends RequiredTag<typeof token> {} declare const keys: Keys; interface Uses { [keys.tag](): void; } interface Uses { keep(): void; }",
+    "diagnosticCodes": [], "admitted": true, "key": "[keys.tag]", "origin": "token"
+  },
+  {
+    "name": "incompatible_provider_cannot_supply_dependent_key",
+    "source": "declare const token: unique symbol; interface Keys { tag: typeof token; } interface Keys { tag: number; } declare const keys: Keys; interface Uses { [keys.tag](): void; } interface Uses { keep(): void; }",
+    "diagnosticCodes": [2717], "admitted": false, "key": "[keys.tag]"
+  },
+  {
+    "name": "cyclic_property_query_is_not_identity_evidence",
+    "source": "interface Keys { tag: typeof keys.tag; } interface Keys { tag: typeof keys.tag; } declare const keys: Keys; interface Uses { [keys.tag](): void; } interface Uses { keep(): void; }",
+    "diagnosticCodes": [2502], "admitted": false, "key": "[keys.tag]"
+  },
+  {
+    "name": "productive_self_dependency_uses_locally_proved_property",
+    "source": "declare const token: unique symbol; interface Keys { tag: typeof token; } interface Keys { tag: typeof token; [keys.tag](): void; } declare const keys: Keys; interface Uses { [keys.tag](): void; } interface Uses { keep(): void; }",
+    "diagnosticCodes": [], "admitted": true, "key": "[keys.tag]", "origin": "token"
+  },
+  {
+    "name": "unrelated_property_rejection_revokes_productive_query_proof",
+    "source": "declare const token: unique symbol; interface Keys { tag: typeof token; bad: string; } interface Keys { tag: typeof token; bad: number; [keys.tag](): void; } declare const keys: Keys; interface Uses { [keys.tag](): void; } interface Uses { keep(): void; }",
+    "diagnosticCodes": [2717], "admitted": false, "key": "[keys.tag]"
+  },
+  {
+    "name": "module_local_repeated_property_uses_same_proof_rules",
+    "source": "export {}; declare const token: unique symbol; interface Keys { tag: typeof token; } interface Keys { tag: typeof token; } declare const keys: Keys; interface Uses { [keys.tag](): void; } interface Uses { keep(): void; }",
+    "diagnosticCodes": [], "admitted": true, "key": "[keys.tag]", "origin": "token"
+  },
+  {
+    "name": "module_local_invalid_member_revokes_all_proof_dependents",
+    "source": "export {}; declare const token: unique symbol; interface Keys { tag: typeof token; bad: string; } interface Keys { tag: typeof token; bad: number; } declare const keys: Keys; interface Uses { [keys.tag](): void; } interface Uses { keep(): void; }",
+    "diagnosticCodes": [2717], "admitted": false, "key": "[keys.tag]"
+  },
+  {
+    "name": "optional_merged_property_is_not_unique_key",
+    "source": "declare const token: unique symbol; interface Keys { tag?: typeof token; } interface Keys { tag?: typeof token; } declare const keys: Keys; interface Uses { [keys.tag](): void; } interface Uses { keep(): void; }",
+    "diagnosticCodes": [2464], "admitted": false, "key": "[keys.tag]"
+  }
+]

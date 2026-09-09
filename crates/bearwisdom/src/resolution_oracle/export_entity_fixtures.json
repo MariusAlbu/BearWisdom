@@ -1,0 +1,114 @@
+[
+  {
+    "name": "assigned_function_factory_keeps_return_identity",
+    "compilerOptions": {"module":"commonjs","moduleResolution":"node10"},
+    "diagnosticCodes": [],
+    "files": [
+      {"path":"provider.d.ts","source":"declare module 'provider' { class Doc { /*@decl:1:method*/touch(): void; } /*@decl:2:function*/function make(): Doc; export = make; }"},
+      {"path":"main.ts","source":"import make = require('provider'); /*@ref:1*/make()./*@ref:2*/touch();"}
+    ],
+    "labels": [[1,2],[2,1]]
+  },
+  {
+    "name": "assigned_namespace_aliases_forward_without_default_export_identity",
+    "compilerOptions": {"module":"commonjs","moduleResolution":"node10"},
+    "diagnosticCodes": [],
+    "files": [
+      {"path":"provider.d.ts","source":"declare module 'provider' { namespace API { class Doc { /*@decl:1:method*/touch(): void; } /*@decl:2:function*/function make(): Doc; } export = API; } declare module 'forward' { import API = require('provider'); export = API; }"},
+      {"path":"main.ts","source":"import API = require('forward'); API./*@ref:1*/make()./*@ref:2*/touch();"}
+    ],
+    "labels": [[1,2],[2,1]]
+  },
+  {
+    "name": "assigned_function_and_namespace_keep_both_facets",
+    "compilerOptions": {"module":"commonjs","moduleResolution":"node10"},
+    "targetMode": "signature",
+    "diagnosticCodes": [],
+    "files": [
+      {"path":"provider.d.ts","source":"declare module 'provider' { /*@decl:1:function*/function API(): API.Doc; namespace API { class Doc { /*@decl:2:method*/touch(): void; } /*@decl:3:function*/function create(): Doc; } export = API; }"},
+      {"path":"main.ts","source":"import API = require('provider'); /*@ref:1*/API()./*@ref:2*/touch(); API./*@ref:3*/create()./*@ref:4*/touch();"}
+    ],
+    "labels": [[1,1],[2,2],[3,3],[4,2]]
+  },
+  {
+    "name": "internal_aliases_preserve_namespace_and_type_owner_ids",
+    "compilerOptions": {"module":"commonjs","moduleResolution":"node10"},
+    "diagnosticCodes": [],
+    "files": [
+      {"path":"provider.d.ts","source":"declare module 'provider' { namespace API { class Doc { /*@decl:1:method*/touch(): void; } /*@decl:2:function*/function make(): Doc; } import Factory = API.make; export = Factory; }"},
+      {"path":"main.ts","source":"import make = require('provider'); /*@ref:1*/make()./*@ref:2*/touch();"}
+    ],
+    "labels": [[1,2],[2,1]]
+  },
+  {
+    "name": "assigned_generic_class_keeps_namespace_and_type_facets",
+    "compilerOptions": {"module":"commonjs","moduleResolution":"node10"},
+    "diagnosticCodes": [],
+    "files": [
+      {"path":"provider.d.ts","source":"declare module 'provider' { class Doc { /*@decl:1:method*/touch(): void; } class API<T> { /*@decl:2:method*/read(): T; } namespace API { /*@decl:3:function*/function create(): API<Doc>; } export = API; }"},
+      {"path":"main.ts","source":"import API = require('provider'); API./*@ref:1*/create()./*@ref:2*/read()./*@ref:3*/touch();"}
+    ],
+    "labels": [[1,3],[2,2],[3,1]]
+  },
+  {
+    "name": "exported_internal_aliases_preserve_nested_owner",
+    "compilerOptions": {"module":"commonjs","moduleResolution":"node10"},
+    "diagnosticCodes": [],
+    "files": [
+      {"path":"provider.d.ts","source":"declare module 'provider' { namespace Impl { class Doc { /*@decl:1:method*/touch(): void; } /*@decl:2:function*/function make(): Doc; } namespace API { export import make = Impl.make; } export = API; }"},
+      {"path":"main.ts","source":"import API = require('provider'); API./*@ref:1*/make()./*@ref:2*/touch();"}
+    ],
+    "labels": [[1,2],[2,1]]
+  },
+  {
+    "name": "internal_forward_aliases_bind_declared_id_before_rhs",
+    "compilerOptions": {"module":"commonjs","moduleResolution":"node10"},
+    "diagnosticCodes": [],
+    "files": [
+      {"path":"provider.d.ts","source":"declare module 'provider' { namespace Impl { class Doc { /*@decl:1:method*/touch(): void; } /*@decl:2:function*/function make(): Doc; } import First = Later.make; import Later = Impl; export = First; }"},
+      {"path":"main.ts","source":"import make = require('provider'); /*@ref:1*/make()./*@ref:2*/touch();"}
+    ],
+    "labels": [[1,2],[2,1]]
+  },
+  {
+    "name": "missing_assignment_provider_cannot_borrow_namesake",
+    "compilerOptions": {"module":"commonjs","moduleResolution":"node10"},
+    "diagnosticCodes": [2307],
+    "files": [
+      {"path":"provider.d.ts","source":"declare module 'present' { function make(): void; export = make; }"},
+      {"path":"main.ts","source":"import make = require('missing'); /*@ref:1*/make();"}
+    ],
+    "labels": [[1,null]]
+  },
+  {
+    "name": "missing_assigned_namespace_member_cannot_borrow_sibling",
+    "compilerOptions": {"module":"commonjs","moduleResolution":"node10"},
+    "diagnosticCodes": [2339],
+    "files": [
+      {"path":"provider.d.ts","source":"declare module 'provider' { namespace Wrong { function touch(): void; } namespace API { function make(): void; } export = API; }"},
+      {"path":"main.ts","source":"import API = require('provider'); API./*@ref:1*/touch();"}
+    ],
+    "labels": [[1,null]]
+  },
+  {
+    "name": "cyclic_internal_aliases_remain_unknown",
+    "compilerOptions": {"module":"commonjs","moduleResolution":"node10"},
+    "diagnosticCodes": [2303],
+    "files": [
+      {"path":"provider.d.ts","source":"declare module 'provider' { import First = Second; import Second = First; export = First; }"},
+      {"path":"main.ts","source":"import make = require('provider'); /*@ref:1*/make();"}
+    ],
+    "labels": [[1,null]]
+  },
+  {
+    "name": "default_export_does_not_make_required_module_callable",
+    "compilerOptions": {"module":"commonjs","moduleResolution":"node10"},
+    "targetMode": "signature",
+    "diagnosticCodes": [2349],
+    "files": [
+      {"path":"provider.d.ts","source":"export default function make(): void;"},
+      {"path":"main.ts","source":"import make = require('./provider'); /*@ref:1*/make();"}
+    ],
+    "labels": [[1,null]]
+  }
+]

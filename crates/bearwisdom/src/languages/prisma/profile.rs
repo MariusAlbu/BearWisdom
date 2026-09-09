@@ -28,6 +28,7 @@ pub const PRISMA_PROFILE: LanguageProfile = LanguageProfile {
     has_generics: false,
     has_sum_types: false,
     look_through_optional: false,
+    reference_member_projection: false,
     literal_narrowing: false,
     async_wrappers: &[],
     container_accessors: &[],
@@ -97,9 +98,21 @@ mod tests;
 pub(crate) fn is_prisma_scalar(name: &str) -> bool {
     matches!(
         name,
-        "String" | "Boolean" | "Int" | "BigInt" | "Float" | "Decimal"
-            | "DateTime" | "Json" | "Bytes" | "Unsupported"
-            | "autoincrement" | "cuid" | "uuid" | "now"
-            | "dbgenerated" | "auto"
+        "String"
+            | "Boolean"
+            | "Int"
+            | "BigInt"
+            | "Float"
+            | "Decimal"
+            | "DateTime"
+            | "Json"
+            | "Bytes"
+            | "Unsupported"
+            | "autoincrement"
+            | "cuid"
+            | "uuid"
+            | "now"
+            | "dbgenerated"
+            | "auto"
     )
 }

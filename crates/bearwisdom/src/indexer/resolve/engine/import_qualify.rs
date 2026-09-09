@@ -81,7 +81,11 @@ pub(crate) fn collect_pending(
         .enumerate()
         .filter_map(|(i, s)| symbol_id_map.id_of(&pf.path, i, &s.qualified_name))
         .collect();
-    Some(PendingFile { path: pf.path.clone(), imports, symbol_ids })
+    Some(PendingFile {
+        path: pf.path.clone(),
+        imports,
+        symbol_ids,
+    })
 }
 
 /// Apply every pending entry whose candidates are now materialized, retaining
@@ -99,14 +103,15 @@ pub(crate) fn apply_pending(
         let file_syms = by_file.get(&entry.path);
         entry.imports.retain(|local, cands| {
             let shadowed = file_syms.is_some_and(|syms| {
-                syms.iter().any(|s| s.name == *local && is_type_like_kind(&s.kind))
+                syms.iter()
+                    .any(|s| s.name == *local && is_type_like_kind(&s.kind))
             });
             if shadowed {
                 return false;
             }
-            let hit = cands.iter().find(|c| {
-                by_qname.get(*c).is_some_and(|s| is_type_like_kind(&s.kind))
-            });
+            let hit = cands
+                .iter()
+                .find(|c| by_qname.get(*c).is_some_and(|s| is_type_like_kind(&s.kind)));
             match hit {
                 Some(q) => {
                     resolved.insert(local.clone(), q.clone());
@@ -120,10 +125,16 @@ pub(crate) fn apply_pending(
                 let Some(ti) = type_info_by_id.get_mut(id) else {
                     continue;
                 };
-                if let Some(new) = ti.return_type_id.and_then(|t| requalify_type(arena, t, &resolved)) {
+                if let Some(new) = ti
+                    .return_type_id
+                    .and_then(|t| requalify_type(arena, t, &resolved))
+                {
                     ti.return_type_id = Some(new);
                 }
-                if let Some(new) = ti.field_type_id.and_then(|t| requalify_type(arena, t, &resolved)) {
+                if let Some(new) = ti
+                    .field_type_id
+                    .and_then(|t| requalify_type(arena, t, &resolved))
+                {
                     ti.field_type_id = Some(new);
                 }
             }
@@ -151,8 +162,10 @@ fn requalify_type(
         Type::Decl { .. } => None,
         Type::Apply { base, args } => {
             let new_base = requalify_type(arena, base, resolve);
-            let new_args: Vec<Option<TypeId>> =
-                args.iter().map(|&a| requalify_type(arena, a, resolve)).collect();
+            let new_args: Vec<Option<TypeId>> = args
+                .iter()
+                .map(|&a| requalify_type(arena, a, resolve))
+                .collect();
             if new_base.is_none() && new_args.iter().all(Option::is_none) {
                 return None;
             }
@@ -161,7 +174,10 @@ fn requalify_type(
                 .zip(&new_args)
                 .map(|(&old, new)| new.unwrap_or(old))
                 .collect();
-            Some(arena.intern(Type::Apply { base: new_base.unwrap_or(base), args }))
+            Some(arena.intern(Type::Apply {
+                base: new_base.unwrap_or(base),
+                args,
+            }))
         }
         Type::Optional(inner) => {
             requalify_type(arena, inner, resolve).map(|i| arena.intern(Type::Optional(i)))
@@ -179,15 +195,16 @@ fn requalify_type(
             requalify_arms(arena, &arms, resolve).map(|arms| arena.intern(Type::Union(arms)))
         }
         Type::Intersection(arms) => {
-            requalify_arms(arena, &arms, resolve)
-                .map(|arms| arena.intern(Type::Intersection(arms)))
+            requalify_arms(arena, &arms, resolve).map(|arms| arena.intern(Type::Intersection(arms)))
         }
         Type::Tuple(items) => {
             requalify_arms(arena, &items, resolve).map(|items| arena.intern(Type::Tuple(items)))
         }
         Type::Function { params, return_ } => {
-            let new_params: Vec<Option<TypeId>> =
-                params.iter().map(|&p| requalify_type(arena, p, resolve)).collect();
+            let new_params: Vec<Option<TypeId>> = params
+                .iter()
+                .map(|&p| requalify_type(arena, p, resolve))
+                .collect();
             let new_return = requalify_type(arena, return_, resolve);
             if new_return.is_none() && new_params.iter().all(Option::is_none) {
                 return None;
@@ -202,7 +219,15 @@ fn requalify_type(
                 return_: new_return.unwrap_or(return_),
             }))
         }
-        Type::Primitive(_) | Type::Generic { .. } | Type::Literal(_) | Type::Unknown => None,
+        Type::Primitive(_)
+        | Type::Intrinsic(_)
+        | Type::Generic { .. }
+        | Type::Region(_)
+        | Type::Literal(_)
+        | Type::Unknown
+        | Type::Indirect { .. } => None,
+        // Source-owned operators never reopen the legacy name-resolution path.
+        Type::Operator(_) | Type::UniqueSymbol(_) | Type::Callable(_) | Type::Object(_) => None,
     }
 }
 
@@ -213,8 +238,10 @@ fn requalify_arms(
     arms: &[TypeId],
     resolve: &FxHashMap<String, String>,
 ) -> Option<Vec<TypeId>> {
-    let rewritten: Vec<Option<TypeId>> =
-        arms.iter().map(|&a| requalify_type(arena, a, resolve)).collect();
+    let rewritten: Vec<Option<TypeId>> = arms
+        .iter()
+        .map(|&a| requalify_type(arena, a, resolve))
+        .collect();
     if rewritten.iter().all(Option::is_none) {
         return None;
     }

@@ -65,6 +65,8 @@ pub struct LanguageProfile {
     pub has_generics: bool,
     pub has_sum_types: bool,
     pub look_through_optional: bool,
+    /// Project reference TypeIds only for member lookup; raw pointers stay opaque.
+    pub reference_member_projection: bool,
     pub literal_narrowing: bool,
     pub async_wrappers: &'static [&'static str],
     /// Built-in container accessor methods that type THROUGH the container's

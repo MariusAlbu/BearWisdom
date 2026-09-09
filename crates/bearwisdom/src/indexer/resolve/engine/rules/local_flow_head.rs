@@ -18,7 +18,7 @@
 // strictly more specific evidence than "any same-named symbol in the file".
 // =============================================================================
 
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 
 pub struct LocalFlowHeadRule;
 
@@ -32,10 +32,16 @@ impl LookupRule for LocalFlowHeadRule {
         if target.is_empty() {
             return LookupResult::Pass;
         }
-        let Some(qname) = ctx.lookup.local_callable_head(target) else {
-            return LookupResult::Pass;
-        };
-        let Some(sym) = ctx.lookup.by_qualified_name(&qname) else {
+        let symbol = ctx
+            .lookup
+            .local_callable_id(target)
+            .and_then(|id| ctx.lookup.symbol_by_id(id))
+            .or_else(|| {
+                ctx.lookup
+                    .local_callable_head(target)
+                    .and_then(|qname| ctx.lookup.by_qualified_name(&qname))
+            });
+        let Some(sym) = symbol else {
             return LookupResult::Pass;
         };
         if (ctx.kind)(ctx.edge_kind(), &sym.kind) {

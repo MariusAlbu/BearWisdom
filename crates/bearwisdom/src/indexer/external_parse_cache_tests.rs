@@ -6,8 +6,7 @@ fn normalize_path_key_folds_dot_segments() {
     // The same file reached via an unfolded `..`/`.` route must canonicalize to
     // one key, so the cache doesn't accumulate duplicate rows per route.
     let canon = normalize_path_key(Path::new("/proj/node_modules/dep/dist/x.d.ts"));
-    let unfolded =
-        normalize_path_key(Path::new("/proj/node_modules/dep/types/../dist/./x.d.ts"));
+    let unfolded = normalize_path_key(Path::new("/proj/node_modules/dep/types/../dist/./x.d.ts"));
     assert_eq!(canon, unfolded);
     assert_eq!(canon, "/proj/node_modules/dep/dist/x.d.ts");
 }
@@ -42,5 +41,18 @@ fn cache_key_embeds_schema_version() {
     assert!(
         key.starts_with(&format!("{EXTRACTOR_SCHEMA_VERSION}:")),
         "schema version must prefix the key so a bump flushes all prior entries"
+    );
+}
+
+#[test]
+fn pre_scoped_owner_payloads_cannot_match_current_cache_keys() {
+    let current = cache_key(Path::new("/source/lib.rs"), "unchanged");
+    assert!(EXTRACTOR_SCHEMA_VERSION >= 32);
+    assert_ne!(
+        current,
+        format!(
+            "31:{}:unchanged",
+            normalize_path_key(Path::new("/source/lib.rs"))
+        )
     );
 }

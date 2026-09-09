@@ -17,6 +17,7 @@ impl Lookup {
             by_id: Default::default(),
             members: Default::default(),
             members_by_id: Default::default(),
+            member_index: Default::default(),
             generics: Default::default(),
             field_types: Default::default(),
             field_type_ids: Default::default(),
@@ -77,7 +78,8 @@ impl Lookup {
     /// Map a workspace-package specifier to its package id, backing
     /// `workspace_package_id` / `is_workspace_declared_name`.
     pub(crate) fn with_workspace_pkg(mut self, specifier: &str, package_id: i64) -> Self {
-        self.workspace_pkgs.insert(specifier.to_string(), package_id);
+        self.workspace_pkgs
+            .insert(specifier.to_string(), package_id);
         self
     }
 
@@ -85,6 +87,8 @@ impl Lookup {
     /// counterpart of `with_member`, for tests that exercise the chain walker's
     /// identity path (two same-qname parents kept distinct by id).
     pub(crate) fn with_member_id(mut self, parent_id: i64, sym: Symbol) -> Self {
+        self.member_index.record(parent_id, &sym.name, sym.id);
+        self.by_id.insert(sym.id, sym.clone());
         self.members_by_id.entry(parent_id).or_default().push(sym);
         self
     }
@@ -109,7 +113,10 @@ impl Lookup {
     }
 
     pub(crate) fn with_parent_id(mut self, child_id: i64, parent_id: i64) -> Self {
-        self.parents_by_id.entry(child_id).or_default().push(parent_id);
+        self.parents_by_id
+            .entry(child_id)
+            .or_default()
+            .push(parent_id);
         self
     }
 
@@ -161,7 +168,12 @@ impl Lookup {
     /// Register the generic args on `child`'s `extends`/`implements` edge to
     /// `parent_head`: `with_parent_args("Child", "Base", &["User"])` for
     /// `class Child extends Base<User>`. Backs `parent_class_args`.
-    pub(crate) fn with_parent_args(mut self, child_head: &str, parent_head: &str, args: &[&str]) -> Self {
+    pub(crate) fn with_parent_args(
+        mut self,
+        child_head: &str,
+        parent_head: &str,
+        args: &[&str],
+    ) -> Self {
         self.inherits_args.insert(
             (child_head.to_string(), parent_head.to_string()),
             args.iter().map(|s| s.to_string()).collect(),
@@ -228,10 +240,7 @@ impl Lookup {
 
     /// Register a symbol as a member of ambient scope, keyed by its simple name.
     pub(crate) fn with_ambient(mut self, sym: Symbol) -> Self {
-        self.ambient
-            .entry(sym.name.clone())
-            .or_default()
-            .push(sym);
+        self.ambient.entry(sym.name.clone()).or_default().push(sym);
         self
     }
 }

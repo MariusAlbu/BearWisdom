@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::contract::SymbolLookup;
 use crate::indexer::resolve::engine::compilation::Compilation;
+use crate::indexer::resolve::engine::contract::SymbolLookup;
 use crate::type_checker::core::types::TypeArena;
 use crate::types::{
     EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, ParsedFile, SymbolKind, Visibility,
@@ -179,7 +179,9 @@ fn build_fixture() -> (Compilation, Arc<TypeArena>) {
 #[test]
 fn by_qualified_name_finds_class() {
     let (tree, _) = build_fixture();
-    let sym = tree.by_qualified_name("Repo").expect("Repo should be indexed");
+    let sym = tree
+        .by_qualified_name("Repo")
+        .expect("Repo should be indexed");
     assert_eq!(sym.qualified_name, "Repo");
     assert_eq!(sym.kind, "class");
 }
@@ -198,7 +200,10 @@ fn members_of_repo_contains_find() {
 #[test]
 fn members_of_id_matches_members_of() {
     let (tree, _) = build_fixture();
-    let repo_id = tree.by_qualified_name("Repo").expect("Repo should be indexed").id;
+    let repo_id = tree
+        .by_qualified_name("Repo")
+        .expect("Repo should be indexed")
+        .id;
     let qname_set = tree.members_of("Repo");
     let id_set = tree.members_of_id(repo_id);
     let mut by_qname: Vec<&str> = qname_set.iter().map(|s| s.name.as_str()).collect();
@@ -227,7 +232,14 @@ fn constructor_var_does_not_poison_instance_type_field_slot() {
     let arena = Arc::new(TypeArena::new());
     let symbols = vec![
         make_symbol("Array", "Array", SymbolKind::Interface, None, None, None),
-        make_symbol("push", "Array.push", SymbolKind::Method, Some(0), None, None),
+        make_symbol(
+            "push",
+            "Array.push",
+            SymbolKind::Method,
+            Some(0),
+            None,
+            None,
+        ),
         make_symbol("Array", "Array", SymbolKind::Variable, None, None, None),
     ];
     // `declare var Array: ArrayConstructor` — the value's declared type.
@@ -258,19 +270,35 @@ fn colliding_qname_field_types_are_kept_per_id() {
     let cfg_a = make_symbol("config", "config", SymbolKind::Variable, None, None, None);
     let cfg_b = make_symbol("config", "config", SymbolKind::Variable, None, None, None);
 
-    let pf_a =
-        make_parsed_file("packages/a/config.ts", vec![cfg_a], vec![type_ref(0, "ConfigA")]);
-    let pf_b =
-        make_parsed_file("packages/b/config.ts", vec![cfg_b], vec![type_ref(0, "ConfigB")]);
+    let pf_a = make_parsed_file(
+        "packages/a/config.ts",
+        vec![cfg_a],
+        vec![type_ref(0, "ConfigA")],
+    );
+    let pf_b = make_parsed_file(
+        "packages/b/config.ts",
+        vec![cfg_b],
+        vec![type_ref(0, "ConfigB")],
+    );
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
-    id_map.insert(("packages/a/config.ts".to_string(), "config".to_string()), 10);
-    id_map.insert(("packages/b/config.ts".to_string(), "config".to_string()), 20);
+    id_map.insert(
+        ("packages/a/config.ts".to_string(), "config".to_string()),
+        10,
+    );
+    id_map.insert(
+        ("packages/b/config.ts".to_string(), "config".to_string()),
+        20,
+    );
 
     let tree = Compilation::build(&[pf_a, pf_b], &id_map.clone().into(), Arc::clone(&arena));
 
-    let id10 = tree.field_type_id_of(10).expect("field_type_id_of(10) populated");
-    let id20 = tree.field_type_id_of(20).expect("field_type_id_of(20) populated");
+    let id10 = tree
+        .field_type_id_of(10)
+        .expect("field_type_id_of(10) populated");
+    let id20 = tree
+        .field_type_id_of(20)
+        .expect("field_type_id_of(20) populated");
     assert_ne!(
         id10, id20,
         "id-keyed field types of a colliding qname must stay distinct"
@@ -283,7 +311,9 @@ fn colliding_qname_field_types_are_kept_per_id() {
 fn symbol_by_id_recovers_the_record() {
     let (tree, _) = build_fixture();
     let repo_id = tree.by_qualified_name("Repo").expect("Repo indexed").id;
-    let recovered = tree.symbol_by_id(repo_id).expect("symbol_by_id recovers Repo");
+    let recovered = tree
+        .symbol_by_id(repo_id)
+        .expect("symbol_by_id recovers Repo");
     assert_eq!(recovered.qualified_name, "Repo");
 }
 
@@ -294,11 +324,23 @@ fn symbol_by_id_recovers_the_record() {
 fn colliding_qname_return_types_are_kept_per_id() {
     let arena = Arc::new(TypeArena::new());
 
-    let mut react_fn =
-        make_symbol("useQuery", "useQuery", SymbolKind::Function, None, None, None);
+    let mut react_fn = make_symbol(
+        "useQuery",
+        "useQuery",
+        SymbolKind::Function,
+        None,
+        None,
+        None,
+    );
     react_fn.signature = Some("function useQuery(): ReactResult".to_string());
-    let mut preact_fn =
-        make_symbol("useQuery", "useQuery", SymbolKind::Function, None, None, None);
+    let mut preact_fn = make_symbol(
+        "useQuery",
+        "useQuery",
+        SymbolKind::Function,
+        None,
+        None,
+        None,
+    );
     preact_fn.signature = Some("function useQuery(): PreactResult".to_string());
 
     let react_pf = make_parsed_file("packages/react/useQuery.ts", vec![react_fn], vec![]);
@@ -306,15 +348,25 @@ fn colliding_qname_return_types_are_kept_per_id() {
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
     id_map.insert(
-        ("packages/react/useQuery.ts".to_string(), "useQuery".to_string()),
+        (
+            "packages/react/useQuery.ts".to_string(),
+            "useQuery".to_string(),
+        ),
         10,
     );
     id_map.insert(
-        ("packages/preact/useQuery.ts".to_string(), "useQuery".to_string()),
+        (
+            "packages/preact/useQuery.ts".to_string(),
+            "useQuery".to_string(),
+        ),
         20,
     );
 
-    let tree = Compilation::build(&[react_pf, preact_pf], &id_map.clone().into(), Arc::clone(&arena));
+    let tree = Compilation::build(
+        &[react_pf, preact_pf],
+        &id_map.clone().into(),
+        Arc::clone(&arena),
+    );
 
     // Qname slot is first-writer-wins (one type for both copies); the id slot
     // must keep each declaration's OWN return.
@@ -340,21 +392,49 @@ fn colliding_qname_return_types_are_kept_per_id() {
 #[test]
 fn same_qname_overload_generics_survive_by_id() {
     let arena = Arc::new(TypeArena::new());
-    let mut react_fn =
-        make_symbol("useQuery", "useQuery", SymbolKind::Function, None, None, None);
+    let mut react_fn = make_symbol(
+        "useQuery",
+        "useQuery",
+        SymbolKind::Function,
+        None,
+        None,
+        None,
+    );
     react_fn.signature = Some("function useQuery<TData, TError>(): ReactResult".to_string());
-    let mut preact_fn =
-        make_symbol("useQuery", "useQuery", SymbolKind::Function, None, None, None);
+    let mut preact_fn = make_symbol(
+        "useQuery",
+        "useQuery",
+        SymbolKind::Function,
+        None,
+        None,
+        None,
+    );
     preact_fn.signature = Some("function useQuery<TData, TError>(): PreactResult".to_string());
 
     let react_pf = make_parsed_file("packages/react/useQuery.ts", vec![react_fn], vec![]);
     let preact_pf = make_parsed_file("packages/preact/useQuery.ts", vec![preact_fn], vec![]);
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
-    id_map.insert(("packages/react/useQuery.ts".to_string(), "useQuery".to_string()), 10);
-    id_map.insert(("packages/preact/useQuery.ts".to_string(), "useQuery".to_string()), 20);
+    id_map.insert(
+        (
+            "packages/react/useQuery.ts".to_string(),
+            "useQuery".to_string(),
+        ),
+        10,
+    );
+    id_map.insert(
+        (
+            "packages/preact/useQuery.ts".to_string(),
+            "useQuery".to_string(),
+        ),
+        20,
+    );
 
-    let tree = Compilation::build(&[react_pf, preact_pf], &id_map.clone().into(), Arc::clone(&arena));
+    let tree = Compilation::build(
+        &[react_pf, preact_pf],
+        &id_map.clone().into(),
+        Arc::clone(&arena),
+    );
 
     let expected = vec!["TData".to_string(), "TError".to_string()];
     assert_eq!(
@@ -375,7 +455,14 @@ fn same_qname_overload_generics_survive_by_id() {
 #[test]
 fn generic_param_defaults_are_captured_by_id() {
     let arena = Arc::new(TypeArena::new());
-    let mut f = make_symbol("useQuery", "useQuery", SymbolKind::Function, None, None, None);
+    let mut f = make_symbol(
+        "useQuery",
+        "useQuery",
+        SymbolKind::Function,
+        None,
+        None,
+        None,
+    );
     f.signature = Some("function useQuery<TData = string, TError = TData>(): R".to_string());
     let pf = make_parsed_file("a.ts", vec![f], vec![]);
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
@@ -398,7 +485,14 @@ fn call_wrapper_return_inferred_from_returned_call() {
     use crate::indexer::resolve::engine::testkit::call_ref;
 
     let arena = Arc::new(TypeArena::new());
-    let mut uq = make_symbol("useQuery", "useQuery", SymbolKind::Function, None, None, None);
+    let mut uq = make_symbol(
+        "useQuery",
+        "useQuery",
+        SymbolKind::Function,
+        None,
+        None,
+        None,
+    );
     uq.signature = Some("function useQuery(): UQR".to_string());
     let usepost = make_symbol("usePost", "usePost", SymbolKind::Function, None, None, None);
 
@@ -412,10 +506,21 @@ fn call_wrapper_return_inferred_from_returned_call() {
     id_map.insert(("src/hooks.ts".to_string(), "useQuery".to_string()), 1);
     id_map.insert(("src/hooks.ts".to_string(), "usePost".to_string()), 2);
 
-    let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map.clone().into(), Arc::clone(&arena));
+    let mut tree = Compilation::build(
+        std::slice::from_ref(&pf),
+        &id_map.clone().into(),
+        Arc::clone(&arena),
+    );
     // useQuery's own return derives from its signature; usePost's is inferred.
-    assert_eq!(tree.return_type_str("usePost"), None, "no return before the pass");
-    tree.infer_call_wrapper_returns(std::slice::from_ref(&pf));
+    assert_eq!(
+        tree.return_type_str("usePost"),
+        None,
+        "no return before the pass"
+    );
+    let mut ids: crate::indexer::symbol_ids::SymbolIds = id_map.into();
+    ids.set_rows(pf.path.clone(), vec![1, 2]);
+    tree.infer_call_wrapper_returns(std::slice::from_ref(&pf), &ids);
+    assert_eq!(tree.return_type_id_of(2), Some(arena.class("UQR")));
     assert_eq!(
         tree.return_type_str("usePost").as_deref(),
         Some("UQR"),
@@ -435,14 +540,39 @@ fn call_wrapper_return_prefers_scoped_nested_callee_over_namesake() {
     let arena = Arc::new(TypeArena::new());
     // Top-level namesake `createLogger` + its `$Ret` (a DIFFERENT shape) — listed
     // first so the unscoped `by_name` path would pick it.
-    let namesake = make_symbol("createLogger", "createLogger", SymbolKind::Function, None, None, None);
-    let namesake_ret =
-        make_symbol("createLogger$Ret", "createLogger$Ret", SymbolKind::Interface, None, None, None);
-    let namesake_member =
-        make_symbol("ship", "createLogger$Ret.ship", SymbolKind::Property, Some(1), None, None);
+    let namesake = make_symbol(
+        "createLogger",
+        "createLogger",
+        SymbolKind::Function,
+        None,
+        None,
+        None,
+    );
+    let namesake_ret = make_symbol(
+        "createLogger$Ret",
+        "createLogger$Ret",
+        SymbolKind::Interface,
+        None,
+        None,
+        None,
+    );
+    let namesake_member = make_symbol(
+        "ship",
+        "createLogger$Ret.ship",
+        SymbolKind::Property,
+        Some(1),
+        None,
+        None,
+    );
     // The factory + its nested builder + the builder's member-bearing `$Ret`.
-    let factory =
-        make_symbol("createScopedLogger", "createScopedLogger", SymbolKind::Function, None, None, None);
+    let factory = make_symbol(
+        "createScopedLogger",
+        "createScopedLogger",
+        SymbolKind::Function,
+        None,
+        None,
+        None,
+    );
     let mut nested = make_symbol(
         "createLogger",
         "createScopedLogger.createLogger",
@@ -474,7 +604,15 @@ fn call_wrapper_return_prefers_scoped_nested_callee_over_namesake() {
     r.source_symbol_index = 3;
     let mut pf = make_parsed_file(
         "src/logger.ts",
-        vec![namesake, namesake_ret, namesake_member, factory, nested, nested_ret, nested_member],
+        vec![
+            namesake,
+            namesake_ret,
+            namesake_member,
+            factory,
+            nested,
+            nested_ret,
+            nested_member,
+        ],
         vec![r],
     );
     pf.flow.flow_return_lhs.insert(0, 3);
@@ -492,9 +630,20 @@ fn call_wrapper_return_prefers_scoped_nested_callee_over_namesake() {
         id_map.insert(("src/logger.ts".to_string(), qname.to_string()), id);
     }
 
-    let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map.clone().into(), Arc::clone(&arena));
-    assert_eq!(tree.return_type_str("createScopedLogger"), None, "no return before the pass");
-    tree.infer_call_wrapper_returns(std::slice::from_ref(&pf));
+    let mut tree = Compilation::build(
+        std::slice::from_ref(&pf),
+        &id_map.clone().into(),
+        Arc::clone(&arena),
+    );
+    assert_eq!(
+        tree.return_type_str("createScopedLogger"),
+        None,
+        "no return before the pass"
+    );
+    let mut ids: crate::indexer::symbol_ids::SymbolIds = id_map.into();
+    ids.set_rows(pf.path.clone(), (100..107).collect());
+    tree.infer_call_wrapper_returns(std::slice::from_ref(&pf), &ids);
+    assert!(tree.return_type_id_of(103).is_some());
     assert_eq!(
         tree.return_type_str("createScopedLogger").as_deref(),
         Some("createScopedLogger.createLogger$Ret"),
@@ -509,7 +658,14 @@ fn field_init_call_types_the_field() {
     use crate::indexer::resolve::engine::testkit::call_ref;
 
     let arena = Arc::new(TypeArena::new());
-    let mut mk = make_symbol("makeThing", "makeThing", SymbolKind::Function, None, None, None);
+    let mut mk = make_symbol(
+        "makeThing",
+        "makeThing",
+        SymbolKind::Function,
+        None,
+        None,
+        None,
+    );
     mk.signature = Some("function makeThing(): Thing".to_string());
     let c = make_symbol("C", "C", SymbolKind::Class, None, None, None);
     let svc = make_symbol("svc", "C.svc", SymbolKind::Property, Some(1), None, None);
@@ -524,9 +680,21 @@ fn field_init_call_types_the_field() {
     id_map.insert(("src/c.ts".to_string(), "C".to_string()), 2);
     id_map.insert(("src/c.ts".to_string(), "C.svc".to_string()), 3);
 
-    let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map.clone().into(), Arc::clone(&arena));
-    assert_eq!(tree.field_type_str("C.svc"), None, "no field type before the pass");
-    tree.infer_field_init_types(std::slice::from_ref(&pf), &rustc_hash::FxHashMap::default());
+    let mut tree = Compilation::build(
+        std::slice::from_ref(&pf),
+        &id_map.clone().into(),
+        Arc::clone(&arena),
+    );
+    assert_eq!(
+        tree.field_type_str("C.svc"),
+        None,
+        "no field type before the pass"
+    );
+    tree.infer_field_init_types(
+        std::slice::from_ref(&pf),
+        &rustc_hash::FxHashMap::default(),
+        &id_map.clone().into(),
+    );
     assert_eq!(
         tree.field_type_str("C.svc").as_deref(),
         Some("Thing"),
@@ -566,11 +734,15 @@ fn field_init_await_unwraps_the_async_wrapper() {
     id_map.insert(("src/c.ts".to_string(), "fetch".to_string()), 1);
     id_map.insert(("src/c.ts".to_string(), "res".to_string()), 2);
 
-    let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map.clone().into(), Arc::clone(&arena));
+    let mut tree = Compilation::build(
+        std::slice::from_ref(&pf),
+        &id_map.clone().into(),
+        Arc::clone(&arena),
+    );
     let mut profiles: rustc_hash::FxHashMap<&'static str, &'static LanguageProfile> =
         rustc_hash::FxHashMap::default();
     profiles.insert("typescript", &ASYNC_PROFILE);
-    tree.infer_field_init_types(std::slice::from_ref(&pf), &profiles);
+    tree.infer_field_init_types(std::slice::from_ref(&pf), &profiles, &id_map.clone().into());
     assert_eq!(
         tree.field_type_str("res").as_deref(),
         Some("Response"),
@@ -584,7 +756,14 @@ fn local_var_init_call_types_the_variable_not_the_callee() {
     use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
 
     let arena = Arc::new(TypeArena::new());
-    let mut mk = make_symbol("makeThing", "makeThing", SymbolKind::Function, None, None, None);
+    let mut mk = make_symbol(
+        "makeThing",
+        "makeThing",
+        SymbolKind::Function,
+        None,
+        None,
+        None,
+    );
     mk.signature = Some("function makeThing(): Thing".to_string());
     // `const r = makeThing()` — a local variable (idx 1).
     let r_sym = make_symbol("r", "r", SymbolKind::Variable, None, None, None);
@@ -628,7 +807,11 @@ fn local_var_init_call_types_the_variable_not_the_callee() {
     id_map.insert(("src/m.ts".to_string(), "makeThing".to_string()), 1);
     id_map.insert(("src/m.ts".to_string(), "r".to_string()), 2);
 
-    let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map.clone().into(), Arc::clone(&arena));
+    let mut tree = Compilation::build(
+        std::slice::from_ref(&pf),
+        &id_map.clone().into(),
+        Arc::clone(&arena),
+    );
     // derive_type_info_from_refs (run during build) must SKIP the chain-bearing
     // TypeRef — `r` must NOT be mis-typed to the callee name "makeThing".
     assert_eq!(
@@ -636,7 +819,11 @@ fn local_var_init_call_types_the_variable_not_the_callee() {
         None,
         "chain-bearing initializer must not type the variable to the callee name",
     );
-    tree.infer_field_init_types(std::slice::from_ref(&pf), &rustc_hash::FxHashMap::default());
+    tree.infer_field_init_types(
+        std::slice::from_ref(&pf),
+        &rustc_hash::FxHashMap::default(),
+        &id_map.clone().into(),
+    );
     assert_eq!(
         tree.field_type_str("r").as_deref(),
         Some("Thing"),
@@ -681,7 +868,10 @@ fn inferred_return_method_does_not_capture_last_param_as_return() {
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
     id_map.insert(("src/browser.ts".to_string(), "Browser".to_string()), 1);
     id_map.insert(
-        ("src/browser.ts".to_string(), "Browser.elementByCss".to_string()),
+        (
+            "src/browser.ts".to_string(),
+            "Browser.elementByCss".to_string(),
+        ),
         2,
     );
 
@@ -705,17 +895,44 @@ fn object_type_return_routes_through_synth_ret_with_typed_members() {
     // The extractor sets the function's return to the inline object type and
     // mirrors it onto BOTH the qname and id slots — the routing must override it.
     let obj_ret = arena.intern_type_str("{ browser: Browser; flag: boolean }");
-    let mut setup =
-        make_symbol("setup", "setup", SymbolKind::Function, None, None, Some(obj_ret));
+    let mut setup = make_symbol(
+        "setup",
+        "setup",
+        SymbolKind::Function,
+        None,
+        None,
+        Some(obj_ret),
+    );
     setup.signature = Some("setup(): { browser: Browser; flag: boolean }".to_string());
     let symbols = vec![
         make_symbol("Browser", "Browser", SymbolKind::Class, None, None, None),
         setup,
         // The synth `$Ret` interface + its members (from the object-literal return),
         // created untyped by the flow pass.
-        make_symbol("setup$Ret", "setup$Ret", SymbolKind::Interface, None, None, None),
-        make_symbol("browser", "setup$Ret.browser", SymbolKind::Property, Some(2), None, None),
-        make_symbol("flag", "setup$Ret.flag", SymbolKind::Property, Some(2), None, None),
+        make_symbol(
+            "setup$Ret",
+            "setup$Ret",
+            SymbolKind::Interface,
+            None,
+            None,
+            None,
+        ),
+        make_symbol(
+            "browser",
+            "setup$Ret.browser",
+            SymbolKind::Property,
+            Some(2),
+            None,
+            None,
+        ),
+        make_symbol(
+            "flag",
+            "setup$Ret.flag",
+            SymbolKind::Property,
+            Some(2),
+            None,
+            None,
+        ),
     ];
     let pf = make_parsed_file("src/lib.ts", symbols, Vec::new());
 
@@ -723,7 +940,10 @@ fn object_type_return_routes_through_synth_ret_with_typed_members() {
     id_map.insert(("src/lib.ts".to_string(), "Browser".to_string()), 1);
     id_map.insert(("src/lib.ts".to_string(), "setup".to_string()), 2);
     id_map.insert(("src/lib.ts".to_string(), "setup$Ret".to_string()), 3);
-    id_map.insert(("src/lib.ts".to_string(), "setup$Ret.browser".to_string()), 4);
+    id_map.insert(
+        ("src/lib.ts".to_string(), "setup$Ret.browser".to_string()),
+        4,
+    );
     id_map.insert(("src/lib.ts".to_string(), "setup$Ret.flag".to_string()), 5);
 
     let tree = Compilation::build(&[pf], &id_map.clone().into(), Arc::clone(&arena));
@@ -789,7 +1009,14 @@ fn inherits_by_id_prefers_same_package_parent() {
     // Package 1: class Base (qname "Base"), wins by_qname first-insert.
     let mut pf1 = make_parsed_file(
         "p1/base.ts",
-        vec![make_symbol("Base", "Base", SymbolKind::Class, None, None, None)],
+        vec![make_symbol(
+            "Base",
+            "Base",
+            SymbolKind::Class,
+            None,
+            None,
+            None,
+        )],
         vec![],
     );
     pf1.package_id = Some(1);
@@ -827,9 +1054,15 @@ fn inherits_by_id_prefers_same_package_parent() {
 fn by_name_finds_both_classes() {
     let (tree, _) = build_fixture();
     let repos = tree.by_name("Repo");
-    assert!(!repos.is_empty(), "by_name(Repo) should return at least one entry");
+    assert!(
+        !repos.is_empty(),
+        "by_name(Repo) should return at least one entry"
+    );
     let user_repos = tree.by_name("UserRepo");
-    assert!(!user_repos.is_empty(), "by_name(UserRepo) should return at least one entry");
+    assert!(
+        !user_repos.is_empty(),
+        "by_name(UserRepo) should return at least one entry"
+    );
 }
 
 #[test]
@@ -854,7 +1087,10 @@ fn in_file_returns_symbols_for_path() {
     let (tree, _) = build_fixture();
     let syms = tree.in_file("src/repo.ts");
     let count = syms.len();
-    assert!(count >= 4, "in_file should return at least 4 symbols; got {count}");
+    assert!(
+        count >= 4,
+        "in_file should return at least 4 symbols; got {count}"
+    );
 }
 
 #[test]
@@ -974,7 +1210,11 @@ fn resolve_external_reexport_follows_export_star_package_chain() {
         700,
     );
 
-    let tree = Compilation::build(&[vue_entry, rt_dom, rt_core], &id_map.clone().into(), Arc::clone(&arena));
+    let tree = Compilation::build(
+        &[vue_entry, rt_dom, rt_core],
+        &id_map.clone().into(),
+        Arc::clone(&arena),
+    );
 
     assert_eq!(
         tree.resolve_external_reexport("computed", "computed", "vue"),
@@ -1032,7 +1272,14 @@ fn is_external_name_reflects_external_supply() {
     assert!(!tree.is_external_name("Repo", "typescript"));
     assert!(!tree.is_external_name("Nowhere", "typescript"));
 
-    let symbols = vec![make_symbol("Ext", "Ext", SymbolKind::Class, None, None, None)];
+    let symbols = vec![make_symbol(
+        "Ext",
+        "Ext",
+        SymbolKind::Class,
+        None,
+        None,
+        None,
+    )];
     let pf = make_parsed_file("ext:ts:lib/x.d.ts", symbols, vec![]);
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
     id_map.insert(("ext:ts:lib/x.d.ts".to_string(), "Ext".to_string()), 1);
@@ -1081,7 +1328,11 @@ fn workspace_package_id_resolves_declared_name_and_deep_import() {
         Some(&ctx),
         &std::collections::HashSet::new(),
     );
-    assert_eq!(tree.workspace_package_id("@org/utils"), Some(42), "exact declared name");
+    assert_eq!(
+        tree.workspace_package_id("@org/utils"),
+        Some(42),
+        "exact declared name"
+    );
     assert_eq!(
         tree.workspace_package_id("@org/utils/sub/mod"),
         Some(42),
@@ -1186,7 +1437,14 @@ fn dart_package_self_specifier_resolves_via_language_resolver() {
 #[test]
 fn ts_bare_external_specifier_still_declines_via_language_resolver() {
     let arena = Arc::new(TypeArena::new());
-    let symbols = vec![make_symbol("App", "App", SymbolKind::Class, None, None, None)];
+    let symbols = vec![make_symbol(
+        "App",
+        "App",
+        SymbolKind::Class,
+        None,
+        None,
+        None,
+    )];
     let pf = make_parsed_file("src/app.ts", symbols, vec![]);
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
     id_map.insert(("src/app.ts".to_string(), "App".to_string()), 1);
@@ -1203,7 +1461,14 @@ fn ts_bare_external_specifier_still_declines_via_language_resolver() {
 #[test]
 fn symbols_in_package_groups_symbols_by_package_id() {
     let arena = Arc::new(TypeArena::new());
-    let symbols = vec![make_symbol("Util", "Util", SymbolKind::Class, None, None, None)];
+    let symbols = vec![make_symbol(
+        "Util",
+        "Util",
+        SymbolKind::Class,
+        None,
+        None,
+        None,
+    )];
     let mut pf = make_parsed_file("packages/utils/x.ts", symbols, vec![]);
     pf.package_id = Some(7);
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
@@ -1279,7 +1544,14 @@ fn typeref_derived_return_type_for_method() {
     let symbols = vec![
         make_symbol("User", "User", SymbolKind::Class, None, None, None),
         make_symbol("Svc", "Svc", SymbolKind::Class, None, None, None),
-        make_symbol("getUser", "Svc.getUser", SymbolKind::Method, Some(1), None, None),
+        make_symbol(
+            "getUser",
+            "Svc.getUser",
+            SymbolKind::Method,
+            Some(1),
+            None,
+            None,
+        ),
     ];
     let refs = vec![
         // TypeRef from getUser (index 2) → "User"
@@ -1314,7 +1586,14 @@ fn typeref_derived_field_type_for_property() {
     let symbols = vec![
         make_symbol("Config", "Config", SymbolKind::Class, None, None, None),
         make_symbol("App", "App", SymbolKind::Class, None, None, None),
-        make_symbol("config", "App.config", SymbolKind::Property, Some(1), None, None),
+        make_symbol(
+            "config",
+            "App.config",
+            SymbolKind::Property,
+            Some(1),
+            None,
+            None,
+        ),
     ];
     let refs = vec![typeref_ref(2, "Config")];
     let pf = make_parsed_file("src/app.ts", symbols, refs);
@@ -1410,16 +1689,14 @@ fn typeid_is_not_overwritten_by_typeref() {
     // A TypeRef ref points to "Other". Phase B must not clobber the TypeId value.
     let user_id = arena.class("User");
 
-    let symbols = vec![
-        make_symbol(
-            "fetch",
-            "fetch",
-            SymbolKind::Method,
-            None,
-            None,
-            Some(user_id),
-        ),
-    ];
+    let symbols = vec![make_symbol(
+        "fetch",
+        "fetch",
+        SymbolKind::Method,
+        None,
+        None,
+        Some(user_id),
+    )];
     // TypeRef claiming the return type is "Other" — must be ignored.
     let refs = vec![typeref_ref(0, "Other")];
     let pf = make_parsed_file("src/f.ts", symbols, refs);
@@ -1445,18 +1722,38 @@ fn ambient_scope_indexes_globals_namespace_symbols() {
 
     let globals_qname = format!("{}.expect", crate::ecosystem::npm::NPM_GLOBALS_MODULE);
     let symbols = vec![
-        make_symbol("expect", &globals_qname, SymbolKind::Variable, None, None, None),
-        make_symbol("ordinary", "ordinary", SymbolKind::Function, None, None, None),
+        make_symbol(
+            "expect",
+            &globals_qname,
+            SymbolKind::Variable,
+            None,
+            None,
+            None,
+        ),
+        make_symbol(
+            "ordinary",
+            "ordinary",
+            SymbolKind::Function,
+            None,
+            None,
+            None,
+        ),
     ];
     let pf = make_parsed_file("ext:ts:__npm_globals__/vitest.d.ts", symbols, vec![]);
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
     id_map.insert(
-        ("ext:ts:__npm_globals__/vitest.d.ts".to_string(), globals_qname.clone()),
+        (
+            "ext:ts:__npm_globals__/vitest.d.ts".to_string(),
+            globals_qname.clone(),
+        ),
         42,
     );
     id_map.insert(
-        ("ext:ts:__npm_globals__/vitest.d.ts".to_string(), "ordinary".to_string()),
+        (
+            "ext:ts:__npm_globals__/vitest.d.ts".to_string(),
+            "ordinary".to_string(),
+        ),
         43,
     );
 
@@ -1467,7 +1764,11 @@ fn ambient_scope_indexes_globals_namespace_symbols() {
     tree.ingest(&[pf], &id_map.clone().into(), &ambient);
 
     let hits = tree.ambient_symbols("expect");
-    assert_eq!(hits.len(), 1, "the flagged globals symbol is in ambient scope");
+    assert_eq!(
+        hits.len(),
+        1,
+        "the flagged globals symbol is in ambient scope"
+    );
     assert_eq!(hits.first().unwrap().id, 42);
 
     // An ordinary top-level symbol is not ambient.
@@ -1511,8 +1812,22 @@ fn build_hook_fixture(
             None,
             None,
         ),
-        make_symbol("useQueryClient", hook_qname, SymbolKind::Function, None, None, None),
-        make_symbol("qc", &param_qname, SymbolKind::Parameter, Some(2), None, None),
+        make_symbol(
+            "useQueryClient",
+            hook_qname,
+            SymbolKind::Function,
+            None,
+            None,
+            None,
+        ),
+        make_symbol(
+            "qc",
+            &param_qname,
+            SymbolKind::Parameter,
+            Some(2),
+            None,
+            None,
+        ),
     ];
     // The param (index 3) has a TypeRef → param_type, so Phase B types it.
     let refs = vec![typeref_ref(3, param_type)];
@@ -1540,8 +1855,12 @@ fn build_hook_fixture(
 fn bare_identifier_return_infers_param_type() {
     let arena = Arc::new(TypeArena::new());
     let mut next_id = 1;
-    let (pf, id_map) =
-        build_hook_fixture("src/hooks.ts", "useQueryClient", "QueryClient", &mut next_id);
+    let (pf, id_map) = build_hook_fixture(
+        "src/hooks.ts",
+        "useQueryClient",
+        "QueryClient",
+        &mut next_id,
+    );
 
     let tree = Compilation::build(&[pf], &id_map.clone().into(), Arc::clone(&arena));
 
@@ -1570,15 +1889,28 @@ fn declared_return_blocks_bare_identifier_inference() {
             None,
             Some(other_id),
         ),
-        make_symbol("qc", "useQueryClient.qc", SymbolKind::Parameter, Some(0), None, None),
+        make_symbol(
+            "qc",
+            "useQueryClient.qc",
+            SymbolKind::Parameter,
+            Some(0),
+            None,
+            None,
+        ),
     ];
     let refs = vec![typeref_ref(1, "QueryClient")];
     let mut pf = make_parsed_file("src/hooks.ts", symbols, refs);
     pf.flow.flow_return_ident = vec![(0, "qc".to_string())];
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
-    id_map.insert(("src/hooks.ts".to_string(), "useQueryClient".to_string()), 1);
-    id_map.insert(("src/hooks.ts".to_string(), "useQueryClient.qc".to_string()), 2);
+    id_map.insert(
+        ("src/hooks.ts".to_string(), "useQueryClient".to_string()),
+        1,
+    );
+    id_map.insert(
+        ("src/hooks.ts".to_string(), "useQueryClient.qc".to_string()),
+        2,
+    );
 
     let tree = Compilation::build(&[pf], &id_map.clone().into(), Arc::clone(&arena));
 
@@ -1625,19 +1957,15 @@ fn agreement_gate_folds_agreement_and_skips_disagreement() {
     let c = |q: &str, t: &str| (q.to_string(), t.to_string(), None);
 
     // Agreement across two owners of the shared qname → one folded entry.
-    let agree = super::agree_inferred_returns_for_test(vec![
-        c("helper", "User"),
-        c("helper", "User"),
-    ]);
+    let agree =
+        super::agree_inferred_returns_for_test(vec![c("helper", "User"), c("helper", "User")]);
     assert_eq!(agree.len(), 1, "agreeing candidates fold to one entry");
     assert_eq!(agree[0].0, "helper");
     assert_eq!(agree[0].1, "User");
 
     // Disagreement on the shared qname → the qname is dropped entirely.
-    let disagree = super::agree_inferred_returns_for_test(vec![
-        c("helper2", "User"),
-        c("helper2", "Account"),
-    ]);
+    let disagree =
+        super::agree_inferred_returns_for_test(vec![c("helper2", "User"), c("helper2", "Account")]);
     assert!(
         disagree.is_empty(),
         "one shared slot cannot hold two types; disagreement skips"
@@ -1664,8 +1992,12 @@ fn inferred_return_lets_call_root_chain_resolve() {
 
     let arena = Arc::new(TypeArena::new());
     let mut next_id = 1;
-    let (pf, id_map) =
-        build_hook_fixture("src/hooks.ts", "useQueryClient", "QueryClient", &mut next_id);
+    let (pf, id_map) = build_hook_fixture(
+        "src/hooks.ts",
+        "useQueryClient",
+        "QueryClient",
+        &mut next_id,
+    );
     let tree = Compilation::build(&[pf], &id_map.clone().into(), Arc::clone(&arena));
 
     // `useQueryClient().clear()` — the call root reads useQueryClient's inferred
@@ -1728,7 +2060,10 @@ fn resolve_path_alias_honors_per_package_isolation_and_global() {
     // A specifier matching no alias in the package → None (not a global borrow).
     assert_eq!(c.resolve_path_alias(Some(8), "react"), None);
     // A ref with no package id uses the workspace-wide aliases.
-    assert_eq!(c.resolve_path_alias(None, "~/db").as_deref(), Some("lib/db"));
+    assert_eq!(
+        c.resolve_path_alias(None, "~/db").as_deref(),
+        Some("lib/db")
+    );
     // An isolated package that declares NO aliases declines — it never borrows the
     // global set (mirrors ProjectContext::manifests_for isolation).
     c.path_aliases_by_pkg.insert(9, Vec::new());
@@ -1753,8 +2088,22 @@ fn module_tagged_value_typeref_resolves_to_exported_value_type() {
     //   const globalExp: TheType                    index 1  → mod.globalExp (TypeRef → TheType)
     //   export { globalExp as exp }                 local rename, exposed name `exp`
     let mod_symbols = vec![
-        make_symbol("TheType", "mod.TheType", SymbolKind::Interface, None, None, None),
-        make_symbol("globalExp", "mod.globalExp", SymbolKind::Variable, None, None, None),
+        make_symbol(
+            "TheType",
+            "mod.TheType",
+            SymbolKind::Interface,
+            None,
+            None,
+            None,
+        ),
+        make_symbol(
+            "globalExp",
+            "mod.globalExp",
+            SymbolKind::Variable,
+            None,
+            None,
+            None,
+        ),
     ];
     // `globalExp`'s declared type is `TheType`, scoped to module `mod`.
     let mod_global_type_ref = typeref_ref(1, "TheType");
@@ -1791,14 +2140,34 @@ fn module_tagged_value_typeref_resolves_to_exported_value_type() {
     consumer.scope_path = Some("g".to_string());
     let mut module_tagged = typeref_ref(0, "exp");
     module_tagged.module = Some("mod".to_string());
-    let consumer_pf = make_parsed_file("ext:ts:g/globals.d.ts", vec![consumer], vec![module_tagged]);
+    let consumer_pf =
+        make_parsed_file("ext:ts:g/globals.d.ts", vec![consumer], vec![module_tagged]);
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
-    id_map.insert(("ext:ts:mod/index.d.ts".to_string(), "mod.TheType".to_string()), 1);
-    id_map.insert(("ext:ts:mod/index.d.ts".to_string(), "mod.globalExp".to_string()), 2);
-    id_map.insert(("ext:ts:g/globals.d.ts".to_string(), "g.exp".to_string()), 3);
+    id_map.insert(
+        (
+            "ext:ts:mod/index.d.ts".to_string(),
+            "mod.TheType".to_string(),
+        ),
+        1,
+    );
+    id_map.insert(
+        (
+            "ext:ts:mod/index.d.ts".to_string(),
+            "mod.globalExp".to_string(),
+        ),
+        2,
+    );
+    id_map.insert(
+        ("ext:ts:g/globals.d.ts".to_string(), "g.exp".to_string()),
+        3,
+    );
 
-    let tree = Compilation::build(&[mod_pf, consumer_pf], &id_map.clone().into(), Arc::clone(&arena));
+    let tree = Compilation::build(
+        &[mod_pf, consumer_pf],
+        &id_map.clone().into(),
+        Arc::clone(&arena),
+    );
 
     assert_eq!(
         tree.field_type_str("g.exp").as_deref(),
@@ -1823,8 +2192,20 @@ fn ambient_scope_indexes_materialization_flagged_globals() {
     let pf = make_parsed_file("ext:ts:__ts_lib__/lib.es5.d.ts", symbols, vec![]);
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
-    id_map.insert(("ext:ts:__ts_lib__/lib.es5.d.ts".to_string(), "Record".to_string()), 71);
-    id_map.insert(("ext:ts:__ts_lib__/lib.es5.d.ts".to_string(), "Promise.then".to_string()), 72);
+    id_map.insert(
+        (
+            "ext:ts:__ts_lib__/lib.es5.d.ts".to_string(),
+            "Record".to_string(),
+        ),
+        71,
+    );
+    id_map.insert(
+        (
+            "ext:ts:__ts_lib__/lib.es5.d.ts".to_string(),
+            "Promise.then".to_string(),
+        ),
+        72,
+    );
 
     // The materialization layer flags only the top-level global.
     let ambient: std::collections::HashSet<String> = ["Record".to_string()].into_iter().collect();
@@ -1862,7 +2243,10 @@ fn enclosing_chain_terminates_on_self_parent() {
         None,
         None,
     )];
-    let (found_type, found_ns) = crate::indexer::resolve::engine::enclosing::_test_enclosing_chain(&symbols, symbols[0].parent_index);
+    let (found_type, found_ns) = crate::indexer::resolve::engine::enclosing::_test_enclosing_chain(
+        &symbols,
+        symbols[0].parent_index,
+    );
     assert_eq!(found_type, Some(0));
     assert_eq!(found_ns, None);
 }
@@ -1874,7 +2258,10 @@ fn enclosing_chain_terminates_on_two_cycle() {
         make_symbol("a", "a", SymbolKind::Class, Some(1), None, None),
         make_symbol("b", "b", SymbolKind::Class, Some(0), None, None),
     ];
-    let (found_type, found_ns) = crate::indexer::resolve::engine::enclosing::_test_enclosing_chain(&symbols, symbols[0].parent_index);
+    let (found_type, found_ns) = crate::indexer::resolve::engine::enclosing::_test_enclosing_chain(
+        &symbols,
+        symbols[0].parent_index,
+    );
     assert_eq!(found_type, Some(1));
     assert_eq!(found_ns, None);
 }
@@ -1885,9 +2272,19 @@ fn enclosing_chain_finds_nearest_type_and_namespace() {
     let symbols = vec![
         make_symbol("App", "App", SymbolKind::Namespace, None, None, None),
         make_symbol("Svc", "App.Svc", SymbolKind::Class, Some(0), None, None),
-        make_symbol("run", "App.Svc.run", SymbolKind::Method, Some(1), None, None),
+        make_symbol(
+            "run",
+            "App.Svc.run",
+            SymbolKind::Method,
+            Some(1),
+            None,
+            None,
+        ),
     ];
-    let (found_type, found_ns) = crate::indexer::resolve::engine::enclosing::_test_enclosing_chain(&symbols, symbols[2].parent_index);
+    let (found_type, found_ns) = crate::indexer::resolve::engine::enclosing::_test_enclosing_chain(
+        &symbols,
+        symbols[2].parent_index,
+    );
     assert_eq!(found_type, Some(1));
     assert_eq!(found_ns, Some(0));
 }
@@ -1927,11 +2324,17 @@ fn build_reexport_alias_fixture() -> Compilation {
     );
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
     id_map.insert(
-        ("ext:ts:wrapper-pkg/index.d.ts".to_string(), "wrapper-pkg.util".to_string()),
+        (
+            "ext:ts:wrapper-pkg/index.d.ts".to_string(),
+            "wrapper-pkg.util".to_string(),
+        ),
         10,
     );
     id_map.insert(
-        ("ext:ts:lib-pkg/index.d.ts".to_string(), "lib-pkg.util".to_string()),
+        (
+            "ext:ts:lib-pkg/index.d.ts".to_string(),
+            "lib-pkg.util".to_string(),
+        ),
         20,
     );
     let mut tree = Compilation::build(&[barrel, lib], &id_map.clone().into(), arena);
@@ -1946,24 +2349,42 @@ fn build_reexport_alias_fixture() -> Compilation {
 #[test]
 fn reexport_alias_target_names_the_declaration_and_leaves_the_single_slot_alone() {
     let tree = build_reexport_alias_fixture();
-    let target = tree.reexport_alias_target("wrapper-pkg.util").expect("alias registered");
-    assert_eq!(target.id, 20, "the alias resolves to the declaration's single identity");
+    let target = tree
+        .reexport_alias_target("wrapper-pkg.util")
+        .expect("alias registered");
+    assert_eq!(
+        target.id, 20,
+        "the alias resolves to the declaration's single identity"
+    );
     assert_eq!(target.qualified_name, "lib-pkg.util");
-    assert_eq!(tree.reexport_alias_target("lib-pkg.util").map(|s| s.id), None);
+    assert_eq!(
+        tree.reexport_alias_target("lib-pkg.util").map(|s| s.id),
+        None
+    );
     // The single-winner slot keeps the binding symbol: type-derivation
     // contexts read it where the binding itself is the correct referent.
-    assert_eq!(tree.by_qualified_name("wrapper-pkg.util").map(|s| s.id), Some(10));
+    assert_eq!(
+        tree.by_qualified_name("wrapper-pkg.util").map(|s| s.id),
+        Some(10)
+    );
 }
 
 #[test]
 fn reexport_alias_leads_but_keeps_same_qname_fallbacks() {
     let tree = build_reexport_alias_fixture();
     let all = tree.all_by_qualified_name("wrapper-pkg.util");
-    assert_eq!(all.len(), 2, "declaration first, barrel binding kept as fallback");
+    assert_eq!(
+        all.len(),
+        2,
+        "declaration first, barrel binding kept as fallback"
+    );
     assert_eq!(all.first().unwrap().id, 20);
     assert_eq!(all.get(1).unwrap().id, 10);
     // The declaring package's own qname is untouched.
-    assert_eq!(tree.by_qualified_name("lib-pkg.util").map(|s| s.id), Some(20));
+    assert_eq!(
+        tree.by_qualified_name("lib-pkg.util").map(|s| s.id),
+        Some(20)
+    );
 }
 
 #[test]
@@ -1978,7 +2399,14 @@ fn merged_value_type_pair_keeps_declared_type_off_field_slots() {
     let symbols = vec![
         make_symbol("D", "D", SymbolKind::Variable, None, Some(ctor), None),
         make_symbol("D", "D", SymbolKind::Interface, None, None, None),
-        make_symbol("gadget", "gadget", SymbolKind::Variable, None, Some(api), None),
+        make_symbol(
+            "gadget",
+            "gadget",
+            SymbolKind::Variable,
+            None,
+            Some(api),
+            None,
+        ),
     ];
     let pf = make_parsed_file("src/lib.d.ts", symbols, Vec::new());
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
@@ -2009,7 +2437,14 @@ fn ext_value_fixture(
 ) -> (ParsedFile, HashMap<(String, String), i64>) {
     let mut pf = make_parsed_file(
         path,
-        vec![make_symbol(name, name, SymbolKind::Variable, None, Some(ty), None)],
+        vec![make_symbol(
+            name,
+            name,
+            SymbolKind::Variable,
+            None,
+            Some(ty),
+            None,
+        )],
         Vec::new(),
     );
     pf.language = language.to_string();
@@ -2028,7 +2463,13 @@ fn build_with_active(
         active_ecosystems: active,
         ..Default::default()
     };
-    Compilation::build_with_context(files, &id_map.clone().into(), arena, Some(&ctx), &std::collections::HashSet::new())
+    Compilation::build_with_context(
+        files,
+        &id_map.clone().into(),
+        arena,
+        Some(&ctx),
+        &std::collections::HashSet::new(),
+    )
 }
 
 #[test]
@@ -2050,7 +2491,10 @@ fn foreign_language_ext_value_is_dropped_from_by_name() {
     );
 
     let rust_allowed = tree.ext_lang_allowed("rust");
-    assert!(rust_allowed.is_some(), "cargo is active — rust must carry a visibility set");
+    assert!(
+        rust_allowed.is_some(),
+        "cargo is active — rust must carry a visibility set"
+    );
     let filtered = tree.filter_ext_langs(tree.by_name("field"), rust_allowed);
     assert!(
         filtered.is_empty(),
@@ -2058,7 +2502,11 @@ fn foreign_language_ext_value_is_dropped_from_by_name() {
     );
 
     let kept = tree.filter_ext_langs(tree.by_name("field"), tree.ext_lang_allowed("python"));
-    assert_eq!(kept.len(), 1, "the same value stays visible to a python receiver");
+    assert_eq!(
+        kept.len(),
+        1,
+        "the same value stays visible to a python receiver"
+    );
 }
 
 /// A demand-pulled file of a language NO active ecosystem serves must still be
@@ -2108,8 +2556,7 @@ fn ecosystem_less_ext_language_is_dropped_for_constrained_receiver() {
 fn co_declared_ecosystem_languages_cross_resolve() {
     let arena = Arc::new(TypeArena::new());
     let api = arena.class("ApiClient");
-    let (pf, id_map) =
-        ext_value_fixture("ext:ts:some-pkg/index.d.ts", "typescript", "client", api);
+    let (pf, id_map) = ext_value_fixture("ext:ts:some-pkg/index.d.ts", "typescript", "client", api);
     // npm declares typescript AND javascript AND vue — one ecosystem, one family.
     let tree = build_with_active(
         vec![EcosystemId::new("npm")],
@@ -2160,7 +2607,14 @@ fn internal_candidates_are_never_language_filtered() {
     let str_ty = arena.class("String");
     let mut pf = make_parsed_file(
         "src/lib.rs",
-        vec![make_symbol("field", "field", SymbolKind::Variable, None, Some(str_ty), None)],
+        vec![make_symbol(
+            "field",
+            "field",
+            SymbolKind::Variable,
+            None,
+            Some(str_ty),
+            None,
+        )],
         Vec::new(),
     );
     pf.language = "rust".to_string();
@@ -2222,7 +2676,10 @@ fn module_augmentation_grafts_onto_the_exported_interface_not_a_same_named_value
             None,
             None,
         )],
-        vec![inherits_ref(0, "@testing-library/jest-dom.matchers.TestingLibraryMatchers")],
+        vec![inherits_ref(
+            0,
+            "@testing-library/jest-dom.matchers.TestingLibraryMatchers",
+        )],
     );
     let expect_pkg = make_parsed_file(
         "ext:ts:@vitest/expect/index.d.ts",
@@ -2253,10 +2710,17 @@ fn module_augmentation_grafts_onto_the_exported_interface_not_a_same_named_value
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
     id_map.insert(
-        ("ext:ts:@vitest/expect/index.d.ts".into(), "@vitest/expect.Assertion".into()),
+        (
+            "ext:ts:@vitest/expect/index.d.ts".into(),
+            "@vitest/expect.Assertion".into(),
+        ),
         900,
     );
-    let mut tree = Compilation::build(&[aug, expect_pkg, vitest], &id_map.clone().into(), Arc::clone(&arena));
+    let mut tree = Compilation::build(
+        &[aug, expect_pkg, vitest],
+        &id_map.clone().into(),
+        Arc::clone(&arena),
+    );
 
     tree.apply_module_augmentations(&[(
         "vitest".to_string(),
@@ -2297,24 +2761,70 @@ fn a_bare_supertype_head_climbs_to_the_member_bearing_declaration() {
     let iface_file = make_parsed_file(
         "ext:ts:pkg/types/matchers.d.ts",
         vec![
-            make_symbol("Matchers", "pkg.matchers.Matchers", SymbolKind::Interface, None, None, None),
-            make_symbol("toBeVisible", "pkg.matchers.Matchers.toBeVisible", SymbolKind::Method, Some(0), None, None),
+            make_symbol(
+                "Matchers",
+                "pkg.matchers.Matchers",
+                SymbolKind::Interface,
+                None,
+                None,
+                None,
+            ),
+            make_symbol(
+                "toBeVisible",
+                "pkg.matchers.Matchers.toBeVisible",
+                SymbolKind::Method,
+                Some(0),
+                None,
+                None,
+            ),
         ],
         vec![],
     );
     let child = make_parsed_file(
         "ext:ts:other/index.d.ts",
-        vec![make_symbol("Assertion", "other.Assertion", SymbolKind::Interface, None, None, None)],
+        vec![make_symbol(
+            "Assertion",
+            "other.Assertion",
+            SymbolKind::Interface,
+            None,
+            None,
+            None,
+        )],
         vec![inherits_ref(0, "Matchers")],
     );
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
-    id_map.insert(("ext:ts:pkg/types/standalone.d.ts".into(), "pkg.standalone.Matchers".into()), 10);
-    id_map.insert(("ext:ts:pkg/types/matchers.d.ts".into(), "pkg.matchers.Matchers".into()), 20);
-    id_map.insert(("ext:ts:pkg/types/matchers.d.ts".into(), "pkg.matchers.Matchers.toBeVisible".into()), 21);
-    id_map.insert(("ext:ts:other/index.d.ts".into(), "other.Assertion".into()), 30);
+    id_map.insert(
+        (
+            "ext:ts:pkg/types/standalone.d.ts".into(),
+            "pkg.standalone.Matchers".into(),
+        ),
+        10,
+    );
+    id_map.insert(
+        (
+            "ext:ts:pkg/types/matchers.d.ts".into(),
+            "pkg.matchers.Matchers".into(),
+        ),
+        20,
+    );
+    id_map.insert(
+        (
+            "ext:ts:pkg/types/matchers.d.ts".into(),
+            "pkg.matchers.Matchers.toBeVisible".into(),
+        ),
+        21,
+    );
+    id_map.insert(
+        ("ext:ts:other/index.d.ts".into(), "other.Assertion".into()),
+        30,
+    );
 
-    let tree = Compilation::build(&[alias_file, iface_file, child], &id_map.clone().into(), Arc::clone(&arena));
+    let tree = Compilation::build(
+        &[alias_file, iface_file, child],
+        &id_map.clone().into(),
+        Arc::clone(&arena),
+    );
 
     assert_eq!(
         tree.parent_class_ids(30),
@@ -2335,8 +2845,14 @@ fn field_init_new_through_a_constructor_valued_name_yields_the_instance() {
 
     let arena = Arc::new(TypeArena::new());
     let ctor = arena.intern(Type::Constructor(arena.class("QueryObserver")));
-    let scope =
-        make_symbol("useBaseQuery", "useBaseQuery", SymbolKind::Function, None, None, None);
+    let scope = make_symbol(
+        "useBaseQuery",
+        "useBaseQuery",
+        SymbolKind::Function,
+        None,
+        None,
+        None,
+    );
     let param = make_symbol(
         "Observer",
         "useBaseQuery.Observer",
@@ -2362,18 +2878,33 @@ fn field_init_new_through_a_constructor_valued_name_yields_the_instance() {
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
     id_map.insert(("src/u.ts".to_string(), "useBaseQuery".to_string()), 1);
-    id_map.insert(("src/u.ts".to_string(), "useBaseQuery.Observer".to_string()), 2);
-    id_map.insert(("src/u.ts".to_string(), "useBaseQuery.observer".to_string()), 3);
+    id_map.insert(
+        ("src/u.ts".to_string(), "useBaseQuery.Observer".to_string()),
+        2,
+    );
+    id_map.insert(
+        ("src/u.ts".to_string(), "useBaseQuery.observer".to_string()),
+        3,
+    );
 
-    let mut tree = Compilation::build(std::slice::from_ref(&pf), &id_map.clone().into(), Arc::clone(&arena));
-    tree.infer_field_init_types(std::slice::from_ref(&pf), &rustc_hash::FxHashMap::default());
+    let mut tree = Compilation::build(
+        std::slice::from_ref(&pf),
+        &id_map.clone().into(),
+        Arc::clone(&arena),
+    );
+    tree.infer_field_init_types(
+        std::slice::from_ref(&pf),
+        &rustc_hash::FxHashMap::default(),
+        &id_map.clone().into(),
+    );
     assert_eq!(
-        tree.field_type_id("useBaseQuery.observer").map(|id| arena.format_type(id)).as_deref(),
+        tree.field_type_id("useBaseQuery.observer")
+            .map(|id| arena.format_type(id))
+            .as_deref(),
         Some("QueryObserver"),
         "the instance the constructor value builds, not the bare ctor name",
     );
 }
-
 
 // ---------------------------------------------------------------------------
 // infer_chain_init_types — chain-initialized binding typing
@@ -2403,9 +2934,23 @@ fn chain_initialized_binding_types_from_the_chains_final_yield() {
     };
     let build_pf = || {
         let symbols = vec![
-            make_symbol("make", "make", SymbolKind::Function, None, None, Some(builder_ty)),
+            make_symbol(
+                "make",
+                "make",
+                SymbolKind::Function,
+                None,
+                None,
+                Some(builder_ty),
+            ),
             make_symbol("Builder", "Builder", SymbolKind::Class, None, None, None),
-            make_symbol("use", "Builder.use", SymbolKind::Method, Some(1), None, Some(builder_ty)),
+            make_symbol(
+                "use",
+                "Builder.use",
+                SymbolKind::Method,
+                Some(1),
+                None,
+                Some(builder_ty),
+            ),
             make_symbol("base", "base", SymbolKind::Variable, None, None, None),
             make_symbol("client", "client", SymbolKind::Variable, None, None, None),
         ];
@@ -2421,8 +2966,14 @@ fn chain_initialized_binding_types_from_the_chains_final_yield() {
     };
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
-    for (i, q) in ["make", "Builder", "Builder.use", "base", "client"].iter().enumerate() {
-        id_map.insert(("src/clients.ts".to_string(), q.to_string()), (i + 1) as i64);
+    for (i, q) in ["make", "Builder", "Builder.use", "base", "client"]
+        .iter()
+        .enumerate()
+    {
+        id_map.insert(
+            ("src/clients.ts".to_string(), q.to_string()),
+            (i + 1) as i64,
+        );
     }
     let mut profiles: rustc_hash::FxHashMap<
         &'static str,
@@ -2437,13 +2988,63 @@ fn chain_initialized_binding_types_from_the_chains_final_yield() {
     }
 
     let mut tree = Compilation::build(&[build_pf()], &id_map.clone().into(), Arc::clone(&arena));
-    tree.infer_field_init_types(&[build_pf()], &profiles);
-    tree.infer_chain_init_types(&[build_pf()], &profiles);
+    tree.infer_field_init_types(&[build_pf()], &profiles, &id_map.clone().into());
+    tree.infer_chain_init_types(&[build_pf()], &profiles, &id_map.clone().into());
 
-    let base_ft = tree.field_type_id_of(4).expect("base typed by single-init pass");
+    let base_ft = tree
+        .field_type_id_of(4)
+        .expect("base typed by single-init pass");
     assert_eq!(arena.format_type(base_ft), "Builder");
-    let client_ft = tree.field_type_id_of(5).expect("client typed by chain-init pass");
+    let client_ft = tree
+        .field_type_id_of(5)
+        .expect("client typed by chain-init pass");
     assert_eq!(arena.format_type(client_ft), "Builder");
+}
+
+#[test]
+fn chain_initializer_pass_alone_reads_source_bound_argument_ids() {
+    let source = "class Value {} class Factory { identity<T>(value: T): T { return value; } }\nlet factory: Factory; let value: Value; const output = factory.identity(value);";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("initializer.ts");
+    std::fs::write(&path, source).unwrap();
+    let arena = Arc::new(TypeArena::new());
+    let registry = crate::languages::default_registry();
+    let pf = crate::indexer::parse_file::parse_file_with_arena(
+        &crate::walker::WalkedFile {
+            absolute_path: path,
+            relative_path: "initializer.ts".into(),
+            language: "typescript",
+        },
+        &registry,
+        &arena,
+    )
+    .unwrap();
+    let mut ids = crate::indexer::write::SymbolIds::default();
+    ids.set_rows(
+        pf.path.clone(),
+        (0..pf.symbols.len()).map(|slot| slot as i64 + 71).collect(),
+    );
+    let value = pf.symbols.iter().position(|s| s.name == "Value").unwrap();
+    let output = pf.symbols.iter().position(|s| s.name == "output").unwrap();
+    let value_id = ids.row_id(&pf.path, value).unwrap();
+    let output_id = ids.row_id(&pf.path, output).unwrap();
+    let profile = registry
+        .all()
+        .iter()
+        .find(|p| p.language_ids().contains(&"typescript"))
+        .unwrap()
+        .profile()
+        .unwrap();
+    let profiles = [("typescript", profile)].into_iter().collect();
+    let mut tree = Compilation::build(std::slice::from_ref(&pf), &ids, Arc::clone(&arena));
+    tree.infer_chain_init_types(&[pf], &profiles, &ids);
+    let ty = tree
+        .field_type_id_of(output_id)
+        .expect("the chain pass carries its own file argument environment");
+    assert_eq!(
+        super::super::head_decl::head_decl_id(&arena, ty),
+        Some(value_id)
+    );
 }
 
 /// An overload set: two rows with IDENTICAL (path, qname) in one file. The
@@ -2456,8 +3057,22 @@ fn same_file_overload_rows_keep_distinct_returns_by_row_id() {
     let ret_a = arena.class("ResultA");
     let ret_b = arena.class("ResultB");
 
-    let over_a = make_symbol("Run", "Svc.Run", SymbolKind::Function, None, None, Some(ret_a));
-    let over_b = make_symbol("Run", "Svc.Run", SymbolKind::Function, None, None, Some(ret_b));
+    let over_a = make_symbol(
+        "Run",
+        "Svc.Run",
+        SymbolKind::Function,
+        None,
+        None,
+        Some(ret_a),
+    );
+    let over_b = make_symbol(
+        "Run",
+        "Svc.Run",
+        SymbolKind::Function,
+        None,
+        None,
+        Some(ret_b),
+    );
     let pf = make_parsed_file("src/svc.cs", vec![over_a, over_b], vec![]);
 
     let mut ids = crate::indexer::write::SymbolIds::default();
@@ -2497,9 +3112,16 @@ fn same_file_interface_namespace_merge_walks_union_of_members() {
     let tree = Compilation::build(&[pf], &ids, Arc::clone(&arena));
 
     use crate::indexer::resolve::engine::contract::SymbolLookup;
-    assert_eq!(tree.canonical_decl_id(8), 7, "namespace row canonicalizes onto the interface row");
+    assert_eq!(
+        tree.canonical_decl_id(8),
+        7,
+        "namespace row canonicalizes onto the interface row"
+    );
     let names = |id: i64| -> Vec<String> {
-        tree.members_of_id(id).iter().map(|s| s.name.clone()).collect()
+        tree.members_of_id(id)
+            .iter()
+            .map(|s| s.name.clone())
+            .collect()
     };
     for probe in [7, 8] {
         let got = names(probe);
@@ -2509,9 +3131,8 @@ fn same_file_interface_namespace_merge_walks_union_of_members() {
         );
     }
     // The walk itself: a member declared on the OTHER half resolves by id.
-    let hit = crate::indexer::resolve::engine::chain::lookup_member_by_id(
-        &tree, 8, "m", &|_k| true,
-    );
+    let hit =
+        crate::indexer::resolve::engine::chain::lookup_member_by_id(&tree, 8, "m", &|_k| true);
     assert_eq!(hit.map(|s| s.id), Some(70));
 }
 
@@ -2522,12 +3143,26 @@ fn same_qname_across_files_never_merges() {
     let arena = Arc::new(TypeArena::new());
     let a = make_parsed_file(
         "src/a.ts",
-        vec![make_symbol("Options", "Options", SymbolKind::Interface, None, None, None)],
+        vec![make_symbol(
+            "Options",
+            "Options",
+            SymbolKind::Interface,
+            None,
+            None,
+            None,
+        )],
         vec![],
     );
     let b = make_parsed_file(
         "src/b.ts",
-        vec![make_symbol("Options", "Options", SymbolKind::Interface, None, None, None)],
+        vec![make_symbol(
+            "Options",
+            "Options",
+            SymbolKind::Interface,
+            None,
+            None,
+            None,
+        )],
         vec![],
     );
     let mut ids = crate::indexer::write::SymbolIds::default();

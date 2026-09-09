@@ -14,7 +14,10 @@ use crate::types::{EdgeKind, ParsedFile, SymbolKind};
 /// Whether a symbol kind introduces a body whose descendants are
 /// implementation detail rather than contract surface.
 fn is_callable(kind: SymbolKind) -> bool {
-    matches!(kind, SymbolKind::Function | SymbolKind::Method | SymbolKind::Constructor)
+    matches!(
+        kind,
+        SymbolKind::Function | SymbolKind::Method | SymbolKind::Constructor
+    )
 }
 
 /// Ref kinds that describe a declaration's contract: what it extends, what
@@ -36,17 +39,9 @@ fn is_contract_ref(kind: EdgeKind) -> bool {
 /// remapped in step. Body-level extras (flow metadata, routes, db sets) are
 /// cleared.
 pub fn reduce_to_contract(pf: &mut ParsedFile) {
-    // has_callable_ancestor[i]: any strict ancestor of i is callable.
-    // parent_index always points backward, so one forward pass suffices.
+    // Out-of-line bodies can precede their nominal owners in source order.
     let n = pf.symbols.len();
-    let mut under_callable = vec![false; n];
-    for i in 0..n {
-        if let Some(p) = pf.symbols[i].parent_index {
-            if p < i {
-                under_callable[i] = under_callable[p] || is_callable(pf.symbols[p].kind);
-            }
-        }
-    }
+    let under_callable = callable_ancestry(&pf.symbols);
     let keep: Vec<bool> = (0..n)
         .map(|i| {
             if !under_callable[i] {
@@ -55,7 +50,9 @@ pub fn reduce_to_contract(pf: &mut ParsedFile) {
             // A contract-level callable's own parameters survive.
             pf.symbols[i].kind == SymbolKind::Parameter
                 && pf.symbols[i].parent_index.is_some_and(|p| {
-                    is_callable(pf.symbols[p].kind) && !under_callable[p]
+                    pf.symbols
+                        .get(p)
+                        .is_some_and(|s| is_callable(s.kind) && !under_callable[p])
                 })
         })
         .collect();
@@ -87,7 +84,11 @@ pub fn reduce_to_contract(pf: &mut ParsedFile) {
     let mut kept_ref = vec![false; pf.refs.len()];
     for (i, r) in pf.refs.iter().enumerate() {
         kept_ref[i] = is_contract_ref(r.kind)
-            && remap.get(r.source_symbol_index).copied().flatten().is_some();
+            && remap
+                .get(r.source_symbol_index)
+                .copied()
+                .flatten()
+                .is_some();
     }
     let mut idx = 0usize;
     pf.refs.retain(|_| {
@@ -106,8 +107,42 @@ pub fn reduce_to_contract(pf: &mut ParsedFile) {
     // caller (plugin cross-file passes CST-walk it; the streaming loop nulls
     // it) — the contract reduction governs symbols and refs only.
     pf.flow = Default::default();
+    super::contract_bindings::restore(pf);
     pf.routes.clear();
     pf.db_sets.clear();
+}
+
+/// Memoized parent-ID walk: linear work, independent of physical row order.
+/// Cyclic/dangling ancestry is not evidence for a public contract declaration.
+fn callable_ancestry(symbols: &[crate::types::ExtractedSymbol]) -> Vec<bool> {
+    // Unknown / active / outside body / inside body (or invalid ancestry).
+    let mut state = vec![0u8; symbols.len()];
+    let mut trail = Vec::new();
+    for start in 0..symbols.len() {
+        if state[start] >= 2 {
+            continue;
+        }
+        let mut current = start;
+        let under = loop {
+            match state[current] {
+                1 | 3 => break true,
+                2 => break false,
+                _ => {}
+            }
+            state[current] = 1;
+            trail.push(current);
+            match symbols[current].parent_index {
+                None => break false,
+                Some(parent) if parent >= symbols.len() => break true,
+                Some(parent) if is_callable(symbols[parent].kind) => break true,
+                Some(parent) => current = parent,
+            }
+        };
+        for index in trail.drain(..) {
+            state[index] = if under { 3 } else { 2 };
+        }
+    }
+    state.into_iter().map(|s| s == 3).collect()
 }
 
 /// Reduce only the REF side of `pf` to contract kinds, keeping every symbol.
@@ -125,6 +160,7 @@ pub fn reduce_refs_to_contract(pf: &mut ParsedFile) {
     });
     retain_parallel(&mut pf.ref_origin_languages, &kept);
     pf.flow = Default::default();
+    super::contract_bindings::restore(pf);
     pf.routes.clear();
     pf.db_sets.clear();
 }

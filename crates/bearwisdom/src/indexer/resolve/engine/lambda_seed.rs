@@ -40,29 +40,68 @@ pub(crate) fn seed_lambda_params(
     arg_env: &FxHashMap<String, TypeId>,
     delegate_wrappers: &[(&str, DelegateShape)],
 ) {
-    if !args.iter().any(|a| matches!(a, CallArg::Lambda { .. })) {
+    if !args
+        .iter()
+        .any(|a| matches!(a, CallArg::Lambda { .. } | CallArg::LambdaAt { .. }))
+    {
         return;
     }
-    let patterns = param_patterns(arena, callee);
+    let patterns = param_patterns(lookup, arena, callee);
     if patterns.is_empty() {
         return;
     }
     let mut env = receiver_env(lookup, arena, receiver, recv_id);
     env.extend(arg_env.iter().map(|(k, v)| (k.clone(), *v)));
     let open = bindable_params(lookup, callee);
+    let patterns: Vec<_> = patterns
+        .iter()
+        .map(|&p| substitute_env(arena, p, &env))
+        .collect();
+    seed_patterns(lookup, arena, args, &patterns, &open, delegate_wrappers);
+}
+
+pub(super) fn seed_patterns(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    args: &[CallArg],
+    patterns: &[TypeId],
+    open: &FxHashSet<String>,
+    delegate_wrappers: &[(&str, DelegateShape)],
+) {
     for (i, arg) in args.iter().enumerate() {
-        let CallArg::Lambda { params } = arg else {
+        if !matches!(arg, CallArg::Lambda { .. } | CallArg::LambdaAt { .. }) {
             continue;
-        };
+        }
         let Some(&pattern) = patterns.get(i) else {
             continue;
         };
-        let substituted = substitute_env(arena, pattern, &env);
-        let Some(callback_params) = callback_param_types(arena, substituted, delegate_wrappers)
-        else {
+        crate::tracef!(
+            "  CALLBACK argument={:?} pattern={:?}",
+            arg,
+            arena.get(pattern)
+        );
+        let Some(callback_params) = callback_param_types(arena, pattern, delegate_wrappers) else {
             continue;
         };
-        seed_names(lookup, arena, params, &callback_params, &open);
+        match arg {
+            CallArg::LambdaAt { params } => {
+                for (span, &ty) in params.iter().zip(&callback_params) {
+                    crate::tracef!(
+                        "  CALLBACK parameter={:?} type={:?} open={}",
+                        span,
+                        arena.get(ty),
+                        is_open(arena, ty, open)
+                    );
+                    if let Some(span) = span.filter(|_| !is_open(arena, ty, &open)) {
+                        lookup.record_contextual_type(span, ty);
+                    }
+                }
+            }
+            CallArg::Lambda { params } => {
+                seed_names(lookup, arena, params, &callback_params, &open)
+            }
+            _ => {}
+        }
     }
 }
 
@@ -78,6 +117,13 @@ fn callback_param_types(
 ) -> Option<Vec<TypeId>> {
     match arena.get(ty) {
         Type::Function { params, .. } => Some(params),
+        Type::Callable(c) if c.complete => Some(
+            c.parameters
+                .into_iter()
+                .filter(|p| !p.receiver)
+                .map(|p| p.ty)
+                .collect(),
+        ),
         // `Action<T>?` — the nullable annotation doesn't change the shape.
         Type::Optional(inner) => callback_param_types(arena, inner, delegate_wrappers),
         Type::Apply { base, args } => {
@@ -99,8 +145,8 @@ fn callback_param_types(
 }
 
 /// Record each named lambda parameter under the callback parameter type at the
-/// same position. Both the id and the string cache are written: the string one
-/// is what the root resolver's `local_type` path reads.
+/// same position on the legacy language path. Preserve TypeIds without a
+/// display-format write that would evict them from the cache.
 fn seed_names(
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
@@ -113,7 +159,6 @@ fn seed_names(
             continue;
         }
         lookup.record_local_type_id(name.clone(), ty);
-        lookup.record_local_type(name.clone(), arena.format_type(ty));
     }
 }
 

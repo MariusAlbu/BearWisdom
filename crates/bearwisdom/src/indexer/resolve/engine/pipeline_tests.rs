@@ -5,7 +5,7 @@ use crate::indexer::resolve::engine::contract::{FlowCacheLookup, SymbolLookup};
 use crate::type_checker::core::types::TypeArena;
 use crate::types::ParsedFile;
 
-use super::{FileLookup, resolve_single_pass};
+use super::{resolve_single_pass, FileLookup};
 
 /// Empty plugin registry for `resolve_one_file` tests that exercise the
 /// profile-driven path only — no plugin contributes synthetic imports.
@@ -152,7 +152,12 @@ impl crate::languages::LanguagePlugin for FakeInjectingPlugin {
     fn scope_kinds(&self) -> &[crate::parser::scope_tree::ScopeKind] {
         &[]
     }
-    fn extract(&self, _source: &str, _file_path: &str, _lang_id: &str) -> crate::types::ExtractionResult {
+    fn extract(
+        &self,
+        _source: &str,
+        _file_path: &str,
+        _lang_id: &str,
+    ) -> crate::types::ExtractionResult {
         crate::types::ExtractionResult::default()
     }
     fn extra_wildcard_imports(
@@ -374,12 +379,19 @@ fn local_type_id_round_trips_optional_without_nominalization() {
     // path either way.
     let formatted = arena.format_type(opt_id); // "User?"
     let reinterned = arena.intern_type_str(&formatted);
-    assert_eq!(reinterned, opt_id, "intern_type_str(\"User?\") must round-trip to Optional(User)");
+    assert_eq!(
+        reinterned, opt_id,
+        "intern_type_str(\"User?\") must round-trip to Optional(User)"
+    );
 
     // New path: TypeId stored and retrieved intact.
     lookup.record_local_type_id("maybeUser".to_string(), opt_id);
     let got = lookup.local_type_id("maybeUser");
-    assert_eq!(got, Some(opt_id), "local_type_id must return Optional(User) TypeId");
+    assert_eq!(
+        got,
+        Some(opt_id),
+        "local_type_id must return Optional(User) TypeId"
+    );
     assert!(
         matches!(arena.get(got.unwrap()), Type::Optional(_)),
         "cached TypeId must be Optional, not a nominalized Class"
@@ -408,14 +420,30 @@ fn reassignment_latest_write_wins_across_both_caches() {
     // TypeId binding, then a String reassignment for the same name.
     lookup.record_local_type_id("x".to_string(), prim_id);
     lookup.record_local_type("x".to_string(), "Repo".to_string());
-    assert_eq!(lookup.local_type_id("x"), None, "String reassignment must evict the stale TypeId");
-    assert_eq!(lookup.local_type("x").as_deref(), Some("Repo"), "latest String write must be visible");
+    assert_eq!(
+        lookup.local_type_id("x"),
+        None,
+        "String reassignment must evict the stale TypeId"
+    );
+    assert_eq!(
+        lookup.local_type("x").as_deref(),
+        Some("Repo"),
+        "latest String write must be visible"
+    );
 
     // The reverse: String binding, then a TypeId reassignment for the same name.
     lookup.record_local_type("y".to_string(), "Repo".to_string());
     lookup.record_local_type_id("y".to_string(), prim_id);
-    assert_eq!(lookup.local_type("y"), None, "TypeId reassignment must evict the stale String");
-    assert_eq!(lookup.local_type_id("y"), Some(prim_id), "latest TypeId write must be visible");
+    assert_eq!(
+        lookup.local_type("y"),
+        None,
+        "TypeId reassignment must evict the stale String"
+    );
+    assert_eq!(
+        lookup.local_type_id("y"),
+        Some(prim_id),
+        "latest TypeId write must be visible"
+    );
 }
 
 #[test]
@@ -426,67 +454,166 @@ fn engine_resolves_local_var_member_call_via_scope_exact_root() {
     };
     fn esym(name: &str, qname: &str, kind: SymbolKind, parent: Option<usize>) -> ExtractedSymbol {
         ExtractedSymbol {
-            name: name.into(), qualified_name: qname.into(), kind,
+            name: name.into(),
+            qualified_name: qname.into(),
+            kind,
             visibility: Some(Visibility::Public),
-            start_line: 0, end_line: 0, start_col: 0, end_col: 0, byte_offset: 0,
-            signature: None, doc_comment: None, scope_path: parent.map(|_| "SolidQueryDevtools".into()),
-            parent_index: parent, declared_type: None, return_type: None,
-            param_types: Vec::new(), generic_params: Vec::new(),
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
+            byte_offset: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: parent.map(|_| "SolidQueryDevtools".into()),
+            parent_index: parent,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
         }
     }
     fn cseg(name: &str, kind: SegmentKind, is_call: bool) -> ChainSegment {
         ChainSegment {
-            name: name.into(), node_kind: String::new(), kind, declared_type: None,
-            type_args: Vec::new(), optional_chaining: false, byte_offset: 0,
-            declared_type_id: None, is_call, call_args: Vec::new(), type_arg_ids: Vec::new(),
+            name: name.into(),
+            node_kind: String::new(),
+            kind,
+            declared_type: None,
+            type_args: Vec::new(),
+            optional_chaining: false,
+            byte_offset: 0,
+            declared_type_id: None,
+            is_call,
+            call_args: Vec::new(),
+            type_arg_ids: Vec::new(),
         }
     }
     fn eref(src: usize, target: &str, kind: EdgeKind, chain: Option<MemberChain>) -> ExtractedRef {
         ExtractedRef {
             is_include: false,
-            is_import_binding: false, is_reexport: false, source_symbol_index: src,
-            target_name: target.into(), kind, line: 1, col: 0, module: None, chain,
-            byte_offset: 1, namespace_segments: Vec::new(), call_args: Vec::new(),
+            is_import_binding: false,
+            is_reexport: false,
+            source_symbol_index: src,
+            target_name: target.into(),
+            kind,
+            line: 1,
+            col: 0,
+            module: None,
+            chain,
+            byte_offset: 1,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
         }
     }
     let symbols = vec![
-        esym("SolidQueryDevtools", "SolidQueryDevtools", SymbolKind::Function, None), // 0
-        esym("devtools", "SolidQueryDevtools.devtools", SymbolKind::Variable, Some(0)), // 1
-        esym("TanstackQueryDevtools", "TanstackQueryDevtools", SymbolKind::Class, None), // 2
-        esym("mount", "TanstackQueryDevtools.mount", SymbolKind::Method, Some(2)), // 3
+        esym(
+            "SolidQueryDevtools",
+            "SolidQueryDevtools",
+            SymbolKind::Function,
+            None,
+        ), // 0
+        esym(
+            "devtools",
+            "SolidQueryDevtools.devtools",
+            SymbolKind::Variable,
+            Some(0),
+        ), // 1
+        esym(
+            "TanstackQueryDevtools",
+            "TanstackQueryDevtools",
+            SymbolKind::Class,
+            None,
+        ), // 2
+        esym(
+            "mount",
+            "TanstackQueryDevtools.mount",
+            SymbolKind::Method,
+            Some(2),
+        ), // 3
     ];
     let refs = vec![
         // `const devtools = new TanstackQueryDevtools()` -> field type TypeRef
         eref(1, "TanstackQueryDevtools", EdgeKind::TypeRef, None),
         // `devtools.mount(ref)` chain
-        eref(0, "mount", EdgeKind::Calls, Some(MemberChain {
-            segments: vec![
-                cseg("devtools", SegmentKind::Identifier, false),
-                cseg("mount", SegmentKind::Property, true),
-            ],
-        })),
+        eref(
+            0,
+            "mount",
+            EdgeKind::Calls,
+            Some(MemberChain {
+                segments: vec![
+                    cseg("devtools", SegmentKind::Identifier, false),
+                    cseg("mount", SegmentKind::Property, true),
+                ],
+            }),
+        ),
     ];
     let pf = ParsedFile {
-        path: "d.ts".into(), language: "typescript".into(), content_hash: String::new(),
-        size: 0, line_count: 0, mtime: None, package_id: None, symbols, refs,
-        routes: Vec::new(), db_sets: Vec::new(), symbol_origin_languages: Vec::new(),
-        ref_origin_languages: Vec::new(), symbol_from_snippet: Vec::new(), content: None,
-        has_errors: false, flow: FlowMeta::default(), demand_contributions: Vec::new(),
-        alias_targets: Vec::new(), component_selectors: Vec::new(), plugin_flow_emissions: Vec::new(),
+        path: "d.ts".into(),
+        language: "typescript".into(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols,
+        refs,
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
         declared_modules: Vec::new(),
     };
     let mut id_map = HashMap::new();
     id_map.insert(("d.ts".to_string(), "SolidQueryDevtools".to_string()), 1i64);
-    id_map.insert(("d.ts".to_string(), "SolidQueryDevtools.devtools".to_string()), 2i64);
-    id_map.insert(("d.ts".to_string(), "TanstackQueryDevtools".to_string()), 3i64);
-    id_map.insert(("d.ts".to_string(), "TanstackQueryDevtools.mount".to_string()), 4i64);
+    id_map.insert(
+        (
+            "d.ts".to_string(),
+            "SolidQueryDevtools.devtools".to_string(),
+        ),
+        2i64,
+    );
+    id_map.insert(
+        ("d.ts".to_string(), "TanstackQueryDevtools".to_string()),
+        3i64,
+    );
+    id_map.insert(
+        (
+            "d.ts".to_string(),
+            "TanstackQueryDevtools.mount".to_string(),
+        ),
+        4i64,
+    );
     let arena = Arc::new(TypeArena::new());
-    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(std::slice::from_ref(&pf), &id_map.clone().into(), arena);
+    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
+        std::slice::from_ref(&pf),
+        &id_map.clone().into(),
+        arena,
+    );
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
-    let (edges, unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map.clone().into(), None);
+    let (edges, unresolved, _ref_log, _census) = super::resolve_one_file(
+        &pf,
+        &tree,
+        &profiles,
+        &no_plugins(),
+        None,
+        &solver,
+        &id_map.clone().into(),
+        None,
+    );
     // mount (target id 4) must resolve as an edge from SolidQueryDevtools (1).
-    assert!(edges.iter().any(|e| e.1 == 4), "devtools.mount must resolve to TanstackQueryDevtools.mount");
+    assert!(
+        edges.iter().any(|e| e.1 == 4),
+        "devtools.mount must resolve to TanstackQueryDevtools.mount"
+    );
 }
 
 /// `const observer = new QueryObserver(); observer.getCurrentResult()` — the
@@ -501,67 +628,144 @@ fn engine_types_a_new_expression_local_for_a_later_member_call() {
     };
     fn esym(name: &str, qname: &str, kind: SymbolKind, parent: Option<usize>) -> ExtractedSymbol {
         ExtractedSymbol {
-            name: name.into(), qualified_name: qname.into(), kind,
+            name: name.into(),
+            qualified_name: qname.into(),
+            kind,
             visibility: Some(Visibility::Public),
-            start_line: 0, end_line: 0, start_col: 0, end_col: 0, byte_offset: 0,
-            signature: None, doc_comment: None, scope_path: parent.map(|_| "useTest".into()),
-            parent_index: parent, declared_type: None, return_type: None,
-            param_types: Vec::new(), generic_params: Vec::new(),
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
+            byte_offset: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: parent.map(|_| "useTest".into()),
+            parent_index: parent,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
         }
     }
     fn cseg(name: &str, kind: SegmentKind, is_call: bool) -> ChainSegment {
         ChainSegment {
-            name: name.into(), node_kind: String::new(), kind, declared_type: None,
-            type_args: Vec::new(), optional_chaining: false, byte_offset: 0,
-            declared_type_id: None, is_call, call_args: Vec::new(), type_arg_ids: Vec::new(),
+            name: name.into(),
+            node_kind: String::new(),
+            kind,
+            declared_type: None,
+            type_args: Vec::new(),
+            optional_chaining: false,
+            byte_offset: 0,
+            declared_type_id: None,
+            is_call,
+            call_args: Vec::new(),
+            type_arg_ids: Vec::new(),
         }
     }
     fn eref(src: usize, target: &str, kind: EdgeKind, chain: Option<MemberChain>) -> ExtractedRef {
         ExtractedRef {
             is_include: false,
-            is_import_binding: false, is_reexport: false, source_symbol_index: src,
-            target_name: target.into(), kind, line: 1, col: 0, module: None, chain,
-            byte_offset: 1, namespace_segments: Vec::new(), call_args: Vec::new(),
+            is_import_binding: false,
+            is_reexport: false,
+            source_symbol_index: src,
+            target_name: target.into(),
+            kind,
+            line: 1,
+            col: 0,
+            module: None,
+            chain,
+            byte_offset: 1,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
         }
     }
     let symbols = vec![
-        esym("useTest", "useTest", SymbolKind::Function, None),                  // 0
-        esym("observer", "useTest.observer", SymbolKind::Variable, Some(0)),     // 1
-        esym("QueryObserver", "QueryObserver", SymbolKind::Class, None),         // 2
-        esym("getCurrentResult", "QueryObserver.getCurrentResult", SymbolKind::Method, Some(2)), // 3
+        esym("useTest", "useTest", SymbolKind::Function, None), // 0
+        esym(
+            "observer",
+            "useTest.observer",
+            SymbolKind::Variable,
+            Some(0),
+        ), // 1
+        esym("QueryObserver", "QueryObserver", SymbolKind::Class, None), // 2
+        esym(
+            "getCurrentResult",
+            "QueryObserver.getCurrentResult",
+            SymbolKind::Method,
+            Some(2),
+        ), // 3
     ];
     let refs = vec![
         // `const observer = new QueryObserver()` — Instantiates, flow-bound to `observer`.
         eref(0, "QueryObserver", EdgeKind::Instantiates, None),
         // `observer.getCurrentResult()`
-        eref(0, "getCurrentResult", EdgeKind::Calls, Some(MemberChain {
-            segments: vec![
-                cseg("observer", SegmentKind::Identifier, false),
-                cseg("getCurrentResult", SegmentKind::Property, true),
-            ],
-        })),
+        eref(
+            0,
+            "getCurrentResult",
+            EdgeKind::Calls,
+            Some(MemberChain {
+                segments: vec![
+                    cseg("observer", SegmentKind::Identifier, false),
+                    cseg("getCurrentResult", SegmentKind::Property, true),
+                ],
+            }),
+        ),
     ];
     let mut flow = FlowMeta::default();
     flow.flow_binding_lhs.insert(0, 1); // ref 0's LHS is symbol 1 (`observer`)
     let pf = ParsedFile {
-        path: "d.ts".into(), language: "typescript".into(), content_hash: String::new(),
-        size: 0, line_count: 0, mtime: None, package_id: None, symbols, refs,
-        routes: Vec::new(), db_sets: Vec::new(), symbol_origin_languages: Vec::new(),
-        ref_origin_languages: Vec::new(), symbol_from_snippet: Vec::new(), content: None,
-        has_errors: false, flow, demand_contributions: Vec::new(),
-        alias_targets: Vec::new(), component_selectors: Vec::new(), plugin_flow_emissions: Vec::new(),
+        path: "d.ts".into(),
+        language: "typescript".into(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols,
+        refs,
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow,
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
         declared_modules: Vec::new(),
     };
     let mut id_map = HashMap::new();
     id_map.insert(("d.ts".to_string(), "useTest".to_string()), 1i64);
     id_map.insert(("d.ts".to_string(), "useTest.observer".to_string()), 2i64);
     id_map.insert(("d.ts".to_string(), "QueryObserver".to_string()), 3i64);
-    id_map.insert(("d.ts".to_string(), "QueryObserver.getCurrentResult".to_string()), 4i64);
+    id_map.insert(
+        (
+            "d.ts".to_string(),
+            "QueryObserver.getCurrentResult".to_string(),
+        ),
+        4i64,
+    );
     let arena = Arc::new(TypeArena::new());
-    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(std::slice::from_ref(&pf), &id_map.clone().into(), arena);
+    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
+        std::slice::from_ref(&pf),
+        &id_map.clone().into(),
+        arena,
+    );
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
-    let (edges, _unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map.clone().into(), None);
+    let (edges, _unresolved, _ref_log, _census) = super::resolve_one_file(
+        &pf,
+        &tree,
+        &profiles,
+        &no_plugins(),
+        None,
+        &solver,
+        &id_map.clone().into(),
+        None,
+    );
     assert!(
         edges.iter().any(|e| e.1 == 4),
         "observer.getCurrentResult must resolve to QueryObserver.getCurrentResult via new-expression typing"
@@ -591,27 +795,55 @@ fn engine_distinguishes_same_named_devtools_across_packages() {
         scope: Option<&str>,
     ) -> ExtractedSymbol {
         ExtractedSymbol {
-            name: name.into(), qualified_name: qname.into(), kind,
+            name: name.into(),
+            qualified_name: qname.into(),
+            kind,
             visibility: Some(Visibility::Public),
-            start_line: 0, end_line: 0, start_col: 0, end_col: 0, byte_offset: 0,
-            signature: None, doc_comment: None, scope_path: scope.map(Into::into),
-            parent_index: parent, declared_type: None, return_type: None,
-            param_types: Vec::new(), generic_params: Vec::new(),
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
+            byte_offset: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: scope.map(Into::into),
+            parent_index: parent,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
         }
     }
     fn cseg(name: &str, kind: SegmentKind, is_call: bool) -> ChainSegment {
         ChainSegment {
-            name: name.into(), node_kind: String::new(), kind, declared_type: None,
-            type_args: Vec::new(), optional_chaining: false, byte_offset: 0,
-            declared_type_id: None, is_call, call_args: Vec::new(), type_arg_ids: Vec::new(),
+            name: name.into(),
+            node_kind: String::new(),
+            kind,
+            declared_type: None,
+            type_args: Vec::new(),
+            optional_chaining: false,
+            byte_offset: 0,
+            declared_type_id: None,
+            is_call,
+            call_args: Vec::new(),
+            type_arg_ids: Vec::new(),
         }
     }
     fn eref(src: usize, target: &str, kind: EdgeKind, chain: Option<MemberChain>) -> ExtractedRef {
         ExtractedRef {
             is_include: false,
-            is_import_binding: false, is_reexport: false, source_symbol_index: src,
-            target_name: target.into(), kind, line: 1, col: 0, module: None, chain,
-            byte_offset: 1, namespace_segments: Vec::new(), call_args: Vec::new(),
+            is_import_binding: false,
+            is_reexport: false,
+            source_symbol_index: src,
+            target_name: target.into(),
+            kind,
+            line: 1,
+            col: 0,
+            module: None,
+            chain,
+            byte_offset: 1,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
         }
     }
     // One package's file: an enclosing symbol `host` holding `devtools` (typed to
@@ -627,28 +859,60 @@ fn engine_distinguishes_same_named_devtools_across_packages() {
         let mount_qname = format!("{impl_class}.mount");
         let symbols = vec![
             esym(host, host, SymbolKind::Function, None, None), // 0
-            esym("devtools", &devtools_qname, SymbolKind::Variable, Some(0), Some(host)), // 1
+            esym(
+                "devtools",
+                &devtools_qname,
+                SymbolKind::Variable,
+                Some(0),
+                Some(host),
+            ), // 1
             esym(impl_class, impl_class, SymbolKind::Class, None, None), // 2
-            esym("mount", &mount_qname, SymbolKind::Method, Some(2), Some(impl_class)), // 3
+            esym(
+                "mount",
+                &mount_qname,
+                SymbolKind::Method,
+                Some(2),
+                Some(impl_class),
+            ), // 3
         ];
         let refs = vec![
             // `const devtools = new <impl_class>()` -> field-type TypeRef on devtools.
             eref(1, impl_class, EdgeKind::TypeRef, None),
             // `devtools.mount(...)` chain, referenced from the host (index 0).
-            eref(0, "mount", EdgeKind::Calls, Some(MemberChain {
-                segments: vec![
-                    cseg("devtools", SegmentKind::Identifier, false),
-                    cseg("mount", SegmentKind::Property, true),
-                ],
-            })),
+            eref(
+                0,
+                "mount",
+                EdgeKind::Calls,
+                Some(MemberChain {
+                    segments: vec![
+                        cseg("devtools", SegmentKind::Identifier, false),
+                        cseg("mount", SegmentKind::Property, true),
+                    ],
+                }),
+            ),
         ];
         let pf = ParsedFile {
-            path: path.into(), language: "typescript".into(), content_hash: String::new(),
-            size: 0, line_count: 0, mtime: None, package_id: Some(package_id), symbols, refs,
-            routes: Vec::new(), db_sets: Vec::new(), symbol_origin_languages: Vec::new(),
-            ref_origin_languages: Vec::new(), symbol_from_snippet: Vec::new(), content: None,
-            has_errors: false, flow: FlowMeta::default(), demand_contributions: Vec::new(),
-            alias_targets: Vec::new(), component_selectors: Vec::new(), plugin_flow_emissions: Vec::new(),
+            path: path.into(),
+            language: "typescript".into(),
+            content_hash: String::new(),
+            size: 0,
+            line_count: 0,
+            mtime: None,
+            package_id: Some(package_id),
+            symbols,
+            refs,
+            routes: Vec::new(),
+            db_sets: Vec::new(),
+            symbol_origin_languages: Vec::new(),
+            ref_origin_languages: Vec::new(),
+            symbol_from_snippet: Vec::new(),
+            content: None,
+            has_errors: false,
+            flow: FlowMeta::default(),
+            demand_contributions: Vec::new(),
+            alias_targets: Vec::new(),
+            component_selectors: Vec::new(),
+            plugin_flow_emissions: Vec::new(),
             declared_modules: Vec::new(),
         };
         let qnames = vec![
@@ -662,8 +926,18 @@ fn engine_distinguishes_same_named_devtools_across_packages() {
 
     // Package A (react-query) and package B (vue-query): same simple name
     // `devtools`, package-distinct enclosing host + impl class.
-    let (pf_a, qa) = make_pkg("packages/react-query/devtools.ts", 1, "ReactQueryDevtools", "ReactDevtoolsImpl");
-    let (pf_b, qb) = make_pkg("packages/vue-query/devtools.ts", 2, "VueQueryDevtools", "VueDevtoolsImpl");
+    let (pf_a, qa) = make_pkg(
+        "packages/react-query/devtools.ts",
+        1,
+        "ReactQueryDevtools",
+        "ReactDevtoolsImpl",
+    );
+    let (pf_b, qb) = make_pkg(
+        "packages/vue-query/devtools.ts",
+        2,
+        "VueQueryDevtools",
+        "VueDevtoolsImpl",
+    );
 
     // Build one id_map across both files, assigning stable ids in order.
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
@@ -677,16 +951,34 @@ fn engine_distinguishes_same_named_devtools_across_packages() {
     // `Compilation` and the per-file resolve calls.
     let files = vec![pf_a, pf_b];
     let arena = Arc::new(TypeArena::new());
-    let tree =
-        crate::indexer::resolve::engine::compilation::Compilation::build(&files, &id_map.clone().into(), arena);
+    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
+        &files,
+        &id_map.clone().into(),
+        arena,
+    );
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
 
-    let mount_a = id_map[&("packages/react-query/devtools.ts".to_string(), "ReactDevtoolsImpl.mount".to_string())];
-    let mount_b = id_map[&("packages/vue-query/devtools.ts".to_string(), "VueDevtoolsImpl.mount".to_string())];
+    let mount_a = id_map[&(
+        "packages/react-query/devtools.ts".to_string(),
+        "ReactDevtoolsImpl.mount".to_string(),
+    )];
+    let mount_b = id_map[&(
+        "packages/vue-query/devtools.ts".to_string(),
+        "VueDevtoolsImpl.mount".to_string(),
+    )];
 
     // Package A resolves to A's mount, NOT B's.
-    let (edges_a, _, _) = super::resolve_one_file(&files[0], &tree, &profiles, &no_plugins(), None, &solver, &id_map.clone().into(), None);
+    let (edges_a, _, _, _census) = super::resolve_one_file(
+        &files[0],
+        &tree,
+        &profiles,
+        &no_plugins(),
+        None,
+        &solver,
+        &id_map.clone().into(),
+        None,
+    );
     assert!(
         edges_a.iter().any(|e| e.1 == mount_a),
         "package A's devtools.mount must bind A's ReactDevtoolsImpl.mount (id {mount_a}); edges={edges_a:?}"
@@ -697,7 +989,16 @@ fn engine_distinguishes_same_named_devtools_across_packages() {
     );
 
     // Package B resolves to B's mount, NOT A's.
-    let (edges_b, _, _) = super::resolve_one_file(&files[1], &tree, &profiles, &no_plugins(), None, &solver, &id_map.clone().into(), None);
+    let (edges_b, _, _, _census) = super::resolve_one_file(
+        &files[1],
+        &tree,
+        &profiles,
+        &no_plugins(),
+        None,
+        &solver,
+        &id_map.clone().into(),
+        None,
+    );
     assert!(
         edges_b.iter().any(|e| e.1 == mount_b),
         "package B's devtools.mount must bind B's VueDevtoolsImpl.mount (id {mount_b}); edges={edges_b:?}"
@@ -761,7 +1062,7 @@ fn snippet_source_symbol_propagates_from_snippet_to_unresolved_row() {
     // Symbol 0: the markdown file's own host symbol (not a snippet).
     // Symbol 1: a TS symbol spliced from a ``ts fence — tagged from_snippet.
     let symbols = vec![
-        esym("README", "README", SymbolKind::Class),  // 0 — host, not snippet
+        esym("README", "README", SymbolKind::Class), // 0 — host, not snippet
         esym("fetchData", "fetchData", SymbolKind::Function), // 1 — in-fence, snippet
     ];
     // One ref from the snippet symbol to an unresolvable target.
@@ -806,8 +1107,16 @@ fn snippet_source_symbol_propagates_from_snippet_to_unresolved_row() {
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
 
-    let (_edges, unresolved, _ref_log) =
-        super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map.clone().into(), None);
+    let (_edges, unresolved, _ref_log, _census) = super::resolve_one_file(
+        &pf,
+        &tree,
+        &profiles,
+        &no_plugins(),
+        None,
+        &solver,
+        &id_map.clone().into(),
+        None,
+    );
 
     // The ref to "NonexistentApi" must be unresolved (no matching symbol in the
     // compilation tree) and the unresolved row must carry from_snippet=true.
@@ -887,7 +1196,13 @@ fn awaited_binding_strips_promise_wrapper_at_seed() {
             type_arg_ids: Vec::new(),
         }
     }
-    fn eref(src: usize, target: &str, kind: EdgeKind, chain: Option<MemberChain>, byte: u32) -> ExtractedRef {
+    fn eref(
+        src: usize,
+        target: &str,
+        kind: EdgeKind,
+        chain: Option<MemberChain>,
+        byte: u32,
+    ) -> ExtractedRef {
         ExtractedRef {
             is_include: false,
             is_import_binding: false,
@@ -918,15 +1233,43 @@ fn awaited_binding_strips_promise_wrapper_at_seed() {
 
     let symbols = vec![
         // 0: enclosing function `getEpisodes`
-        esym("getEpisodes", "getEpisodes", SymbolKind::Function, None, None, None),
+        esym(
+            "getEpisodes",
+            "getEpisodes",
+            SymbolKind::Function,
+            None,
+            None,
+            None,
+        ),
         // 1: local `res` — bound by `await fetch(url)`
-        esym("res", "getEpisodes.res", SymbolKind::Variable, Some(0), Some("getEpisodes"), None),
+        esym(
+            "res",
+            "getEpisodes.res",
+            SymbolKind::Variable,
+            Some(0),
+            Some("getEpisodes"),
+            None,
+        ),
         // 2: `Response` class
         esym("Response", "Response", SymbolKind::Class, None, None, None),
         // 3: `Response.json` method
-        esym("json", "Response.json", SymbolKind::Method, Some(2), Some("Response"), None),
+        esym(
+            "json",
+            "Response.json",
+            SymbolKind::Method,
+            Some(2),
+            Some("Response"),
+            None,
+        ),
         // 4: `fetch` function, return type = Promise<Response>
-        esym("fetch", "fetch", SymbolKind::Function, None, None, Some(promise_response_id)),
+        esym(
+            "fetch",
+            "fetch",
+            SymbolKind::Function,
+            None,
+            None,
+            Some(promise_response_id),
+        ),
     ];
 
     let refs = vec![
@@ -935,12 +1278,18 @@ fn awaited_binding_strips_promise_wrapper_at_seed() {
         // record; here flow_binding_lhs is set manually.
         eref(0, "fetch", EdgeKind::Calls, None, 5),
         // ref 1: `res.json()` chain — the member call we expect to resolve.
-        eref(0, "json", EdgeKind::Calls, Some(MemberChain {
-            segments: vec![
-                cseg("res", SegmentKind::Identifier, false),
-                cseg("json", SegmentKind::Property, true),
-            ],
-        }), 20),
+        eref(
+            0,
+            "json",
+            EdgeKind::Calls,
+            Some(MemberChain {
+                segments: vec![
+                    cseg("res", SegmentKind::Identifier, false),
+                    cseg("json", SegmentKind::Property, true),
+                ],
+            }),
+            20,
+        ),
     ];
 
     let mut flow = FlowMeta::default();
@@ -989,7 +1338,16 @@ fn awaited_binding_strips_promise_wrapper_at_seed() {
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
 
-    let (edges, _unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map.clone().into(), None);
+    let (edges, _unresolved, _ref_log, _census) = super::resolve_one_file(
+        &pf,
+        &tree,
+        &profiles,
+        &no_plugins(),
+        None,
+        &solver,
+        &id_map.clone().into(),
+        None,
+    );
 
     // `res.json()` must resolve to `Response.json` (id 4).
     assert!(
@@ -1054,7 +1412,13 @@ fn non_awaited_promise_binding_keeps_promise_head_at_seed() {
             type_arg_ids: Vec::new(),
         }
     }
-    fn eref(src: usize, target: &str, kind: EdgeKind, chain: Option<MemberChain>, byte: u32) -> ExtractedRef {
+    fn eref(
+        src: usize,
+        target: &str,
+        kind: EdgeKind,
+        chain: Option<MemberChain>,
+        byte: u32,
+    ) -> ExtractedRef {
         ExtractedRef {
             is_include: false,
             is_import_binding: false,
@@ -1083,27 +1447,61 @@ fn non_awaited_promise_binding_keeps_promise_head_at_seed() {
 
     let symbols = vec![
         // 0: enclosing function
-        esym("usePromise", "usePromise", SymbolKind::Function, None, None, None),
+        esym(
+            "usePromise",
+            "usePromise",
+            SymbolKind::Function,
+            None,
+            None,
+            None,
+        ),
         // 1: `p` — non-awaited binding, keeps Promise head
-        esym("p", "usePromise.p", SymbolKind::Variable, Some(0), Some("usePromise"), None),
+        esym(
+            "p",
+            "usePromise.p",
+            SymbolKind::Variable,
+            Some(0),
+            Some("usePromise"),
+            None,
+        ),
         // 2: `Promise` class with `then`
         esym("Promise", "Promise", SymbolKind::Class, None, None, None),
         // 3: `Promise.then`
-        esym("then", "Promise.then", SymbolKind::Method, Some(2), Some("Promise"), None),
+        esym(
+            "then",
+            "Promise.then",
+            SymbolKind::Method,
+            Some(2),
+            Some("Promise"),
+            None,
+        ),
         // 4: `fetch` returns Promise<Response>
-        esym("fetch", "fetch", SymbolKind::Function, None, None, Some(promise_response_id)),
+        esym(
+            "fetch",
+            "fetch",
+            SymbolKind::Function,
+            None,
+            None,
+            Some(promise_response_id),
+        ),
     ];
 
     let refs = vec![
         // ref 0: `const p = fetch(url)` — NOT awaited
         eref(0, "fetch", EdgeKind::Calls, None, 5),
         // ref 1: `p.then(...)` — should resolve to Promise.then
-        eref(0, "then", EdgeKind::Calls, Some(MemberChain {
-            segments: vec![
-                cseg("p", SegmentKind::Identifier, false),
-                cseg("then", SegmentKind::Property, true),
-            ],
-        }), 20),
+        eref(
+            0,
+            "then",
+            EdgeKind::Calls,
+            Some(MemberChain {
+                segments: vec![
+                    cseg("p", SegmentKind::Identifier, false),
+                    cseg("then", SegmentKind::Property, true),
+                ],
+            }),
+            20,
+        ),
     ];
 
     let mut flow = FlowMeta::default();
@@ -1137,10 +1535,19 @@ fn non_awaited_promise_binding_keeps_promise_head_at_seed() {
     };
 
     let mut id_map = HashMap::new();
-    id_map.insert(("use_promise.ts".to_string(), "usePromise".to_string()), 1i64);
-    id_map.insert(("use_promise.ts".to_string(), "usePromise.p".to_string()), 2i64);
+    id_map.insert(
+        ("use_promise.ts".to_string(), "usePromise".to_string()),
+        1i64,
+    );
+    id_map.insert(
+        ("use_promise.ts".to_string(), "usePromise.p".to_string()),
+        2i64,
+    );
     id_map.insert(("use_promise.ts".to_string(), "Promise".to_string()), 3i64);
-    id_map.insert(("use_promise.ts".to_string(), "Promise.then".to_string()), 4i64);
+    id_map.insert(
+        ("use_promise.ts".to_string(), "Promise.then".to_string()),
+        4i64,
+    );
     id_map.insert(("use_promise.ts".to_string(), "fetch".to_string()), 5i64);
 
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
@@ -1151,7 +1558,16 @@ fn non_awaited_promise_binding_keeps_promise_head_at_seed() {
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
 
-    let (edges, _unresolved, _ref_log) = super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map.clone().into(), None);
+    let (edges, _unresolved, _ref_log, _census) = super::resolve_one_file(
+        &pf,
+        &tree,
+        &profiles,
+        &no_plugins(),
+        None,
+        &solver,
+        &id_map.clone().into(),
+        None,
+    );
 
     // `p.then()` must resolve to `Promise.then` (id 4) — Promise head is preserved.
     assert!(
@@ -1179,68 +1595,129 @@ fn member_refs_on_uncaptured_call_root_all_blame_the_initializer() {
     };
     fn esym(name: &str, qname: &str, kind: SymbolKind, parent: Option<usize>) -> ExtractedSymbol {
         ExtractedSymbol {
-            name: name.into(), qualified_name: qname.into(), kind,
+            name: name.into(),
+            qualified_name: qname.into(),
+            kind,
             visibility: Some(Visibility::Public),
-            start_line: 0, end_line: 0, start_col: 0, end_col: 0, byte_offset: 0,
-            signature: None, doc_comment: None, scope_path: parent.map(|_| "caller".into()),
-            parent_index: parent, declared_type: None, return_type: None,
-            param_types: Vec::new(), generic_params: Vec::new(),
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
+            byte_offset: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: parent.map(|_| "caller".into()),
+            parent_index: parent,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
         }
     }
     fn cseg(name: &str, kind: SegmentKind, is_call: bool) -> ChainSegment {
         ChainSegment {
-            name: name.into(), node_kind: String::new(), kind, declared_type: None,
-            type_args: Vec::new(), optional_chaining: false, byte_offset: 0,
-            declared_type_id: None, is_call, call_args: Vec::new(), type_arg_ids: Vec::new(),
+            name: name.into(),
+            node_kind: String::new(),
+            kind,
+            declared_type: None,
+            type_args: Vec::new(),
+            optional_chaining: false,
+            byte_offset: 0,
+            declared_type_id: None,
+            is_call,
+            call_args: Vec::new(),
+            type_arg_ids: Vec::new(),
         }
     }
     fn eref(src: usize, target: &str, kind: EdgeKind, chain: Option<MemberChain>) -> ExtractedRef {
         ExtractedRef {
             is_include: false,
-            is_import_binding: false, is_reexport: false, source_symbol_index: src,
-            target_name: target.into(), kind, line: 1, col: 0, module: None, chain,
-            byte_offset: 1, namespace_segments: Vec::new(), call_args: Vec::new(),
+            is_import_binding: false,
+            is_reexport: false,
+            source_symbol_index: src,
+            target_name: target.into(),
+            kind,
+            line: 1,
+            col: 0,
+            module: None,
+            chain,
+            byte_offset: 1,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
         }
     }
     let symbols = vec![
-        esym("caller", "caller", SymbolKind::Function, None),                    // 0
-        esym("logger", "caller.logger", SymbolKind::Variable, Some(0)),          // 1
-        esym("createScopedLogger", "createScopedLogger", SymbolKind::Function, None), // 2
+        esym("caller", "caller", SymbolKind::Function, None), // 0
+        esym("logger", "caller.logger", SymbolKind::Variable, Some(0)), // 1
+        esym(
+            "createScopedLogger",
+            "createScopedLogger",
+            SymbolKind::Function,
+            None,
+        ), // 2
     ];
     let refs = vec![
         // `const logger = createScopedLogger()` — Calls, flow-bound to `logger`.
         // No return_type on the factory symbol above, so nothing seeds `logger`.
         eref(0, "createScopedLogger", EdgeKind::Calls, None),
         // `logger.info()`
-        eref(0, "info", EdgeKind::Calls, Some(MemberChain {
-            segments: vec![
-                cseg("logger", SegmentKind::Identifier, false),
-                cseg("info", SegmentKind::Property, true),
-            ],
-        })),
+        eref(
+            0,
+            "info",
+            EdgeKind::Calls,
+            Some(MemberChain {
+                segments: vec![
+                    cseg("logger", SegmentKind::Identifier, false),
+                    cseg("info", SegmentKind::Property, true),
+                ],
+            }),
+        ),
         // `logger.warn()`
-        eref(0, "warn", EdgeKind::Calls, Some(MemberChain {
-            segments: vec![
-                cseg("logger", SegmentKind::Identifier, false),
-                cseg("warn", SegmentKind::Property, true),
-            ],
-        })),
+        eref(
+            0,
+            "warn",
+            EdgeKind::Calls,
+            Some(MemberChain {
+                segments: vec![
+                    cseg("logger", SegmentKind::Identifier, false),
+                    cseg("warn", SegmentKind::Property, true),
+                ],
+            }),
+        ),
     ];
     let mut flow = FlowMeta::default();
     flow.flow_binding_lhs.insert(0, 1); // ref 0's LHS is symbol 1 (`logger`)
     let pf = ParsedFile {
-        path: "logger.ts".into(), language: "typescript".into(), content_hash: String::new(),
-        size: 0, line_count: 0, mtime: None, package_id: None, symbols, refs,
-        routes: Vec::new(), db_sets: Vec::new(), symbol_origin_languages: Vec::new(),
-        ref_origin_languages: Vec::new(), symbol_from_snippet: Vec::new(), content: None,
-        has_errors: false, flow, demand_contributions: Vec::new(),
-        alias_targets: Vec::new(), component_selectors: Vec::new(), plugin_flow_emissions: Vec::new(),
+        path: "logger.ts".into(),
+        language: "typescript".into(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols,
+        refs,
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow,
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
         declared_modules: Vec::new(),
     };
     let mut id_map = HashMap::new();
     id_map.insert(("logger.ts".to_string(), "caller".to_string()), 1i64);
     id_map.insert(("logger.ts".to_string(), "caller.logger".to_string()), 2i64);
-    id_map.insert(("logger.ts".to_string(), "createScopedLogger".to_string()), 3i64);
+    id_map.insert(
+        ("logger.ts".to_string(), "createScopedLogger".to_string()),
+        3i64,
+    );
     let arena = Arc::new(TypeArena::new());
     let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
         std::slice::from_ref(&pf),
@@ -1249,8 +1726,16 @@ fn member_refs_on_uncaptured_call_root_all_blame_the_initializer() {
     );
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
-    let (edges, unresolved, _ref_log) =
-        super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map.clone().into(), None);
+    let (edges, unresolved, _ref_log, _census) = super::resolve_one_file(
+        &pf,
+        &tree,
+        &profiles,
+        &no_plugins(),
+        None,
+        &solver,
+        &id_map.clone().into(),
+        None,
+    );
 
     // The factory call itself resolves.
     assert!(
@@ -1259,10 +1744,18 @@ fn member_refs_on_uncaptured_call_root_all_blame_the_initializer() {
     );
     // Both member refs on `logger` are unresolved, and BOTH blame the factory
     // (id 3) as the uncaptured-return cause — not `logger` itself (id 2).
-    assert_eq!(unresolved.len(), 2, "info and warn must both be unresolved; got {unresolved:?}");
+    assert_eq!(
+        unresolved.len(),
+        2,
+        "info and warn must both be unresolved; got {unresolved:?}"
+    );
     for row in &unresolved {
         let (_, target_name, _, _, _, _, _, _, cause_symbol_id, cause_kind) = row;
-        assert_eq!(*cause_symbol_id, Some(3), "{target_name} must blame the factory, not the binding");
+        assert_eq!(
+            *cause_symbol_id,
+            Some(3),
+            "{target_name} must blame the factory, not the binding"
+        );
         assert_eq!(*cause_kind, Some("uncaptured_return"));
     }
 }
@@ -1370,39 +1863,79 @@ fn rename_import_original_name_does_not_shadow_local_struct() {
     };
     fn esym(name: &str, qname: &str, kind: SymbolKind) -> ExtractedSymbol {
         ExtractedSymbol {
-            name: name.into(), qualified_name: qname.into(), kind,
+            name: name.into(),
+            qualified_name: qname.into(),
+            kind,
             visibility: Some(Visibility::Public),
-            start_line: 0, end_line: 0, start_col: 0, end_col: 0, byte_offset: 0,
-            signature: None, doc_comment: None, scope_path: None,
-            parent_index: None, declared_type: None, return_type: None,
-            param_types: Vec::new(), generic_params: Vec::new(),
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
+            byte_offset: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: None,
+            parent_index: None,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
         }
     }
     fn import_ref(target: &str, module: &str, original: Option<&str>, line: u32) -> ExtractedRef {
         ExtractedRef {
             is_include: false,
-            is_import_binding: false, is_reexport: false, source_symbol_index: 0,
-            target_name: target.into(), kind: EdgeKind::Imports,
-            line, col: 0, module: Some(module.into()),
-            chain: original.map(|orig| MemberChain { segments: vec![ChainSegment {
-                name: orig.into(), node_kind: "use_as_original".into(),
-                kind: SegmentKind::Identifier, declared_type: None, type_args: Vec::new(),
-                optional_chaining: false, byte_offset: 0, declared_type_id: None,
-                is_call: false, call_args: Vec::new(), type_arg_ids: Vec::new(),
-            }]}),
-            byte_offset: 0, namespace_segments: Vec::new(), call_args: Vec::new(),
+            is_import_binding: false,
+            is_reexport: false,
+            source_symbol_index: 0,
+            target_name: target.into(),
+            kind: EdgeKind::Imports,
+            line,
+            col: 0,
+            module: Some(module.into()),
+            chain: original.map(|orig| MemberChain {
+                segments: vec![ChainSegment {
+                    name: orig.into(),
+                    node_kind: "use_as_original".into(),
+                    kind: SegmentKind::Identifier,
+                    declared_type: None,
+                    type_args: Vec::new(),
+                    optional_chaining: false,
+                    byte_offset: 0,
+                    declared_type_id: None,
+                    is_call: false,
+                    call_args: Vec::new(),
+                    type_arg_ids: Vec::new(),
+                }],
+            }),
+            byte_offset: 0,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
         }
     }
     let type_ref = ExtractedRef {
         is_include: false,
-        is_import_binding: false, is_reexport: false, source_symbol_index: 1,
-        target_name: "Widget".into(), kind: EdgeKind::TypeRef,
-        line: 10, col: 0, module: None, chain: None,
-        byte_offset: 100, namespace_segments: Vec::new(), call_args: Vec::new(),
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: 1,
+        target_name: "Widget".into(),
+        kind: EdgeKind::TypeRef,
+        line: 10,
+        col: 0,
+        module: None,
+        chain: None,
+        byte_offset: 100,
+        namespace_segments: Vec::new(),
+        call_args: Vec::new(),
     };
     let mut pf = ParsedFile {
-        path: "widgets/src/widget.rs".into(), language: "rust".into(),
-        content_hash: String::new(), size: 0, line_count: 0, mtime: None, package_id: Some(1),
+        path: "widgets/src/widget.rs".into(),
+        language: "rust".into(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: Some(1),
         symbols: vec![
             esym("Widget", "Widget", SymbolKind::Struct),
             esym("caller", "caller", SymbolKind::Function),
@@ -1412,34 +1945,80 @@ fn rename_import_original_name_does_not_shadow_local_struct() {
             type_ref,
             import_ref("Widget", "crate", None, 200),
         ],
-        routes: Vec::new(), db_sets: Vec::new(), symbol_origin_languages: Vec::new(),
-        ref_origin_languages: Vec::new(), symbol_from_snippet: Vec::new(), content: None,
-        has_errors: false, flow: FlowMeta::default(), demand_contributions: Vec::new(),
-        alias_targets: Vec::new(), component_selectors: Vec::new(), plugin_flow_emissions: Vec::new(),
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
         declared_modules: Vec::new(),
     };
     pf.symbols[0].visibility = Some(Visibility::Public);
     let ext_pf = ParsedFile {
-        path: "ext:rust:ext_pkg/src/lib.rs".into(), language: "rust".into(),
-        content_hash: String::new(), size: 0, line_count: 0, mtime: None, package_id: None,
+        path: "ext:rust:ext_pkg/src/lib.rs".into(),
+        language: "rust".into(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
         symbols: vec![esym("Widget", "Widget", SymbolKind::Interface)],
         refs: Vec::new(),
-        routes: Vec::new(), db_sets: Vec::new(), symbol_origin_languages: Vec::new(),
-        ref_origin_languages: Vec::new(), symbol_from_snippet: Vec::new(), content: None,
-        has_errors: false, flow: FlowMeta::default(), demand_contributions: Vec::new(),
-        alias_targets: Vec::new(), component_selectors: Vec::new(), plugin_flow_emissions: Vec::new(),
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
         declared_modules: Vec::new(),
     };
     let mut id_map = HashMap::new();
-    id_map.insert(("widgets/src/widget.rs".to_string(), "Widget".to_string()), 1i64);
-    id_map.insert(("widgets/src/widget.rs".to_string(), "caller".to_string()), 2i64);
-    id_map.insert(("ext:rust:ext_pkg/src/lib.rs".to_string(), "Widget".to_string()), 3i64);
+    id_map.insert(
+        ("widgets/src/widget.rs".to_string(), "Widget".to_string()),
+        1i64,
+    );
+    id_map.insert(
+        ("widgets/src/widget.rs".to_string(), "caller".to_string()),
+        2i64,
+    );
+    id_map.insert(
+        (
+            "ext:rust:ext_pkg/src/lib.rs".to_string(),
+            "Widget".to_string(),
+        ),
+        3i64,
+    );
     let arena = Arc::new(TypeArena::new());
     let files = [pf, ext_pf];
-    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(&files, &id_map.clone().into(), arena);
+    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
+        &files,
+        &id_map.clone().into(),
+        arena,
+    );
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
-    let (edges, unresolved, _log) = super::resolve_one_file(&files[0], &tree, &profiles, &no_plugins(), None, &solver, &id_map.clone().into(), None);
+    let (edges, unresolved, _log, _census) = super::resolve_one_file(
+        &files[0],
+        &tree,
+        &profiles,
+        &no_plugins(),
+        None,
+        &solver,
+        &id_map.clone().into(),
+        None,
+    );
     assert!(
         edges.iter().any(|e| e.1 == 1),
         "bare TypeRef must bind the local struct; edges={edges:?} unresolved={unresolved:?}"
@@ -1517,7 +2096,12 @@ fn file_lookup_by_name_respects_cross_language_ext_visibility() {
     let arena = Arc::new(TypeArena::new());
     let str_ty = arena.class("str");
     let api_ty = arena.class("ApiClient");
-    let py = ext_value_file("ext:idx:C:/py/site-packages/fields.py", "python", "field", str_ty);
+    let py = ext_value_file(
+        "ext:idx:C:/py/site-packages/fields.py",
+        "python",
+        "field",
+        str_ty,
+    );
     let ts = ext_value_file("ext:ts:some-pkg/index.d.ts", "typescript", "client", api_ty);
 
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
@@ -1558,7 +2142,11 @@ fn file_lookup_by_name_respects_cross_language_ext_visibility() {
     );
 
     let py_lookup = FileLookup::new(&tree, "python");
-    assert_eq!(py_lookup.by_name("field").len(), 1, "python keeps its own ext surface");
+    assert_eq!(
+        py_lookup.by_name("field").len(),
+        1,
+        "python keeps its own ext surface"
+    );
 }
 
 /// A plain namespace import (`using System.Linq;`) becomes a WILDCARD entry
@@ -1620,7 +2208,10 @@ fn namespace_import_entry_is_a_wildcard_under_the_profile_flag() {
         .find(|i| i.imported_name == "System.Linq")
         .expect("using directive must land an import entry");
     assert_eq!(entry.module_path.as_deref(), Some("System.Linq"));
-    assert!(entry.is_wildcard, "a plain using opens the namespace as a wildcard");
+    assert!(
+        entry.is_wildcard,
+        "a plain using opens the namespace as a wildcard"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1639,26 +2230,50 @@ fn duplicate_ref_emissions_collapse_to_one_row_per_site() {
     };
     fn esym(name: &str, qname: &str, kind: SymbolKind) -> ExtractedSymbol {
         ExtractedSymbol {
-            name: name.into(), qualified_name: qname.into(), kind,
+            name: name.into(),
+            qualified_name: qname.into(),
+            kind,
             visibility: Some(Visibility::Public),
-            start_line: 0, end_line: 0, start_col: 0, end_col: 0, byte_offset: 0,
-            signature: None, doc_comment: None, scope_path: None,
-            parent_index: None, declared_type: None, return_type: None,
-            param_types: Vec::new(), generic_params: Vec::new(),
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
+            byte_offset: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: None,
+            parent_index: None,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
         }
     }
     fn eref(target: &str, line: u32, byte: u32) -> ExtractedRef {
         ExtractedRef {
             is_include: false,
-            is_import_binding: false, is_reexport: false, source_symbol_index: 0,
-            target_name: target.into(), kind: EdgeKind::Calls, line, col: 0,
-            module: None, chain: None, byte_offset: byte,
-            namespace_segments: Vec::new(), call_args: Vec::new(),
+            is_import_binding: false,
+            is_reexport: false,
+            source_symbol_index: 0,
+            target_name: target.into(),
+            kind: EdgeKind::Calls,
+            line,
+            col: 0,
+            module: None,
+            chain: None,
+            byte_offset: byte,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
         }
     }
     let pf = ParsedFile {
-        path: "dup.ts".into(), language: "typescript".into(), content_hash: String::new(),
-        size: 0, line_count: 0, mtime: None, package_id: None,
+        path: "dup.ts".into(),
+        language: "typescript".into(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
         symbols: vec![esym("f", "f", SymbolKind::Function)],
         refs: vec![
             // The same node emitted three times — one row survives.
@@ -1669,10 +2284,18 @@ fn duplicate_ref_emissions_collapse_to_one_row_per_site() {
             eref("missingB", 1, 30),
             eref("missingB", 1, 40),
         ],
-        routes: Vec::new(), db_sets: Vec::new(), symbol_origin_languages: Vec::new(),
-        ref_origin_languages: Vec::new(), symbol_from_snippet: Vec::new(), content: None,
-        has_errors: false, flow: FlowMeta::default(), demand_contributions: Vec::new(),
-        alias_targets: Vec::new(), component_selectors: Vec::new(), plugin_flow_emissions: Vec::new(),
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
         declared_modules: Vec::new(),
     };
     let mut id_map = HashMap::new();
@@ -1685,15 +2308,39 @@ fn duplicate_ref_emissions_collapse_to_one_row_per_site() {
     );
     let profiles = super::build_profiles();
     let solver = super::SemanticModel::production();
-    let (_edges, unresolved, ref_log) =
-        super::resolve_one_file(&pf, &tree, &profiles, &no_plugins(), None, &solver, &id_map.clone().into(), None);
+    let (_edges, unresolved, ref_log, _census) = super::resolve_one_file(
+        &pf,
+        &tree,
+        &profiles,
+        &no_plugins(),
+        None,
+        &solver,
+        &id_map.clone().into(),
+        None,
+    );
 
-    let count_a = unresolved.iter().filter(|(_, n, ..)| n == "missingA").count();
-    let count_b = unresolved.iter().filter(|(_, n, ..)| n == "missingB").count();
-    assert_eq!(count_a, 1, "triple emission of one site must land one row; unresolved={unresolved:?}");
-    assert_eq!(count_b, 2, "distinct byte offsets on one line are separate sites");
+    let count_a = unresolved
+        .iter()
+        .filter(|(_, n, ..)| n == "missingA")
+        .count();
+    let count_b = unresolved
+        .iter()
+        .filter(|(_, n, ..)| n == "missingB")
+        .count();
+    assert_eq!(
+        count_a, 1,
+        "triple emission of one site must land one row; unresolved={unresolved:?}"
+    );
+    assert_eq!(
+        count_b, 2,
+        "distinct byte offsets on one line are separate sites"
+    );
     // The resolution log sees each SITE once too — not each emission.
-    assert_eq!(ref_log.len(), 3, "ref_log must carry one row per distinct site; got {ref_log:?}");
+    assert_eq!(
+        ref_log.len(),
+        3,
+        "ref_log must carry one row per distinct site; got {ref_log:?}"
+    );
 }
 
 /// A dotted-FQN import (`import java.util.Map` → target `Map`, module

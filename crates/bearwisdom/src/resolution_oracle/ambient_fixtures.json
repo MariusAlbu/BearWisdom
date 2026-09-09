@@ -1,0 +1,50 @@
+[
+  {
+    "name": "ambient_interface_parts_share_generic_identity",
+    "diagnosticCodes": [],
+    "files": [
+      { "path": "a.d.ts", "source": "interface Catalog<T> { /*@decl:1:method*/first(): T; }" },
+      { "path": "b.d.ts", "source": "interface Catalog<T> { /*@decl:2:method*/forEach(callback: (item: T) => void): void; }" },
+      { "path": "main.ts", "source": "export {}; class Doc { /*@decl:3:method*/touch() {} } function run(list: Catalog<Doc>) { list./*@ref:1*/first()./*@ref:2*/touch(); list./*@ref:3*/forEach(item => item./*@ref:4*/touch()); }" }
+    ],
+    "labels": [[1,1],[2,3],[3,2],[4,3]]
+  },
+  {
+    "name": "same_file_interface_parts_are_a_control",
+    "diagnosticCodes": [],
+    "files": [
+      { "path": "a.d.ts", "source": "interface Catalog<T> { /*@decl:1:method*/first(): T; } interface Catalog<T> { /*@decl:2:method*/forEach(callback: (item: T) => void): void; }" },
+      { "path": "main.ts", "source": "export {}; class Doc { /*@decl:3:method*/touch() {} } function run(list: Catalog<Doc>) { list./*@ref:1*/first()./*@ref:2*/touch(); list./*@ref:3*/forEach(item => item./*@ref:4*/touch()); }" }
+    ],
+    "labels": [[1,1],[2,3],[3,2],[4,3]]
+  },
+  {
+    "name": "ambient_value_and_type_are_distinct_bindings",
+    "diagnosticCodes": [],
+    "files": [
+      { "path": "api.d.ts", "source": "interface Deferred<T> { /*@decl:1:method*/then(callback: (item: T) => void): Deferred<T>; } interface DeferredConstructor { /*@decl:2:method*/reject(): Deferred<never>; } declare var Deferred: DeferredConstructor;" },
+      { "path": "main.ts", "source": "export {}; Deferred./*@ref:1*/reject()./*@ref:2*/then(item => {});" }
+    ],
+    "labels": [[1,2],[2,1]]
+  },
+  {
+    "name": "ambient_value_and_type_split_across_files",
+    "diagnosticCodes": [],
+    "files": [
+      { "path": "a.d.ts", "source": "interface Deferred<T> { /*@decl:1:method*/then(callback: (item: T) => void): Deferred<T>; }" },
+      { "path": "b.d.ts", "source": "interface Deferred<T> { readonly marker: boolean; } interface DeferredConstructor { /*@decl:2:method*/reject(): Deferred<never>; } declare var Deferred: DeferredConstructor;" },
+      { "path": "main.ts", "source": "export {}; Deferred./*@ref:1*/reject()./*@ref:2*/then(item => {});" }
+    ],
+    "labels": [[1,2],[2,1]]
+  },
+  {
+    "name": "exported_namesakes_do_not_augment_ambient_interfaces",
+    "diagnosticCodes": [2339, 7006],
+    "files": [
+      { "path": "global.d.ts", "source": "interface Catalog<T> { /*@decl:1:method*/first(): T; }" },
+      { "path": "module.ts", "source": "export interface Catalog<T> { forEach(callback: (item: T) => void): void; }" },
+      { "path": "main.ts", "source": "export {}; class Doc { /*@decl:2:method*/touch() {} } function run(list: Catalog<Doc>) { list./*@ref:1*/first()./*@ref:2*/touch(); list./*@ref:3*/forEach(item => {}); }" }
+    ],
+    "labels": [[1,1],[2,2],[3,null]]
+  }
+]

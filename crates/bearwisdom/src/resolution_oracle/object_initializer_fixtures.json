@@ -1,0 +1,340 @@
+[
+  {
+    "name": "closure_iife",
+    "source": "export const api = (() => { let state: () => boolean = () => true; return { check(): boolean { return state() }, replace(next: () => boolean): void { state = next } }; })(); api.check(); api.replace(() => false);",
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "api.check()",
+        "declaration": "check(): boolean",
+        "result": "boolean",
+        "supported": true,
+        "signature": "check(): boolean"
+      },
+      {
+        "expression": "api.replace(() => false)",
+        "declaration": "replace(next:",
+        "result": "void",
+        "supported": true,
+        "signature": "replace(next:"
+      }
+    ]
+  },
+  {
+    "name": "direct_generic_method",
+    "source": "export const api = { echo<T>(value: T): T { return value } }; declare const n: number; api.echo(n);",
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "api.echo(n)",
+        "declaration": "echo<T>",
+        "result": "number",
+        "supported": true,
+        "signature": "echo<T>"
+      }
+    ]
+  },
+  {
+    "name": "typed_iife_argument",
+    "source": "export const api = ((value: number) => { return { read(): number { return value }, value }; })(4); api.read();",
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "api.read()",
+        "declaration": "read(): number",
+        "result": "number",
+        "supported": true,
+        "signature": "read(): number"
+      }
+    ]
+  },
+  {
+    "name": "nested_object",
+    "source": "export const api = { child: { read(): number { return 1 } } }; api.child.read();",
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "api.child.read()",
+        "declaration": "read(): number",
+        "result": "number",
+        "supported": true,
+        "signature": "read(): number"
+      }
+    ]
+  },
+  {
+    "name": "expression_iife",
+    "source": "export const api = (() => ({ read(): number { return 1 } }))(); api.read();",
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "api.read()",
+        "declaration": "read(): number",
+        "result": "number",
+        "supported": true,
+        "signature": "read(): number"
+      }
+    ]
+  },
+  {
+    "name": "function_iife",
+    "source": "export const api = (function() { return { read(): number { return 1 } }; })(); api.read();",
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "api.read()",
+        "declaration": "read(): number",
+        "result": "number",
+        "supported": true,
+        "signature": "read(): number"
+      }
+    ]
+  },
+  {
+    "name": "quoted_method",
+    "source": "export const api = { \"read\"(): number { return 1 } }; api.read();",
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "api.read()",
+        "declaration": "\"read\"(): number",
+        "result": "number",
+        "supported": true,
+        "signature": "\"read\"(): number"
+      }
+    ]
+  },
+  {
+    "name": "arrow_property",
+    "source": "export const api = { run: (n: number): number => n }; api.run(2);",
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "api.run(2)",
+        "declaration": "run: (",
+        "result": "number",
+        "supported": true,
+        "signature": "(n: number): number"
+      }
+    ]
+  },
+  {
+    "name": "inferred_closure_read",
+    "source": "export const api = (() => { let n: number = 1; return { read() { return n } }; })(); api.read();",
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "api.read()",
+        "declaration": "read() {",
+        "result": "number",
+        "supported": true,
+        "signature": "read() {"
+      }
+    ]
+  },
+  {
+    "name": "invalid_method_argument",
+    "source": "export const api = { read(n: number): number { return n } }; api.read(\"bad\");",
+    "diagnosticCodes": [
+      2345
+    ],
+    "calls": [
+      {
+        "expression": "api.read(\"bad\")",
+        "declaration": "read(n:",
+        "result": "number",
+        "supported": false,
+        "signature": "read(n:"
+      }
+    ]
+  },
+  {
+    "name": "invalid_method_arity",
+    "source": "export const api = { read(n: number): number { return n } }; api.read();",
+    "diagnosticCodes": [
+      2554
+    ],
+    "calls": [
+      {
+        "expression": "api.read()",
+        "declaration": "read(n:",
+        "result": "number",
+        "supported": false,
+        "signature": "read(n:"
+      }
+    ]
+  },
+  {
+    "name": "unsupported_return_branch",
+    "source": "declare const choice: boolean; export const api = (() => { if (choice) return { read(): number { return 1 } }; return { read(): number { return 2 } }; })(); api.read();",
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "api.read()",
+        "declaration": "read(): number",
+        "result": "number",
+        "supported": false,
+        "signature": "read(): number"
+      }
+    ]
+  },
+  {
+    "name": "unsupported_spread",
+    "source": "const base = { read(): number { return 1 } }; export const api = { ...base }; api.read();",
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "api.read()",
+        "declaration": "read(): number",
+        "result": "number",
+        "supported": false,
+        "signature": "read(): number"
+      }
+    ]
+  },
+  {
+    "name": "unsupported_getter",
+    "source": "export const api = { get read(): () => number { return () => 1 } }; api.read();",
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "api.read()",
+        "declaration": "() => number",
+        "result": "number",
+        "supported": false,
+        "signature": "() => number"
+      }
+    ]
+  },
+  {
+    "name": "invalid_iife_argument",
+    "source": "export const api = ((value: number) => ({ read(): number { return value } }))(\"bad\"); api.read();",
+    "diagnosticCodes": [
+      2345
+    ],
+    "calls": [
+      {
+        "expression": "api.read()",
+        "declaration": "read(): number",
+        "result": "number",
+        "supported": false,
+        "signature": "read(): number"
+      }
+    ]
+  },
+  {
+    "name": "generic_iife",
+    "source": "declare const n: number; export const api = (<T>(value: T) => ({ read(): T { return value } }))(n); api.read();",
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "api.read()",
+        "declaration": "read(): T",
+        "result": "number",
+        "supported": true,
+        "signature": "read(): T"
+      }
+    ]
+  },
+  {
+    "name": "inferred_arrow_return",
+    "source": "export const api = { read: (value: number) => value }; api.read(1);",
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "api.read(1)",
+        "declaration": "read: (",
+        "result": "number",
+        "supported": true,
+        "signature": "(value: number) =>"
+      }
+    ]
+  },
+  {
+    "name": "local_objects",
+    "source": "export {}; function work() { const api = { read(): number { return 1 } }; api.read(); }",
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "api.read()",
+        "declaration": "read(): number",
+        "result": "number",
+        "supported": true,
+        "signature": "read(): number"
+      }
+    ]
+  },
+  {
+    "name": "closure_shadow",
+    "source": "export const n: string = \"outer\"; export const api = (() => { let n: number = 1; return { read() { return n } }; })(); api.read();",
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "api.read()",
+        "declaration": "read() {",
+        "result": "number",
+        "supported": true,
+        "signature": "read() {"
+      }
+    ]
+  },
+  {
+    "name": "unknown_inferred_body",
+    "source": "export const api = { read() { return absent } }; api.read();",
+    "diagnosticCodes": [
+      2304
+    ],
+    "calls": [
+      {
+        "expression": "api.read()",
+        "declaration": "read() {",
+        "result": "number",
+        "supported": false,
+        "signature": "read() {"
+      }
+    ]
+  },
+  {
+    "name": "property_read_publication",
+    "source": "export const api = { count: 1, label: \"hello\", enabled: true, read(): number { return 1 } }; const count = api.count; const label = api.label; const enabled = api.enabled; api.read();",
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "api.read()",
+        "declaration": "read(): number",
+        "signature": "read(): number",
+        "result": "number",
+        "supported": true
+      }
+    ],
+    "reads": [
+      {
+        "name": "count",
+        "type": "number"
+      },
+      {
+        "name": "label",
+        "type": "string"
+      },
+      {
+        "name": "enabled",
+        "type": "boolean"
+      }
+    ]
+  },
+  {
+    "name": "annotated_iife_return",
+    "source": "interface Contract { read(): number } export const api = ((): Contract => ({ read(): number { return 1 } }))(); api.read();",
+    "diagnosticCodes": [],
+    "calls": [
+      {
+        "expression": "api.read()",
+        "declaration": "read(): number }",
+        "signature": "read(): number }",
+        "result": "number",
+        "supported": true
+      }
+    ],
+    "nominal": true
+  }
+]

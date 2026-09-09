@@ -1,0 +1,45 @@
+[
+  {
+    "name": "qualified_receiver_and_ordinary_borrows_keep_separate_output_regions", "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub struct Input; impl Input { /*@decl:3:method*/pub fn touch(&self) {} } pub struct Doc; impl Doc { /*@decl:4:method*/pub fn touch(&self) {} }\npub trait Choose { /*@decl:1:method*/fn keep<'a,'b>(&'a self,x:&'b Doc)->&'a Self { self } /*@decl:2:method*/fn other<'a,'b>(&'a self,x:&'b Doc)->&'b Doc { x } } impl Choose for Input {}\npub fn f(p:Input,x:Doc) { <Input as Choose>::/*@ref:11*/keep(&p,&x)./*@ref:12*/touch(); <Input as Choose>::/*@ref:13*/other(&p,&x)./*@ref:14*/touch(); }\n"}],
+    "labels": [[11,1],[12,3],[13,2],[14,4]]
+  },
+  {
+    "name": "qualified_shared_borrow_return_and_local_cascades", "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } pub trait Keep { /*@decl:1:method*/fn keep(&self)->&Self { self } } impl Keep for Doc {}\npub fn f(p:Doc,q:Doc) { <Doc as Keep>::/*@ref:11*/keep(&p)./*@ref:12*/touch(); let x=<Doc as Keep>::/*@ref:13*/keep(&(q)); x./*@ref:14*/touch(); }\n"}],
+    "labels": [[11,1],[12,2],[13,1],[14,2]]
+  },
+  {
+    "name": "qualified_mutable_borrow_return_and_local_cascades", "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&mut self) {} } pub trait Keep { /*@decl:1:method*/fn keep(&mut self)->&mut Self { self } } impl Keep for Doc {}\npub fn f(mut p:Doc,mut q:Doc) { <Doc as Keep>::/*@ref:11*/keep(&mut p)./*@ref:12*/touch(); let x=<Doc as Keep>::/*@ref:13*/keep(&mut q); x./*@ref:14*/touch(); }\n"}],
+    "labels": [[11,1],[12,2],[13,1],[14,2]]
+  },
+  {
+    "name": "qualified_borrowed_ordinary_argument_keeps_its_nominal_identity", "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub mod real { pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } } pub mod twin { pub struct Doc; impl Doc { pub fn touch(&self) {} } }\npub struct Input; pub trait Choose { /*@decl:1:method*/fn choose<U>(&self,x:U)->U { x } } impl Choose for Input {}\npub fn f(p:Input,x:real::Doc) { <Input as Choose>::/*@ref:11*/choose(&p,&x)./*@ref:12*/touch(); }\n"}],
+    "labels": [[11,1],[12,2]]
+  },
+  {
+    "name": "qualified_nested_borrow_argument_preserves_both_layers", "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } pub struct Input; pub trait Choose { /*@decl:1:method*/fn choose<U>(&self,x:U)->U { x } } impl Choose for Input {}\npub fn f(p:Input,x:Doc) { <Input as Choose>::/*@ref:11*/choose(&p,&&x)./*@ref:12*/touch(); }\n"}],
+    "labels": [[11,1],[12,2]]
+  },
+  {
+    "name": "qualified_borrow_of_generic_and_self_binding", "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub trait Save { /*@decl:1:method*/fn save(&self) {} } pub struct Doc; impl Save for Doc {} impl Doc { pub fn inner(self) { <Self as Save>::/*@ref:11*/save(&self); } }\npub fn f<T:Save>(p:T) { <T as Save>::/*@ref:12*/save(&p); }\n"}],
+    "labels": [[11,1],[12,1]]
+  },
+  {
+    "name": "qualified_borrow_cross_file_alias_and_namesake", "entry": "lib.rs",
+    "files": [
+      {"path":"api.rs","source":"pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } pub trait Keep { /*@decl:1:method*/fn keep(&self)->&Self { self } } impl Keep for Doc {}\n"},
+      {"path":"lib.rs","source":"pub mod api; pub mod twin { pub struct Doc; impl Doc { pub fn touch(&self) {} } } use api::{Doc as Input,Keep as Contract};\npub fn f(p:Input) { <Input as Contract>::/*@ref:11*/keep(&p)./*@ref:12*/touch(); }\n"}
+    ],
+    "labels": [[11,1],[12,2]]
+  },
+  {
+    "name": "qualified_borrow_missing_trait_member_is_not_inherent", "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub trait Empty {} pub struct Doc; impl Empty for Doc {} impl Doc { pub fn absent(&self) {} }\npub fn f(p:Doc) { <Doc as Empty>::/*@ref:11*/absent(&p); }\n"}],
+    "labels": [[11,null]], "diagnostics": [[11,"E0576"]]
+  }
+]

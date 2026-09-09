@@ -1,0 +1,79 @@
+[
+  {
+    "name": "trait_override_static_declaration_targets",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub trait Save { /*@decl:1:method*/fn save(&self); } pub struct Doc; impl Save for Doc { /*@decl:2:method*/fn save(&self) {} }\npub fn concrete(p:&Doc) { p./*@ref:11*/save(); } pub fn generic<T:Save>(p:&T) { p./*@ref:12*/save(); } pub fn qualified(p:&Doc) { <Doc as Save>::/*@ref:13*/save(p); }\n"}],
+    "labels": [[11,1],[12,1],[13,1]]
+  },
+  {
+    "name": "shared_trait_receiver_precedes_mutable_inherent",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:1:method*/pub fn save(&mut self) {} } pub trait Save { /*@decl:2:method*/fn save(&self) {} } impl Save for Doc {} pub fn f(mut p:Doc) { p./*@ref:11*/save(); }\n"}],
+    "labels": [[11,2]]
+  },
+  {
+    "name": "inherent_precedes_trait_at_same_receiver_candidate",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:1:method*/pub fn save(&self) {} } pub trait Save { /*@decl:2:method*/fn save(&self) {} } impl Save for Doc {} pub fn f(p:&Doc) { p./*@ref:11*/save(); }\n"}],
+    "labels": [[11,1]]
+  },
+  {
+    "name": "renamed_cross_file_trait_and_receiver",
+    "entry": "lib.rs",
+    "files": [
+      {"path":"lib.rs","source":"mod api; mod model; mod body; use api::Save as Active; use model::Doc as Input; pub fn f(p:&Input) { p./*@ref:11*/save(); <Input as Active>::/*@ref:12*/save(p); }\n"},
+      {"path":"api.rs","source":"pub trait Save { /*@decl:1:method*/fn save(&self) {} }\n"},
+      {"path":"model.rs","source":"pub struct Doc;\n"},
+      {"path":"body.rs","source":"impl crate::api::Save for crate::model::Doc {}\n"}
+    ],
+    "labels": [[11,1],[12,1]]
+  },
+  {
+    "name": "generic_where_bound_and_supertrait",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"pub trait Base { /*@decl:1:method*/fn save(&self); } pub trait Child:Base {} pub fn f<T>(p:&T) where T:Child { p./*@ref:11*/save(); }\n"}],
+    "labels": [[11,1]]
+  },
+  {
+    "name": "trait_generic_output_and_namesake_payload_cascade",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"mod a { pub struct Doc; impl Doc { /*@decl:1:method*/pub fn save(&self) {} } } mod b { pub struct Doc; impl Doc { /*@decl:2:method*/pub fn save(&self) {} } } pub trait Get<T> { /*@decl:3:method*/fn get(&self)->&T; } pub struct C; impl Get<b::Doc> for C { fn get(&self)->&b::Doc { loop {} } } pub fn f(p:&C) { p./*@ref:11*/get()./*@ref:12*/save(); } pub fn g<T:Get<a::Doc>>(p:&T) { p./*@ref:13*/get()./*@ref:14*/save(); }\n"}],
+    "labels": [[11,3],[12,2],[13,3],[14,1]]
+  },
+  {
+    "name": "anonymous_trait_import_supplies_method",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"mod api { pub trait Save { /*@decl:1:method*/fn save(&self) {} } } pub struct Doc; impl api::Save for Doc {} use api::Save as _; pub fn f(p:&Doc) { p./*@ref:11*/save(); }\n"}],
+    "labels": [[11,1]]
+  },
+  {
+    "name": "shadowed_trait_alias_does_not_remove_method_ambiguity",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"mod a { pub trait Save { fn save(&self) {} } } mod b { pub trait Save { fn save(&self) {} } } struct Doc; impl a::Save for Doc {} impl b::Save for Doc {} use a::Save; fn f(p:Doc) { use b::Save; p./*@ref:11*/save(); }\n"}],
+    "labels": [[11,null]], "diagnostics": [[11,"E0034"]]
+  },
+  {
+    "name": "anonymous_trait_imports_preserve_competing_candidates",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"mod a { pub trait Save { fn save(&self) {} } } mod b { pub trait Save { fn save(&self) {} } } struct Doc; impl a::Save for Doc {} impl b::Save for Doc {} use a::Save as _; use b::Save as _; fn f(p:Doc) { p./*@ref:11*/save(); }\n"}],
+    "labels": [[11,null]], "diagnostics": [[11,"E0034"]]
+  },
+  {
+    "name": "trait_implementation_without_import_is_not_in_scope",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"mod api { pub trait Save { fn save(&self) {} } } struct Doc; impl api::Save for Doc {} fn f(p:Doc) { p./*@ref:11*/save(); }\n"}],
+    "labels": [[11,null]], "diagnostics": [[11,"E0599"]]
+  },
+  {
+    "name": "in_scope_trait_without_implementation_is_not_applicable",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"trait Save { fn save(&self) {} } struct Doc; fn f(p:Doc) { p./*@ref:11*/save(); }\n"}],
+    "labels": [[11,null]], "diagnostics": [[11,"E0599"]]
+  },
+  {
+    "name": "unsatisfied_impl_obligation_is_not_a_blanket",
+    "entry": "lib.rs",
+    "files": [{"path":"lib.rs","source":"trait Save { fn save(&self) {} } trait Marker {} struct Doc; struct Wrap<T>(T); impl<T:Marker> Save for Wrap<T> {} fn f(p:Wrap<Doc>) { p./*@ref:11*/save(); }\n"}],
+    "labels": [[11,null]], "diagnostics": [[11,"E0599"]]
+  }
+]

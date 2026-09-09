@@ -42,6 +42,7 @@ pub const GLEAM_PROFILE: LanguageProfile = LanguageProfile {
     has_generics: true,
     has_sum_types: true,
     look_through_optional: true,
+    reference_member_projection: false,
     literal_narrowing: false,
     async_wrappers: &[],
     container_accessors: &[],
@@ -116,7 +117,24 @@ mod tests;
 pub(crate) fn is_gleam_operator(name: &str) -> bool {
     matches!(
         name,
-        "+" | "-" | "*" | "/" | "%" | "==" | "!=" | "<" | "<="
-            | ">" | ">=" | "&&" | "||" | "!" | "|>" | "<>" | "+." | "-." | "*." | "/."
+        "+" | "-"
+            | "*"
+            | "/"
+            | "%"
+            | "=="
+            | "!="
+            | "<"
+            | "<="
+            | ">"
+            | ">="
+            | "&&"
+            | "||"
+            | "!"
+            | "|>"
+            | "<>"
+            | "+."
+            | "-."
+            | "*."
+            | "/."
     )
 }

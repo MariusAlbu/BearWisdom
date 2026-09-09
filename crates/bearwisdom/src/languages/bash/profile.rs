@@ -3,7 +3,8 @@
 // DEFAULT_PROFILE at runtime.
 
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, DispatchAxis, KindTable, LanguageProfile, NamespaceScope, SupertypeDiscovery,
+    ChainQualification, DispatchAxis, KindTable, LanguageProfile, NamespaceScope,
+    SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind};
 
@@ -55,6 +56,7 @@ pub const BASH_PROFILE: LanguageProfile = LanguageProfile {
     has_generics: false,
     has_sum_types: false,
     look_through_optional: false,
+    reference_member_projection: false,
     literal_narrowing: false,
     async_wrappers: &[],
     container_accessors: &[],

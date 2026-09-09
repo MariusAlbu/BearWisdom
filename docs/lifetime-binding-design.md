@@ -1,0 +1,22 @@
+1. [generic] Allocate all captured generic parameters in source order, with explicit Type/Lifetime/Const kind metadata on their GenericParamIds; spelling remains display-only.
+2. [profile data] Describe generic parameter syntax kinds and lifetime tokens in source forms; reserve lifetime declarations in a distinct namespace domain.
+3. [generic] Bind named lifetime uses through ScopeId/NameId/BindingId to the owning declaration and parameter position; do not recover identity by comparing lifetime text.
+4. [generic] Represent lifetime generic arguments as a tagged Region type-arena value and reference regions as Static/Parameter(GenericParamId)/Unknown.
+5. [generic] Preserve const parameter positions but decline const instantiation in this slice; unsupported arguments cannot shift later type parameters.
+6. [generic] Retain lifetime recipes separately inside source indirections so late module binding can materialize parameter IDs before reference types are interned.
+7. [generic] Extend unconditional impl parameter correspondence to kind-aware lifetime/type BindingId bijections; constraints, consts and specialized arguments remain barriers.
+8. [generic] Verify impl argument kinds against the bound owner's generic parameter kinds before attaching members or instantiating alias patterns.
+9. [generic] Substitute reference regions and explicit Region arguments by GenericParamId alongside type arguments; reject kind-confused applications.
+10. [generic] Applicability can bind an open lifetime parameter to an attested static or source-parameter region. Unknown regions never prove applicability.
+11. [generic] Repeated rigid regions must agree by identity; different rigid lifetime IDs remain unknown until outlives/variance evidence exists, not provably disjoint.
+12. [generic] Serialize parameter kinds and remap region parameter IDs in both arena merges and portable parse caches; no snapshot-local region IDs may leak into content-addressed payloads.
+13. [generic] Rebind source-dependent lifetime recipes after provider edits/deletion and on cold load; advance binding and extraction epochs.
+14. [generic] Test legal named-lifetime aliases, mixed/permuted lifetime/type parameters, Self/field/return cascades, source shadowing, explicit static arguments and kind-confused negative controls.
+15. [generic] Keep elision inference, higher-ranked lifetimes, outlives/variance/borrow checking, const evaluation and compiler-target-labelled Rust occurrences explicitly open.
+16. [generic] Promote the retained legal lifetime probe only after fresh/cold exact-ID tests pass; rustc legality checks are supplementary, not independent occurrence target labels or a measured 99% gate.
+17. [generic] Infer explicit source/static region correspondence in call arguments alongside type arguments; conflicting or missing lifetime bindings yield Unknown regions rather than escaping as the callee's parameter identity. This is not an outlives proof; omitted turbofish lifetime slots remain unsupported.
+18. Verified: the original named-lifetime alias probe now passes fresh/cold exact persisted target IDs. Thirteen new lifetime fixtures cover explicit static/source regions, independent owners, mixed/permuted arguments, nominal negatives, alias chains, Self/field/return and call-inference cascades.
+19. Verified: source parameter-kind edits invalidate unchanged impl membership; referent-provider retargeting/deletion covers both static and named lifetime recipes. Arena snapshots and portable payloads preserve/remap parameter IDs, including a region first encountered inside a reference.
+20. Verification boundary: 2,056 selected core/profile tests pass; 62 alias fixture legality/diagnostic checks agree with rustc (140 total across five Rust groups). These are not independent Rust source-occurrence target labels. The legal elided Alias<'_> probe still fails with no edge against its retained positive target expectation.
+21. Integration verification: all 12 targeted incremental/package-context/TS/JS/Rust corpus tests pass. TypeScript 5.9.3 independently verifies 136 scope and 79 module labels. Native budget/ID audits cover 220 dirty production files with zero new violations; diff whitespace check passes.
+22. Consumer compatibility remains unverified: AlphaT's locked/offline check stops before compilation on yanked der 0.8.0 via ureq/ort; Lynx's stops because its lockfile needs an update. Neither consumer lockfile was changed.

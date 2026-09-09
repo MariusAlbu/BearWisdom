@@ -1,0 +1,62 @@
+[
+  {
+    "name":"borrowed_field_arguments_and_local_return_cascades", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } pub struct Holder { pub item:Doc } /*@decl:1:function*/pub fn identity<T>(x:T)->T { x } pub fn f(p:Holder) { /*@ref:11*/identity(&p.item)./*@ref:12*/touch(); let r=&p.item; let x=/*@ref:13*/identity(r); x./*@ref:14*/touch(); }\n"}],
+    "labels":[[11,1],[12,2],[13,1],[14,2]]
+  },
+  {
+    "name":"mutable_field_arguments_and_local_return_cascades", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&mut self) {} } pub struct Holder { pub item:Doc } /*@decl:1:function*/pub fn identity<T>(x:T)->T { x } pub fn f(mut p:Holder) { /*@ref:11*/identity(&mut p.item)./*@ref:12*/touch(); let r=&mut p.item; let x=/*@ref:13*/identity(r); x./*@ref:14*/touch(); }\n"}],
+    "labels":[[11,1],[12,2],[13,1],[14,2]]
+  },
+  {
+    "name":"owned_field_local_preserves_declared_field_identity", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } pub struct Holder { pub item:Doc } /*@decl:1:function*/pub fn identity<T>(x:T)->T { x } pub fn f(p:Holder) { let local=p.item; /*@ref:11*/identity(local)./*@ref:12*/touch(); }\n"}],
+    "labels":[[11,1],[12,2]]
+  },
+  {
+    "name":"nested_generic_field_projection_substitutes_owner_parameter_ids", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } pub struct Holder<T> { pub item:T } pub struct Wrapper<U> { pub value:U } /*@decl:1:function*/pub fn identity<T>(x:T)->T { x } pub fn f(p:&Wrapper<Holder<Doc>>) { let r=&p.value.item; /*@ref:11*/identity(r)./*@ref:12*/touch(); /*@ref:13*/identity(&p.value.item)./*@ref:14*/touch(); }\n"}],
+    "labels":[[11,1],[12,2],[13,1],[14,2]]
+  },
+  {
+    "name":"reference_valued_field_keeps_its_declared_region", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } pub struct Holder<'a> { pub value:&'a Doc } /*@decl:1:function*/pub fn identity<T>(x:T)->T { x } pub fn f(p:Holder<'_>) { let r=p.value; /*@ref:11*/identity(r)./*@ref:12*/touch(); /*@ref:13*/identity(p.value)./*@ref:14*/touch(); }\n"}],
+    "labels":[[11,1],[12,2],[13,1],[14,2]]
+  },
+  {
+    "name":"raw_identifier_fields_and_sibling_namesake_owners_stay_distinct", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub mod a { pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } pub struct Holder { pub r#type:Doc } } pub mod b { pub struct Doc; impl Doc { /*@decl:3:method*/pub fn touch(&self) {} } pub struct Holder { pub r#type:Doc } } /*@decl:1:function*/pub fn identity<T>(x:T)->T { x } pub fn first(p:a::Holder) { /*@ref:11*/identity(p.r#type)./*@ref:12*/touch(); } pub fn second(p:b::Holder) { let p=p.r#type; /*@ref:13*/identity(p)./*@ref:14*/touch(); }\n"}],
+    "labels":[[11,1],[12,2],[13,1],[14,3]]
+  },
+  {
+    "name":"explicit_reference_dereference_arguments_and_locals", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } /*@decl:1:function*/pub fn identity<T>(x:T)->T { x } pub fn f(p:&&Doc) { /*@ref:11*/identity(*p)./*@ref:12*/touch(); let r=*p; /*@ref:13*/identity(r)./*@ref:14*/touch(); }\n"}],
+    "labels":[[11,1],[12,2],[13,1],[14,2]]
+  },
+  {
+    "name":"explicit_raw_pointer_dereference_then_borrow", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } /*@decl:1:function*/pub fn identity<T>(x:T)->T { x } pub unsafe fn f(p:*const Doc) { /*@ref:11*/identity(&*p)./*@ref:12*/touch(); let r=&*p; /*@ref:13*/identity(r)./*@ref:14*/touch(); }\n"}],
+    "labels":[[11,1],[12,2],[13,1],[14,2]]
+  },
+  {
+    "name":"tuple_position_projection_preserves_each_element_type", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct A; impl A { /*@decl:2:method*/pub fn touch(&self) {} } pub struct B; impl B { /*@decl:3:method*/pub fn touch(&self) {} } /*@decl:1:function*/pub fn identity<T>(x:T)->T { x } pub fn f(p:&(A,B)) { /*@ref:11*/identity(&p.1)./*@ref:12*/touch(); let r=&p.0; /*@ref:13*/identity(r)./*@ref:14*/touch(); }\n"}],
+    "labels":[[11,1],[12,3],[13,1],[14,2]]
+  },
+  {
+    "name":"private_field_is_visible_in_its_declaring_module_descendant", "entry":"lib.rs",
+    "files":[{"path":"api.rs","source":"pub struct Doc; impl Doc { /*@decl:2:method*/pub fn touch(&self) {} } pub struct Holder { item:Doc } pub mod child { pub fn run(p:super::Holder) { let r=&p.item; crate::/*@ref:11*/identity(r)./*@ref:12*/touch(); crate::/*@ref:13*/identity(&p.item)./*@ref:14*/touch(); } }\n"},{"path":"lib.rs","source":"pub mod api; /*@decl:1:function*/pub fn identity<T>(x:T)->T { x }\n"}],
+    "labels":[[11,1],[12,2],[13,1],[14,2]]
+  },
+  {
+    "name":"raw_field_selectors_direct_chains_and_alternate_spelling", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct Doc; impl Doc { /*@decl:1:method*/pub fn touch(&self) {} } pub struct Holder { pub r#type:Doc,pub r#item:Doc } pub fn f(p:Holder) { p.r#type./*@ref:11*/touch(); p.r#item./*@ref:12*/touch(); p.item./*@ref:13*/touch(); }\n"}],
+    "labels":[[11,1],[12,1],[13,1]]
+  },
+  {
+    "name":"raw_pointer_valued_field_does_not_implicitly_gain_reference_members", "entry":"lib.rs",
+    "files":[{"path":"lib.rs","source":"pub struct Doc; impl Doc { pub fn touch(&self) {} } pub struct Holder { pub value:*const Doc } pub fn f(p:Holder) { let r=p.value; r./*@ref:11*/touch(); }\n"}],
+    "labels":[[11,null]], "diagnostics":[[11,"E0599"]]
+  }
+]

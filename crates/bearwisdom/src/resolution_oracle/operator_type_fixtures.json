@@ -1,0 +1,14 @@
+[
+  {"syntax":"keyof T","shape":["keyof",["param",0]]},
+  {"syntax":"T[K]","shape":["index",["param",0],["param",1]]},
+  {"syntax":"readonly [T, K]","shape":["readonly",["tuple",["param",0],["param",1]]]},
+  {"syntax":"T extends K ? T : K","shape":["conditional",true,["param",0],["param",1],["param",0],["param",1]]},
+  {"syntax":"[T] extends [K] ? T : K","shape":["conditional",false,["tuple",["param",0]],["tuple",["param",1]],["param",0],["param",1]]},
+  {"syntax":"(T) extends K ? T[K] : never","shape":["conditional",true,["param",0],["param",1],["index",["param",0],["param",1]],["intrinsic","never"]]},
+  {"syntax":"T[keyof T]","shape":["index",["param",0],["keyof",["param",0]]]},
+  {"syntax":"(readonly [T, K])[0]","shape":["index",["readonly",["tuple",["param",0],["param",1]]],["number",0.0]]},
+  {"syntax":"keyof readonly T[]","shape":["keyof",["readonly",["array",["param",0]]]]},
+  {"syntax":"T extends string ? readonly [T, K] : K extends number ? T[K] : never","shape":["conditional",true,["param",0],["intrinsic","string"],["readonly",["tuple",["param",0],["param",1]]],["conditional",true,["param",1],["intrinsic","number"],["index",["param",0],["param",1]],["intrinsic","never"]]]},
+  {"syntax":"keyof /* operand */ T","shape":["keyof",["param",0]]},
+  {"syntax":"T[/* key */ K]","shape":["index",["param",0],["param",1]]}
+]

@@ -11,6 +11,19 @@ use crate::indexer::resolve::engine::contract::SymbolLookup;
 use crate::type_checker::core::types::{PrimKind, Type, TypeArena, TypeId};
 use crate::types::CallArg;
 
+/// Prefer source-owned semantic operands, including authoritative absence.
+/// Display payloads are accepted only by sources without a migrated table.
+pub(crate) fn at<'a>(
+    lookup: &'a dyn SymbolLookup,
+    selector: u32,
+    legacy: &'a [CallArg],
+) -> Option<&'a [CallArg]> {
+    lookup
+        .source_call_arguments(selector)
+        .unwrap_or(Ok(legacy))
+        .ok()
+}
+
 /// Type each argument positionally. Positions the engine cannot type hold
 /// `Unknown` so later positions stay aligned with the callee's parameters.
 pub(crate) fn resolve_arg_types(
@@ -26,6 +39,16 @@ pub(crate) fn resolve_arg_types(
 /// The type of one argument expression, `Unknown` when it cannot be typed.
 fn resolve_arg_type(lookup: &dyn SymbolLookup, arena: &TypeArena, arg: &CallArg) -> TypeId {
     match arg {
+        CallArg::ValueAt(span) => lookup
+            .value_expression(*span)
+            .unwrap_or_else(|| arena.intern(Type::Unknown)),
+        CallArg::BorrowAt { span, expr } => lookup
+            .borrow_argument(*span, resolve_arg_type(lookup, arena, expr))
+            .unwrap_or_else(|| arena.intern(Type::Unknown)),
+        CallArg::IdentAt(span) => lookup
+            .argument_reference(*span)
+            .and_then(|value| super::lexical_value::argument_type(&value, lookup, arena))
+            .unwrap_or_else(|| arena.intern(Type::Unknown)),
         CallArg::Ident(name) => ident_type(lookup, arena, name),
         CallArg::StringLit(_) | CallArg::TemplateLit(_) => arena.primitive(PrimKind::Str),
         CallArg::Literal(text) => literal_type(arena, text),
@@ -67,6 +90,9 @@ fn ident_type(lookup: &dyn SymbolLookup, arena: &TypeArena, name: &str) -> TypeI
     }
     if let Some(ty) = lookup.local_type(name) {
         return arena.intern_type_str(&ty);
+    }
+    if lookup.has_local_binding(name) {
+        return arena.intern(Type::Unknown);
     }
     let candidates = lookup.by_name(name);
     let [only] = candidates.iter().collect::<Vec<_>>()[..] else {
