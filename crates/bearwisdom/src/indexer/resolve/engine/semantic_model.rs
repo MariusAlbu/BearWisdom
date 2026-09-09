@@ -101,8 +101,8 @@ impl SemanticModel {
             }
         }
         // The walk's own diagnosis of a declined chain. When a namespace or
-        // wildcard-import root sends the chain through the bare ladder below and
-        // that ladder also comes up empty, this outranks a bare-name
+        // wildcard-import root sends the chain through the module-scoped ladder
+        // below and that ladder also comes up empty, this outranks a bare-name
         // classification of the last segment: the root that never linked or
         // the member the receiver lacks is the cause, not the leaf's name.
         let mut chain_cause: Option<Cause> = None;
@@ -124,37 +124,36 @@ impl SemanticModel {
                         return SolveOutcome::Unresolved(cause);
                     }
                     // A multi-segment chain the walk declined is normally a genuine
-                    // miss: a same-named sibling must not hijack `a.b.c`. Three
-                    // exceptions all root on a MODULE the chain walker can't type
-                    // as a value, so a scoped ladder resolves the member under
-                    // that module:
-                    //   - a namespace/module SYMBOL root (`React.useState`) and a
-                    //     wildcard/namespace IMPORT root (`import * as v; v.x`)
-                    //     run the full bare-name ladder, whose import rungs carry
-                    //     the scoping;
-                    //   - a ref whose `module` IS the chain's own qualifier path
-                    //     (a qualified `mod::path::f()` call — the target is a
-                    //     direct member of the module) runs ONLY the
-                    //     module-evidence rungs. Every probe is scoped by the
-                    //     module, so no ambient / same-file / global rung can
-                    //     bind an unrelated same-named sibling. A module tag that
-                    //     merely names where the chain's ROOT was imported from
-                    //     (`client.get()` tagged with the client's package) says
-                    //     nothing about the member's home and does not qualify.
-                    // A single-segment "chain" carries no receiver and always falls
-                    // through.
-                    if chain.segments.len() > 1
-                        && !chain_root_is_namespace(chain, lookup)
-                        && !chain_root_is_wildcard_import(chain, file_ctx)
-                    {
+                    // miss: a same-named sibling must not hijack `a.b.c`. The only
+                    // exception is a root whose module is proven at THIS source
+                    // site: an imported/ambient/same-package namespace, a wildcard
+                    // import alias, or a ref whose own `module` is its qualifier.
+                    // Re-run only the module-evidence subset with those source-
+                    // addressed module paths; never the full bare-name ladder.
+                    if chain.segments.len() > 1 {
+                        let mut modules = namespace_root_modules(
+                            chain,
+                            file_ctx,
+                            ref_ctx.file_package_id,
+                            lookup,
+                        );
+                        for module in wildcard_root_modules(chain, file_ctx) {
+                            push_unique_module(&mut modules, &module);
+                        }
+                        if module_is_chain_qualifier(ref_ctx.extracted_ref, chain, profile) {
+                            if let Some(module) = ref_ctx.extracted_ref.module.as_deref() {
+                                push_unique_module(&mut modules, module);
+                            }
+                        }
+
                         // A declined walk without a cause of its own anchored the
                         // root (a failed anchor always carries one) and died on a
                         // later hop silently — record that as the chain's cause.
                         let cause = cause.or(Some(Cause::new(None, CauseKind::ChainDeclined)));
-                        if module_is_chain_qualifier(ref_ctx.extracted_ref, chain, profile) {
-                            return match self
-                                .resolve_module_scoped(ref_ctx, file_ctx, lookup, profile)
-                            {
+                        if !modules.is_empty() {
+                            return match self.resolve_module_scoped_at(
+                                ref_ctx, file_ctx, lookup, profile, &modules,
+                            ) {
                                 BindOutcome::Resolved(res, _rule) => SolveOutcome::Resolved(res),
                                 BindOutcome::Drained => SolveOutcome::Drained,
                                 BindOutcome::Unresolved => SolveOutcome::Unresolved(cause),
@@ -223,6 +222,36 @@ impl SemanticModel {
         };
         self.module_engine.bind(&ctx)
     }
+
+    /// Run a declined namespace/wildcard chain only through modules the source
+    /// site proves. Each attempt gets a synthetic `ref.module`, so the existing
+    /// module-evidence rules remain the sole binding surface.
+    fn resolve_module_scoped_at(
+        &self,
+        ref_ctx: &RefContext,
+        file_ctx: &FileContext,
+        lookup: &dyn SymbolLookup,
+        profile: &LanguageProfile,
+        modules: &[String],
+    ) -> BindOutcome {
+        for module in modules {
+            let mut scoped_ref = ref_ctx.extracted_ref.clone();
+            scoped_ref.module = Some(module.clone());
+            let scoped_ctx = RefContext {
+                extracted_ref: &scoped_ref,
+                source_symbol: ref_ctx.source_symbol,
+                scope_chain: ref_ctx.scope_chain.clone(),
+                file_package_id: ref_ctx.file_package_id,
+                source_symbol_id: ref_ctx.source_symbol_id,
+            };
+            match self.resolve_module_scoped(&scoped_ctx, file_ctx, lookup, profile) {
+                BindOutcome::Resolved(res, rule) => return BindOutcome::Resolved(res, rule),
+                BindOutcome::Drained => return BindOutcome::Drained,
+                BindOutcome::Unresolved => {}
+            }
+        }
+        BindOutcome::Unresolved
+    }
 }
 
 /// `true` when the ref's extractor-set `module` is exactly the chain's own
@@ -252,25 +281,132 @@ fn module_is_chain_qualifier(
     for_sep(profile.qname_separator) || for_sep(".")
 }
 
-/// `true` when the chain's root segment names a namespace/module declaration
-/// (`React` in `React.useState`). Namespace-qualified member access roots on a
-/// namespace the chain walker can't type as a value, so a declined chain with a
-/// namespace root falls through to the bare-name ladder — scoped by the ref's
-/// module — which binds the member under the imported namespace.
-fn chain_root_is_namespace(chain: &crate::types::MemberChain, lookup: &dyn SymbolLookup) -> bool {
+/// Source-addressed module paths a namespace root may use after its value walk
+/// declines. A same-file value wins before any namespace candidate; an imported
+/// root must tie its namespace declaration to that import's module/package/path.
+/// A same-named namespace elsewhere in the index supplies no module evidence.
+fn namespace_root_modules(
+    chain: &crate::types::MemberChain,
+    file_ctx: &FileContext,
+    file_package_id: Option<i64>,
+    lookup: &dyn SymbolLookup,
+) -> Vec<String> {
     let Some(root) = chain.segments.first() else {
+        return Vec::new();
+    };
+    let candidates = lookup.by_name(&root.name);
+    if candidates.iter().any(|s| {
+        s.file_path.as_ref() == file_ctx.file_path
+            && crate::indexer::resolve::engine::kinds::is_value_kind(&s.kind)
+    }) {
+        return Vec::new();
+    }
+
+    let is_namespace = |kind: &str| matches!(kind, "namespace" | "module");
+    let mut modules = Vec::new();
+    for candidate in candidates.iter().filter(|s| is_namespace(&s.kind)) {
+        let imported = file_ctx.imports.iter().any(|import| {
+            !import.is_wildcard
+                && import.bound_name() == root.name.as_str()
+                && namespace_matches_import(candidate, import, file_ctx, lookup)
+        });
+        let same_package =
+            file_package_id.is_some_and(|package_id| candidate.package_id == Some(package_id));
+        if imported || same_package {
+            push_unique_module(&mut modules, &candidate.qualified_name);
+            if imported {
+                for import in &file_ctx.imports {
+                    if !import.is_wildcard
+                        && import.bound_name() == root.name.as_str()
+                        && namespace_matches_import(candidate, import, file_ctx, lookup)
+                    {
+                        if let Some(module) = import.module_path.as_deref() {
+                            push_unique_module(&mut modules, module);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Ambient declarations are source-visible even when an index only keeps
+    // them in its ambient scope (rather than in the global simple-name map).
+    for candidate in lookup
+        .ambient_symbols(&root.name)
+        .iter()
+        .filter(|candidate| is_namespace(&candidate.kind))
+    {
+        push_unique_module(&mut modules, &candidate.qualified_name);
+    }
+    modules
+}
+
+/// `true` when the chain's root segment names a namespace/module declaration
+/// the current file binds. Exposed to the focused unit tests; production uses
+/// [`namespace_root_modules`] to preserve the exact source-addressed modules.
+#[cfg(test)]
+fn chain_root_is_namespace(
+    chain: &crate::types::MemberChain,
+    file_ctx: &FileContext,
+    file_package_id: Option<i64>,
+    lookup: &dyn SymbolLookup,
+) -> bool {
+    !namespace_root_modules(chain, file_ctx, file_package_id, lookup).is_empty()
+}
+
+/// A namespace declaration is import-bound only when the import's module can
+/// actually reach it: the resolved module candidate, its workspace package,
+/// its qname, or its indexed file path agrees with the import path.
+fn namespace_matches_import(
+    candidate: &crate::indexer::resolve::engine::contract::Symbol,
+    import: &crate::indexer::resolve::engine::contract::ImportEntry,
+    file_ctx: &FileContext,
+    lookup: &dyn SymbolLookup,
+) -> bool {
+    let Some(module) = import.module_path.as_deref() else {
         return false;
     };
     lookup
-        .by_name(&root.name)
+        .in_module_from(&file_ctx.file_path, module)
         .iter()
-        .any(|s| matches!(s.kind.as_str(), "namespace" | "module"))
+        .any(|symbol| symbol.id == candidate.id)
+        || lookup
+            .workspace_package_id(module)
+            .is_some_and(|package_id| candidate.package_id == Some(package_id))
+        || candidate.qualified_name == module
+        || super::support::qname_under_module(&candidate.qualified_name, module)
+        || super::support::file_path_matches_module(&candidate.file_path, module)
+}
+
+/// Source-addressed modules named by a wildcard import root (`import * as v`).
+fn wildcard_root_modules(chain: &crate::types::MemberChain, file_ctx: &FileContext) -> Vec<String> {
+    let Some(root) = chain.segments.first() else {
+        return Vec::new();
+    };
+    let mut modules = Vec::new();
+    for import in &file_ctx.imports {
+        if import.is_wildcard
+            && (import.alias.as_deref() == Some(root.name.as_str())
+                || import.imported_name == root.name)
+        {
+            if let Some(module) = import.module_path.as_deref() {
+                push_unique_module(&mut modules, module);
+            }
+        }
+    }
+    modules
+}
+
+fn push_unique_module(modules: &mut Vec<String>, module: &str) {
+    if !module.is_empty() && !modules.iter().any(|candidate| candidate == module) {
+        modules.push(module.to_string());
+    }
 }
 
 /// `true` when the chain's root segment names a wildcard/namespace import in this
 /// file (`import * as v from 'm'` — `is_wildcard`, matched by alias or imported
 /// name). The alias names a module, not a value, so `v.member` resolves against
-/// the module's exports through the bare-name ladder rather than the value walk.
+/// the module's exports through the module-scoped ladder rather than the value walk.
+#[cfg(test)]
 fn chain_root_is_wildcard_import(
     chain: &crate::types::MemberChain,
     file_ctx: &FileContext,

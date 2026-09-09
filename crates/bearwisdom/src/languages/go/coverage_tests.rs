@@ -758,8 +758,9 @@ fn coverage_defer_statement_extracts_calls_from_defer() {
 
 #[test]
 fn coverage_import_spec_with_alias_emits_imports_edge() {
-    // `import f "fmt"` — aliased import; the import path should still produce
-    // an Imports edge with target_name "fmt".
+    // `import f "fmt"` — the explicit alias is the package name bound in this
+    // file, so the Imports edge must use `f` while retaining `fmt` as module
+    // evidence.
     let src = "package main\nimport f \"fmt\"";
     let r = extract::extract(src);
     let imports: Vec<_> = r
@@ -768,8 +769,10 @@ fn coverage_import_spec_with_alias_emits_imports_edge() {
         .filter(|r| r.kind == EdgeKind::Imports)
         .collect();
     assert!(
-        imports.iter().any(|r| r.target_name == "fmt"),
-        "expected Imports edge to fmt from aliased import_spec; refs: {:?}",
+        imports
+            .iter()
+            .any(|r| r.target_name == "f" && r.module.as_deref() == Some("fmt")),
+        "expected Imports edge bound as f from aliased import_spec; refs: {:?}",
         imports.iter().map(|r| &r.target_name).collect::<Vec<_>>()
     );
 }

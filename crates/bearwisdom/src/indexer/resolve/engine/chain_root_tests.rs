@@ -12,6 +12,7 @@ use crate::indexer::resolve::engine::contract::{FileContext, ImportEntry};
 use crate::indexer::resolve::engine::testkit::{
     call_ref, file_ctx, import, ref_ctx, source_symbol, sym, Lookup,
 };
+use crate::languages::go::profile::GO_PROFILE;
 use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
 use crate::types::{ChainSegment, MemberChain, SegmentKind};
 
@@ -63,12 +64,21 @@ fn bind_cause(lookup: &Lookup, segs: Vec<ChainSegment>, fc: &FileContext) -> Opt
 }
 
 fn drive(lookup: &Lookup, segs: Vec<ChainSegment>, fc: &FileContext) -> Result<i64, Option<Cause>> {
+    drive_with_profile(lookup, segs, fc, &DEFAULT_PROFILE)
+}
+
+fn drive_with_profile(
+    lookup: &Lookup,
+    segs: Vec<ChainSegment>,
+    fc: &FileContext,
+    profile: &crate::type_checker::profile::language_profile::LanguageProfile,
+) -> Result<i64, Option<Cause>> {
     let leaf = segs.last().unwrap().name.clone();
     let mut r = call_ref(&leaf);
     r.chain = Some(MemberChain { segments: segs });
     let s = source_symbol("caller");
     let rc = ref_ctx(&r, &s, vec![]);
-    bind_member_access(&rc, fc, lookup, &DEFAULT_PROFILE).map(|res| res.target_symbol_id)
+    bind_member_access(&rc, fc, lookup, profile).map(|res| res.target_symbol_id)
 }
 
 /// `System.Console.WriteLine(...)`: the root segment names a NAMESPACE, so no
@@ -164,6 +174,34 @@ fn untyped_root_bound_by_an_import_blames_the_import() {
 
     let cause = bind_cause(&lookup, segs, &fc).expect("an unanchorable root must carry a cause");
     assert_eq!(cause.kind, CauseKind::ImportUnlinked);
+}
+
+/// Go package aliases bind the qualified call root even when their imported
+/// package has no materialized symbol surface.
+#[test]
+fn unlinked_go_package_alias_roots_blame_the_import() {
+    let lookup = Lookup::new();
+    let fc = file_ctx(
+        vec![import("utilsstrings", None), import("clientpkg", None)],
+        None,
+    );
+
+    for (root, method_name) in [("utilsstrings", "ToLower"), ("clientpkg", "New")] {
+        let cause = drive_with_profile(
+            &lookup,
+            vec![seg(root), member(method_name)],
+            &fc,
+            &GO_PROFILE,
+        )
+        .err()
+        .flatten()
+        .expect("an unlinked package alias must carry an import cause");
+        assert_eq!(
+            cause.kind,
+            CauseKind::ImportUnlinked,
+            "{root}.{method_name}"
+        );
+    }
 }
 
 /// A bare type name still roots on segment 0 and steps to segment 1 — the

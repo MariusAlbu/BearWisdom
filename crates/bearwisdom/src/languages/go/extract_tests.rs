@@ -218,6 +218,54 @@ import "github.com/user/repo/mypkg"
     assert_eq!(imp.module.as_deref(), Some("github.com/user/repo/mypkg"));
 }
 
+#[test]
+fn package_alias_imports_bind_the_local_alias() {
+    let source = r#"package main
+
+import (
+    utilsstrings "example.com/utils/strings"
+    clientpkg "example.com/api/client"
+)
+"#;
+    let r = extract::extract(source);
+    let imports: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Imports)
+        .collect();
+
+    assert!(imports.iter().any(|r| {
+        r.target_name == "utilsstrings" && r.module.as_deref() == Some("example.com/utils/strings")
+    }));
+    assert!(imports.iter().any(|r| {
+        r.target_name == "clientpkg" && r.module.as_deref() == Some("example.com/api/client")
+    }));
+}
+
+#[test]
+fn blank_and_dot_imports_keep_path_derived_entries() {
+    let source = r#"package main
+
+import (
+    _ "database/sql"
+    . "example.com/shared/dotpkg"
+)
+"#;
+    let r = extract::extract(source);
+    let imports: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Imports)
+        .collect();
+
+    assert!(imports
+        .iter()
+        .any(|r| r.target_name == "sql" && r.module.as_deref() == Some("database/sql")));
+    assert!(imports.iter().any(|r| {
+        r.target_name == "dotpkg" && r.module.as_deref() == Some("example.com/shared/dotpkg")
+    }));
+}
+
 // -----------------------------------------------------------------------
 // Call expressions
 // -----------------------------------------------------------------------

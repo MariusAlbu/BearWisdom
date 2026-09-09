@@ -26,27 +26,130 @@ fn nseg(name: &str) -> ChainSegment {
 }
 
 /// `React.useState` — the root names a module/namespace, so a chain the walker
-/// declined falls through to the bare-name ladder (which binds the member under
-/// the imported namespace) instead of being a hard miss.
+/// declined falls through to the module-scoped ladder under the imported
+/// namespace instead of being a hard miss.
 #[test]
 fn namespace_rooted_chain_is_detected() {
-    let lookup =
-        Lookup::new().with(sym(1, "React", "@types/react.React", "module", "react/index.d.ts"));
+    let lookup = Lookup::new().with(sym(
+        1,
+        "React",
+        "react.React",
+        "module",
+        "ext:typescript:react/index.d.ts",
+    ));
+    let fc = file_ctx(vec![import("React", Some("react"))], None);
     let chain = MemberChain {
         segments: vec![nseg("React"), nseg("useState")],
     };
-    assert!(chain_root_is_namespace(&chain, &lookup));
+    assert!(chain_root_is_namespace(&chain, &fc, None, &lookup));
 }
 
-/// `React.useState()` where nothing types or anchors the `React` root and the
-/// bare ladder finds no `useState` either: the walk's own diagnosis — `React`
-/// is declared but no rung reaches it, blamed on that declaration — is the
-/// recorded cause, not a bare-name classification of the leaf (`useState`:
-/// declared nowhere, `NameUnknown`, nothing to blame).
+/// An import binds a VALUE named `mapper`, while only an unrelated package
+/// declares the namespace `x.mapper`. The import is not evidence for that
+/// namespace, so the value chain cannot enter the module-only fallback.
 #[test]
-fn namespace_root_fallthrough_keeps_the_walks_cause() {
-    let lookup =
-        Lookup::new().with(sym(1, "React", "@types/react.React", "module", "react/index.d.ts"));
+fn imported_value_does_not_admit_an_unrelated_same_named_namespace() {
+    let lookup = Lookup::new()
+        .with(sym(
+            4,
+            "mapper",
+            "values.mapper",
+            "variable",
+            "src/values.ts",
+        ))
+        .with(sym(
+            5,
+            "mapper",
+            "x.mapper",
+            "module",
+            "packages/x/index.ts",
+        ));
+    let fc = file_ctx(vec![import("mapper", Some("values"))], None);
+    let chain = MemberChain {
+        segments: vec![nseg("mapper"), nseg("map")],
+    };
+    assert!(!chain_root_is_namespace(&chain, &fc, None, &lookup));
+}
+
+/// An ambient namespace is available without a written import, so its declined
+/// member chain may fall through to the module-scoped ladder.
+#[test]
+fn ambient_namespace_rooted_chain_is_detected() {
+    let lookup = Lookup::new().with_ambient(sym(
+        2,
+        "Reflect",
+        "Reflect",
+        "namespace",
+        "ext:typescript/lib.es5.d.ts",
+    ));
+    let fc = file_ctx(vec![], None);
+    let chain = MemberChain {
+        segments: vec![nseg("Reflect"), nseg("get")],
+    };
+    assert!(chain_root_is_namespace(&chain, &fc, None, &lookup));
+}
+
+/// A module declared in the caller's workspace package is in scope without an
+/// import, so its declined member chain may fall through to the module-scoped ladder.
+#[test]
+fn same_package_namespace_rooted_chain_is_detected() {
+    let lookup = Lookup::new().with_in_package(
+        7,
+        sym(3, "LocalNs", "LocalNs", "module", "packages/app/src/ns.ts"),
+    );
+    let fc = file_ctx(vec![], None);
+    let chain = MemberChain {
+        segments: vec![nseg("LocalNs"), nseg("member")],
+    };
+    assert!(chain_root_is_namespace(&chain, &fc, Some(7), &lookup));
+}
+
+/// A value declared in the current file shadows an otherwise visible namespace
+/// from the same package.
+#[test]
+fn same_file_value_shadows_same_package_namespace() {
+    let lookup = Lookup::new()
+        .with_in_package(
+            7,
+            sym(6, "mapper", "Caller.mapper", "property", "src/main.ts"),
+        )
+        .with_in_package(
+            7,
+            sym(
+                7,
+                "mapper",
+                "LocalNs.mapper",
+                "module",
+                "packages/app/src/ns.ts",
+            ),
+        );
+    let fc = file_ctx(vec![], None);
+    let chain = MemberChain {
+        segments: vec![nseg("mapper"), nseg("map")],
+    };
+    assert!(!chain_root_is_namespace(&chain, &fc, Some(7), &lookup));
+}
+
+/// `import React from "react"; React.useState()` reaches the leaf only through
+/// the imported namespace's source-addressed qname, never through the full
+/// bare-name ladder.
+#[test]
+fn imported_react_chain_resolves_through_its_namespace_module() {
+    let lookup = Lookup::new()
+        .with(sym(
+            8,
+            "React",
+            "react.React",
+            "module",
+            "ext:typescript:react/index.d.ts",
+        ))
+        .with(sym(
+            9,
+            "useState",
+            "react.React.useState",
+            "function",
+            "ext:typescript:react/index.d.ts",
+        ));
     let mut r = ExtractedRef {
         is_include: false,
         is_import_binding: false,
@@ -66,13 +169,94 @@ fn namespace_root_fallthrough_keeps_the_walks_cause() {
     };
     r.chain.as_mut().unwrap().segments[1].is_call = true;
     let src = source_symbol("caller");
-    let fc = file_ctx(vec![], None);
+    let fc = file_ctx(vec![import("React", Some("react"))], None);
+    let rc = ref_ctx(&r, &src, vec![]);
+
+    match SemanticModel::production().get_symbol_info(&rc, &fc, &lookup, &TYPESCRIPT_PROFILE) {
+        SolveOutcome::Resolved(res) => assert_eq!(res.target_symbol_id, 9),
+        _ => panic!("the imported namespace must resolve React.useState"),
+    }
+}
+
+/// A namespace miss retains the chain cause and cannot bind a same-file leaf
+/// with the same spelling through the former full-ladder fallthrough.
+#[test]
+fn namespace_miss_cannot_hijack_a_same_file_leaf() {
+    let lookup = Lookup::new()
+        .with(sym(
+            10,
+            "React",
+            "react.React",
+            "module",
+            "ext:typescript:react/index.d.ts",
+        ))
+        .with(sym(11, "useState", "useState", "function", "src/main.ts"));
+    let mut r = ExtractedRef {
+        is_include: false,
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: 0,
+        target_name: "useState".to_string(),
+        kind: EdgeKind::Calls,
+        line: 0,
+        col: 0,
+        module: None,
+        namespace_segments: Vec::new(),
+        chain: Some(MemberChain {
+            segments: vec![nseg("React"), nseg("useState")],
+        }),
+        byte_offset: 0,
+        call_args: Vec::new(),
+    };
+    r.chain.as_mut().unwrap().segments[1].is_call = true;
+    let src = source_symbol("caller");
+    let fc = file_ctx(vec![import("React", Some("react"))], None);
+    let rc = ref_ctx(&r, &src, vec![]);
+
+    assert!(matches!(
+        SemanticModel::production().get_symbol_info(&rc, &fc, &lookup, &TYPESCRIPT_PROFILE),
+        SolveOutcome::Unresolved(_)
+    ));
+}
+
+/// `React.useState()` where the import binds `React` but the module-scoped
+/// ladder finds no `useState`: the walk's own external-surface diagnosis is retained
+/// instead of classifying the leaf as a bare unknown name.
+#[test]
+fn namespace_root_fallthrough_keeps_the_walks_cause() {
+    let lookup = Lookup::new().with(sym(
+        1,
+        "React",
+        "react.React",
+        "module",
+        "ext:typescript:react/index.d.ts",
+    ));
+    let mut r = ExtractedRef {
+        is_include: false,
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: 0,
+        target_name: "useState".to_string(),
+        kind: EdgeKind::Calls,
+        line: 0,
+        col: 0,
+        module: None,
+        namespace_segments: Vec::new(),
+        chain: Some(MemberChain {
+            segments: vec![nseg("React"), nseg("useState")],
+        }),
+        byte_offset: 0,
+        call_args: Vec::new(),
+    };
+    r.chain.as_mut().unwrap().segments[1].is_call = true;
+    let src = source_symbol("caller");
+    let fc = file_ctx(vec![import("React", Some("react"))], None);
     let solver = SemanticModel::production();
 
     let rc = ref_ctx(&r, &src, vec![]);
     match solver.get_symbol_info(&rc, &fc, &lookup, &TYPESCRIPT_PROFILE) {
         SolveOutcome::Unresolved(Some(cause)) => {
-            assert_eq!(cause.kind, CauseKind::DefinedUnimported);
+            assert_eq!(cause.kind, CauseKind::ExternalUnmaterialized);
             assert_eq!(cause.symbol_id, Some(1));
         }
         SolveOutcome::Unresolved(None) => panic!("the fallthrough dropped the walk's cause"),
@@ -82,7 +266,7 @@ fn namespace_root_fallthrough_keeps_the_walks_cause() {
 
 /// A qualified call chain the walker can't root (`m::f(v)` — the root names a
 /// module path, never a typable value) but whose ref carries extractor-set
-/// `module` evidence falls through to the ladder, where the module anchor
+/// `module` evidence falls through to the module-scoped ladder, where the module anchor
 /// binds the target inside the module's own files.
 #[test]
 fn module_tagged_declined_chain_falls_through_to_ladder() {
@@ -213,20 +397,29 @@ fn module_tagged_declined_chain_cannot_hijack_a_same_named_sibling() {
     );
 }
 
-/// `rendered.getByText` — `rendered` is a value, not a namespace; the chain
-/// walker owns it and a decline stays a hard miss so no same-named sibling
-/// hijacks the member access.
+/// `mapper.map` roots on the caller's field. An unrelated package's
+/// `x.mapper` namespace must not turn that value chain into a module-scoped
+/// ladder.
 #[test]
-fn value_rooted_chain_is_not_a_namespace() {
-    let lookup = Lookup::new().with(sym(1, "rendered", "rendered", "variable", "x.ts"));
+fn value_root_shadowed_by_foreign_namespace_is_not_a_namespace() {
+    let lookup = Lookup::new()
+        .with_in_package(
+            1,
+            sym(10, "mapper", "Caller.mapper", "property", "src/main.ts"),
+        )
+        .with_in_package(
+            2,
+            sym(11, "mapper", "x.mapper", "module", "packages/x/index.ts"),
+        );
+    let fc = file_ctx(vec![], None);
     let chain = MemberChain {
-        segments: vec![nseg("rendered"), nseg("getByText")],
+        segments: vec![nseg("mapper"), nseg("map")],
     };
-    assert!(!chain_root_is_namespace(&chain, &lookup));
+    assert!(!chain_root_is_namespace(&chain, &fc, Some(1), &lookup));
 }
 
 /// `import * as v from 'valibot'; v.object(...)` — the wildcard alias `v` names
-/// the module, not a value. A declined chain falls through to the bare-name
+/// the module, not a value. A declined chain falls through to the module-scoped
 /// ladder, which resolves `object` as a valibot export; without this `v` is
 /// value-typed to a foreign same-name binding and the member is a hard miss.
 #[test]
@@ -242,7 +435,7 @@ fn wildcard_import_rooted_chain_is_detected() {
 }
 
 /// A named (non-wildcard) import is a value the chain walker owns — a decline
-/// stays a hard miss, no ladder fall-through.
+/// stays a hard miss, with no module-scoped retry.
 #[test]
 fn named_import_rooted_chain_is_not_wildcard() {
     let fc = file_ctx(vec![import("foo", Some("m"))], None);

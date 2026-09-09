@@ -149,3 +149,33 @@ fn named_reexport_ref_is_not_a_wildcard() {
         .expect("the named reexport ref still lands an entry");
     assert!(!entry.is_wildcard);
 }
+
+#[test]
+fn go_package_aliases_remain_bound_names_without_module_evidence() {
+    let extracted = crate::languages::go::extract::extract(
+        r#"package main
+
+import (
+    utilsstrings "example.com/utils/strings"
+    clientpkg "example.com/api/client"
+)
+"#,
+    );
+    let mut file = blank_parsed_file("go");
+    file.refs = extracted.refs;
+
+    let ctx = super::build_file_context(
+        "go",
+        &file,
+        &crate::languages::go::profile::GO_PROFILE,
+        None,
+        None,
+    );
+
+    assert!(ctx.imports.iter().any(|entry| {
+        entry.imported_name == "utilsstrings" && entry.module_path.is_none() && !entry.is_wildcard
+    }));
+    assert!(ctx.imports.iter().any(|entry| {
+        entry.imported_name == "clientpkg" && entry.module_path.is_none() && !entry.is_wildcard
+    }));
+}

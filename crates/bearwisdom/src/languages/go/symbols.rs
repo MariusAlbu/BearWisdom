@@ -113,11 +113,23 @@ fn emit_import_ref(
     // Strip surrounding quotes / backticks.
     let full_path = raw.trim_matches('"').trim_matches('`');
 
-    let target_name = full_path
-        .rsplit('/')
-        .next()
-        .unwrap_or(full_path)
-        .to_string();
+    // A Go package alias is the name that the importing file actually binds:
+    // `import clientpkg "example.com/api/client"` makes `clientpkg.New()`
+    // valid, not `client.New()`. Only `package_identifier` is a usable alias;
+    // blank (`_`) and dot imports deliberately keep their historical
+    // path-derived entries because neither creates an ordinary package root.
+    let mut alias_cursor = node.walk();
+    let alias = node
+        .children(&mut alias_cursor)
+        .find(|child| child.kind() == "package_identifier")
+        .map(|child| node_text(&child, source));
+    let target_name = alias.unwrap_or_else(|| {
+        full_path
+            .rsplit('/')
+            .next()
+            .unwrap_or(full_path)
+            .to_string()
+    });
 
     let module = if full_path.is_empty() {
         None

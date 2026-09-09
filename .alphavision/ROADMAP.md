@@ -21,7 +21,7 @@ pascal-castle-fresh, dart-serverpod, fsharp-fable, make-curl (c), scala-gatling.
 - [x] `covers()` O(packages) → ancestor walk in `SymbolLocationIndex` (ts-ever-demand 43 → ~4 min)
 - [x] commit the `covers()` change
 - [x] worktrees: research `target/` (6.3 GB) removed, metadata pruned, 39 merged branches deleted
-- [ ] decide the 48 unmerged `worktree-*` / agent branches (list in session report; delete or keep)
+- [x] decide the 48 unmerged `worktree-*` / agent branches (list in session report; delete or keep)
 - [x] dogfood index rebuilt without the 60,716 stale `.claude/worktrees/*` rows; DB vacuumed (5.6 GB + 1.5 GB WAL)
 - [x] walker: never index `.claude/worktrees/**` even when the secondary import-pull scan would pull it (root cause was the file watcher bypassing the exclusions; fixed in `indexer/watch_filter.rs`)
 - [x] `bw_search` returns worktree copies before the main tree — verify gone after rebuild
@@ -36,11 +36,11 @@ first, re-census, then rank resolution work on the honest numbers.
 - [x] `engine/chain_root.rs:69` — value-shaped untypable root records the same-file binding's `untyped_binding`/`uncaptured_field`, else the new `untyped_root`; never `classify_unbound_root(root name)`
   - [x] failing test first: two-segment chain, root is an untyped local, assert `UntypedBinding` with the local blamed
 - [x] `engine/semantic_model.rs` fallthrough keeps the walk's cause when the bare ladder also misses (member cause survives)
-- [ ] `engine/semantic_model.rs:92` `chain_root_is_namespace` — only a namespace the FILE binds (import, ambient, same-package) qualifies; a same-named namespace elsewhere in the index must not re-run the chain as a bare ladder
-  - [ ] failing test first: field `mapper` shadowed by package `x.mapper`; the root stays a value
+- [x] `engine/semantic_model.rs:92` `chain_root_is_namespace` — only a namespace the FILE binds (import, ambient, same-package) qualifies; a same-named namespace elsewhere in the index must not re-run the chain as a bare ladder
+  - [x] failing test first: field `mapper` shadowed by package `x.mapper`; the root stays a value
 - [x] `engine/compilation.rs:2396` `is_external_name` — wire to the externals surface so `unbound_external_known` fires; stdlib names leave `name_unknown`
 - [x] `engine/chain.rs:2063` — the untyped-root floor now records `untyped_root` / the same-file binding; `:316` is unreachable (namespace anchor always leaves one segment)
-- [ ] package-alias roots (`utilsstrings.ToLower`, `clientpkg.New`) record `import_unlinked`, not `name_unknown`
+- [x] package-alias roots (`utilsstrings.ToLower`, `clientpkg.New`) record `import_unlinked`, not `name_unknown`
 - [x] re-census on 14 projects (addendum in the census doc): `external_known` 242k is the largest honest bucket → M3 reachability outranks M4 supply
 - [x] import discipline: external-head attestation removed (denied roots the scoped lookup could not see; superset −7.8k); re-enable only with materialized-module evidence (M6)
 - [x] `resolution_corpus_rust` fails at baseline `281f8515` (SelfProbe nested-module import binds the crate-root twin; AliasDoc root dies `uncaptured_field`) — pre-existing, trace and fix
