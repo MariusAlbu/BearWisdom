@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
 use super::*;
-use crate::indexer::resolve::engine::contract::{SymbolSet, Symbol as ContractSymbol};
+use crate::indexer::resolve::engine::contract::{Symbol as ContractSymbol, SymbolSet};
 use crate::type_checker::core::types::Type;
 
 /// Minimal lookup: generic parameters for one owner, plus a recording local
@@ -12,6 +12,7 @@ struct SeedLookup {
     empty: Vec<ContractSymbol>,
     empty_pairs: Vec<(String, String)>,
     seeded: RefCell<Vec<(String, TypeId)>>,
+    contextual: RefCell<Vec<(crate::types::SourceSpan, TypeId)>>,
 }
 
 impl SeedLookup {
@@ -22,6 +23,7 @@ impl SeedLookup {
             empty: Vec::new(),
             empty_pairs: Vec::new(),
             seeded: RefCell::new(Vec::new()),
+            contextual: RefCell::new(Vec::new()),
         }
     }
 }
@@ -31,6 +33,9 @@ impl crate::indexer::resolve::engine::contract::FlowCacheLookup for SeedLookup {
         self.seeded.borrow_mut().push((name, id));
     }
     fn record_local_type(&self, _: String, _: String) {}
+    fn record_contextual_type(&self, parameter: crate::types::SourceSpan, ty: TypeId) {
+        self.contextual.borrow_mut().push((parameter, ty));
+    }
 }
 
 impl SymbolLookup for SeedLookup {
@@ -77,6 +82,14 @@ fn map_method() -> Symbol {
     Symbol {
         signature: Some("map(fn: (value: T) => U): Array<U>".to_string()),
         ..crate::indexer::resolve::engine::testkit::sym(1, "map", "Array.map", "method", "a.ts")
+    }
+}
+
+/// `map(value: T, fn: (value: T) => U): Array<U>` declared on `Array<T>`.
+fn map_with_value_method() -> Symbol {
+    Symbol {
+        signature: Some("map(value: T, fn: (value: T) => U): Array<U>".to_string()),
+        ..crate::indexer::resolve::engine::testkit::sym(2, "map", "Array.map", "method", "a.ts")
     }
 }
 
@@ -132,6 +145,57 @@ fn an_unbindable_receiver_seeds_nothing() {
         &[],
     );
 
+    assert!(lookup.seeded.borrow().is_empty());
+}
+
+#[test]
+fn a_source_addressed_lambda_parameter_records_its_exact_span() {
+    let lookup = SeedLookup::new("Array", &["T"]);
+    let arena = TypeArena::new();
+    let parameter = crate::types::SourceSpan { start: 24, end: 28 };
+    let args = vec![CallArg::LambdaAt {
+        params: vec![Some(parameter)],
+    }];
+
+    seed_lambda_params(
+        &lookup,
+        &arena,
+        &map_method(),
+        &args,
+        array_of(&arena, "User"),
+        None,
+        &FxHashMap::default(),
+        &[],
+    );
+
+    let contextual = lookup.contextual.borrow();
+    assert_eq!(contextual.len(), 1);
+    assert_eq!(contextual[0].0, parameter);
+    assert_eq!(arena.get(contextual[0].1), Type::Class("User".to_string()));
+    assert!(lookup.seeded.borrow().is_empty());
+}
+
+#[test]
+fn an_open_generic_source_addressed_lambda_parameter_records_nothing() {
+    let lookup = SeedLookup::new("Array", &["T"]);
+    let arena = TypeArena::new();
+    let args = vec![CallArg::LambdaAt {
+        params: vec![Some(crate::types::SourceSpan { start: 24, end: 28 })],
+    }];
+
+    // Bare `Array` leaves the callback parameter as the open generic `T`.
+    seed_lambda_params(
+        &lookup,
+        &arena,
+        &map_method(),
+        &args,
+        arena.class("Array"),
+        None,
+        &FxHashMap::default(),
+        &[],
+    );
+
+    assert!(lookup.contextual.borrow().is_empty());
     assert!(lookup.seeded.borrow().is_empty());
 }
 
@@ -204,6 +268,63 @@ fn an_argument_driven_binding_reaches_the_callback_parameter() {
     assert_eq!(arena.get(seeded[0].1), Type::Class("Account".to_string()));
 }
 
+#[test]
+fn a_compatible_argument_binding_preserves_the_receivers_callback_type() {
+    let lookup = SeedLookup::new("Array", &["T"]);
+    let arena = TypeArena::new();
+    let args = vec![
+        CallArg::Ident("user".to_string()),
+        CallArg::Lambda {
+            params: vec!["x".to_string()],
+        },
+    ];
+    let mut arg_env = FxHashMap::default();
+    arg_env.insert("T".to_string(), arena.class("User"));
+
+    seed_lambda_params(
+        &lookup,
+        &arena,
+        &map_with_value_method(),
+        &args,
+        array_of(&arena, "User"),
+        None,
+        &arg_env,
+        &[],
+    );
+
+    let seeded = lookup.seeded.borrow();
+    assert_eq!(seeded.len(), 1);
+    assert_eq!(seeded[0].0, "x");
+    assert_eq!(arena.get(seeded[0].1), Type::Class("User".to_string()));
+}
+
+#[test]
+fn an_incompatible_argument_binding_does_not_seed_a_callback_parameter() {
+    let lookup = SeedLookup::new("Array", &["T"]);
+    let arena = TypeArena::new();
+    let args = vec![
+        CallArg::Ident("account".to_string()),
+        CallArg::Lambda {
+            params: vec!["x".to_string()],
+        },
+    ];
+    let mut arg_env = FxHashMap::default();
+    arg_env.insert("T".to_string(), arena.class("Account"));
+
+    seed_lambda_params(
+        &lookup,
+        &arena,
+        &map_with_value_method(),
+        &args,
+        array_of(&arena, "User"),
+        None,
+        &arg_env,
+        &[],
+    );
+
+    assert!(lookup.seeded.borrow().is_empty());
+}
+
 // --- delegate-wrapper unwrap --------------------------------------------------
 
 /// `void UseSnapshot<TEntity>(this ModelBuilder b, Action<EntityTypeBuilder<TEntity>>? configure = null)`
@@ -242,7 +363,10 @@ fn a_delegate_wrapped_lambda_seeds_from_the_wrappers_generic_args() {
         arena.class("ModelBuilder"),
         None,
         &env,
-        &[("Action", DelegateShape::AllParams), ("Func", DelegateShape::LastIsReturn)],
+        &[
+            ("Action", DelegateShape::AllParams),
+            ("Func", DelegateShape::LastIsReturn),
+        ],
     );
 
     let seeded = lookup.seeded.borrow();
@@ -282,7 +406,11 @@ fn func_shaped_delegates_drop_the_trailing_return_arg() {
     let lookup = SeedLookup::new("Runner.Run", &[]);
     let arena = TypeArena::new();
     let mut callee = crate::indexer::resolve::engine::testkit::sym(
-        9, "Run", "Runner.Run", "method", "src/Runner.cs",
+        9,
+        "Run",
+        "Runner.Run",
+        "method",
+        "src/Runner.cs",
     );
     callee.signature = Some("void Run(Func<Widget, bool> pred)".to_string());
     let args = vec![CallArg::Lambda {

@@ -16,11 +16,12 @@ use crate::ecosystem::externals::ts_package_from_virtual_path;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::contract::{
-    build_scope_chain, is_jvm_language, parse_object_type_members,
-    parse_param_types_from_signature, parse_return_type_from_jvm_descriptor,
-    parse_return_type_from_signature, parse_return_type_positional, parse_top_level_conditional,
-    parse_type_head_and_args, resolve_type_name_in_scope, signature_generic_params, FileContext,
-    ImportEntry, RefContext, Symbol, SymbolLookup, SymbolSet, TypeInfo,
+    build_scope_chain, chain_walker::parse_return_type_from_signature_for_lang, is_jvm_language,
+    parse_object_type_members, parse_param_types_from_signature,
+    parse_return_type_from_jvm_descriptor, parse_return_type_from_signature,
+    parse_return_type_positional, parse_top_level_conditional, parse_type_head_and_args,
+    resolve_type_name_in_scope, signature_generic_params, FileContext, ImportEntry, RefContext,
+    Symbol, SymbolLookup, SymbolSet, TypeInfo,
 };
 use crate::indexer::resolve::engine::ext_lang_visibility::ExtLangVisibility;
 use crate::indexer::resolve::engine::import_qualify;
@@ -1262,7 +1263,7 @@ impl Compilation {
                 SymbolKind::Method | SymbolKind::Function | SymbolKind::Constructor => {
                     // Signature-based return type, with JVM fallback.
                     let sig_rt: Option<String> = sym.signature.as_deref().and_then(|s| {
-                        parse_return_type_from_signature(s)
+                        parse_return_type_from_signature_for_lang(s, &pf.language)
                             .or_else(|| {
                                 if sym.kind == SymbolKind::Constructor {
                                     None

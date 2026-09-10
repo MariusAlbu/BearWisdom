@@ -742,7 +742,8 @@ fn dispatch_body_node(
                 .child_by_field_name("function")
                 .or_else(|| node.named_child(0))
             {
-                let chain = calls::build_chain(&callee, src);
+                let mut chain = calls::build_chain(&callee, src);
+                calls::mark_terminal_called(&mut chain);
                 let target_name = chain
                     .as_ref()
                     .and_then(|c| c.segments.last())

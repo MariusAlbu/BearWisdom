@@ -122,7 +122,12 @@ pub(super) fn extract_calls_from_body(
                     .child_by_field_name("function")
                     .or_else(|| child.named_child(0))
                 {
-                    let chain = build_chain(&callee, src);
+                    let mut chain = build_chain(&callee, src);
+                    // The outer call node owns the invocation. Its `function`
+                    // child is often only a field expression (`this.modify`),
+                    // so `build_chain_inner` cannot see this call_expression
+                    // to mark the terminal segment itself.
+                    mark_terminal_called(&mut chain);
                     let target_name = chain
                         .as_ref()
                         .and_then(|c| c.segments.last())
@@ -335,14 +340,31 @@ pub(super) fn build_chain(node: &Node, src: &[u8]) -> Option<MemberChain> {
     Some(MemberChain { segments })
 }
 
+/// Mark the final member in a chain as invoked by its containing call node.
+/// The chain is built from the call's callee, so that enclosing call node is
+/// not necessarily present in the subtree `build_chain_inner` receives.
+pub(super) fn mark_terminal_called(chain: &mut Option<MemberChain>) {
+    if let Some(last) = chain.as_mut().and_then(|c| c.segments.last_mut()) {
+        last.is_call = true;
+    }
+}
+
 fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) -> Option<()> {
     match node.kind() {
         "identifier" | "type_identifier" => {
             let name = node_text(*node, src);
+            // tree-sitter-scala currently represents receiver keywords as
+            // identifiers, so recognize their lexical role here as well as in
+            // the dedicated-node arms below.
+            let kind = if matches!(name.as_str(), "this" | "super") {
+                SegmentKind::SelfRef
+            } else {
+                SegmentKind::Identifier
+            };
             segments.push(ChainSegment {
                 name,
                 node_kind: "identifier".to_string(),
-                kind: SegmentKind::Identifier,
+                kind,
                 declared_type: None,
                 type_args: vec![],
                 optional_chaining: false,

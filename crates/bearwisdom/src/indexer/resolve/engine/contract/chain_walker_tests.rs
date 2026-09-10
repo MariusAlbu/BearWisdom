@@ -1,6 +1,34 @@
 use super::*;
 
 // ---------------------------------------------------------------------------
+// Go return signatures
+// ---------------------------------------------------------------------------
+
+#[test]
+fn go_free_function_return_does_not_skip_its_parameter_group() {
+    assert_eq!(
+        parse_return_type_from_signature_for_lang(
+            "func NewWithClient(c *fasthttp.Client) *Client",
+            "go",
+        )
+        .as_deref(),
+        Some("Client"),
+    );
+    assert_eq!(
+        parse_return_type_from_signature_for_lang(
+            "func (c *Client) SetRetryConfig(config *RetryConfig) *Client",
+            "go",
+        )
+        .as_deref(),
+        Some("Client"),
+    );
+    assert_eq!(
+        parse_return_type_from_signature_for_lang("func NewWithoutReturn(c *Client)", "go"),
+        None,
+    );
+}
+
+// ---------------------------------------------------------------------------
 // parse_top_level_conditional
 // ---------------------------------------------------------------------------
 

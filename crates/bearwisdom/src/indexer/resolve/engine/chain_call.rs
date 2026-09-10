@@ -1,8 +1,9 @@
 //! Call instantiation keeps method receiver evidence separate from arguments.
 use super::*;
 use crate::indexer::resolve::engine::{bound_call, contract::generic_return, lambda_seed};
-use crate::type_checker::profile::language_profile::DelegateShape;
+use crate::type_checker::{core::types::Type, profile::language_profile::DelegateShape};
 use crate::types::CallArg;
+use rustc_hash::FxHashSet;
 
 /// Owned auto-borrow evidence is allocated at the source call, not copied from
 /// an ordinary argument or invented as a generic declaration parameter.
@@ -126,10 +127,108 @@ pub(super) fn apply_with_receiver(
         return None;
     }
     let env = bind_arg_generics(lookup, arena, &callee, &actual);
-    seed_lambda_params(
-        lookup, arena, &callee, args, receiver, recv_id, &env, wrappers,
-    );
+    if let Some(callback_callee) =
+        uniquely_contextual_callback_callee(lookup, arena, &callee, args, wrappers)
+    {
+        let callback_env = if callback_callee.id == callee.id {
+            env.clone()
+        } else {
+            bind_arg_generics(lookup, arena, &callback_callee, &actual)
+        };
+        seed_lambda_params(
+            lookup,
+            arena,
+            &callback_callee,
+            args,
+            receiver,
+            recv_id,
+            &callback_env,
+            wrappers,
+        );
+    }
     yielded.map(|y| substitute_env(arena, y, &env))
+}
+
+/// The one exact-arity overload whose callback positions can contextually type
+/// this call's lambdas. Legacy extraction has no call-site overload identity,
+/// so a tie must abstain rather than write a type from an arbitrary sibling.
+///
+/// This is deliberately separate from `select_overload_for_args`: that helper
+/// continues to select the legacy callee for generic return inference. Only
+/// contextual lambda seeding requires this stronger uniqueness proof.
+#[cfg(test)]
+pub(super) fn _test_uniquely_contextual_callback_callee(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    callee: &Symbol,
+    args: &[CallArg],
+    wrappers: &[(&str, DelegateShape)],
+) -> Option<Symbol> {
+    uniquely_contextual_callback_callee(lookup, arena, callee, args, wrappers)
+}
+
+fn uniquely_contextual_callback_callee(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    callee: &Symbol,
+    args: &[CallArg],
+    wrappers: &[(&str, DelegateShape)],
+) -> Option<Symbol> {
+    if !args
+        .iter()
+        .any(|arg| matches!(arg, CallArg::Lambda { .. } | CallArg::LambdaAt { .. }))
+    {
+        return None;
+    }
+
+    let mut candidates = vec![callee.clone()];
+    candidates.extend(
+        lookup
+            .all_by_qualified_name(&callee.qualified_name)
+            .into_iter()
+            .cloned(),
+    );
+
+    let mut seen = FxHashSet::default();
+    let mut match_ = None;
+    for candidate in candidates {
+        if !seen.insert(candidate.id) {
+            continue;
+        }
+        let patterns = param_patterns(lookup, arena, &candidate);
+        if patterns.len() != args.len()
+            || !args.iter().zip(&patterns).all(|(arg, &pattern)| {
+                !matches!(arg, CallArg::Lambda { .. } | CallArg::LambdaAt { .. })
+                    || callback_pattern(arena, pattern, wrappers)
+            })
+        {
+            continue;
+        }
+        if match_.replace(candidate).is_some() {
+            return None;
+        }
+    }
+    match_
+}
+
+fn callback_pattern(
+    arena: &TypeArena,
+    pattern: TypeId,
+    wrappers: &[(&str, DelegateShape)],
+) -> bool {
+    match arena.get(pattern) {
+        Type::Function { .. } => true,
+        Type::Callable(callable) => callable.complete,
+        Type::Optional(inner) => callback_pattern(arena, inner, wrappers),
+        Type::Apply { base, .. } => {
+            let Type::Class(head) = arena.get(base) else {
+                return false;
+            };
+            let simple = head.rsplit('.').next().unwrap_or(&head);
+            wrappers.iter().any(|(name, _)| *name == simple)
+        }
+        _ => false,
+    }
 }
 
 #[cfg(test)]

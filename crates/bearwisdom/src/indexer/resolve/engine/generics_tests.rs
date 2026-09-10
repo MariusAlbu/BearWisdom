@@ -54,7 +54,7 @@ fn a_slot_the_receiver_pinned_is_not_reopened_by_an_argument() {
 }
 
 #[test]
-fn first_concrete_position_wins_and_later_ones_do_not_override() {
+fn conflicting_concrete_positions_permanently_make_the_slot_unknown() {
     let arena = TypeArena::new();
     let lookup = Lookup::new();
     let p = params(&["T"]);
@@ -65,8 +65,24 @@ fn first_concrete_position_wins_and_later_ones_do_not_override() {
 
     unify_into(&lookup, &arena, pattern, first, &p, &mut env);
     unify_into(&lookup, &arena, pattern, second, &p, &mut env);
+    unify_into(&lookup, &arena, pattern, first, &p, &mut env);
 
-    assert_eq!(env.get("T").copied(), Some(first));
+    assert_eq!(env.get("T").copied(), Some(arena.intern(Type::Unknown)));
+}
+
+#[test]
+fn matching_concrete_positions_keep_their_shared_binding() {
+    let arena = TypeArena::new();
+    let lookup = Lookup::new();
+    let p = params(&["T"]);
+    let pattern = arena.class("T");
+    let user = arena.class("User");
+    let mut env: FxHashMap<String, TypeId> = FxHashMap::default();
+
+    unify_into(&lookup, &arena, pattern, user, &p, &mut env);
+    unify_into(&lookup, &arena, pattern, user, &p, &mut env);
+
+    assert_eq!(env.get("T").copied(), Some(user));
 }
 
 #[test]
@@ -86,6 +102,28 @@ fn an_untyped_argument_leaves_the_slot_open() {
     );
 
     assert!(env.is_empty());
+}
+
+#[test]
+fn an_untyped_argument_does_not_erase_a_concrete_binding() {
+    let arena = TypeArena::new();
+    let lookup = Lookup::new();
+    let p = params(&["T"]);
+    let pattern = arena.class("T");
+    let user = arena.class("User");
+    let mut env: FxHashMap<String, TypeId> = FxHashMap::default();
+
+    unify_into(&lookup, &arena, pattern, user, &p, &mut env);
+    unify_into(
+        &lookup,
+        &arena,
+        pattern,
+        arena.intern(Type::Unknown),
+        &p,
+        &mut env,
+    );
+
+    assert_eq!(env.get("T").copied(), Some(user));
 }
 
 #[test]
@@ -202,6 +240,27 @@ fn a_callee_with_no_generic_parameters_binds_nothing() {
     let env = bind_arg_generics(&lookup, arena, &find_method(), &[arena.class("User")]);
 
     assert!(env.is_empty());
+}
+
+#[test]
+fn conflicting_arguments_for_one_generic_leave_callback_context_open() {
+    // `f<T>(a: T, b: T, cb: (T) => void)` cannot contextually type `cb`
+    // from either `a` or `b` when the concrete arguments disagree.
+    let lookup = Lookup::new().with_generics("f", &["T"]);
+    let arena = lookup.type_arena().unwrap();
+    let callee = Symbol {
+        signature: Some("f<T>(a: T, b: T, cb: (value: T) => void): void".to_string()),
+        ..sym(2, "f", "f", "function", "a.ts")
+    };
+
+    let env = bind_arg_generics(
+        &lookup,
+        arena,
+        &callee,
+        &[arena.class("User"), arena.class("Account")],
+    );
+
+    assert_eq!(env.get("T").copied(), Some(arena.intern(Type::Unknown)));
 }
 
 #[test]

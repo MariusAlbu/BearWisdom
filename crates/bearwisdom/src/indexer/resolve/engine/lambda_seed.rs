@@ -51,13 +51,36 @@ pub(crate) fn seed_lambda_params(
         return;
     }
     let mut env = receiver_env(lookup, arena, receiver, recv_id);
-    env.extend(arg_env.iter().map(|(k, v)| (k.clone(), *v)));
+    merge_argument_bindings(arena, &mut env, arg_env);
     let open = bindable_params(lookup, callee);
     let patterns: Vec<_> = patterns
         .iter()
         .map(|&p| substitute_env(arena, p, &env))
         .collect();
     seed_patterns(lookup, arena, args, &patterns, &open, delegate_wrappers);
+}
+
+/// Keep a concrete generic binding learned from the receiver unless argument
+/// inference agrees with it. A disagreement means the selected call shape is
+/// not coherent enough to contextually type a callback, so leave the generic
+/// open and let ordinary resolution continue without this seed.
+fn merge_argument_bindings(
+    arena: &TypeArena,
+    receiver_env: &mut FxHashMap<String, TypeId>,
+    arg_env: &FxHashMap<String, TypeId>,
+) {
+    let unknown = arena.intern(Type::Unknown);
+    for (name, &argument) in arg_env {
+        match receiver_env.get(name).copied() {
+            None => {
+                receiver_env.insert(name.clone(), argument);
+            }
+            Some(receiver) if receiver == argument => {}
+            Some(_) => {
+                receiver_env.insert(name.clone(), unknown);
+            }
+        }
+    }
 }
 
 pub(super) fn seed_patterns(

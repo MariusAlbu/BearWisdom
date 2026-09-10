@@ -1760,6 +1760,232 @@ fn member_refs_on_uncaptured_call_root_all_blame_the_initializer() {
     }
 }
 
+/// Go's `client := client.NewWithClient()` must seed `client` from the
+/// factory's captured `*Client` return, rather than treating the callee qname
+/// as a nominal receiver. The paired no-return factory is the negative control:
+/// it must remain an `uncaptured_return`, never a `client.NewWithoutReturn`
+/// local type.
+#[test]
+fn go_factory_local_uses_captured_pointer_return_without_qname_fallback() {
+    use crate::types::{
+        ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, MemberChain, ParsedFile,
+        SegmentKind, SymbolKind, Visibility,
+    };
+
+    fn symbol(name: &str, qname: &str, kind: SymbolKind, parent: Option<usize>) -> ExtractedSymbol {
+        ExtractedSymbol {
+            name: name.into(),
+            qualified_name: qname.into(),
+            kind,
+            visibility: Some(Visibility::Public),
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
+            byte_offset: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: parent.map(|_| "main".into()),
+            parent_index: parent,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        }
+    }
+
+    fn segment(name: &str, kind: SegmentKind, is_call: bool, byte_offset: u32) -> ChainSegment {
+        ChainSegment {
+            name: name.into(),
+            node_kind: String::new(),
+            kind,
+            declared_type: None,
+            type_args: Vec::new(),
+            optional_chaining: false,
+            byte_offset,
+            declared_type_id: None,
+            is_call,
+            call_args: Vec::new(),
+            type_arg_ids: Vec::new(),
+        }
+    }
+
+    fn call_ref(
+        target: &str,
+        chain: Option<MemberChain>,
+        line: u32,
+        byte_offset: u32,
+    ) -> ExtractedRef {
+        ExtractedRef {
+            is_include: false,
+            is_import_binding: false,
+            is_reexport: false,
+            source_symbol_index: 0,
+            target_name: target.into(),
+            kind: EdgeKind::Calls,
+            line,
+            col: 0,
+            module: None,
+            chain,
+            byte_offset,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        }
+    }
+
+    let mut factory = symbol(
+        "NewWithClient",
+        "client.NewWithClient",
+        SymbolKind::Function,
+        None,
+    );
+    // This is the exact source shape in go-fiber. Leave return_type empty so
+    // Compilation must parse and materialize the trailing Go result itself.
+    factory.signature = Some("func NewWithClient(c *fasthttp.Client) *Client".into());
+    factory.scope_path = Some("client".into());
+    let mut no_return = symbol(
+        "NewWithoutReturn",
+        "client.NewWithoutReturn",
+        SymbolKind::Function,
+        None,
+    );
+    no_return.signature = Some("func NewWithoutReturn(c *fasthttp.Client)".into());
+    no_return.scope_path = Some("client".into());
+    let symbols = vec![
+        symbol("main", "main", SymbolKind::Function, None), // 0
+        symbol("client", "main.client", SymbolKind::Variable, Some(0)), // 1
+        symbol(
+            "uncaptured",
+            "main.uncaptured",
+            SymbolKind::Variable,
+            Some(0),
+        ), // 2
+        factory,                                            // 3
+        no_return,                                          // 4
+        symbol("Client", "client.Client", SymbolKind::Interface, None), // 5
+        symbol(
+            "SetRetryConfig",
+            "client.Client.SetRetryConfig",
+            SymbolKind::Method,
+            Some(5),
+        ), // 6
+    ];
+    let refs = vec![
+        call_ref("NewWithClient", None, 1, 10),
+        call_ref(
+            "SetRetryConfig",
+            Some(MemberChain {
+                segments: vec![
+                    segment("client", SegmentKind::Identifier, false, 20),
+                    segment("SetRetryConfig", SegmentKind::Property, true, 27),
+                ],
+            }),
+            2,
+            20,
+        ),
+        call_ref("NewWithoutReturn", None, 3, 40),
+        call_ref(
+            "SetRetryConfig",
+            Some(MemberChain {
+                segments: vec![
+                    segment("uncaptured", SegmentKind::Identifier, false, 50),
+                    segment("SetRetryConfig", SegmentKind::Property, true, 61),
+                ],
+            }),
+            4,
+            50,
+        ),
+    ];
+    let mut flow = FlowMeta::default();
+    flow.flow_binding_lhs.insert(0, 1);
+    flow.flow_binding_lhs.insert(2, 2);
+    let pf = ParsedFile {
+        path: "main.go".into(),
+        language: "go".into(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols,
+        refs,
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow,
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
+    };
+    let mut id_map = HashMap::new();
+    for (idx, qname) in [
+        "main",
+        "main.client",
+        "main.uncaptured",
+        "client.NewWithClient",
+        "client.NewWithoutReturn",
+        "client.Client",
+        "client.Client.SetRetryConfig",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        id_map.insert(("main.go".to_string(), qname.to_string()), idx as i64 + 1);
+    }
+    let arena = Arc::new(TypeArena::new());
+    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
+        std::slice::from_ref(&pf),
+        &id_map.clone().into(),
+        Arc::clone(&arena),
+    );
+    assert_eq!(
+        tree.return_type_str("client.NewWithClient").as_deref(),
+        Some("client.Client"),
+        "the Go signature's trailing *Client result must materialize in the factory return slot",
+    );
+    let profiles = super::build_profiles();
+    let solver = super::SemanticModel::production();
+    let (edges, unresolved, _ref_log, _census) = super::resolve_one_file(
+        &pf,
+        &tree,
+        &profiles,
+        &no_plugins(),
+        None,
+        &solver,
+        &id_map.clone().into(),
+        None,
+    );
+
+    assert!(
+        edges.iter().any(|edge| edge.1 == 4),
+        "NewWithClient() must resolve; edges={edges:?}"
+    );
+    assert!(
+        edges.iter().any(|edge| edge.1 == 7),
+        "client.SetRetryConfig() must resolve through Client, never client.NewWithClient; edges={edges:?}"
+    );
+    assert_eq!(
+        edges.len(),
+        3,
+        "the two factory calls and only the captured receiver chain must resolve; edges={edges:?}"
+    );
+    assert_eq!(
+        unresolved.len(),
+        1,
+        "only uncaptured.SetRetryConfig must be unresolved; unresolved={unresolved:?}"
+    );
+    let (_, target, _, _, _, _, _, _, cause_id, cause_kind) = &unresolved[0];
+    assert_eq!(target, "SetRetryConfig");
+    assert_eq!(*cause_id, Some(5));
+    assert_eq!(*cause_kind, Some("uncaptured_return"));
+}
+
 /// A rename import ref (`use m::Orig as Bound;`) carries the module's original
 /// declared name as a single-segment chain. `build_file_context` must key the
 /// entry on the ORIGINAL name — that is what the module's files declare — with

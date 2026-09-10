@@ -1,7 +1,7 @@
 // Tests for calls.rs — lambda parameter-name capture in call args, including
 // the brace-block call form whose args node is a `block`.
 
-use crate::types::CallArg;
+use crate::types::{CallArg, EdgeKind, SegmentKind};
 
 /// Parse a Scala snippet and return the args of the first `Calls` ref that
 /// carries a captured lambda argument. Filtering for a `Lambda` arg targets the
@@ -102,4 +102,29 @@ object O { val items: List[org.apache.commons.io.IOUtils] = null }
             "package segment {seg:?} leaked as a TypeRef; got {type_refs:?}"
         );
     }
+}
+
+#[test]
+fn this_member_call_emits_self_root_and_called_property() {
+    let result = super::super::extract::extract(
+        "class Same { def modify() = (); def call() = this.modify() }",
+    );
+    let calls: Vec<_> = result
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .collect();
+    assert_eq!(calls.len(), 1, "expected one this.modify call: {calls:?}");
+
+    let segments = &calls[0]
+        .chain
+        .as_ref()
+        .expect("this.modify must carry a member chain")
+        .segments;
+    assert_eq!(segments.len(), 2, "unexpected chain: {segments:?}");
+    assert_eq!(segments[0].name, "this");
+    assert_eq!(segments[0].kind, SegmentKind::SelfRef);
+    assert_eq!(segments[1].name, "modify");
+    assert_eq!(segments[1].kind, SegmentKind::Property);
+    assert!(segments[1].is_call, "modify must be marked as called");
 }

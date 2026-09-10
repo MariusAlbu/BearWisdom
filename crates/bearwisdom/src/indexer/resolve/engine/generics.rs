@@ -31,9 +31,10 @@ use super::chain::head_qname;
 /// union, an intersection, a head or arity mismatch — is a silent no-op that
 /// leaves the slot open rather than guessing.
 ///
-/// A slot binds at most once (the first concrete position wins) and never to
-/// `Unknown` or to another generic parameter, so an untyped argument can never
-/// erase a binding a later argument would have supplied.
+/// A slot binds only when every concrete occurrence agrees. An untyped argument
+/// is no evidence and never changes a prior binding; two distinct concrete
+/// occurrences permanently conflict to `Unknown`, so a later matching argument
+/// cannot restore a generic inference the call itself disproved.
 pub(crate) fn unify_into(
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
@@ -48,7 +49,7 @@ pub(crate) fn unify_into(
     match (arena.get(pattern), arena.get(actual)) {
         (Type::Class(name), _) => {
             if params.contains(&name) {
-                env.entry(name).or_insert(actual);
+                bind_slot(arena, env, &name, actual);
             }
         }
         // A class VALUE against a token-shaped parameter: `inject(TasksService)`
@@ -74,7 +75,7 @@ pub(crate) fn unify_into(
                 .collect();
             if let [slot] = &open[..] {
                 if pattern_head_constructs(lookup, arena, p_base) {
-                    env.entry(slot.clone()).or_insert(inner);
+                    bind_slot(arena, env, slot, inner);
                 }
             }
         }
@@ -126,6 +127,23 @@ pub(crate) fn unify_into(
         // parameter, not the argument — unify through it.
         (Type::Optional(p_in), _) => unify_into(lookup, arena, p_in, actual, params, env),
         _ => {}
+    }
+}
+
+/// Add one concrete inference for a generic slot. Equal facts agree; unequal
+/// facts mean the same generic appeared under incompatible call-site types and
+/// therefore has no sound substitution. `Unknown` is an absorbing conflict
+/// marker rather than a candidate a later argument may overwrite.
+fn bind_slot(arena: &TypeArena, env: &mut FxHashMap<String, TypeId>, name: &str, actual: TypeId) {
+    let unknown = arena.intern(Type::Unknown);
+    match env.get(name).copied() {
+        None => {
+            env.insert(name.to_owned(), actual);
+        }
+        Some(existing) if existing == unknown || existing == actual => {}
+        Some(_) => {
+            env.insert(name.to_owned(), unknown);
+        }
     }
 }
 

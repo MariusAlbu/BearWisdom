@@ -53,9 +53,9 @@ ROOT-family rows.
 
 - [x] audit: only java/python/ruby/swift emit parameter symbols; typed params surface as `Property` in ts/csharp/go; flow runner now synthesizes binding symbols and 11 languages' flow queries seed parameter + typed-local types (`132f2482`)
 - [ ] lambda / closure params typed from the callee's parameter types (call-site arg→param binding, generic)
-- [ ] `this` / `self` root fails enclosing-type lookup (scala `this.modify`) — trace, fix the id-keyed enclosing lookup
+- [x] `this` / `self` root fails enclosing-type lookup (scala `this.modify`) — trace, fix the id-keyed enclosing lookup
 - [x] pointer-sigil types (`*fiber.Ctx`) intern as the pointee (`922032c0`); go-fiber +7,067 edges once parameters seeded
-- [ ] Go local seeded with the callee's QNAME as its type (`client → client.NewWithClient`) — return-type capture vs seed fallback, trace first
+- [x] Go local seeded with the callee's QNAME as its type (`client → client.NewWithClient`) — return-type capture vs seed fallback, trace first
 - [ ] pattern / destructuring bindings (`case (key, inputs)`, `const { a } = …`) seed element types
 - [x] targeted recapture (14 census projects, `5c893f20`): +23,995 edges (+1.7%), aggregate 63.83% → 64.90%; go-fiber 55.19 → 63.50, php-laravel 50.46 → 56.15, kotlin-ktor +0.7, rust-tantivy +0.8, java-petclinic +1.0, puppet +0.3, python-superset +0.1; nothing regressed
 - [ ] remaining root typing: lambda params from callee params, `this`/self enclosing lookup, Go callee-qname seed, destructuring — the census after M2 still holds untyped_binding 56k + untyped_root 17k on these 14

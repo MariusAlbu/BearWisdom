@@ -937,9 +937,12 @@ pub(crate) fn parse_top_level_conditional(rt: &str) -> Option<(String, String)> 
 /// `pointer_type_name`). A void method (nothing after the param list) → `None`.
 fn parse_go_result(sig: &str) -> Option<String> {
     let trimmed = sig.trim();
-    let skip_receiver = trimmed.starts_with("func");
+    let skip_receiver = trimmed
+        .strip_prefix("func")
+        .is_some_and(|after_func| after_func.trim_start().starts_with('('));
     // Index of the first param-list group to skip (the receiver) before the
-    // real param list. `func`-prefixed struct methods carry one; interface
+    // real param list. Only `func (` struct methods carry one; free functions
+    // name the function before their sole parameter group, and interface
     // method_elems carry none.
     let groups_to_skip = if skip_receiver { 1 } else { 0 };
 

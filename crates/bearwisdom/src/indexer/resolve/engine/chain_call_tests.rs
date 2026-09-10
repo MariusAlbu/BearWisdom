@@ -1,11 +1,17 @@
 use super::*;
 use crate::indexer::{
-    resolve::engine::{compilation::Compilation, contract::TypeInfo, testkit::sym},
+    resolve::engine::{
+        compilation::Compilation,
+        contract::TypeInfo,
+        testkit::{sym, sym_with_sig, Lookup},
+    },
     symbol_ids::SymbolIds,
 };
 use crate::type_checker::core::types::{
     GenericParamData, GenericParamKind, Indirection, Lifetime, Mutability,
 };
+use crate::type_checker::profile::language_profile::DelegateShape;
+use crate::types::CallArg;
 use std::sync::Arc;
 
 #[test]
@@ -152,4 +158,78 @@ fn zero_argument_calls_substitute_only_attested_matching_receiver_regions() {
         env[&method], unknown,
         "ordinary input must not impersonate receiver evidence"
     );
+}
+
+#[test]
+fn legacy_callback_seeding_uses_the_one_callback_shaped_overload() {
+    let non_callback = sym_with_sig(
+        30,
+        "Entity",
+        "ModelBuilder.Entity",
+        "method",
+        "src/ModelBuilder.cs",
+        "Entity(string, string): EntityTypeBuilder",
+    );
+    let callback = sym_with_sig(
+        31,
+        "Entity",
+        "ModelBuilder.Entity",
+        "method",
+        "src/ModelBuilder.cs",
+        "Entity(string, Action<EntityTypeBuilder>): EntityTypeBuilder",
+    );
+    let lookup = Lookup::new().with(non_callback.clone()).with(callback);
+    let arena = lookup.type_arena().expect("arena");
+    let args = vec![
+        CallArg::StringLit("users".into()),
+        CallArg::Lambda {
+            params: vec!["builder".into()],
+        },
+    ];
+
+    let selected = super::_test_uniquely_contextual_callback_callee(
+        &lookup,
+        arena,
+        &non_callback,
+        &args,
+        &[("Action", DelegateShape::AllParams)],
+    );
+    assert_eq!(selected.map(|symbol| symbol.id), Some(31));
+}
+
+#[test]
+fn legacy_callback_seeding_abstains_for_equal_arity_callback_overloads() {
+    let first = sym_with_sig(
+        30,
+        "Entity",
+        "ModelBuilder.Entity",
+        "method",
+        "src/ModelBuilder.cs",
+        "Entity(string, Action<FirstBuilder>): EntityTypeBuilder",
+    );
+    let second = sym_with_sig(
+        31,
+        "Entity",
+        "ModelBuilder.Entity",
+        "method",
+        "src/ModelBuilder.cs",
+        "Entity(string, Action<SecondBuilder>): EntityTypeBuilder",
+    );
+    let lookup = Lookup::new().with(first.clone()).with(second);
+    let arena = lookup.type_arena().expect("arena");
+    let args = vec![
+        CallArg::StringLit("users".into()),
+        CallArg::Lambda {
+            params: vec!["builder".into()],
+        },
+    ];
+
+    assert!(super::_test_uniquely_contextual_callback_callee(
+        &lookup,
+        arena,
+        &first,
+        &args,
+        &[("Action", DelegateShape::AllParams)],
+    )
+    .is_none());
 }
