@@ -29,10 +29,10 @@ fn call_args_for(src: &str, target: &str) -> Vec<CallArg> {
         .unwrap_or_default()
 }
 
-fn lambda_param_slices<'a>(src: &'a str, args: &[CallArg]) -> Vec<Vec<Option<&'a str>>> {
+fn callback_param_slices<'a>(src: &'a str, args: &[CallArg]) -> Vec<Vec<Option<&'a str>>> {
     args.iter()
         .filter_map(|arg| match arg {
-            CallArg::LambdaAt { params } => Some(
+            CallArg::LambdaAt { params } | CallArg::TrailingBlockAt { params } => Some(
                 params
                     .iter()
                     .map(|span| span.map(|span| &src[span.start as usize..span.end as usize]))
@@ -43,13 +43,13 @@ fn lambda_param_slices<'a>(src: &'a str, args: &[CallArg]) -> Vec<Vec<Option<&'a
         .collect()
 }
 
-fn first_lambda_params(args: &[CallArg]) -> &[Option<SourceSpan>] {
+fn first_trailing_block_params(args: &[CallArg]) -> &[Option<SourceSpan>] {
     args.iter()
         .find_map(|arg| match arg {
-            CallArg::LambdaAt { params } => Some(params.as_slice()),
+            CallArg::TrailingBlockAt { params } => Some(params.as_slice()),
             _ => None,
         })
-        .expect("expected LambdaAt callback argument")
+        .expect("expected TrailingBlockAt callback argument")
 }
 
 #[test]
@@ -90,13 +90,17 @@ def caller(arr)
 end
 "#;
     let args = parse_call_args(src);
+    assert!(
+        matches!(args.as_slice(), [CallArg::TrailingBlockAt { .. }]),
+        "brace block must retain trailing-block provenance: {args:?}"
+    );
     assert_eq!(
-        lambda_param_slices(src, &args),
+        callback_param_slices(src, &args),
         vec![vec![Some("x")]],
         "brace callback parameter must retain its exact declaration span: {args:?}"
     );
     assert_eq!(
-        first_lambda_params(&args)[0].unwrap().start as usize,
+        first_trailing_block_params(&args)[0].unwrap().start as usize,
         src.find("|x|").unwrap() + 1,
         "the parameter span must point at the declaration, not x.foo"
     );
@@ -112,13 +116,17 @@ def caller(arr)
 end
 "#;
     let args = parse_call_args(src);
+    assert!(
+        matches!(args.as_slice(), [CallArg::TrailingBlockAt { .. }]),
+        "do block must retain trailing-block provenance: {args:?}"
+    );
     assert_eq!(
-        lambda_param_slices(src, &args),
+        callback_param_slices(src, &args),
         vec![vec![Some("y")]],
         "do callback parameter must retain its exact declaration span: {args:?}"
     );
     assert_eq!(
-        first_lambda_params(&args)[0].unwrap().start as usize,
+        first_trailing_block_params(&args)[0].unwrap().start as usize,
         src.find("|y|").unwrap() + 1,
         "the parameter span must point at the declaration, not y.bar"
     );
@@ -132,13 +140,23 @@ def caller
 end
 "#;
     let args = call_args_for(src, "consume");
+    assert!(
+        matches!(args.as_slice(), [CallArg::LambdaAt { .. }]),
+        "direct arrow lambda must remain a positional LambdaAt: {args:?}"
+    );
     assert_eq!(
-        lambda_param_slices(src, &args),
+        callback_param_slices(src, &args),
         vec![vec![Some("item"), Some("other")]],
         "direct arrow lambda parameters must remain positional: {args:?}"
     );
     assert_eq!(
-        first_lambda_params(&args)[0].unwrap().start as usize,
+        args.iter()
+            .find_map(|arg| match arg {
+                CallArg::LambdaAt { params } => params.first().copied().flatten(),
+                _ => None,
+            })
+            .unwrap()
+            .start as usize,
         src.find("item, other").unwrap(),
         "the arrow parameter span must point at its declaration"
     );
@@ -153,8 +171,12 @@ fn call_args_callback_factories_capture_only_exact_proc_shapes() {
     ] {
         let src = format!("def caller\n  consume({factory})\nend\n");
         let args = call_args_for(&src, "consume");
+        assert!(
+            matches!(args.as_slice(), [CallArg::LambdaAt { .. }]),
+            "factory `{factory}` must remain a positional LambdaAt: {args:?}"
+        );
         assert_eq!(
-            lambda_param_slices(&src, &args),
+            callback_param_slices(&src, &args),
             vec![vec![Some(parameter)]],
             "factory `{factory}` must be a callback argument: {args:?}"
         );
@@ -167,7 +189,7 @@ end
 "#;
     let args = call_args_for(src, "consume");
     assert!(
-        lambda_param_slices(src, &args).is_empty(),
+        callback_param_slices(src, &args).is_empty(),
         "a receiver-owned proc method is not the Kernel proc factory: {args:?}"
     );
 }
@@ -180,7 +202,7 @@ fn call_args_zero_arity_callbacks_remain_explicit_lambda_arguments() {
     ] {
         let args = call_args_for(source, "each");
         assert_eq!(
-            lambda_param_slices(source, &args),
+            callback_param_slices(source, &args),
             vec![Vec::new()],
             "zero-parameter trailing block must remain a callback argument: {args:?}"
         );
@@ -188,7 +210,7 @@ fn call_args_zero_arity_callbacks_remain_explicit_lambda_arguments() {
 
     let arrow = "def caller\n  consume(-> { touch })\nend\n";
     assert_eq!(
-        lambda_param_slices(arrow, &call_args_for(arrow, "consume")),
+        callback_param_slices(arrow, &call_args_for(arrow, "consume")),
         vec![Vec::new()],
         "zero-parameter arrow must remain a callback argument"
     );
@@ -196,7 +218,7 @@ fn call_args_zero_arity_callbacks_remain_explicit_lambda_arguments() {
     for factory in ["proc { touch }", "lambda { touch }", "Proc.new { touch }"] {
         let source = format!("def caller\n  consume({factory})\nend\n");
         assert_eq!(
-            lambda_param_slices(&source, &call_args_for(&source, "consume")),
+            callback_param_slices(&source, &call_args_for(&source, "consume")),
             vec![Vec::new()],
             "zero-parameter `{factory}` must remain a callback argument"
         );
@@ -212,7 +234,7 @@ end
 "#;
     let args = parse_call_args(src);
     assert_eq!(
-        lambda_param_slices(src, &args),
+        callback_param_slices(src, &args),
         vec![vec![Some("first"), None, None, None, None, None]],
         "destructure/rest/keyword/optional/block forms need holes; block locals are not callback parameters: {args:?}"
     );

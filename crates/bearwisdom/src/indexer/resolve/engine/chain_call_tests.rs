@@ -278,6 +278,38 @@ fn legacy_callback_seeding_uses_the_one_callback_shaped_overload() {
 }
 
 #[test]
+fn trailing_blocks_select_callback_shaped_overloads_for_contextual_seeding() {
+    let non_callback = sym_with_sig(
+        32,
+        "visit",
+        "Catalog.visit",
+        "method",
+        "catalog.rbs",
+        "visit(Request): void",
+    );
+    let callback = sym_with_sig(
+        33,
+        "visit",
+        "Catalog.visit",
+        "method",
+        "catalog.rbs",
+        "visit(Request, callback: (Item) -> Result): void",
+    );
+    let lookup = Lookup::new().with(non_callback.clone()).with(callback);
+    let arena = lookup.type_arena().expect("arena");
+    let args = vec![
+        CallArg::Ident("request".into()),
+        CallArg::TrailingBlockAt {
+            params: vec![Some(crate::types::SourceSpan { start: 40, end: 44 })],
+        },
+    ];
+
+    let selected =
+        super::_test_uniquely_contextual_callback_callee(&lookup, arena, &non_callback, &args, &[]);
+    assert_eq!(selected.map(|symbol| symbol.id), Some(33));
+}
+
+#[test]
 fn legacy_callback_seeding_abstains_for_equal_arity_callback_overloads() {
     let first = sym_with_sig(
         30,

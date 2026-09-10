@@ -42,18 +42,19 @@ pub(super) fn call(
             let origin = selected.origins.get(selected.selected).ok_or(())?;
             let declaration = origin
                 .declaration
-                .filter(|&id| lookup.symbol_by_id(id).is_some())
+                .and_then(|id| lookup.symbol_by_id(id))
                 .ok_or(())?;
-            super::super::lambda_seed::seed_patterns(
+            super::super::lambda_seed::seed_patterns_for_callee(
                 lookup,
                 arena,
+                declaration,
                 args,
                 &selected.parameters,
                 &Default::default(),
                 profile.delegate_wrappers,
             );
             Ok(SymbolInfo {
-                target_symbol_id: declaration,
+                target_symbol_id: declaration.id,
                 confidence: RESOLVED_CONFIDENCE,
                 strategy: "bound_overload",
                 resolved_yield_type: Some(selected.return_type),
@@ -259,9 +260,10 @@ pub(super) fn apply(
                 .iter()
                 .map(|&ty| rewrite(ty))
                 .collect();
-            super::super::lambda_seed::seed_patterns(
+            super::super::lambda_seed::seed_patterns_for_callee(
                 lookup,
                 arena,
+                member,
                 args,
                 &patterns,
                 &Default::default(),

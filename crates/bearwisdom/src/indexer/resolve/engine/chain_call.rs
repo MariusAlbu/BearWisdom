@@ -117,9 +117,10 @@ pub(super) fn apply_with_receiver(
             .and_then(|info| info.parameter_type_ids.clone())
             .unwrap_or_else(|| param_patterns(lookup, arena, &callee));
         let patterns: Vec<_> = patterns.into_iter().map(rewrite).collect();
-        lambda_seed::seed_patterns(
+        lambda_seed::seed_patterns_for_callee(
             lookup,
             arena,
+            &callee,
             args,
             &patterns,
             &Default::default(),
@@ -252,10 +253,7 @@ fn uniquely_contextual_callback_callee(
     args: &[CallArg],
     wrappers: &[(&str, DelegateShape)],
 ) -> Option<Symbol> {
-    if !args
-        .iter()
-        .any(|arg| matches!(arg, CallArg::Lambda { .. } | CallArg::LambdaAt { .. }))
-    {
+    if !args.iter().any(is_contextual_callback_arg) {
         return None;
     }
 
@@ -276,8 +274,7 @@ fn uniquely_contextual_callback_callee(
         let patterns = param_patterns(lookup, arena, &candidate);
         if patterns.len() != args.len()
             || !args.iter().zip(&patterns).all(|(arg, &pattern)| {
-                !matches!(arg, CallArg::Lambda { .. } | CallArg::LambdaAt { .. })
-                    || callback_pattern(arena, pattern, wrappers)
+                !is_contextual_callback_arg(arg) || callback_pattern(arena, pattern, wrappers)
             })
         {
             continue;
@@ -287,6 +284,16 @@ fn uniquely_contextual_callback_callee(
         }
     }
     match_
+}
+
+/// Callback-bearing syntax understood by the contextual overload selector.
+/// `TrailingBlockAt` stays distinct until lambda seeding, where strict Ruby
+/// declaration contracts can require it specifically.
+fn is_contextual_callback_arg(arg: &CallArg) -> bool {
+    matches!(
+        arg,
+        CallArg::Lambda { .. } | CallArg::LambdaAt { .. } | CallArg::TrailingBlockAt { .. }
+    )
 }
 
 fn callback_pattern(

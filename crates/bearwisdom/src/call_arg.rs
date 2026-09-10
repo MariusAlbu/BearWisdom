@@ -80,6 +80,11 @@ pub enum CallArg {
     /// Syntax-addressed callback parameters. None preserves unsupported pattern
     /// positions; spans map directly to file-local BindingIds, never names.
     LambdaAt { params: Vec<Option<SourceSpan>> },
+    /// Ruby block attached to the call (`receiver.method { |value| ... }` or
+    /// `receiver.method do |value| ... end`). Its exact parameter spans have
+    /// the same source identity as `LambdaAt`, while its separate syntax
+    /// provenance lets strict Ruby block contracts reject positional procs.
+    TrailingBlockAt { params: Vec<Option<SourceSpan>> },
     /// Any argument shape not covered by the above variants.
     Other,
 }

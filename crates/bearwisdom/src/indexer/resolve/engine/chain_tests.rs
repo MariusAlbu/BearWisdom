@@ -3821,6 +3821,49 @@ fn call_args_bind_against_the_arity_matching_overload() {
 }
 
 #[test]
+fn trailing_block_prefers_the_callback_shaped_same_arity_overload() {
+    use crate::indexer::resolve::engine::testkit::sym_with_sig;
+    use crate::types::CallArg;
+
+    let one = sym_with_sig(
+        32,
+        "visit",
+        "Catalog.visit",
+        "method",
+        "catalog.rbs",
+        "visit(Request): Response",
+    );
+    let ordinary = sym_with_sig(
+        33,
+        "visit",
+        "Catalog.visit",
+        "method",
+        "catalog.rbs",
+        "visit(Request, Item): Response",
+    );
+    let callback = sym_with_sig(
+        34,
+        "visit",
+        "Catalog.visit",
+        "method",
+        "catalog.rbs",
+        "visit(Request, callback: (Item) -> Result): Response",
+    );
+    let lookup = Lookup::new()
+        .with(one.clone())
+        .with(ordinary)
+        .with(callback);
+    let arena = lookup.type_arena().expect("arena");
+    let args = vec![
+        CallArg::Ident("request".to_string()),
+        CallArg::TrailingBlockAt { params: vec![None] },
+    ];
+
+    let picked = super::_test_select_overload_for_args(&lookup, arena, &one, &args);
+    assert_eq!(picked.id, 34, "the structural callback overload must win");
+}
+
+#[test]
 fn closest_receiver_extension_overload_wins() {
     // Two same-name extensions in ONE declaring class: one on the receiver's
     // direct supertype, one on a remoter ancestor. The closest match is the

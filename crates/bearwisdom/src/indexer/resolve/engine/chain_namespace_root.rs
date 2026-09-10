@@ -131,9 +131,10 @@ fn call_yield(
         .copied()
         .map(rewrite)
         .collect();
-    super::super::lambda_seed::seed_patterns(
+    super::super::lambda_seed::seed_patterns_for_callee(
         lookup,
         arena,
+        callee,
         args,
         &patterns,
         &Default::default(),

@@ -38,12 +38,14 @@ pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
         }
     }
     // A trailing block (`{ |x| ... }` / `do |y| ... end`) is a callback
-    // argument. Preserve each declaration token's exact source address so
-    // contextual typing never writes a file-wide name. Unsupported formal
-    // positions stay holes; `; local` names are block locals, not parameters.
+    // argument. Keep its distinct Ruby syntax provenance: strict RBS/RBI
+    // block contracts must not be satisfied by a positional proc. Preserve
+    // each declaration token's exact source address so contextual typing
+    // never writes a file-wide name. Unsupported formal positions stay holes;
+    // `; local` names are block locals, not parameters.
     if let Some(block) = call_node.child_by_field_name("block") {
         let params = block_param_spans(&block);
-        out.push(CallArg::LambdaAt { params });
+        out.push(CallArg::TrailingBlockAt { params });
     }
     out
 }

@@ -40,10 +40,12 @@ pub(crate) fn seed_lambda_params(
     arg_env: &FxHashMap<String, TypeId>,
     delegate_wrappers: &[(&str, DelegateShape)],
 ) {
-    if !args
-        .iter()
-        .any(|a| matches!(a, CallArg::Lambda { .. } | CallArg::LambdaAt { .. }))
-    {
+    if !args.iter().any(|a| {
+        matches!(
+            a,
+            CallArg::Lambda { .. } | CallArg::LambdaAt { .. } | CallArg::TrailingBlockAt { .. }
+        )
+    }) {
         return;
     }
     let patterns = param_patterns(lookup, arena, callee);
@@ -57,7 +59,28 @@ pub(crate) fn seed_lambda_params(
         .iter()
         .map(|&p| substitute_env(arena, p, &env))
         .collect();
-    seed_patterns(lookup, arena, args, &patterns, &open, delegate_wrappers);
+    seed_patterns_for_callee(
+        lookup,
+        arena,
+        callee,
+        args,
+        &patterns,
+        &open,
+        delegate_wrappers,
+    );
+}
+
+/// RBS and RBI declarations describe Ruby's attached block contract. Their
+/// callback slot must be satisfied by a syntactic trailing block, never a proc
+/// or arrow lambda passed in the ordinary argument list.
+fn strict_ruby_block_contract(callee: &Symbol) -> bool {
+    callee
+        .file_path
+        .rsplit('.')
+        .next()
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("rbs") || extension.eq_ignore_ascii_case("rbi")
+        })
 }
 
 /// Keep a concrete generic binding learned from the receiver unless argument
@@ -91,8 +114,57 @@ pub(super) fn seed_patterns(
     open: &FxHashSet<String>,
     delegate_wrappers: &[(&str, DelegateShape)],
 ) {
+    seed_patterns_with_policy(
+        lookup,
+        arena,
+        args,
+        patterns,
+        open,
+        delegate_wrappers,
+        false,
+    );
+}
+
+/// Seed selected-callee callback patterns while preserving contract-specific
+/// provenance requirements. RBS/RBI `&block` slots only admit a syntactic
+/// trailing block; ordinary lambda/proc arguments do not satisfy that slot.
+pub(super) fn seed_patterns_for_callee(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    callee: &Symbol,
+    args: &[CallArg],
+    patterns: &[TypeId],
+    open: &FxHashSet<String>,
+    delegate_wrappers: &[(&str, DelegateShape)],
+) {
+    seed_patterns_with_policy(
+        lookup,
+        arena,
+        args,
+        patterns,
+        open,
+        delegate_wrappers,
+        strict_ruby_block_contract(callee),
+    );
+}
+
+fn seed_patterns_with_policy(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    args: &[CallArg],
+    patterns: &[TypeId],
+    open: &FxHashSet<String>,
+    delegate_wrappers: &[(&str, DelegateShape)],
+    strict_ruby_block_contract: bool,
+) {
     for (i, arg) in args.iter().enumerate() {
-        if !matches!(arg, CallArg::Lambda { .. } | CallArg::LambdaAt { .. }) {
+        let is_callback = matches!(
+            arg,
+            CallArg::Lambda { .. } | CallArg::LambdaAt { .. } | CallArg::TrailingBlockAt { .. }
+        );
+        if !is_callback
+            || (strict_ruby_block_contract && !matches!(arg, CallArg::TrailingBlockAt { .. }))
+        {
             continue;
         }
         let Some(&pattern) = patterns.get(i) else {
@@ -107,7 +179,7 @@ pub(super) fn seed_patterns(
             continue;
         };
         match arg {
-            CallArg::LambdaAt { params } => {
+            CallArg::LambdaAt { params } | CallArg::TrailingBlockAt { params } => {
                 for (span, &ty) in params.iter().zip(&callback_params) {
                     crate::tracef!(
                         "  CALLBACK parameter={:?} type={:?} open={}",

@@ -17,6 +17,7 @@ fn detect_typescript() {
 #[test]
 fn detect_rbs_uses_the_contract_route() {
     assert_eq!(detect_language(Path::new("catalog.rbs")), Some("rbs"));
+    assert_eq!(detect_language(Path::new("catalog.rbi")), Some("rbi"));
     assert_eq!(detect_language(Path::new("catalog.rb")), Some("ruby"));
 }
 

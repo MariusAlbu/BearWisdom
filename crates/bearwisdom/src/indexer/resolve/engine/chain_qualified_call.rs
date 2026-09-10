@@ -29,14 +29,25 @@ pub(super) fn anchor(
     let selected = lookup.qualified_call(segment.byte_offset, &actual, explicit)?;
     Some(selected.map_err(|_| None).and_then(|call| {
         let ordinary = args.get(call.receiver_arguments..).ok_or(None)?;
-        super::super::lambda_seed::seed_patterns(
-            lookup,
-            arena,
-            ordinary,
-            &call.parameters,
-            &Default::default(),
-            profile.delegate_wrappers,
-        );
+        match lookup.symbol_by_id(call.declaration) {
+            Some(callee) => super::super::lambda_seed::seed_patterns_for_callee(
+                lookup,
+                arena,
+                callee,
+                ordinary,
+                &call.parameters,
+                &Default::default(),
+                profile.delegate_wrappers,
+            ),
+            None => super::super::lambda_seed::seed_patterns(
+                lookup,
+                arena,
+                ordinary,
+                &call.parameters,
+                &Default::default(),
+                profile.delegate_wrappers,
+            ),
+        }
         if terminal {
             Ok(namespace_root::Anchor::Terminal(SymbolInfo {
                 target_symbol_id: call.declaration,

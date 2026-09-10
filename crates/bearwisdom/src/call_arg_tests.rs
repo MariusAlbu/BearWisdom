@@ -38,6 +38,23 @@ fn source_addressed_identifier_round_trips_without_a_name_payload() {
 }
 
 #[test]
+fn trailing_block_parameters_round_trip_with_their_exact_spans() {
+    let block = CallArg::TrailingBlockAt {
+        params: vec![
+            Some(SourceSpan { start: 12, end: 16 }),
+            None,
+            Some(SourceSpan { start: 20, end: 25 }),
+        ],
+    };
+    let payload = serde_json::to_string(&block).unwrap();
+    assert_eq!(
+        payload,
+        r#"{"TrailingBlockAt":{"params":[{"start":12,"end":16},null,{"start":20,"end":25}]}}"#
+    );
+    assert_eq!(serde_json::from_str::<CallArg>(&payload).unwrap(), block);
+}
+
+#[test]
 fn nested_argument_traversal_visits_only_identifier_use_spans() {
     let first = SourceSpan { start: 10, end: 12 };
     let second = SourceSpan { start: 30, end: 31 };

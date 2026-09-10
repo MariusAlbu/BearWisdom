@@ -1374,7 +1374,9 @@ fn select_overload_for_args(
         let lambdas_fit = args.iter().zip(patterns.iter()).all(|(a, &p)| {
             if !matches!(
                 a,
-                crate::types::CallArg::Lambda { .. } | crate::types::CallArg::LambdaAt { .. }
+                crate::types::CallArg::Lambda { .. }
+                    | crate::types::CallArg::LambdaAt { .. }
+                    | crate::types::CallArg::TrailingBlockAt { .. }
             ) {
                 return true;
             }

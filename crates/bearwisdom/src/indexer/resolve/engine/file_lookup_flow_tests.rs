@@ -1457,14 +1457,14 @@ fn ruby_rbs_required_block_contract_seeds_the_exact_trailing_block_parameter() {
                 && reference
                     .call_args
                     .iter()
-                    .any(|arg| matches!(arg, CallArg::LambdaAt { .. }))
+                    .any(|arg| matches!(arg, CallArg::TrailingBlockAt { .. }))
         })
-        .expect("Ruby visit trailing block with LambdaAt");
+        .expect("Ruby visit trailing block with exact provenance");
     let call_args = callback.call_args.clone();
     let parameter = call_args
         .iter()
         .find_map(|arg| match arg {
-            CallArg::LambdaAt { params } => params.first().copied().flatten(),
+            CallArg::TrailingBlockAt { params } => params.first().copied().flatten(),
             _ => None,
         })
         .expect("Ruby trailing-block parameter span");

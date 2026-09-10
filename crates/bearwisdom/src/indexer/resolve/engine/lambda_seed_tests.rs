@@ -176,6 +176,155 @@ fn a_source_addressed_lambda_parameter_records_its_exact_span() {
 }
 
 #[test]
+fn a_trailing_block_parameter_records_its_exact_span() {
+    let lookup = SeedLookup::new("Array", &["T"]);
+    let arena = TypeArena::new();
+    let parameter = crate::types::SourceSpan { start: 24, end: 28 };
+    let args = vec![CallArg::TrailingBlockAt {
+        params: vec![Some(parameter)],
+    }];
+
+    seed_lambda_params(
+        &lookup,
+        &arena,
+        &map_method(),
+        &args,
+        array_of(&arena, "User"),
+        None,
+        &FxHashMap::default(),
+        &[],
+    );
+
+    let contextual = lookup.contextual.borrow();
+    assert_eq!(contextual.len(), 1);
+    assert_eq!(contextual[0].0, parameter);
+    assert_eq!(arena.get(contextual[0].1), Type::Class("User".to_string()));
+}
+
+#[test]
+fn strict_ruby_block_contracts_reject_positional_callbacks_and_accept_trailing_blocks() {
+    for extension in ["rbs", "rbi"] {
+        let arena = TypeArena::new();
+        let mut contract = map_method();
+        contract.file_path = format!("contracts/catalog.{extension}").into();
+        let parameter = crate::types::SourceSpan { start: 24, end: 28 };
+
+        for positional in [
+            CallArg::Lambda {
+                params: vec!["item".to_string()],
+            },
+            CallArg::LambdaAt {
+                params: vec![Some(parameter)],
+            },
+        ] {
+            let lookup = SeedLookup::new("Array", &["T"]);
+            seed_lambda_params(
+                &lookup,
+                &arena,
+                &contract,
+                &[positional],
+                array_of(&arena, "Item"),
+                None,
+                &FxHashMap::default(),
+                &[],
+            );
+            assert!(lookup.seeded.borrow().is_empty());
+            assert!(lookup.contextual.borrow().is_empty());
+        }
+
+        let lookup = SeedLookup::new("Array", &["T"]);
+        seed_lambda_params(
+            &lookup,
+            &arena,
+            &contract,
+            &[CallArg::TrailingBlockAt {
+                params: vec![Some(parameter)],
+            }],
+            array_of(&arena, "Item"),
+            None,
+            &FxHashMap::default(),
+            &[],
+        );
+        assert_eq!(
+            lookup.contextual.borrow().as_slice(),
+            &[(parameter, arena.class("Item"))]
+        );
+    }
+}
+
+#[test]
+fn direct_selected_rbi_contract_seeding_requires_a_trailing_block() {
+    let arena = TypeArena::new();
+    let mut contract = map_method();
+    contract.file_path = "contracts/catalog.rbi".into();
+    let callback = arena.intern(Type::Function {
+        params: vec![arena.class("Item")],
+        return_: arena.class("Result"),
+    });
+    let parameter = crate::types::SourceSpan { start: 24, end: 28 };
+
+    // `->(item) { ... }` is an ordinary positional argument (`LambdaAt`),
+    // not the RBI declaration's attached `&block`.
+    let arrow_lookup = SeedLookup::new("Array", &[]);
+    seed_patterns_for_callee(
+        &arrow_lookup,
+        &arena,
+        &contract,
+        &[CallArg::LambdaAt {
+            params: vec![Some(parameter)],
+        }],
+        &[callback],
+        &Default::default(),
+        &[],
+    );
+    assert!(arrow_lookup.contextual.borrow().is_empty());
+
+    let block_lookup = SeedLookup::new("Array", &[]);
+    seed_patterns_for_callee(
+        &block_lookup,
+        &arena,
+        &contract,
+        &[CallArg::TrailingBlockAt {
+            params: vec![Some(parameter)],
+        }],
+        &[callback],
+        &Default::default(),
+        &[],
+    );
+    assert_eq!(
+        block_lookup.contextual.borrow().as_slice(),
+        &[(parameter, arena.class("Item"))]
+    );
+}
+
+#[test]
+fn non_contract_ruby_callbacks_still_seed_positional_lambdas() {
+    let lookup = SeedLookup::new("Array", &["T"]);
+    let arena = TypeArena::new();
+    let mut callee = map_method();
+    callee.file_path = "app/catalog.rb".into();
+    let parameter = crate::types::SourceSpan { start: 24, end: 28 };
+
+    seed_lambda_params(
+        &lookup,
+        &arena,
+        &callee,
+        &[CallArg::LambdaAt {
+            params: vec![Some(parameter)],
+        }],
+        array_of(&arena, "Item"),
+        None,
+        &FxHashMap::default(),
+        &[],
+    );
+
+    assert_eq!(
+        lookup.contextual.borrow().as_slice(),
+        &[(parameter, arena.class("Item"))]
+    );
+}
+
+#[test]
 fn an_open_generic_source_addressed_lambda_parameter_records_nothing() {
     let lookup = SeedLookup::new("Array", &["T"]);
     let arena = TypeArena::new();
@@ -380,7 +529,6 @@ fn a_delegate_wrapped_lambda_seeds_from_the_wrappers_generic_args() {
 
 #[test]
 fn a_nominal_non_delegate_parameter_stays_opaque() {
-    use crate::type_checker::profile::language_profile::DelegateShape;
     let lookup = SeedLookup::new("EFSnapshotBuilder.UseSnapshot", &["TEntity"]);
     let arena = TypeArena::new();
     let args = vec![CallArg::Lambda {

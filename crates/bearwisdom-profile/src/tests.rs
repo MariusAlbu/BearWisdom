@@ -80,6 +80,12 @@ mod detection {
     }
 
     #[test]
+    fn rbi_extension_is_discovered_with_ruby_sources() {
+        let lang = detect_language(Path::new("catalog.rbi")).expect("should detect");
+        assert_eq!(lang.id, "ruby");
+    }
+
+    #[test]
     fn php_extension() {
         let lang = detect_language(Path::new("index.php")).expect("should detect");
         assert_eq!(lang.id, "php");

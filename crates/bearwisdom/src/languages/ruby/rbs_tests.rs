@@ -133,7 +133,15 @@ end
         .all(|symbol| symbol.kind != SymbolKind::Method));
     assert_eq!(
         crate::languages::default_registry().language_by_extension("catalog.rbi"),
-        None,
-        "RBI remains deliberately unsupported by the RBS route"
+        Some("rbi"),
+        "RBI must use its dedicated route rather than the raw RBS extractor"
     );
+}
+
+#[test]
+fn rbi_route_is_separate_from_the_grammar_free_rbs_route() {
+    let plugin = super::RubyPlugin;
+    assert_eq!(plugin.language_id_for_extension(".rbi"), Some("rbi"));
+    assert!(plugin.grammar("rbi").is_some());
+    assert!(plugin.grammar("rbs").is_none());
 }
