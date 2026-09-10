@@ -55,6 +55,9 @@ ROOT-family rows.
 - [ ] lambda / closure params typed from the callee's parameter types (call-site arg→param binding, generic)
   - [x] exact scoped callback parameter seeding for Scala, Java, C#, Kotlin, Swift, Dart, Go, Python, and adjacent-PHPDoc PHP contracts
   - [ ] Ruby prerequisite: ingest selected RBS/RBI callable block contracts and capture trailing-block, Proc, and lambda parameter declaration spans as positional call arguments; seed only exact scoped bindings after arity/selected-callee proof, preserving nested/shadowed blocks and fresh/cold reload
+    - [x] Ruby trailing blocks, arrow lambdas, and exact `proc`/`lambda`/`Proc.new` factories emit positional declaration spans (including zero-arity and unsupported-form holes); callback identity preserves nested captures, fences shadows/boundaries, and survives fresh/cold restoration
+    - [x] strict `.rbs` required-block contracts are discovered without Ruby parsing, fail closed on overloads/optional/generic/complex or malformed shapes, materialize structural function slots, and seed exact Ruby block roots after normal selected-callee resolution
+    - [ ] RBI/Sorbet `sig`/`T.proc` ingestion and broader RBS overload, optional-block, generic, keyword, splat, and complex-type semantics remain fenced
 - [x] `this` / `self` root fails enclosing-type lookup (scala `this.modify`) — trace, fix the id-keyed enclosing lookup
 - [x] pointer-sigil types (`*fiber.Ctx`) intern as the pointee (`922032c0`); go-fiber +7,067 edges once parameters seeded
 - [x] Go local seeded with the callee's QNAME as its type (`client → client.NewWithClient`) — return-type capture vs seed fallback, trace first

@@ -61,6 +61,8 @@ pub fn walk(project_root: &Path) -> Result<Vec<WalkedFile>> {
 /// the `Option<&'static str>` return type expected by callers.
 ///
 /// Special cases:
+/// - `.rbs` shares Ruby's project profile but routes to the grammar-free RBS
+///   contract extractor rather than Ruby source parsing.
 /// - `.pp` is shared between Puppet manifests and Free Pascal source. The
 ///   profile matcher returns Puppet by default; override to Pascal when
 ///   the file head shows clear Pascal markers (`program`, `unit`,
@@ -80,6 +82,12 @@ pub fn walk(project_root: &Path) -> Result<Vec<WalkedFile>> {
 ///   the SCSS extractor runs and emits mixin/function symbols.
 pub fn detect_language(path: &Path) -> Option<&'static str> {
     let lang = profile_detect_language(path).map(|desc| desc.id);
+    // RBS declarations share Ruby's project profile (SDK, package manager,
+    // exclusions), but have a distinct raw extractor and deliberately no Ruby
+    // tree-sitter grammar. Route this extension before the Ruby source path.
+    if lang == Some("ruby") && is_dot_rbs(path) {
+        return Some("rbs");
+    }
     if lang == Some("puppet") && is_likely_pascal(path) {
         return Some("pascal");
     }
@@ -96,6 +104,13 @@ pub fn detect_language(path: &Path) -> Option<&'static str> {
         return None;
     }
     lang
+}
+
+fn is_dot_rbs(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("rbs"))
+        .unwrap_or(false)
 }
 
 fn is_dot_ts(path: &Path) -> bool {

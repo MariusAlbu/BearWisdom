@@ -5,7 +5,7 @@
 use super::helpers::{get_call_method_name, node_text};
 use crate::types::{
     CallArg, ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind,
-    SymbolKind,
+    SourceSpan, SymbolKind,
 };
 use tree_sitter::Node;
 
@@ -37,45 +37,69 @@ pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
             out.push(extract_arg(&child, src, 0));
         }
     }
-    // A trailing block (`{ |x| ... }` / `do |y| ... end`) is a child of the
-    // call node. Capture its positional parameter names as a `CallArg::Lambda`
-    // so the contextual callback-parameter typing seam types the block
-    // parameter from the callee's signature. A block with no parameters (or
-    // implicit numbered params) contributes nothing.
-    let mut cursor = call_node.walk();
-    for child in call_node.children(&mut cursor) {
-        if matches!(child.kind(), "block" | "do_block") {
-            let params = block_param_names(&child, src);
-            if !params.is_empty() {
-                out.push(CallArg::Lambda { params });
-            }
-            break;
-        }
+    // A trailing block (`{ |x| ... }` / `do |y| ... end`) is a callback
+    // argument. Preserve each declaration token's exact source address so
+    // contextual typing never writes a file-wide name. Unsupported formal
+    // positions stay holes; `; local` names are block locals, not parameters.
+    if let Some(block) = call_node.child_by_field_name("block") {
+        let params = block_param_spans(&block);
+        out.push(CallArg::LambdaAt { params });
     }
     out
 }
 
-/// Positional parameter names of a `block`/`do_block`'s `block_parameters`
-/// (`{ |x, y| ... }` -> `["x", "y"]`). Only bare identifier parameters are
-/// captured; destructuring / splat slots are skipped.
-fn block_param_names(block_node: &Node, src: &[u8]) -> Vec<String> {
-    let mut cursor = block_node.walk();
-    for child in block_node.children(&mut cursor) {
-        if child.kind() == "block_parameters" {
-            let mut names = Vec::new();
-            let mut pc = child.walk();
-            for p in child.children(&mut pc) {
-                if p.kind() == "identifier" {
-                    let name = node_text(&p, src);
-                    if !name.is_empty() {
-                        names.push(name);
-                    }
-                }
-            }
-            return names;
+/// Positional callback parameter declaration spans. Only a direct identifier
+/// is source-addressable under the fixed-arity callback contract. Every other
+/// formal form remains a positional hole, and Ruby's `; local` block locals
+/// are deliberately excluded altogether.
+fn parameter_spans(parameters: Node) -> Vec<Option<SourceSpan>> {
+    let mut out = Vec::new();
+    let mut after_locals = false;
+    let mut cursor = parameters.walk();
+    for child in parameters.children(&mut cursor) {
+        if child.kind() == ";" {
+            after_locals = true;
+            continue;
         }
+        if after_locals || !child.is_named() {
+            continue;
+        }
+        out.push((child.kind() == "identifier").then(|| SourceSpan {
+            start: child.start_byte() as u32,
+            end: child.end_byte() as u32,
+        }));
     }
-    Vec::new()
+    out
+}
+
+fn block_param_spans(block_node: &Node) -> Vec<Option<SourceSpan>> {
+    block_node
+        .child_by_field_name("parameters")
+        .filter(|parameters| parameters.kind() == "block_parameters")
+        .map(parameter_spans)
+        .unwrap_or_default()
+}
+
+fn lambda_param_spans(lambda_node: &Node) -> Vec<Option<SourceSpan>> {
+    lambda_node
+        .child_by_field_name("parameters")
+        .filter(|parameters| parameters.kind() == "lambda_parameters")
+        .map(parameter_spans)
+        .unwrap_or_default()
+}
+
+/// `proc {}`, `lambda {}`, and `Proc.new {}` create a callback only in these
+/// exact syntactic shapes. A same-named method on another receiver does not.
+fn callback_factory_param_spans(node: &Node, src: &[u8]) -> Option<Vec<Option<SourceSpan>>> {
+    let block = node.child_by_field_name("block")?;
+    let method = node.child_by_field_name("method")?;
+    let method_name = node_text(&method, src);
+    let receiver = node.child_by_field_name("receiver");
+    let is_kernel_factory = receiver.is_none() && matches!(method_name.as_str(), "proc" | "lambda");
+    let is_proc_new = receiver.is_some_and(|receiver| {
+        receiver.kind() == "constant" && node_text(&receiver, src) == "Proc"
+    }) && method_name == "new";
+    (is_kernel_factory || is_proc_new).then(|| block_param_spans(&block))
 }
 
 /// Convert a single Ruby argument expression node to a `CallArg`, recursing for
@@ -174,6 +198,16 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
                 right: Box::new(right),
             }
         }
+        // `->(x) { ... }` is a direct lambda expression. Its own parameter
+        // positions are independent of the containing call's arguments.
+        "lambda" => CallArg::LambdaAt {
+            params: lambda_param_spans(node),
+        },
+        // `proc {}`, `lambda {}`, and `Proc.new {}` passed as arguments carry
+        // exact block declaration spans. Other calls remain ordinary values.
+        "call" => callback_factory_param_spans(node, src)
+            .map(|params| CallArg::LambdaAt { params })
+            .unwrap_or(CallArg::Other),
         _ => CallArg::Other,
     }
 }

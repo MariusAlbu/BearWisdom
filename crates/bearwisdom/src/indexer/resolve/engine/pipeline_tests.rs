@@ -93,6 +93,98 @@ fn empty_parsed_returns_ok_with_zero_counts() {
     );
 }
 
+#[test]
+fn engine_selects_an_rbs_contract_before_typing_a_ruby_trailing_block() {
+    let dir = tempfile::tempdir().unwrap();
+    let rbs_path = dir.path().join("catalog.rbs");
+    let ruby_path = dir.path().join("callbacks.rb");
+    std::fs::write(
+        &rbs_path,
+        "class Catalog\n  def visit: () { (Item) -> void } -> void\nend\n",
+    )
+    .unwrap();
+    std::fs::write(
+        &ruby_path,
+        "class Item\n  def touch\n  end\nend\nclass Catalog\n  def run\n    visit { |item| item.touch }\n  end\nend\n",
+    )
+    .unwrap();
+
+    let arena = Arc::new(TypeArena::new());
+    let registry = crate::languages::default_registry();
+    let rbs = crate::indexer::parse_file::parse_file_with_arena(
+        &crate::walker::WalkedFile {
+            relative_path: "catalog.rbs".into(),
+            absolute_path: rbs_path,
+            language: "rbs",
+        },
+        registry,
+        &arena,
+    )
+    .unwrap();
+    let ruby = crate::indexer::parse_file::parse_file_with_arena(
+        &crate::walker::WalkedFile {
+            relative_path: "callbacks.rb".into(),
+            absolute_path: ruby_path,
+            language: "ruby",
+        },
+        registry,
+        &arena,
+    )
+    .unwrap();
+    let files = vec![rbs, ruby];
+    let db = crate::Database::open_in_memory().unwrap();
+    let (_, ids) = crate::indexer::write::write_parsed_files_with_origin(
+        &db,
+        &files,
+        "internal",
+        Some(&arena),
+    )
+    .unwrap();
+    let visit_index = files[0]
+        .symbols
+        .iter()
+        .position(|symbol| symbol.qualified_name == "Catalog::visit")
+        .expect("RBS visit contract");
+    let touch_index = files[1]
+        .symbols
+        .iter()
+        .position(|symbol| symbol.qualified_name == "Item::touch")
+        .expect("Ruby Item#touch method");
+    let visit_id = ids
+        .row_id("catalog.rbs", visit_index)
+        .expect("RBS visit id");
+    let touch_id = ids
+        .row_id("callbacks.rb", touch_index)
+        .expect("Ruby touch id");
+
+    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
+        &files,
+        &ids,
+        Arc::clone(&arena),
+    );
+    let profiles = super::build_profiles();
+    let solver = super::SemanticModel::production();
+    let (edges, unresolved, _ref_log, _census) = super::resolve_one_file(
+        &files[1],
+        &tree,
+        &profiles,
+        &no_plugins(),
+        None,
+        &solver,
+        &ids,
+        None,
+    );
+
+    assert!(
+        edges.iter().any(|edge| edge.1 == visit_id),
+        "the Ruby call must select the indexed RBS contract; edges={edges:?}; unresolved={unresolved:?}"
+    );
+    assert!(
+        edges.iter().any(|edge| edge.1 == touch_id),
+        "the selected RBS callback type must seed item before item.touch resolves; edges={edges:?}; unresolved={unresolved:?}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // FileLookup unit tests
 // ---------------------------------------------------------------------------

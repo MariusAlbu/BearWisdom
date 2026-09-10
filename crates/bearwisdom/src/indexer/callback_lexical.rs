@@ -37,7 +37,16 @@ struct BoundCallback {
 pub(crate) fn supports(prefix: &str) -> bool {
     matches!(
         prefix,
-        "scala" | "java" | "csharp" | "kotlin" | "swift" | "dart" | "go" | "python" | "php"
+        "scala"
+            | "java"
+            | "csharp"
+            | "kotlin"
+            | "swift"
+            | "dart"
+            | "go"
+            | "python"
+            | "php"
+            | "ruby"
     )
 }
 
@@ -208,6 +217,7 @@ fn callback_kind(prefix: &str, kind: &str) -> bool {
         "go" => kind == "func_literal",
         "python" => kind == "lambda",
         "php" => matches!(kind, "arrow_function" | "anonymous_function"),
+        "ruby" => matches!(kind, "block" | "do_block" | "lambda"),
         _ => false,
     }
 }
@@ -227,6 +237,7 @@ fn callback(node: Node, prefix: &str) -> Option<Callback> {
         "go" => go_callback(node),
         "python" => python_callback(node),
         "php" => php_callback(node),
+        "ruby" => ruby_callback(node),
         _ => callback_with_fields(node, prefix),
     }
 }
@@ -420,6 +431,72 @@ fn php_parameter_variable_names(node: Node) -> Vec<Node> {
     names
 }
 
+/// Ruby trailing blocks (`{ |item| ... }` / `do |item| ... end`) keep their
+/// parameters on the block itself, while `->(item) { ... }` keeps them on the
+/// outer `lambda` node. Only direct positional identifiers gain contextual
+/// identity. Unsupported named forms and `|item; local|` block locals are
+/// explicit fences so they cannot borrow a same-spelling outer binding.
+fn ruby_callback(node: Node) -> Option<Callback> {
+    let body = node.child_by_field_name("body")?;
+    let body_span = span(body);
+    let mut supported = Vec::new();
+    let mut barriers = collect_barriers(body, "ruby", body_span);
+
+    if let Some(parameters) = node.child_by_field_name("parameters") {
+        for index in 0..parameters.child_count() {
+            let Some(parameter) = parameters.child(index) else {
+                continue;
+            };
+            if !parameter.is_named() {
+                continue;
+            }
+            let block_local = parameters.field_name_for_child(index as u32) == Some("locals");
+            if parameter.kind() == "identifier" && !block_local {
+                supported.push(span(parameter));
+                continue;
+            }
+            for name in ruby_unsupported_parameter_names(parameter) {
+                barriers.push(Barrier {
+                    name: span(name),
+                    range: body_span,
+                });
+            }
+        }
+    }
+
+    let boundaries = collect_boundaries(body, "ruby");
+    // A parameterless nested Ruby closure normally captures its outer local,
+    // so keep it transparent when it has no local identity evidence. It must
+    // still become a scope when a write/shadow or ordinary callable boundary
+    // exists in its body; otherwise those fences would be skipped after the
+    // outer callback deliberately stops its own scan at nested callbacks.
+    if supported.is_empty() && barriers.is_empty() && boundaries.is_empty() {
+        return None;
+    }
+    Some(Callback {
+        body: body_span,
+        parameters: supported,
+        barriers,
+        boundaries,
+        outer_captures: None,
+    })
+}
+
+fn ruby_unsupported_parameter_names(node: Node) -> Vec<Node> {
+    match node.kind() {
+        "identifier" => vec![node],
+        "optional_parameter"
+        | "keyword_parameter"
+        | "splat_parameter"
+        | "hash_splat_parameter"
+        | "block_parameter" => node.child_by_field_name("name").into_iter().collect(),
+        "destructured_parameter" => named_children(node)
+            .flat_map(ruby_unsupported_parameter_names)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
 fn callback_from_explicit_parameters(
     body: Node,
     parameters: Vec<SourceSpan>,
@@ -546,6 +623,10 @@ fn ordinary_boundary_kind(prefix: &str, kind: &str) -> bool {
                 | "enum_declaration"
                 | "anonymous_class"
         ),
+        "ruby" => matches!(
+            kind,
+            "method" | "singleton_method" | "class" | "module" | "singleton_class"
+        ),
         _ => false,
     }
 }
@@ -571,7 +652,7 @@ fn collect_barriers_inner(
     // barrier into the enclosing callback; the nested callback gets its own
     // barrier pass when `php_callback` constructs it.
     if node.start_byte() != callback_body.start as usize
-        && prefix == "php"
+        && matches!(prefix, "php" | "ruby")
         && callback_kind(prefix, node.kind())
     {
         return;
@@ -696,6 +777,40 @@ fn collect_barriers_inner(
                     .filter(|name| name.kind() == "variable_name"),
                 node.child_by_field_name("body"),
             ) {
+                barriers.push(Barrier {
+                    name: span(name),
+                    range: barrier_range(node, callback_body, prefix),
+                });
+            }
+        }
+        ("ruby", "assignment" | "operator_assignment") => {
+            if let Some(name) = node
+                .child_by_field_name("left")
+                .filter(|name| name.kind() == "identifier")
+            {
+                barriers.push(Barrier {
+                    name: span(name),
+                    range: barrier_range(node, callback_body, prefix),
+                });
+            }
+        }
+        ("ruby", "for") => {
+            if let Some(name) = node
+                .child_by_field_name("pattern")
+                .filter(|name| name.kind() == "identifier")
+            {
+                barriers.push(Barrier {
+                    name: span(name),
+                    range: barrier_range(node, callback_body, prefix),
+                });
+            }
+        }
+        ("ruby", "rescue") => {
+            if let Some(name) = node
+                .child_by_field_name("variable")
+                .and_then(|variable| named_children(variable).next())
+                .filter(|name| name.kind() == "identifier")
+            {
                 barriers.push(Barrier {
                     name: span(name),
                     range: barrier_range(node, callback_body, prefix),
@@ -854,7 +969,7 @@ fn barrier_range(node: Node, callback_body: SourceSpan, prefix: &str) -> SourceS
     // PHP locals, foreach targets, and catch variables are function-scoped.
     // A write inside a nested compound statement therefore fences the same
     // name through the rest of the callback function, not only that block.
-    if prefix == "php" {
+    if matches!(prefix, "php" | "ruby") {
         return SourceSpan {
             start,
             end: callback_body.end,

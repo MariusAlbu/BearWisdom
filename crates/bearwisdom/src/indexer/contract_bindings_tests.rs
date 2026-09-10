@@ -133,6 +133,104 @@ fn cached_lambda_at_span_rebuilds_callback_identity_after_json_round_trip() {
 }
 
 #[test]
+fn ruby_callback_identity_and_lambda_spans_survive_source_and_cold_restore() {
+    use crate::types::CallArg;
+
+    let source = "def run; use { |item| item.touch }; end";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("callbacks.rb");
+    std::fs::write(&path, source).unwrap();
+    let arena = crate::type_checker::core::types::TypeArena::new();
+    let mut parsed = crate::indexer::parse_file::parse_file_with_arena(
+        &crate::walker::WalkedFile {
+            relative_path: "ext:ruby:pkg/callbacks.rb".into(),
+            absolute_path: path,
+            language: "ruby",
+        },
+        crate::languages::default_registry(),
+        &arena,
+    )
+    .unwrap();
+    let callback = parsed
+        .refs
+        .iter()
+        .find(|reference| reference.target_name == "use")
+        .expect("Ruby use call");
+    let parameter = callback
+        .call_args
+        .iter()
+        .find_map(|arg| match arg {
+            CallArg::LambdaAt { params } => params.first().copied().flatten(),
+            _ => None,
+        })
+        .expect("Ruby trailing block must retain its declaration span");
+    let root = parsed
+        .refs
+        .iter()
+        .find(|reference| {
+            reference.target_name == "touch"
+                && reference
+                    .chain
+                    .as_ref()
+                    .and_then(|chain| chain.segments.first())
+                    .is_some_and(|segment| segment.name == "item")
+        })
+        .expect("item.touch ref")
+        .byte_offset;
+    let fresh = parsed
+        .flow
+        .callback_lexical
+        .as_ref()
+        .expect("fresh Ruby callback graph");
+    let expected_declarations = fresh.declarations.clone();
+    let expected_references = fresh.references.clone();
+    assert!(expected_declarations.contains_key(&parameter));
+    assert!(expected_references.contains_key(&root));
+
+    let payload = super::super::external_parse_payload::CachedParse::from_parsed(&parsed, &arena);
+    parsed.flow = Default::default();
+    restore(&mut parsed);
+    let restored = parsed
+        .flow
+        .callback_lexical
+        .as_ref()
+        .expect("source restoration rebuilds Ruby callback identity");
+    assert_eq!(restored.declarations, expected_declarations);
+    assert_eq!(restored.references, expected_references);
+
+    let payload: super::super::external_parse_payload::CachedParse =
+        serde_json::from_str(&serde_json::to_string(&payload).unwrap()).unwrap();
+    let cold_arena = crate::type_checker::core::types::TypeArena::new();
+    let mut cold = payload.into_parsed(
+        &cold_arena,
+        &parsed.path,
+        &parsed.content_hash,
+        parsed.size,
+        parsed.mtime,
+    );
+    cold.content = Some(source.into());
+    let cold_parameter = cold
+        .refs
+        .iter()
+        .find(|reference| reference.target_name == "use")
+        .and_then(|reference| {
+            reference.call_args.iter().find_map(|arg| match arg {
+                CallArg::LambdaAt { params } => params.first().copied().flatten(),
+                _ => None,
+            })
+        });
+    assert_eq!(cold_parameter, Some(parameter));
+    restore(&mut cold);
+    let cold_graph = cold
+        .flow
+        .callback_lexical
+        .as_ref()
+        .expect("cold source restoration rebuilds Ruby callback identity");
+    assert_eq!(cold_graph.declarations, expected_declarations);
+    assert_eq!(cold_graph.references, expected_references);
+}
+
+#[test]
 fn ambient_source_units_and_import_origins_survive_contract_filter_and_portable_recapture() {
     let source = "declare module 'provider' { import { Doc } from 'other'; export namespace Nested { export function make(): Doc; } global { interface Catalog { read(): Doc; } } }";
     let dir = tempfile::tempdir().unwrap();

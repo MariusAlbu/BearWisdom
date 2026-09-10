@@ -74,6 +74,12 @@ mod detection {
     }
 
     #[test]
+    fn rbs_extension_is_discovered_with_ruby_sources() {
+        let lang = detect_language(Path::new("catalog.rbs")).expect("should detect");
+        assert_eq!(lang.id, "ruby");
+    }
+
+    #[test]
     fn php_extension() {
         let lang = detect_language(Path::new("index.php")).expect("should detect");
         assert_eq!(lang.id, "php");

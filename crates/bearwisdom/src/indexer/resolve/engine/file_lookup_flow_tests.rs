@@ -1394,6 +1394,148 @@ fn php_phpdoc_lambda_at_span_seeds_from_the_extracted_callback_contract() {
     );
 }
 
+#[test]
+fn ruby_rbs_required_block_contract_seeds_the_exact_trailing_block_parameter() {
+    use crate::type_checker::core::types::Type;
+    use crate::types::CallArg;
+    use rustc_hash::FxHashMap;
+
+    let rbs_source = "class Catalog\n  def visit: (Request) { (Item) -> Result } -> void\nend\n";
+    let ruby_source = "class Item\n  def touch\n  end\nend\ndef run(catalog)\n  catalog.visit(Request.new) { |item| item.touch }\nend\n";
+    let dir = tempfile::tempdir().unwrap();
+    let rbs_path = dir.path().join("catalog.rbs");
+    let ruby_path = dir.path().join("callbacks.rb");
+    std::fs::write(&rbs_path, rbs_source).unwrap();
+    std::fs::write(&ruby_path, ruby_source).unwrap();
+    let arena = Arc::new(TypeArena::new());
+
+    let rbs = crate::indexer::parse_file::parse_file_with_arena(
+        &crate::walker::WalkedFile {
+            relative_path: "catalog.rbs".into(),
+            absolute_path: rbs_path,
+            language: "rbs",
+        },
+        crate::languages::default_registry(),
+        &arena,
+    )
+    .unwrap();
+    let visit_contract = rbs
+        .symbols
+        .iter()
+        .find(|symbol| symbol.qualified_name == "Catalog::visit")
+        .expect("strict required-block RBS visit contract");
+    let signature = visit_contract
+        .signature
+        .clone()
+        .expect("RBS visit signature");
+    assert_eq!(
+        signature,
+        "visit(arg0: Request, callback: (Item) -> Result): void"
+    );
+    let Type::Function { params, return_ } = arena.get(visit_contract.param_types[1]) else {
+        panic!("strict required RBS block must become a structural function slot");
+    };
+    assert_eq!(params, vec![arena.class("Item")]);
+    assert_eq!(return_, arena.class("Result"));
+
+    let parsed = crate::indexer::parse_file::parse_file_with_arena(
+        &crate::walker::WalkedFile {
+            relative_path: "callbacks.rb".into(),
+            absolute_path: ruby_path,
+            language: "ruby",
+        },
+        crate::languages::default_registry(),
+        &arena,
+    )
+    .unwrap();
+    let files = [parsed];
+    let callback = files[0]
+        .refs
+        .iter()
+        .find(|reference| {
+            reference.target_name == "visit"
+                && reference
+                    .call_args
+                    .iter()
+                    .any(|arg| matches!(arg, CallArg::LambdaAt { .. }))
+        })
+        .expect("Ruby visit trailing block with LambdaAt");
+    let call_args = callback.call_args.clone();
+    let parameter = call_args
+        .iter()
+        .find_map(|arg| match arg {
+            CallArg::LambdaAt { params } => params.first().copied().flatten(),
+            _ => None,
+        })
+        .expect("Ruby trailing-block parameter span");
+    assert_eq!(
+        &ruby_source[parameter.start as usize..parameter.end as usize],
+        "item"
+    );
+    let root = files[0]
+        .refs
+        .iter()
+        .find(|reference| {
+            reference.target_name == "touch"
+                && reference
+                    .chain
+                    .as_ref()
+                    .and_then(|chain| chain.segments.first())
+                    .is_some_and(|segment| segment.name == "item")
+        })
+        .expect("item.touch chain")
+        .byte_offset;
+    let graph = files[0]
+        .flow
+        .callback_lexical
+        .as_ref()
+        .expect("Ruby callback identity graph");
+    assert!(graph.declarations.contains_key(&parameter));
+    assert!(graph.references.contains_key(&root));
+
+    let db = crate::Database::open_in_memory().unwrap();
+    let (_, ids) = crate::indexer::write::write_parsed_files_with_origin(
+        &db,
+        &files,
+        "internal",
+        Some(&arena),
+    )
+    .unwrap();
+    let tree = Compilation::build(&files, &ids, Arc::clone(&arena));
+    let lookup = FileLookup::for_file(&tree, &files[0], &ids);
+    lookup.set_cursor(root);
+    assert_eq!(lookup.local_type_id("item"), None);
+
+    let callee = crate::indexer::resolve::engine::testkit::sym_with_sig(
+        904,
+        "visit",
+        "Catalog::visit",
+        "method",
+        "catalog.rbs",
+        &signature,
+    );
+    crate::indexer::resolve::engine::lambda_seed::seed_lambda_params(
+        &lookup,
+        &arena,
+        &callee,
+        &call_args,
+        arena.class("Catalog"),
+        None,
+        &FxHashMap::default(),
+        &[],
+    );
+
+    lookup.set_cursor(root);
+    assert_eq!(lookup.local_type_id("item"), Some(arena.class("Item")));
+    assert_eq!(
+        lookup
+            .local_reference(root)
+            .and_then(|value| value.value_type),
+        Some(arena.class("Item")),
+        "the strict RBS block contract must seed the exact Ruby trailing-block root"
+    );
+}
+
 fn assert_php_callback_contract_does_not_seed(visit_declaration: &str) {
     use crate::types::CallArg;
     use rustc_hash::FxHashMap;

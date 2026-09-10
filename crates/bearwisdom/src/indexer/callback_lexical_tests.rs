@@ -11,6 +11,7 @@ fn capture_graph(language: &str, source: &str) -> (Option<LexicalBindings>, Vec<
         "go" => crate::languages::go::extract::extract(source).refs,
         "python" => crate::languages::python::extract::extract(source).refs,
         "php" => crate::languages::php::extract::extract(source).refs,
+        "ruby" => crate::languages::ruby::extract::extract(source).refs,
         _ => unreachable!(),
     };
     let plugin = crate::languages::default_registry().get(language);
@@ -852,6 +853,137 @@ fn php_empty_arrows_and_exact_anonymous_use_capture_outer() {
         assert!(
             !graph.references.contains_key(&reference.byte_offset),
             "an unmodeled PHP callback boundary must not fall through to the outer parameter: {source}"
+        );
+    }
+}
+
+#[test]
+fn ruby_blocks_and_arrow_lambdas_keep_exact_callback_identity() {
+    for (source, parameter, target) in [
+        (
+            "def run; use { |brace_item| brace_item.touch }; end",
+            "brace_item",
+            "touch",
+        ),
+        (
+            "def run; use do |do_item| do_item.touch end; end",
+            "do_item",
+            "touch",
+        ),
+        (
+            "def run; use(->(lambda_item) { lambda_item.touch }); end",
+            "lambda_item",
+            "touch",
+        ),
+    ] {
+        let (graph, refs) = capture_source("ruby", source);
+        let reference = reference_for(&refs, parameter, target);
+        assert_eq!(
+            graph.references.get(&reference.byte_offset),
+            Some(&declaration_span_at(&graph, source, parameter)),
+            "Ruby callback root must bind to its exact declaration: {source}"
+        );
+    }
+}
+
+#[test]
+fn ruby_nested_blocks_select_the_inner_binding_and_capture_outer_names() {
+    let source = "def run; use { |item| other { |item| item.inner }; item.outer }; end";
+    let (graph, refs) = capture_source("ruby", source);
+    let inner = reference_for(&refs, "item", "inner");
+    let outer = reference_for(&refs, "item", "outer");
+    assert_ne!(
+        graph.references[&inner.byte_offset],
+        graph.references[&outer.byte_offset]
+    );
+
+    let source = "def run; use { |item| other { |other| item.captured }; item.outer }; end";
+    let (graph, refs) = capture_source("ruby", source);
+    let captured = reference_for(&refs, "item", "captured");
+    let outer = reference_for(&refs, "item", "outer");
+    assert_eq!(
+        graph.references[&captured.byte_offset], graph.references[&outer.byte_offset],
+        "a differently named nested Ruby block must retain the outer capture"
+    );
+}
+
+#[test]
+fn ruby_reassignment_fences_later_callback_reads() {
+    for operator in ["= other", "+= 1"] {
+        let source =
+            format!("def run; use {{ |item| item.before; item {operator}; item.after }}; end");
+        let (graph, refs) = capture_source("ruby", &source);
+        let before = reference_for(&refs, "item", "before");
+        let after = reference_for(&refs, "item", "after");
+        assert!(graph.references.contains_key(&before.byte_offset));
+        assert!(
+            !graph.references.contains_key(&after.byte_offset),
+            "a Ruby reassignment must fence the old callback binding: {source}"
+        );
+    }
+}
+
+#[test]
+fn ruby_block_locals_and_unsupported_parameter_forms_fence_outer_names() {
+    for (parameters, target) in [
+        ("other; item", "local"),
+        ("item = nil", "optional"),
+        ("*item", "splat"),
+        ("(item, value)", "destructured"),
+        ("item:", "keyword"),
+    ] {
+        let source = format!(
+            "def run; use {{ |item| other {{ |{parameters}| item.{target} }}; item.outer }}; end"
+        );
+        let (graph, refs) = capture_source("ruby", &source);
+        let fenced = reference_for(&refs, "item", target);
+        let outer = reference_for(&refs, "item", "outer");
+        assert!(
+            !graph.references.contains_key(&fenced.byte_offset),
+            "unsupported Ruby parameter identity must fence the outer name: {source}"
+        );
+        assert!(graph.references.contains_key(&outer.byte_offset));
+    }
+}
+
+#[test]
+fn ruby_named_callable_boundary_does_not_capture_an_outer_block_parameter() {
+    let source = "def run; use { |item| def nested; item.inside; end; item.outer }; end";
+    let (graph, refs) = capture_source("ruby", source);
+    let inside = reference_for(&refs, "item", "inside");
+    let outer = reference_for(&refs, "item", "outer");
+    assert!(!graph.references.contains_key(&inside.byte_offset));
+    assert!(graph.references.contains_key(&outer.byte_offset));
+}
+
+#[test]
+fn ruby_zero_parameter_nested_blocks_keep_outer_captures_but_fence_their_own_shadows() {
+    let source = "def run; use { |item| other { item.captured }; item.outer }; end";
+    let (graph, refs) = capture_source("ruby", source);
+    let captured = reference_for(&refs, "item", "captured");
+    let outer = reference_for(&refs, "item", "outer");
+    assert_eq!(
+        graph.references.get(&captured.byte_offset),
+        graph.references.get(&outer.byte_offset),
+        "a parameterless nested Ruby block with no local shadow captures its outer callback binding"
+    );
+
+    for (body, target) in [
+        ("item = other; item.assignment", "assignment"),
+        ("item += 1; item.operator", "operator"),
+        ("for item in items do item.loop end", "loop"),
+        (
+            "begin; raise error; rescue => item; item.rescued; end",
+            "rescued",
+        ),
+        ("def nested; item.callable; end", "callable"),
+    ] {
+        let source = format!("def run; use {{ |item| other {{ {body} }} }}; end");
+        let (graph, refs) = capture_source("ruby", &source);
+        let shadowed = reference_for(&refs, "item", target);
+        assert!(
+            !graph.references.contains_key(&shadowed.byte_offset),
+            "a parameterless nested Ruby block must fence its {target} body read: {source}"
         );
     }
 }

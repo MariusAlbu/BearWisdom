@@ -46,7 +46,7 @@ static BUNDLE_INSTALL: RestoreStep = RestoreStep {
 pub static RUBY: LanguageDescriptor = LanguageDescriptor {
     id: "ruby",
     display_name: "Ruby",
-    file_extensions: &[".rb", ".rake", ".gemspec", ".ru"],
+    file_extensions: &[".rb", ".rake", ".gemspec", ".ru", ".rbs"],
     filenames: &["Rakefile", "Gemfile"],
     aliases: &["rb"],
     exclude_dirs: &["vendor", ".bundle", "tmp", "log"],

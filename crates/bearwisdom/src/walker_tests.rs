@@ -15,6 +15,12 @@ fn detect_typescript() {
 }
 
 #[test]
+fn detect_rbs_uses_the_contract_route() {
+    assert_eq!(detect_language(Path::new("catalog.rbs")), Some("rbs"));
+    assert_eq!(detect_language(Path::new("catalog.rb")), Some("ruby"));
+}
+
+#[test]
 fn detect_qt_linguist_ts_is_not_typescript() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("keepassxc_en.ts");

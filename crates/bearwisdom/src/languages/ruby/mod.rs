@@ -6,6 +6,7 @@ pub(crate) mod flow;
 mod helpers;
 pub(crate) mod keywords;
 mod params;
+mod rbs;
 mod symbols;
 
 pub mod connectors;
@@ -29,6 +30,10 @@ mod predicates_tests;
 #[path = "calls_tests.rs"]
 mod calls_tests;
 
+#[cfg(test)]
+#[path = "rbs_tests.rs"]
+mod rbs_tests;
+
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::ExtractionResult;
@@ -41,16 +46,23 @@ impl LanguagePlugin for RubyPlugin {
     }
 
     fn language_ids(&self) -> &[&str] {
-        &["ruby"]
+        &["ruby", "rbs"]
     }
 
     fn extensions(&self) -> &[&str] {
-        &[".rb", ".rake", ".gemspec"]
+        &[".rb", ".rake", ".gemspec", ".rbs"]
+    }
+
+    fn language_id_for_extension(&self, ext: &str) -> Option<&str> {
+        match ext.to_ascii_lowercase().as_str() {
+            ".rb" | ".rake" | ".gemspec" => Some("ruby"),
+            ".rbs" => Some("rbs"),
+            _ => None,
+        }
     }
 
     fn grammar(&self, lang_id: &str) -> Option<tree_sitter::Language> {
-        let _ = lang_id;
-        Some(tree_sitter_ruby::LANGUAGE.into())
+        (lang_id == "ruby").then(|| tree_sitter_ruby::LANGUAGE.into())
     }
 
     fn scope_kinds(&self) -> &[ScopeKind] {
@@ -58,8 +70,12 @@ impl LanguagePlugin for RubyPlugin {
     }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
-        let _ = (file_path, lang_id);
-        extract::extract(source)
+        let _ = file_path;
+        match lang_id {
+            "ruby" => extract::extract(source),
+            "rbs" => rbs::extract(source),
+            _ => ExtractionResult::default(),
+        }
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {
