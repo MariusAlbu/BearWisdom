@@ -29,10 +29,11 @@ pub(super) fn extract_use_declaration(
 ) {
     let mut cursor = node.walk();
     let mut group_prefix: Option<String> = None;
+    let group_is_type_binding = node.child_by_field_name("type").is_none();
     for child in node.children(&mut cursor) {
         match child.kind() {
             "namespace_use_clause" => {
-                push_use_clause(&child, src, None, refs, current_symbol_count);
+                push_use_clause(&child, src, None, true, refs, current_symbol_count);
             }
             "namespace_name" => {
                 group_prefix = Some(node_text(&child, src));
@@ -45,6 +46,7 @@ pub(super) fn extract_use_declaration(
                             &member,
                             src,
                             group_prefix.as_deref(),
+                            group_is_type_binding,
                             refs,
                             current_symbol_count,
                         );
@@ -65,9 +67,12 @@ fn push_use_clause(
     clause: &Node,
     src: &[u8],
     group_prefix: Option<&str>,
+    inherited_type_binding: bool,
     refs: &mut Vec<ExtractedRef>,
     current_symbol_count: usize,
 ) {
+    let is_type_binding =
+        inherited_type_binding && clause.child_by_field_name("type").is_none();
     let mut cursor = clause.walk();
     let Some(name_node) = clause
         .children(&mut cursor)
@@ -86,6 +91,7 @@ fn push_use_clause(
     push_fq_import(
         full,
         alias,
+        is_type_binding,
         clause.start_position().row as u32,
         clause.start_byte() as u32,
         refs,
@@ -103,6 +109,7 @@ fn push_use_clause(
 fn push_fq_import(
     full: String,
     alias: Option<String>,
+    is_type_binding: bool,
     line: u32,
     byte_offset: u32,
     refs: &mut Vec<ExtractedRef>,
@@ -116,12 +123,23 @@ fn push_fq_import(
         None
     };
 
-    let chain = match alias.as_deref() {
-        Some(bound) if bound != original => Some(MemberChain {
+    let preserve_binding_shape =
+        is_type_binding || alias.as_deref().is_some_and(|bound| bound != original);
+    let chain = if preserve_binding_shape {
+        Some(MemberChain {
             segments: vec![ChainSegment {
                 name: original.clone(),
-                node_kind: "use_as_original".to_string(),
-                kind: SegmentKind::Identifier,
+                node_kind: if is_type_binding {
+                    "namespace_use_type"
+                } else {
+                    "namespace_use_value"
+                }
+                .to_string(),
+                kind: if is_type_binding {
+                    SegmentKind::TypeAccess
+                } else {
+                    SegmentKind::Identifier
+                },
                 declared_type: None,
                 type_args: Vec::new(),
                 optional_chaining: false,
@@ -131,8 +149,9 @@ fn push_fq_import(
                 call_args: Vec::new(),
                 type_arg_ids: Vec::new(),
             }],
-        }),
-        _ => None,
+        })
+    } else {
+        None
     };
     let target_name = alias.unwrap_or(original);
 
@@ -226,6 +245,9 @@ fn apply_use_aliases(refs: &mut [ExtractedRef]) {
         .filter(|r| r.kind == EdgeKind::Imports)
         .filter_map(|r| {
             let seg = r.chain.as_ref()?.segments.first()?;
+            if seg.kind != SegmentKind::TypeAccess {
+                return None;
+            }
             Some((r.target_name.clone(), seg.name.clone()))
         })
         .collect();
@@ -252,6 +274,7 @@ fn apply_use_aliases(refs: &mut [ExtractedRef]) {
 /// that order, so the dedup key sees the final `target_name`. Key includes
 /// `module` so refs with different qualifier paths survive.
 pub(super) fn finalize_refs(refs: &mut Vec<ExtractedRef>) {
+    append_qualified_import_type_refs(refs);
     apply_use_aliases(refs);
 
     let mut seen: std::collections::HashSet<(usize, String, EdgeKind, u32, u32, Option<String>)> =
@@ -266,6 +289,87 @@ pub(super) fn finalize_refs(refs: &mut Vec<ExtractedRef>) {
             r.module.clone(),
         ))
     });
+}
+
+/// Add a direct type demand for a qualified static receiver whose first
+/// component is a class/namespace import. Composer indexes real declarations
+/// by `(namespace, type)`; this preserves that exact pair without inventing a
+/// representative file for the imported namespace directory.
+fn append_qualified_import_type_refs(refs: &mut Vec<ExtractedRef>) {
+    let imports: std::collections::HashMap<String, String> = refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Imports)
+        .filter_map(|r| {
+            let segment = r.chain.as_ref()?.segments.first()?;
+            if segment.kind != SegmentKind::TypeAccess {
+                return None;
+            }
+            let module = r.module.as_deref()?;
+            Some((
+                r.target_name.clone(),
+                format!("{module}\\{}", segment.name),
+            ))
+        })
+        .collect();
+    if imports.is_empty() {
+        return;
+    }
+
+    let mut demands = Vec::new();
+    for reference in refs.iter() {
+        let Some(root) = reference.chain.as_ref().and_then(|chain| chain.segments.first()) else {
+            continue;
+        };
+        if root.kind != SegmentKind::TypeAccess {
+            continue;
+        }
+        let Some((binding, tail)) = root.name.split_once('\\') else {
+            continue;
+        };
+        let Some(imported_namespace) = imports.get(binding) else {
+            continue;
+        };
+        let Some((owner_tail, type_name)) = tail.rsplit_once('\\') else {
+            demands.push((
+                reference.source_symbol_index,
+                reference.line,
+                reference.col,
+                reference.byte_offset,
+                imported_namespace.clone(),
+                tail.to_string(),
+            ));
+            continue;
+        };
+        demands.push((
+            reference.source_symbol_index,
+            reference.line,
+            reference.col,
+            reference.byte_offset,
+            format!("{imported_namespace}\\{owner_tail}"),
+            type_name.to_string(),
+        ));
+    }
+
+    for (source_symbol_index, line, col, byte_offset, module, target_name) in demands {
+        if target_name.is_empty() {
+            continue;
+        }
+        refs.push(ExtractedRef {
+            is_include: false,
+            is_import_binding: false,
+            is_reexport: false,
+            source_symbol_index,
+            target_name,
+            kind: EdgeKind::TypeRef,
+            line,
+            col,
+            module: Some(module),
+            chain: None,
+            byte_offset,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
+    }
 }
 
 #[cfg(test)]

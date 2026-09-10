@@ -156,6 +156,7 @@ fn resolve_dart_export_chain(files: &[ParsedFile], arena: Arc<TypeArena>) -> Opt
             module_path: Some("test".to_string()),
             alias: None,
             is_wildcard: true,
+            binding_kind: None,
         }],
     )
 }
@@ -220,6 +221,7 @@ fn declines_non_matching_import() {
         module_path: Some("./bar".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     assert_eq!(apply(&lookup, "Foo", imports), None);
 }
@@ -234,6 +236,7 @@ fn declines_unresolved_non_relative_import() {
         module_path: Some("some-package".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     assert_eq!(apply(&lookup, "Foo", imports), None);
 }
@@ -366,6 +369,7 @@ fn binds_via_named_reexport_hop() {
         module_path: Some("./index.ts".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     assert_eq!(apply(&lookup, "Foo", imports), Some(99));
 }
@@ -395,6 +399,7 @@ fn binds_via_language_resolver_fallback_hop() {
         module_path: Some("foo.dart".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     assert_eq!(apply(&lookup, "Foo", imports), Some(77));
 }
@@ -413,6 +418,7 @@ fn declines_when_language_resolver_also_misses() {
         module_path: Some("lodash".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     assert_eq!(apply(&lookup, "Foo", imports), None);
 }
@@ -436,6 +442,7 @@ fn relative_specifier_never_reaches_language_resolver_branch() {
         module_path: Some("./index.ts".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     assert_eq!(apply(&lookup, "Foo", imports), Some(55));
 }

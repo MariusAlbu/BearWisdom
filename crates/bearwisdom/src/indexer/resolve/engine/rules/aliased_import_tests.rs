@@ -119,6 +119,7 @@ fn binds_when_alias_rewrites_specifier() {
         module_path: Some("@/utils".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     assert_eq!(resolve_with_alias(&lookup, "utils", imports), Some(20));
 }
@@ -135,6 +136,7 @@ fn declines_when_alias_does_not_change_specifier() {
         module_path: Some("./foo".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     assert_eq!(resolve_with_alias(&lookup, "Foo", imports), None);
 }
@@ -149,6 +151,7 @@ fn declines_when_no_import_matches_target() {
         module_path: Some("@/foo".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     assert_eq!(resolve_with_alias(&lookup, "Foo", imports), None);
 }
@@ -164,6 +167,7 @@ fn binds_via_alias_import_with_path_rewrite() {
         module_path: Some("@/foo".to_string()),
         alias: Some("F".to_string()),
         is_wildcard: false,
+        binding_kind: None,
     }];
     assert_eq!(resolve_with_alias(&lookup, "F", imports), Some(23));
 }

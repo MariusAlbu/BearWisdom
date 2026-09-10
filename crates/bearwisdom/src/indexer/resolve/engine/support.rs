@@ -15,12 +15,10 @@ use rustc_hash::FxHashMap;
 pub(crate) use super::path_match::{
     basename_stem_matches, file_path_matches_module, is_bare_module_specifier,
     is_relative_specifier, parent_dir, path_contains_segment_run, path_stem_matches,
-    trim_path_extension, trim_source_extension,
 };
 
 pub(crate) use super::reexports::{
     follow_reexports, relative_reexport_candidates, workspace_pkg_barrels,
-    workspace_pkg_declared_symbol,
 };
 
 use crate::indexer::resolve::engine::contract::{

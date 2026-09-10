@@ -105,6 +105,7 @@ fn yields_to_explicit_import_binding_the_same_name() {
             module_path: Some("./utils".to_string()),
             alias: None,
             is_wildcard: false,
+            binding_kind: None,
         }],
         file_namespace: None,
     };
@@ -129,6 +130,7 @@ fn does_not_yield_to_a_renamed_import_whose_original_name_matches() {
             module_path: Some("./utils".to_string()),
             alias: Some("external_helper".to_string()),
             is_wildcard: false,
+            binding_kind: None,
         }],
         file_namespace: None,
     };
@@ -156,6 +158,7 @@ fn yields_to_a_renamed_import_on_its_bound_name() {
             module_path: Some("./utils".to_string()),
             alias: Some("external_helper".to_string()),
             is_wildcard: false,
+            binding_kind: None,
         }],
         file_namespace: None,
     };
@@ -178,6 +181,7 @@ fn does_not_yield_to_wildcard_import() {
             module_path: Some("./utils".to_string()),
             alias: None,
             is_wildcard: true,
+            binding_kind: None,
         }],
         file_namespace: None,
     };

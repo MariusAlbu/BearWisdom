@@ -115,12 +115,22 @@ pub(crate) fn build_file_context(
                         module_path: Some(module),
                         alias: Some(r.target_name.clone()),
                         is_wildcard: false,
+                        binding_kind: r
+                            .chain
+                            .as_ref()
+                            .and_then(|chain| chain.segments.first())
+                            .map(|segment| segment.kind),
                     },
                     None => ImportEntry {
                         imported_name: r.target_name.clone(),
                         module_path: Some(module),
                         alias: None,
                         is_wildcard: entry_is_wildcard(r),
+                        binding_kind: r
+                            .chain
+                            .as_ref()
+                            .and_then(|chain| chain.segments.first())
+                            .map(|segment| segment.kind),
                     },
                 })
             })
@@ -138,6 +148,11 @@ pub(crate) fn build_file_context(
                 },
                 alias: None,
                 is_wildcard: entry_is_wildcard(r),
+                binding_kind: r
+                    .chain
+                    .as_ref()
+                    .and_then(|chain| chain.segments.first())
+                    .map(|segment| segment.kind),
             })
             .collect(),
     };

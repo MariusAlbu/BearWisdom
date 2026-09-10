@@ -10,6 +10,7 @@ use crate::indexer::resolve::engine::compilation::Compilation;
 use crate::indexer::resolve::engine::contract::{FileContext, ImportEntry, SymbolLookup};
 use crate::indexer::resolve::engine::root_import_discipline::{apply, RootImportOutcome};
 use crate::type_checker::core::types::TypeArena;
+use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
 use crate::types::{
     ChainSegment, ExtractedSymbol, FlowMeta, ParsedFile, SegmentKind, SymbolKind, Visibility,
 };
@@ -41,7 +42,7 @@ fn make_parsed_file(
     symbols: Vec<ExtractedSymbol>,
     declared_modules: Vec<String>,
 ) -> ParsedFile {
-    make_parsed_file_for_language(path, "typescript", symbols, declared_modules)
+    make_parsed_file_for_language(path, "fixture", symbols, declared_modules)
 }
 
 fn make_parsed_file_for_language(
@@ -129,12 +130,12 @@ fn dart_external_libraries_produce_exact_package_uri_keys() {
     );
 }
 
-/// A Compilation over one internal shim file declaring `virtual:pwa` (and a
-/// `*.css` wildcard pattern) with one class the module body exports.
+/// A Compilation over one internal fixture declaring `virtual:pwa` (and a
+/// wildcard pattern) with one class the module body exports.
 fn build_shim_compilation() -> (Compilation, Arc<TypeArena>) {
     let arena = Arc::new(TypeArena::new());
     let pf = make_parsed_file(
-        "src/shims.d.ts",
+        "src/shims.fixture",
         vec![make_symbol(
             "RegisterOptions",
             "RegisterOptions",
@@ -144,7 +145,10 @@ fn build_shim_compilation() -> (Compilation, Arc<TypeArena>) {
     );
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
     id_map.insert(
-        ("src/shims.d.ts".to_string(), "RegisterOptions".to_string()),
+        (
+            "src/shims.fixture".to_string(),
+            "RegisterOptions".to_string(),
+        ),
         11,
     );
     let tree = Compilation::build_with_context(
@@ -175,8 +179,8 @@ fn seg(name: &str) -> ChainSegment {
 
 fn ctx_with(imports: Vec<ImportEntry>) -> FileContext {
     FileContext {
-        file_path: "src/app.ts".to_string(),
-        language: "typescript".to_string(),
+        file_path: "src/app.fixture".to_string(),
+        language: "fixture".to_string(),
         imports,
         file_namespace: None,
     }
@@ -188,6 +192,7 @@ fn imp(name: &str, module: &str) -> ImportEntry {
         module_path: Some(module.to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }
 }
 
@@ -195,12 +200,12 @@ fn imp(name: &str, module: &str) -> ImportEntry {
 fn declared_modules_produce_module_entry_keys() {
     let (tree, _) = build_shim_compilation();
     assert_eq!(
-        tree.resolve_module_from("src/app.ts", "virtual:pwa"),
-        Some("src/shims.d.ts"),
+        tree.resolve_module_from("src/app.fixture", "virtual:pwa"),
+        Some("src/shims.fixture"),
         "a declared ambient-module name must key the declaring file"
     );
     assert_eq!(
-        tree.resolve_module_from("src/app.ts", "*.css"),
+        tree.resolve_module_from("src/app.fixture", "*.css"),
         None,
         "a wildcard declaration pattern is not an exact specifier and gets no key"
     );
@@ -210,7 +215,7 @@ fn declared_modules_produce_module_entry_keys() {
 fn import_ref_against_declared_specifier_resolves() {
     let (tree, arena) = build_shim_compilation();
     let ctx = ctx_with(vec![imp("RegisterOptions", "virtual:pwa")]);
-    match apply(&ctx, &tree, &arena, &seg("RegisterOptions")) {
+    match apply(&ctx, &tree, &arena, &DEFAULT_PROFILE, &seg("RegisterOptions")) {
         RootImportOutcome::Typed(recv) => assert_eq!(
             recv.id,
             Some(11),
@@ -224,7 +229,7 @@ fn import_ref_against_declared_specifier_resolves() {
 fn scheme_specifier_without_key_still_denies() {
     let (tree, arena) = build_shim_compilation();
     let ctx = ctx_with(vec![imp("thing", "virtual:unregistered")]);
-    match apply(&ctx, &tree, &arena, &seg("thing")) {
+    match apply(&ctx, &tree, &arena, &DEFAULT_PROFILE, &seg("thing")) {
         RootImportOutcome::Deny(c) => assert_eq!(c.kind, CauseKind::ImportUnlinked),
         _ => panic!("a scheme-prefixed specifier with no module key must keep denying"),
     }

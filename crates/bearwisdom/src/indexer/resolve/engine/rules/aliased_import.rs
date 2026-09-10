@@ -46,7 +46,7 @@ impl LookupRule for AliasedImportRule {
             };
             for sym in ctx.lookup.by_name(lookup_name) {
                 if (ctx.kind)(edge_kind, &sym.kind)
-                    && file_path_matches_module(&sym.file_path, &rewritten)
+                    && file_path_matches_module(&sym.file_path, &rewritten, ctx.profile)
                 {
                     return LookupResult::Resolved(
                         ctx.resolved(sym.id, "engine_aliased_import"),

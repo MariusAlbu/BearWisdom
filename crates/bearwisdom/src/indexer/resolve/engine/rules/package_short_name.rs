@@ -30,7 +30,10 @@ impl LookupRule for PackageShortNameRule {
 
     fn apply(&self, ctx: &BinderContext) -> LookupResult {
         // Gate: only active for package-short-name import shapes.
-        if ctx.profile.chain_qualification != ChainQualification::PackageShortName {
+        if !matches!(
+            ctx.profile.chain_qualification,
+            ChainQualification::PackageShortName
+        ) {
             return LookupResult::Pass;
         }
 

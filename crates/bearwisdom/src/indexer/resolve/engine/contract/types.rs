@@ -8,7 +8,7 @@
 // =============================================================================
 
 use crate::type_checker::core::types::{GenericParamId, TypeId};
-use crate::types::{ExtractedRef, ExtractedSymbol};
+use crate::types::{ExtractedRef, ExtractedSymbol, SegmentKind};
 use std::sync::Arc;
 
 use super::SymbolLookup;
@@ -29,6 +29,10 @@ pub struct ImportEntry {
     pub alias: Option<String>,
     /// Whether this is a wildcard/namespace import (e.g., `using NS;`).
     pub is_wildcard: bool,
+    /// Semantic shape the extractor preserved for the imported binding.
+    /// `TypeAccess` proves the binding may prefix a qualified type; `None` or
+    /// another shape grants no such authority.
+    pub binding_kind: Option<SegmentKind>,
 }
 
 impl ImportEntry {

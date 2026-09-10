@@ -13,7 +13,9 @@ use crate::indexer::resolve::engine::testkit::{
     call_ref, file_ctx, import, ref_ctx, source_symbol, sym, Lookup,
 };
 use crate::languages::go::profile::GO_PROFILE;
-use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
+use crate::type_checker::profile::chain_specs::{ChainQualification, QualifiedImportRoot};
+use crate::type_checker::profile::import_specs::ModulePathMatch;
+use crate::type_checker::profile::language_profile::{LanguageProfile, DEFAULT_PROFILE};
 use crate::types::{ChainSegment, MemberChain, SegmentKind};
 
 /// A plain identifier segment — the shape every namespace/type segment takes.
@@ -42,6 +44,10 @@ fn segment(name: &str, kind: SegmentKind, is_call: bool) -> ChainSegment {
     }
 }
 
+fn type_access(name: &str) -> ChainSegment {
+    segment(name, SegmentKind::TypeAccess, false)
+}
+
 /// A `using NS;` entry — the form `build_file_context` produces for a plain
 /// namespace import under a profile that treats one as a wildcard.
 fn wildcard_import(module: &str) -> ImportEntry {
@@ -50,7 +56,136 @@ fn wildcard_import(module: &str) -> ImportEntry {
         module_path: Some(module.to_string()),
         alias: None,
         is_wildcard: true,
+        binding_kind: None,
     }
+}
+
+fn named_import(name: &str, module: &str, alias: Option<&str>) -> ImportEntry {
+    ImportEntry {
+        imported_name: name.to_string(),
+        module_path: Some(module.to_string()),
+        alias: alias.map(str::to_string),
+        is_wildcard: false,
+        binding_kind: Some(SegmentKind::TypeAccess),
+    }
+}
+
+fn qualified_module_path(module: &str) -> ModulePathMatch {
+    ModulePathMatch::heuristic(module)
+}
+
+fn qualified_type_candidates(module: &str, _imported: &str, tail: &str) -> Vec<String> {
+    vec![format!("{module}.{tail}")]
+}
+
+fn qualified_import_profile() -> LanguageProfile {
+    let mut profile = DEFAULT_PROFILE;
+    profile.chain_qualification = ChainQualification::SamePackageAndImportsWithQualifiedRoot(
+        QualifiedImportRoot {
+            module_path_adapter: qualified_module_path,
+            type_candidates: qualified_type_candidates,
+        },
+    );
+    profile
+}
+
+#[test]
+fn qualified_type_import_anchors_static_receiver() {
+    let lookup = Lookup::new()
+        .with(sym(
+            40,
+            "Item",
+            "alpha.models.Item",
+            "class",
+            "vendor/alpha/models/Item.gen",
+        ))
+        .with(sym(
+            41,
+            "Item",
+            "other.Item",
+            "class",
+            "src/other/Item.gen",
+        ))
+        .with_member_id(
+            40,
+            sym(
+                42,
+                "load",
+                "alpha.models.Item.load",
+                "method",
+                "vendor/alpha/models/Item.gen",
+            ),
+        );
+    let fc = file_ctx(vec![named_import("models", "alpha.models", None)], None);
+    let segs = vec![type_access("models.Item"), member("load")];
+    let profile = qualified_import_profile();
+
+    assert_eq!(
+        drive_with_profile(&lookup, segs, &fc, &profile).expect("qualified import bind"),
+        42
+    );
+}
+
+#[test]
+fn aliased_qualified_type_import_anchors_nested_type() {
+    let lookup = Lookup::new()
+        .with(sym(
+            43,
+            "Factory",
+            "alpha.models.factories.Factory",
+            "class",
+            "vendor/alpha/models/factories/Factory.gen",
+        ))
+        .with_member_id(
+            43,
+            sym(
+                44,
+                "new",
+                "alpha.models.factories.Factory.new",
+                "method",
+                "vendor/alpha/models/factories/Factory.gen",
+            ),
+        );
+    let fc = file_ctx(vec![named_import("models", "alpha.models", Some("M"))], None);
+    let segs = vec![type_access("M.factories.Factory"), member("new")];
+    let profile = qualified_import_profile();
+
+    assert_eq!(
+        drive_with_profile(&lookup, segs, &fc, &profile).expect("aliased import bind"),
+        44
+    );
+}
+
+#[test]
+fn unmatched_qualified_root_falls_through_but_matched_unlinked_import_declines() {
+    let lookup = Lookup::new()
+        .with(sym(
+            45,
+            "Item",
+            "models.Item",
+            "class",
+            "src/models/Item.gen",
+        ))
+        .with_member_id(
+            45,
+            sym(
+                46,
+                "load",
+                "models.Item.load",
+                "method",
+                "src/models/Item.gen",
+            ),
+        );
+    let segs = vec![type_access("models.Item"), member("load")];
+    let profile = qualified_import_profile();
+
+    assert_eq!(
+        drive_with_profile(&lookup, segs.clone(), &file_ctx(vec![], None), &profile)
+            .expect("a non-imported qualified root may be a namespace path"),
+        46
+    );
+    let wrong_import = file_ctx(vec![named_import("models", "other", None)], None);
+    assert!(drive_with_profile(&lookup, segs, &wrong_import, &profile).is_err());
 }
 
 /// The symbol id the chain binds, or `None` when it stays unresolved.

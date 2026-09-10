@@ -1720,6 +1720,11 @@ impl Compilation {
                         module_path: Some(module),
                         alias: None,
                         is_wildcard: r.target_name == "*",
+                        binding_kind: r
+                            .chain
+                            .as_ref()
+                            .and_then(|chain| chain.segments.first())
+                            .map(|segment| segment.kind),
                     })
                 })
                 .collect();
@@ -2153,6 +2158,11 @@ fn init_pass_file_ctx(pf: &ParsedFile) -> FileContext {
                 module_path: Some(module),
                 alias: None,
                 is_wildcard: r.target_name == "*",
+                binding_kind: r
+                    .chain
+                    .as_ref()
+                    .and_then(|chain| chain.segments.first())
+                    .map(|segment| segment.kind),
             })
         })
         .collect();

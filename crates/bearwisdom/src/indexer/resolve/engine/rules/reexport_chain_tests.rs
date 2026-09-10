@@ -33,6 +33,7 @@ fn declines_relative_import() {
         module_path: Some("./foo".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     assert_eq!(resolve(&lookup, "Foo", imports), None);
 }
@@ -46,6 +47,7 @@ fn declines_when_no_import_matches_target() {
         module_path: Some("pkg-a".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     assert_eq!(resolve(&lookup, "Bar", imports), None);
 }
@@ -60,6 +62,7 @@ fn declines_when_no_external_reexport_found() {
         module_path: Some("pkg-a".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     // Testkit Lookup::resolve_external_reexport returns None by default.
     assert_eq!(resolve(&lookup, "Foo", imports), None);
@@ -74,6 +77,7 @@ fn declines_dotted_target_no_prefix_import() {
         module_path: Some("pkg-a".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     assert_eq!(resolve(&lookup, "Ns.Inner", imports), None);
 }

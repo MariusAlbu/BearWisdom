@@ -186,9 +186,9 @@ fn passes_when_no_module_on_ref() {
 
 /// Rewrites axis used by the scheme-prefix candidate tests.
 const SCHEME_REWRITES: ModulePrefixRewrites = ModulePrefixRewrites::On {
-    definitely_typed: true,
-    deep_import_peel: true,
-    decline_bare_directory_match: true,
+    module_path_adapter: None,
+    candidate_prefixes: crate::ecosystem::npm::module_specifier::module_prefix_candidates,
+    declines_directory_match: crate::ecosystem::npm::module_specifier::declines_directory_match,
 };
 
 /// A scheme-prefixed specifier with a subpath probes the scheme-as-path form:

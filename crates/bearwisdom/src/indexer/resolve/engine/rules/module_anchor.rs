@@ -103,9 +103,8 @@ impl LookupRule for ModuleAnchorRule {
                     }
                 }
                 // Directory-containment fallback: map the module to a path
-                // fragment and match against file_path.  Bare specifiers under
-                // a `decline_bare_directory_match` rewrite axis are declined so
-                // a package name never matches a same-named project file.
+                // fragment and match against file_path. A profile adapter may
+                // decline this fallback for a source module spelling.
                 if declines_bare_directory_match(module, rewrites) {
                     return LookupResult::Pass;
                 }
@@ -208,84 +207,28 @@ fn module_leaf<'a>(module: &'a str, sep: &str) -> &'a str {
     after_profile.rsplit('.').next().unwrap_or(after_profile)
 }
 
-/// A bare module specifier names a package, not a project-relative path: it
-/// does not start with `.` or `/`, and is not a Windows drive path (`C:/…`).
-fn is_bare_module_specifier(spec: &str) -> bool {
-    !spec.starts_with('.')
-        && !spec.starts_with('/')
-        && !(spec.len() >= 2 && spec.as_bytes()[1] == b':')
-}
-
 /// The ordered module-prefix candidates the `ByNameUnderModuleDir` anchor
-/// probes: the literal `module` first, then — only for a bare specifier under
-/// `ModulePrefixRewrites::On` — DefinitelyTyped `@types/` rewrites and
-/// deep-import `/seg` peels. A relative specifier or `Off` yields only the
-/// literal module.
+/// probes. Profiles that opt into rewrites delegate candidate construction to
+/// their language or ecosystem adapter; the resolver only preserves order.
 fn module_prefix_candidates(module: &str, rewrites: ModulePrefixRewrites) -> Vec<String> {
-    let mut out = vec![module.to_string()];
-    let ModulePrefixRewrites::On {
-        definitely_typed,
-        deep_import_peel,
-        ..
-    } = rewrites
-    else {
-        return out;
-    };
-    if !is_bare_module_specifier(module) {
-        return out;
+    match rewrites {
+        ModulePrefixRewrites::Off => vec![module.to_string()],
+        ModulePrefixRewrites::On {
+            candidate_prefixes, ..
+        } => candidate_prefixes(module),
     }
-    // A scheme-prefixed specifier (`node:assert/strict`) means the module
-    // behind the scheme — probe the descheme'd form and its own rewrites
-    // alongside the literal. The scheme also names the platform package that
-    // types the module, so the scheme-as-path form (`node/assert/strict`) is
-    // probed too — its rewrites reach the `@types/{scheme}/…` qnames the
-    // supply carries.
-    if let Some(stripped) =
-        crate::indexer::resolve::engine::module_scheme::strip_scheme_prefix(module)
-    {
-        out.extend(module_prefix_candidates(stripped, rewrites));
-        let scheme = &module[..module.len() - stripped.len() - 1];
-        out.extend(module_prefix_candidates(&format!("{scheme}/{stripped}"), rewrites));
-        return out;
-    }
-    if definitely_typed && !module.starts_with("@types/") {
-        // `@scope/pkg` → `@types/scope__pkg`; `pkg` → `@types/pkg`.
-        if let Some(rest) = module.strip_prefix('@') {
-            if let Some(slash) = rest.find('/') {
-                let scope = &rest[..slash];
-                let pkg = &rest[slash + 1..];
-                out.push(format!("@types/{scope}__{pkg}"));
-            }
-        } else {
-            out.push(format!("@types/{module}"));
-        }
-    }
-    if deep_import_peel && module.contains('/') {
-        // Strip trailing `/seg` segments, stopping before a bare `@scope`.
-        let mut path = module;
-        while let Some(slash) = path.rfind('/') {
-            let parent = &path[..slash];
-            if parent.starts_with('@') && !parent.contains('/') {
-                break;
-            }
-            path = parent;
-            out.push(path.to_string());
-        }
-    }
-    out
 }
 
-/// Whether the directory-containment fallback of `ByNameUnderModuleDir` is
-/// declined — true only for a bare specifier when the rewrites axis sets
-/// `decline_bare_directory_match`.
+/// Whether the profile's adapter declines the directory-containment fallback
+/// of `ByNameUnderModuleDir` for this source module spelling.
 fn declines_bare_directory_match(module: &str, rewrites: ModulePrefixRewrites) -> bool {
-    matches!(
-        rewrites,
+    match rewrites {
+        ModulePrefixRewrites::Off => false,
         ModulePrefixRewrites::On {
-            decline_bare_directory_match: true,
+            declines_directory_match,
             ..
-        }
-    ) && is_bare_module_specifier(module)
+        } => declines_directory_match(module),
+    }
 }
 
 #[cfg(test)]

@@ -558,6 +558,62 @@ fn static_call_emits_type_access_chain() {
     );
 }
 
+#[test]
+fn namespace_qualified_static_call_preserves_import_and_type_access_root() {
+    use crate::types::SegmentKind;
+
+    let source = r#"<?php
+use Illuminate\Database\Eloquent;
+class Service {
+    public function run(): void {
+        Eloquent\Builder::query();
+    }
+}
+"#;
+    let extracted = extract::extract(source);
+    assert!(!extracted.has_errors, "parse errors in qualified static call test");
+
+    let import = extracted
+        .refs
+        .iter()
+        .find(|reference| {
+            reference.kind == EdgeKind::Imports && reference.target_name == "Eloquent"
+        })
+        .expect("namespace use import");
+    assert_eq!(import.module.as_deref(), Some("Illuminate\\Database"));
+    assert_eq!(
+        import
+            .chain
+            .as_ref()
+            .expect("class import shape")
+            .segments[0]
+            .kind,
+        SegmentKind::TypeAccess
+    );
+
+    let builder_demand = extracted
+        .refs
+        .iter()
+        .find(|reference| {
+            reference.kind == EdgeKind::TypeRef
+                && reference.target_name == "Builder"
+                && reference.module.as_deref() == Some("Illuminate\\Database\\Eloquent")
+        })
+        .expect("qualified imported Builder demand");
+    assert!(builder_demand.chain.is_none());
+
+    let call = extracted
+        .refs
+        .iter()
+        .find(|reference| reference.kind == EdgeKind::Calls && reference.target_name == "query")
+        .expect("qualified static call");
+    let chain = call.chain.as_ref().expect("static-call chain");
+    assert_eq!(chain.segments.len(), 2);
+    assert_eq!(chain.segments[0].name, "Eloquent\\Builder");
+    assert_eq!(chain.segments[0].kind, SegmentKind::TypeAccess);
+    assert_eq!(chain.segments[1].name, "query");
+}
+
 // -----------------------------------------------------------------------
 // Namespace hoisting into qualified_name
 // -----------------------------------------------------------------------

@@ -45,15 +45,15 @@ impl LookupRule for ChainPrefixRule {
             if !(ctx.kind)(edge_kind, &sym.kind) {
                 continue;
             }
-            if file_path_matches_module(&sym.file_path, module_path) {
+            if file_path_matches_module(&sym.file_path, module_path, ctx.profile) {
                 return LookupResult::Resolved(ctx.resolved(sym.id, "default_chain_prefix"));
             }
         }
 
-        // A `node:` specifier has an authoritative supplied-type root. If the
-        // fenced matcher above did not find it, a same-named project directory
-        // is not evidence for the builtin import.
-        if module_path.starts_with("node:") {
+        // An adapter-authoritative module has no generic prefix fallback.
+        if ctx.profile.module_path_match(module_path).authority
+            != crate::type_checker::profile::language_profile::ModuleMatchAuthority::Heuristic
+        {
             return LookupResult::Pass;
         }
 

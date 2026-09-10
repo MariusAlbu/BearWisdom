@@ -51,6 +51,60 @@ const PHP_PRIMITIVES: &[(&str, PrimKind)] = &[
     ("never", PrimKind::Never),
 ];
 
+/// Convert a PHP namespace import to the slash-delimited form used only while
+/// comparing that import with an indexed file path. The extracted module stays
+/// raw (`Illuminate\\Database`) so resolver diagnostics and other import
+/// strategies retain the source spelling.
+pub(crate) fn normalize_php_module_path_for_match(module: &str) -> String {
+    module.replace('\\', "/")
+}
+
+pub(crate) fn php_module_path_match(
+    module: &str,
+) -> crate::type_checker::profile::language_profile::ModulePathMatch {
+    crate::type_checker::profile::language_profile::ModulePathMatch {
+        module_path: normalize_php_module_path_for_match(module),
+        required_file_prefix: None,
+        compound_extensions: &[],
+        authority:
+            crate::type_checker::profile::language_profile::ModuleMatchAuthority::Heuristic,
+    }
+}
+
+/// Build the exact qualified-name spellings an imported PHP namespace can
+/// denote in the symbol index.
+///
+/// PHP source keeps namespace components separated by `\\`, while indexed
+/// containment places a nested type below its owner with `.`. For
+/// `use Illuminate\\Database\\Eloquent; Eloquent\\Builder::query()`, the
+/// source spelling is `Illuminate\\Database\\Eloquent\\Builder` and the
+/// canonical containment spelling is `Illuminate\\Database\\Eloquent.Builder`.
+/// Empty namespace components are rejected so malformed source text never
+/// widens a resolver lookup.
+pub(crate) fn php_qualified_import_type_candidates(
+    module: &str,
+    imported_name: &str,
+    qualified_tail: &str,
+) -> Vec<String> {
+    if !php_namespace_path_is_well_formed(module)
+        || !php_namespace_path_is_well_formed(imported_name)
+        || !php_namespace_path_is_well_formed(qualified_tail)
+    {
+        return Vec::new();
+    }
+
+    let source_qname = format!("{module}\\{imported_name}\\{qualified_tail}");
+    let Some((owner, type_name)) = source_qname.rsplit_once('\\') else {
+        return Vec::new();
+    };
+    let containment_qname = format!("{owner}.{type_name}");
+    vec![source_qname, containment_qname]
+}
+
+fn php_namespace_path_is_well_formed(path: &str) -> bool {
+    !path.is_empty() && path.split('\\').all(|segment| !segment.is_empty())
+}
+
 /// PHP profile.
 pub const PHP_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
@@ -79,7 +133,12 @@ pub const PHP_PROFILE: LanguageProfile = LanguageProfile {
     kind_compatible_table: PHP_KIND_TABLE,
     // Same-namespace + `use`-statement qualification of a bare receiver type
     // via the structured walker's `qualify_current_ty`.
-    chain_qualification: ChainQualification::SamePackageAndImports,
+    chain_qualification: ChainQualification::SamePackageAndImportsWithQualifiedRoot(
+        crate::type_checker::profile::language_profile::QualifiedImportRoot {
+            module_path_adapter: php_module_path_match,
+            type_candidates: php_qualified_import_type_candidates,
+        },
+    ),
     builtin_skip: Some(super::predicates::is_php_builtin),
     namespace_decline: None,
     imports: crate::type_checker::profile::language_profile::ImportAxes {

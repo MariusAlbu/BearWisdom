@@ -1,5 +1,5 @@
 use super::*;
-use crate::types::EdgeKind;
+use crate::types::{EdgeKind, SegmentKind};
 
 fn imports_refs(source: &str) -> Vec<crate::types::ExtractedRef> {
     crate::languages::php::extract::extract(source)
@@ -19,10 +19,11 @@ fn aliased_use_carries_original_as_chain_and_alias_as_target() {
     let chain = imp.chain.as_ref().expect("expected a rename chain");
     assert_eq!(chain.segments.len(), 1);
     assert_eq!(chain.segments[0].name, "Factory");
+    assert_eq!(chain.segments[0].kind, SegmentKind::TypeAccess);
 }
 
 #[test]
-fn non_aliased_use_carries_no_chain() {
+fn non_aliased_class_use_preserves_type_binding_shape() {
     let source = "<?php\nuse App\\Models\\User;\n";
     let refs = imports_refs(source);
     let imp = refs
@@ -30,7 +31,10 @@ fn non_aliased_use_carries_no_chain() {
         .find(|r| r.target_name == "User")
         .expect("expected an Imports ref");
     assert_eq!(imp.module.as_deref(), Some("App\\Models"));
-    assert!(imp.chain.is_none());
+    let chain = imp.chain.as_ref().expect("expected class import shape");
+    assert_eq!(chain.segments.len(), 1);
+    assert_eq!(chain.segments[0].name, "User");
+    assert_eq!(chain.segments[0].kind, SegmentKind::TypeAccess);
 }
 
 #[test]
@@ -42,7 +46,10 @@ fn grouped_use_emits_one_ref_per_member() {
         .find(|r| r.target_name == "User")
         .expect("expected a User import from the group");
     assert_eq!(user.module.as_deref(), Some("App\\Models"));
-    assert!(user.chain.is_none());
+    assert_eq!(
+        user.chain.as_ref().expect("grouped class import shape").segments[0].kind,
+        SegmentKind::TypeAccess
+    );
 
     let log = refs
         .iter()
@@ -51,6 +58,7 @@ fn grouped_use_emits_one_ref_per_member() {
     assert_eq!(log.module.as_deref(), Some("App\\Services"));
     let chain = log.chain.as_ref().expect("expected a rename chain");
     assert_eq!(chain.segments[0].name, "Logger");
+    assert_eq!(chain.segments[0].kind, SegmentKind::TypeAccess);
 }
 
 #[test]
@@ -63,12 +71,42 @@ fn use_function_and_use_const_extract_target_and_module() {
         .find(|r| r.target_name == "enum_value")
         .expect("expected the function import");
     assert_eq!(func.module.as_deref(), Some("App\\Support"));
+    assert!(func.chain.is_none(), "unaliased function import is value-shaped");
 
     let konst = refs
         .iter()
         .find(|r| r.target_name == "MAX_SIZE")
         .expect("expected the const import");
     assert_eq!(konst.module.as_deref(), Some("App\\Support"));
+    assert!(konst.chain.is_none(), "unaliased const import is value-shaped");
+}
+
+#[test]
+fn value_import_alias_cannot_authorize_a_qualified_type_demand() {
+    let source = r#"<?php
+use function Vendor\EloquentFactory as Eloquent;
+class Service { public function run(): void { Eloquent\Builder::query(); } }
+"#;
+    let result = crate::languages::php::extract::extract(source);
+    let import = result
+        .refs
+        .iter()
+        .find(|reference| reference.kind == EdgeKind::Imports)
+        .expect("function import");
+    assert_eq!(
+        import
+            .chain
+            .as_ref()
+            .expect("aliased value binding")
+            .segments[0]
+            .kind,
+        SegmentKind::Identifier
+    );
+    assert!(!result.refs.iter().any(|reference| {
+        reference.kind == EdgeKind::TypeRef
+            && reference.module.as_deref() == Some("Vendor\\EloquentFactory")
+            && reference.target_name == "Builder"
+    }));
 }
 
 #[test]

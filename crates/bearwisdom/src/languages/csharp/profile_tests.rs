@@ -12,10 +12,10 @@ fn id_matches() {
 #[test]
 fn chain_qualification_is_same_package_and_imports() {
     // Same-namespace + using-directive qualification through the engine walker.
-    assert_eq!(
+    assert!(matches!(
         CSHARP_PROFILE.chain_qualification,
         ChainQualification::SamePackageAndImports
-    );
+    ));
 }
 
 #[test]

@@ -47,6 +47,7 @@ fn binds_when_module_last_segment_matches_target() {
         module_path: Some("Foundation.NSData".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     assert_eq!(
         resolve(&lookup, "NSData", imports, &ENABLED_PROFILE),
@@ -62,6 +63,7 @@ fn declines_when_gate_is_off() {
         module_path: Some("Foundation.NSData".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     // DEFAULT_PROFILE has explicit_member_import: false.
     assert_eq!(
@@ -81,6 +83,7 @@ fn declines_when_multiple_internal_candidates_exist() {
         module_path: Some("Foundation.NSData".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     assert_eq!(
         resolve(&lookup, "NSData", imports, &ENABLED_PROFILE),

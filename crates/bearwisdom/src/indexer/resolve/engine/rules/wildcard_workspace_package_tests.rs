@@ -172,6 +172,7 @@ fn wildcard_import(module: &str) -> ImportEntry {
         module_path: Some(module.to_string()),
         alias: None,
         is_wildcard: true,
+        binding_kind: None,
     }
 }
 
@@ -255,6 +256,7 @@ fn declines_when_no_wildcard_import() {
         module_path: Some("tantivy::collector".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     assert_eq!(resolve(&WWS_PROFILE, &lookup, "TopDocs", imports, None), None);
 }

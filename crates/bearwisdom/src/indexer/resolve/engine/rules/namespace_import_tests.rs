@@ -54,6 +54,7 @@ fn binds_type_under_imported_name_as_namespace() {
         module_path: None,
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     assert_eq!(resolve(&lookup, "Helper", imports), Some(31));
 }

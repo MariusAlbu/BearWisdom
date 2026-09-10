@@ -186,6 +186,7 @@ fn binds_via_by_name_when_file_path_matches_module() {
         module_path: Some("./components/MyCard.vue".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     match run(&lookup, "MyCard", imports) {
         LookupResult::Resolved(r) => assert_eq!(r.target_symbol_id, 1),
@@ -213,6 +214,7 @@ fn binds_via_alias_lookup_name() {
         module_path: Some("./components/Foo.vue".to_string()),
         alias: Some("MyCard".to_string()),
         is_wildcard: false,
+        binding_kind: None,
     }];
     match run(&lookup, "MyCard", imports) {
         LookupResult::Resolved(r) => assert_eq!(r.target_symbol_id, 2),
@@ -229,6 +231,7 @@ fn binds_via_module_symbols_when_unique() {
         module_path: Some("./Banner.vue".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     // by_name returns nothing; falls through to in_module_from
     match run(&lookup, "Banner", imports) {
@@ -259,6 +262,7 @@ fn declines_when_module_symbols_are_ambiguous() {
         module_path: Some("./Banner.vue".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     assert!(matches!(run(&lookup, "Banner", imports), LookupResult::Pass));
 }
@@ -284,6 +288,7 @@ fn binds_via_path_alias_in_file() {
         module_path: Some("@/Card".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     match run(&lookup, "Card", imports) {
         LookupResult::Resolved(r) => assert_eq!(r.target_symbol_id, 6),
@@ -307,6 +312,7 @@ fn passes_when_no_matching_import() {
         module_path: Some("./OtherComp.vue".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     assert!(matches!(run(&lookup, "MyCard", imports), LookupResult::Pass));
 }
@@ -336,6 +342,7 @@ fn passes_for_non_calls_edge() {
         module_path: Some("./MyCard.vue".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }]);
     let rc = ref_ctx(&r, &source, vec![]);
     let kind = accept_any;

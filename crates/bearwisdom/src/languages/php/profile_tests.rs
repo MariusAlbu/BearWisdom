@@ -1,5 +1,5 @@
 use super::PHP_PROFILE;
-use crate::type_checker::profile::language_profile::{ChainQualification, KindCompatibility};
+use crate::type_checker::profile::language_profile::KindCompatibility;
 use crate::types::{EdgeKind, SymbolKind};
 
 #[test]
@@ -9,12 +9,46 @@ fn php_profile_identity() {
 }
 
 #[test]
+fn php_module_path_normalization_is_confined_to_the_path_matching_view() {
+    assert_eq!(
+        super::normalize_php_module_path_for_match("Illuminate\\Database\\Eloquent"),
+        "Illuminate/Database/Eloquent"
+    );
+    assert_eq!(
+        super::normalize_php_module_path_for_match("already/slashed"),
+        "already/slashed"
+    );
+}
+
+#[test]
+fn php_qualified_import_candidates_keep_namespace_and_containment_boundaries() {
+    assert_eq!(
+        super::php_qualified_import_type_candidates(
+            "Illuminate\\Database",
+            "Eloquent",
+            "Builder",
+        ),
+        vec![
+            "Illuminate\\Database\\Eloquent\\Builder",
+            "Illuminate\\Database\\Eloquent.Builder",
+        ]
+    );
+}
+
+#[test]
+fn php_qualified_import_candidates_decline_empty_namespace_components() {
+    assert!(super::php_qualified_import_type_candidates("Illuminate\\", "Eloquent", "Builder")
+        .is_empty());
+    assert!(super::php_qualified_import_type_candidates("Illuminate", "", "Builder").is_empty());
+    assert!(super::php_qualified_import_type_candidates("Illuminate", "Eloquent", "Builder\\")
+        .is_empty());
+}
+
+#[test]
 fn php_chain_qualification_is_same_package_and_imports() {
     // Same-namespace + `use`-statement qualification through the engine walker.
-    assert_eq!(
-        PHP_PROFILE.chain_qualification,
-        ChainQualification::SamePackageAndImports
-    );
+    assert!(PHP_PROFILE.chain_qualification.uses_same_package_and_imports());
+    assert!(PHP_PROFILE.chain_qualification.qualified_import_root().is_some());
 }
 
 #[test]

@@ -11,6 +11,7 @@ pub(super) fn resolve_root_impl(
     file_ctx: &FileContext,
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
+    profile: &LanguageProfile,
     seg: &crate::types::ChainSegment,
 ) -> Result<Receiver, Option<Cause>> {
     if seg.kind == SegmentKind::BaseRef {
@@ -108,7 +109,7 @@ pub(super) fn resolve_root_impl(
     // workspace package — or dies with the import as its cause. The unscoped
     // by-name fallbacks below never run for such a root: a same-named symbol
     // from an unrelated file is a hijack, not a resolution.
-    match super::super::root_import_discipline::apply(file_ctx, lookup, arena, seg) {
+    match super::super::root_import_discipline::apply(file_ctx, lookup, arena, profile, seg) {
         RootImportOutcome::Typed(recv) => return Ok(recv),
         RootImportOutcome::Deny(c) => return Err(Some(c)),
         RootImportOutcome::Unconstrained => {}

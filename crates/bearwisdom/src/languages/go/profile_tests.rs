@@ -11,10 +11,10 @@ fn id_matches() {
 #[test]
 fn chain_qualification_is_package_short_name() {
     // Members keyed under the import's package short name (`gin.NewRouter`).
-    assert_eq!(
+    assert!(matches!(
         GO_PROFILE.chain_qualification,
         ChainQualification::PackageShortName
-    );
+    ));
 }
 
 #[test]

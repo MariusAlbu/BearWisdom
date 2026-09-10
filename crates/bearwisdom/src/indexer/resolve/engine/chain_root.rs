@@ -45,7 +45,14 @@ pub(super) fn anchor(
     profile: &LanguageProfile,
     chain: &MemberChain,
 ) -> Result<(Receiver, usize), Option<Cause>> {
-    let cause = match resolve_root(ref_ctx, file_ctx, lookup, arena, &chain.segments[0]) {
+    let cause = match resolve_root(
+        ref_ctx,
+        file_ctx,
+        lookup,
+        arena,
+        profile,
+        &chain.segments[0],
+    ) {
         Ok(root) => return Ok((root, 1)),
         Err(cause) => cause,
     };
@@ -56,14 +63,33 @@ pub(super) fn anchor(
     {
         return Err(cause);
     }
-    let anchored = namespace_anchor(
-        file_ctx,
-        lookup,
-        arena,
-        profile,
-        ref_ctx.file_package_id,
-        &chain.segments,
-    );
+    // Some extractors preserve a source-qualified static receiver in one
+    // TypeAccess segment. Under import qualification, its first component is
+    // meaningful only through an explicit named binding; do not let the
+    // wildcard namespace anchor reinterpret it when that proof is absent.
+    let anchored = if split_import_qualified_root(profile, &chain.segments[0]).is_some() {
+        match imported_qualified_root_anchor(file_ctx, lookup, arena, profile, &chain.segments) {
+            QualifiedRootAnchor::Bound(receiver) => Some((receiver, 1)),
+            QualifiedRootAnchor::NotImported => namespace_anchor(
+                file_ctx,
+                lookup,
+                arena,
+                profile,
+                ref_ctx.file_package_id,
+                &chain.segments,
+            ),
+            QualifiedRootAnchor::Declined => None,
+        }
+    } else {
+        namespace_anchor(
+            file_ctx,
+            lookup,
+            arena,
+            profile,
+            ref_ctx.file_package_id,
+            &chain.segments,
+        )
+    };
     match anchored {
         Some((recv, consumed)) => {
             crate::tracef!(
@@ -76,6 +102,98 @@ pub(super) fn anchor(
         None => {
             Err(cause.or_else(|| Some(root_cause(ref_ctx, file_ctx, lookup, &chain.segments[0]))))
         }
+    }
+}
+
+/// Split a source-qualified TypeAccess root into its locally bound head and
+/// remaining type path. The profile supplies the source separator; the import
+/// table must later prove what the bound head denotes.
+fn split_import_qualified_root<'a>(
+    profile: &LanguageProfile,
+    root: &'a ChainSegment,
+) -> Option<(&'a str, &'a str)> {
+    if profile
+        .chain_qualification
+        .qualified_import_root()
+        .is_none()
+        || root.kind != SegmentKind::TypeAccess
+        || root.is_call
+        || profile.qname_separator.is_empty()
+    {
+        return None;
+    }
+    let (binding, qualified_tail) = root.name.split_once(profile.qname_separator)?;
+    if binding.is_empty()
+        || qualified_tail.is_empty()
+        || qualified_tail
+            .split(profile.qname_separator)
+            .any(|part| part.is_empty())
+    {
+        return None;
+    }
+    Some((binding, qualified_tail))
+}
+
+/// Root a source-qualified TypeAccess through the file's explicit import
+/// table. The binding component matches the import's local name, while exact
+/// index probes use its original declared name.
+///
+/// A duplicate local binding that reaches two distinct indexed types is
+/// ambiguous and declines rather than choosing the first import row.
+enum QualifiedRootAnchor {
+    NotImported,
+    Bound(Receiver),
+    Declined,
+}
+
+fn imported_qualified_root_anchor(
+    file_ctx: &FileContext,
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    profile: &LanguageProfile,
+    segments: &[ChainSegment],
+) -> QualifiedRootAnchor {
+    let Some((binding, qualified_tail)) =
+        segments.first().and_then(|root| split_import_qualified_root(profile, root))
+    else {
+        return QualifiedRootAnchor::NotImported;
+    };
+    let Some(config) = profile.chain_qualification.qualified_import_root() else {
+        return QualifiedRootAnchor::NotImported;
+    };
+    let mut matched: Option<(String, Receiver)> = None;
+    let mut imported = false;
+
+    for import in &file_ctx.imports {
+        if import.is_wildcard
+            || import.binding_kind != Some(SegmentKind::TypeAccess)
+            || import.bound_name() != binding
+            || import.imported_name.is_empty()
+        {
+            continue;
+        }
+        imported = true;
+        let Some(module) = import.module_path.as_deref().filter(|module| !module.is_empty()) else {
+            continue;
+        };
+        for qname in (config.type_candidates)(module, &import.imported_name, qualified_tail) {
+            let Some(receiver) = type_receiver(lookup, arena, &qname) else {
+                continue;
+            };
+            if let Some((previous_qname, _)) = &matched {
+                if previous_qname != &qname {
+                    return QualifiedRootAnchor::Declined;
+                }
+                continue;
+            }
+            matched = Some((qname, receiver));
+        }
+    }
+
+    match matched {
+        Some((_, receiver)) => QualifiedRootAnchor::Bound(receiver),
+        None if imported => QualifiedRootAnchor::Declined,
+        None => QualifiedRootAnchor::NotImported,
     }
 }
 
@@ -139,7 +257,7 @@ fn namespace_anchor(
             continue;
         }
         let joined = join_segments(&segments[..k], sep);
-        if k > 1 {
+        if k > 1 || (!sep.is_empty() && joined.contains(sep)) {
             if let Some(recv) = type_receiver(lookup, arena, &joined) {
                 return Some((recv, k));
             }

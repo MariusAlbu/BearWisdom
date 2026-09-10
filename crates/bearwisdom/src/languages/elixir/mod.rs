@@ -160,6 +160,7 @@ impl LanguagePlugin for ElixirPlugin {
                             module_path: Some(module.clone()),
                             alias: None,
                             is_wildcard: true,
+                            binding_kind: None,
                         });
                     }
                     using_injection::ElixirInjection::Alias { local, module } => {
@@ -175,6 +176,7 @@ impl LanguagePlugin for ElixirPlugin {
                             module_path: Some(module.clone()),
                             alias: None,
                             is_wildcard: false,
+                            binding_kind: None,
                         });
                     }
                     // A function defined literally inside a `__using__` quote

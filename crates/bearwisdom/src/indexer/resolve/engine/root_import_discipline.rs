@@ -19,6 +19,7 @@
 // =============================================================================
 
 use crate::type_checker::core::types::TypeArena;
+use crate::type_checker::profile::language_profile::LanguageProfile;
 
 use super::cause::{Cause, CauseKind};
 use super::chain::{import_scoped_external_root, Receiver};
@@ -41,6 +42,7 @@ pub(super) fn apply(
     file_ctx: &FileContext,
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
+    profile: &LanguageProfile,
     seg: &crate::types::ChainSegment,
 ) -> RootImportOutcome {
     let Some(entry) = binding_import(file_ctx, &seg.name) else {
@@ -57,7 +59,7 @@ pub(super) fn apply(
     };
 
     // External candidate set (ext files under the imported module).
-    if let Some(recv) = import_scoped_external_root(file_ctx, lookup, arena, seg) {
+    if let Some(recv) = import_scoped_external_root(file_ctx, lookup, arena, profile, seg) {
         return RootImportOutcome::Typed(recv);
     }
 

@@ -12,6 +12,7 @@ fn wildcard_import(module: &str) -> ImportEntry {
         module_path: Some(module.to_string()),
         alias: None,
         is_wildcard: true,
+        binding_kind: None,
     }
 }
 

@@ -41,7 +41,7 @@ impl LookupRule for FileImportRule {
                 if !(ctx.kind)(edge_kind, &sym.kind) {
                     continue;
                 }
-                if file_path_matches_module(&sym.file_path, module_path) {
+                if file_path_matches_module(&sym.file_path, module_path, ctx.profile) {
                     return LookupResult::Resolved(ctx.resolved(sym.id, "default_file_import"));
                 }
             }

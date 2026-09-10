@@ -197,6 +197,7 @@ fn import(name: &str, module: &str) -> ImportEntry {
         module_path: Some(module.to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }
 }
 

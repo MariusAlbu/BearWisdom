@@ -96,6 +96,7 @@ fn named_import(name: &str) -> ImportEntry {
         module_path: Some("./mod".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }
 }
 

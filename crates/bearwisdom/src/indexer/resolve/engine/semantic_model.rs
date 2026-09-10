@@ -136,6 +136,7 @@ impl SemanticModel {
                             file_ctx,
                             ref_ctx.file_package_id,
                             lookup,
+                            profile,
                         );
                         for module in wildcard_root_modules(chain, file_ctx) {
                             push_unique_module(&mut modules, &module);
@@ -290,6 +291,7 @@ fn namespace_root_modules(
     file_ctx: &FileContext,
     file_package_id: Option<i64>,
     lookup: &dyn SymbolLookup,
+    profile: &LanguageProfile,
 ) -> Vec<String> {
     let Some(root) = chain.segments.first() else {
         return Vec::new();
@@ -308,7 +310,7 @@ fn namespace_root_modules(
         let imported = file_ctx.imports.iter().any(|import| {
             !import.is_wildcard
                 && import.bound_name() == root.name.as_str()
-                && namespace_matches_import(candidate, import, file_ctx, lookup)
+                && namespace_matches_import(candidate, import, file_ctx, lookup, profile)
         });
         let same_package =
             file_package_id.is_some_and(|package_id| candidate.package_id == Some(package_id));
@@ -318,7 +320,7 @@ fn namespace_root_modules(
                 for import in &file_ctx.imports {
                     if !import.is_wildcard
                         && import.bound_name() == root.name.as_str()
-                        && namespace_matches_import(candidate, import, file_ctx, lookup)
+                        && namespace_matches_import(candidate, import, file_ctx, lookup, profile)
                     {
                         if let Some(module) = import.module_path.as_deref() {
                             push_unique_module(&mut modules, module);
@@ -350,7 +352,14 @@ fn chain_root_is_namespace(
     file_package_id: Option<i64>,
     lookup: &dyn SymbolLookup,
 ) -> bool {
-    !namespace_root_modules(chain, file_ctx, file_package_id, lookup).is_empty()
+    !namespace_root_modules(
+        chain,
+        file_ctx,
+        file_package_id,
+        lookup,
+        &crate::type_checker::profile::language_profile::DEFAULT_PROFILE,
+    )
+    .is_empty()
 }
 
 /// A namespace declaration is import-bound only when the import's module can
@@ -361,6 +370,7 @@ fn namespace_matches_import(
     import: &crate::indexer::resolve::engine::contract::ImportEntry,
     file_ctx: &FileContext,
     lookup: &dyn SymbolLookup,
+    profile: &LanguageProfile,
 ) -> bool {
     let Some(module) = import.module_path.as_deref() else {
         return false;
@@ -374,7 +384,7 @@ fn namespace_matches_import(
             .is_some_and(|package_id| candidate.package_id == Some(package_id))
         || candidate.qualified_name == module
         || super::support::qname_under_module(&candidate.qualified_name, module)
-        || super::support::file_path_matches_module(&candidate.file_path, module)
+        || super::support::file_path_matches_module(&candidate.file_path, module, profile)
 }
 
 /// Source-addressed modules named by a wildcard import root (`import * as v`).

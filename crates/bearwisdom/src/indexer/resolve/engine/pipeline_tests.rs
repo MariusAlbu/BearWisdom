@@ -707,6 +707,7 @@ impl crate::languages::LanguagePlugin for FakeInjectingPlugin {
             module_path: Some("Some.Module".to_string()),
             alias: None,
             is_wildcard: true,
+            binding_kind: None,
         }]
     }
 }

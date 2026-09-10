@@ -2,6 +2,7 @@ use super::*;
 use crate::indexer::resolve::engine::testkit::{
     call_ref, file_ctx, ref_ctx, source_symbol, Lookup,
 };
+use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
 
 #[test]
 fn active_binding_type_precedes_the_extractors_flat_annotation() {
@@ -23,7 +24,14 @@ fn active_binding_type_precedes_the_extractors_flat_annotation() {
         is_call: false,
         call_args: vec![],
     };
-    let receiver =
-        resolve_root_impl(&context, &file_ctx(vec![], None), &lookup, &arena, &segment).unwrap();
+    let receiver = resolve_root_impl(
+        &context,
+        &file_ctx(vec![], None),
+        &lookup,
+        &arena,
+        &DEFAULT_PROFILE,
+        &segment,
+    )
+    .unwrap();
     assert_eq!(receiver.ty, arena.class("Alpha"));
 }

@@ -3,6 +3,44 @@
 // how import statements bind, module paths anchor, and namespaces scope.
 // =============================================================================
 
+/// How strongly a language or ecosystem adapter constrains file-path matching
+/// for one module specifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModuleMatchAuthority {
+    /// The ordinary matcher may use its normal fallbacks after a miss.
+    Heuristic,
+    /// The adapted path is the complete candidate surface; a miss is final.
+    Authoritative,
+    /// The adapter recognized malformed or forbidden module syntax.
+    Reject,
+}
+
+/// Normalized, language-neutral evidence consumed by the generic file/module
+/// matcher. Language and ecosystem modules build this value; resolver code
+/// only applies its path, extension, prefix, and authority constraints.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModulePathMatch {
+    pub module_path: String,
+    pub required_file_prefix: Option<&'static str>,
+    pub compound_extensions: &'static [&'static str],
+    pub authority: ModuleMatchAuthority,
+}
+
+impl ModulePathMatch {
+    pub fn heuristic(module_path: &str) -> Self {
+        Self {
+            module_path: module_path.to_string(),
+            required_file_prefix: None,
+            compound_extensions: &[],
+            authority: ModuleMatchAuthority::Heuristic,
+        }
+    }
+}
+
+/// Language/ecosystem-owned conversion from source module spelling to the
+/// generic path evidence used by the resolver.
+pub type ModulePathAdapter = fn(&str) -> ModulePathMatch;
+
 /// Per-language data for the generic template-include resolver. Every field
 /// is a per-language delta of one shared algorithm: from an `Imports` ref
 /// whose `target_name` is a relative-path / stem reference to another
@@ -286,33 +324,25 @@ pub struct AliasDecode {
     pub fallback_kind: Option<&'static str>,
 }
 
-/// Module-prefix-rewrite generator for the `ByNameUnderModuleDir` anchor's
-/// bare-specifier path. Each delta is pure data; the engine derives the
-/// ordered candidate prefixes deterministically from the bare module string.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Module-prefix-rewrite policy for the `ByNameUnderModuleDir` anchor's
+/// bare-specifier path. The engine consumes normalized candidates and a
+/// decline decision without interpreting ecosystem naming conventions.
+#[derive(Debug, Clone, Copy)]
 pub enum ModulePrefixRewrites {
     /// No rewrites — the literal `{module}` is the only prefix tried, and the
     /// directory-containment fallback runs as usual. The default.
     Off,
-    /// Generate alternate prefixes for a bare specifier and retry the qname
-    /// probe under each, in order: `{module}` first, then the
-    /// DefinitelyTyped rewrites, then the deep-import peels.
+    /// Generate qname prefixes for a bare specifier and retry each in
+    /// adapter-defined order.
     On {
-        /// Try the `@types/` DefinitelyTyped form of the specifier:
-        /// `@scope/pkg` → `@types/scope__pkg`, `pkg` → `@types/pkg`. Skipped
-        /// when the specifier already starts with `@types/`.
-        definitely_typed: bool,
-        /// Peel trailing `/seg` segments off a `/`-bearing specifier
-        /// (`pkg/sub` → `pkg`), retrying the qname probe at each shorter prefix.
-        /// Stops before a bare `@scope` (a scoped package always keeps its
-        /// package segment: `@scope/pkg/sub` peels to `@scope/pkg`, never
-        /// `@scope`).
-        deep_import_peel: bool,
-        /// Decline the directory-containment fallback for a bare specifier.
-        /// `true` for TS/JS — a bare package name (`react`) must resolve
-        /// through the qname rewrites or stay unresolved, never directory-match
-        /// a same-named project file.
-        decline_bare_directory_match: bool,
+        /// Optional language/ecosystem adapter for file-path matching. The
+        /// callback implementation lives outside the generic resolver.
+        module_path_adapter: Option<ModulePathAdapter>,
+        /// Produces qname prefix candidates in priority order. The adapter
+        /// includes the literal module spelling when it is a valid candidate.
+        candidate_prefixes: fn(&str) -> Vec<String>,
+        /// True when directory containment would be unsound for this module.
+        declines_directory_match: fn(&str) -> bool,
     },
 }
 

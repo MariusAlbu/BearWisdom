@@ -12,10 +12,10 @@ fn hare_profile_drains_resolve_ref_to_engine_data() {
     // binds a bare `mod::target` member through the generic engine.
     assert!(HARE_PROFILE.builtin_skip.is_some());
     assert_eq!(HARE_PROFILE.qname_separator, "::");
-    assert_eq!(
+    assert!(matches!(
         HARE_PROFILE.chain_qualification,
         ChainQualification::PackageShortName
-    );
+    ));
     let is_builtin = HARE_PROFILE.builtin_skip.unwrap();
     assert!(is_builtin("int"));
     assert!(is_builtin("str"));

@@ -34,6 +34,7 @@ fn wildcard_import(name: &str, module: &str) -> ImportEntry {
         module_path: Some(module.to_string()),
         alias: None,
         is_wildcard: true,
+        binding_kind: None,
     }
 }
 
@@ -73,6 +74,7 @@ fn declines_when_no_wildcard_imports_present() {
         module_path: Some("my.mod".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     assert_eq!(resolve(&lookup, "Foo", imports), None);
 }

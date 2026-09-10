@@ -1662,9 +1662,10 @@ pub(super) fn resolve_root(
     file_ctx: &FileContext,
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
+    profile: &LanguageProfile,
     seg: &crate::types::ChainSegment,
 ) -> Result<Receiver, Option<Cause>> {
-    let result = resolve_root_impl(ref_ctx, file_ctx, lookup, arena, seg);
+    let result = resolve_root_impl(ref_ctx, file_ctx, lookup, arena, profile, seg);
     let result_str = result.as_ref().ok().map_or_else(
         || "UNTYPABLE".to_string(),
         |r| format!("typed {}", arena.format_type(r.ty)),
@@ -1762,16 +1763,13 @@ pub(super) fn import_scoped_external_root(
     file_ctx: &FileContext,
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
+    profile: &LanguageProfile,
     seg: &crate::types::ChainSegment,
 ) -> Option<Receiver> {
     let entry = external_import_entry(file_ctx, &seg.name)?;
     let spec = entry.module_path.as_deref()?;
     let root = package_root(spec);
-    // Node built-ins are declared in the `@types/node` supplied type tree, not
-    // under a package whose name equals the literal `node:` specifier. Let the
-    // shared matcher recognize that deliberately narrow path shape; every
-    // other external import keeps the package-root fence below.
-    let is_node_builtin = super::module_scheme::node_builtin_module_alias(spec).is_some();
+    let module_match = profile.module_path_match(spec);
     // A rename import binds `seg.name` locally, but the module's files declare
     // the ORIGINAL name — that is the name the scoped candidate set must carry.
     let lookup_name = if entry.alias.as_deref() == Some(seg.name.as_str()) {
@@ -1783,8 +1781,10 @@ pub(super) fn import_scoped_external_root(
     let mut scoped: Vec<&Symbol> = by_name
         .iter()
         .filter(|s| {
-            if is_node_builtin {
-                super::path_match::file_path_matches_module(&s.file_path, spec)
+            if module_match.authority
+                != crate::type_checker::profile::language_profile::ModuleMatchAuthority::Heuristic
+            {
+                super::path_match::file_path_matches_module(&s.file_path, spec, profile)
             } else {
                 ext_file_under_module(&s.file_path, root)
             }

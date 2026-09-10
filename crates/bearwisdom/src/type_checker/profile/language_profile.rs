@@ -342,6 +342,24 @@ pub struct LanguageProfile {
     pub visibility_keywords: &'static [(&'static str, Visibility)],
 }
 
+impl LanguageProfile {
+    /// Adapt a source module specifier into generic file-path evidence. The
+    /// callback itself is always owned by the language/ecosystem profile.
+    pub fn module_path_match(&self, module: &str) -> ModulePathMatch {
+        if let Some(config) = self.chain_qualification.qualified_import_root() {
+            return (config.module_path_adapter)(module);
+        }
+        if let ModulePrefixRewrites::On {
+            module_path_adapter: Some(adapter),
+            ..
+        } = self.imports.module_prefix_rewrites
+        {
+            return adapter(module);
+        }
+        ModulePathMatch::heuristic(module)
+    }
+}
+
 #[cfg(test)]
 #[path = "language_profile_tests.rs"]
 mod tests;

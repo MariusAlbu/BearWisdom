@@ -7,6 +7,7 @@ use crate::indexer::resolve::engine::contract::{
     FileContext, ImportEntry, Symbol as ContractSymbol, SymbolLookup, SymbolSet,
 };
 use crate::type_checker::core::types::{TypeArena, TypeId};
+use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
 use crate::types::{ChainSegment, SegmentKind};
 
 #[derive(Default)]
@@ -126,7 +127,7 @@ fn seg(name: &str, is_call: bool) -> ChainSegment {
 fn ctx_with(imports: Vec<ImportEntry>) -> FileContext {
     FileContext {
         file_path: "src/a.ts".to_string(),
-        language: "typescript".to_string(),
+        language: "fixture".to_string(),
         imports,
         file_namespace: None,
     }
@@ -138,6 +139,7 @@ fn imp(name: &str, module: &str) -> ImportEntry {
         module_path: Some(module.to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }
 }
 
@@ -145,7 +147,13 @@ fn imp(name: &str, module: &str) -> ImportEntry {
 fn unimported_name_is_unconstrained() {
     let lookup = FakeLookup::default();
     let arena = TypeArena::new();
-    let out = apply(&ctx_with(vec![]), &lookup, &arena, &seg("assert", false));
+    let out = apply(
+        &ctx_with(vec![]),
+        &lookup,
+        &arena,
+        &DEFAULT_PROFILE,
+        &seg("assert", false),
+    );
     assert!(matches!(out, RootImportOutcome::Unconstrained));
 }
 
@@ -158,60 +166,13 @@ fn scheme_prefixed_unlinked_import_denies_with_import_unlinked() {
         vec![sym(9, "assert", "URL.assert", "method", "src/url.ts")],
     );
     let arena = TypeArena::new();
-    let ctx = ctx_with(vec![imp("assert", "node:assert/strict")]);
-    match apply(&ctx, &lookup, &arena, &seg("assert", false)) {
+    let ctx = ctx_with(vec![imp("assert", "custom:assert/strict")]);
+    match apply(&ctx, &lookup, &arena, &DEFAULT_PROFILE, &seg("assert", false)) {
         RootImportOutcome::Deny(c) => {
             assert_eq!(c.kind, CauseKind::ImportUnlinked);
             assert_eq!(c.symbol_id, None);
         }
         _ => panic!("scheme-prefixed unlinked import must deny"),
-    }
-}
-
-#[test]
-fn node_builtin_value_uses_its_types_node_field_type() {
-    let mut lookup = FakeLookup::default();
-    lookup.by_name.insert(
-        "path".into(),
-        vec![sym(
-            10,
-            "path",
-            "path",
-            "variable",
-            "ext:ts:@types/node/path.d.ts",
-        )],
-    );
-    lookup
-        .field_types
-        .insert("path".into(), "path.PlatformPath".into());
-    let arena = TypeArena::new();
-    let ctx = ctx_with(vec![imp("path", "node:path")]);
-    match apply(&ctx, &lookup, &arena, &seg("path", false)) {
-        RootImportOutcome::Typed(recv) => {
-            assert_eq!(arena.format_type(recv.ty), "path.PlatformPath")
-        }
-        _ => panic!("node builtin must type from its @types/node value"),
-    }
-}
-
-#[test]
-fn node_missing_denies_when_an_unrelated_node_candidate_exists() {
-    let mut lookup = FakeLookup::default();
-    lookup.by_name.insert(
-        "missing".into(),
-        vec![sym(
-            11,
-            "missing",
-            "@types/node.path.missing",
-            "variable",
-            "ext:ts:@types/node/path.d.ts",
-        )],
-    );
-    let arena = TypeArena::new();
-    let ctx = ctx_with(vec![imp("missing", "node:missing")]);
-    match apply(&ctx, &lookup, &arena, &seg("missing", false)) {
-        RootImportOutcome::Deny(c) => assert_eq!(c.kind, CauseKind::ImportUnlinked),
-        _ => panic!("node builtin must not borrow an unrelated @types/node file"),
     }
 }
 
@@ -225,7 +186,7 @@ fn declared_dependency_without_a_scoped_candidate_stays_unconstrained() {
     let arena = TypeArena::new();
     let ctx = ctx_with(vec![imp("logging", "@tryghost/logging")]);
     assert!(matches!(
-        apply(&ctx, &lookup, &arena, &seg("logging", false)),
+        apply(&ctx, &lookup, &arena, &DEFAULT_PROFILE, &seg("logging", false)),
         RootImportOutcome::Unconstrained
     ));
 }
@@ -235,7 +196,7 @@ fn unattested_bare_specifier_stays_unconstrained() {
     let lookup = FakeLookup::default();
     let arena = TypeArena::new();
     let ctx = ctx_with(vec![imp("Database", "crate::db")]);
-    let out = apply(&ctx, &lookup, &arena, &seg("Database", false));
+    let out = apply(&ctx, &lookup, &arena, &DEFAULT_PROFILE, &seg("Database", false));
     assert!(matches!(out, RootImportOutcome::Unconstrained));
 }
 
@@ -250,7 +211,7 @@ fn internally_linked_module_types_the_root() {
     lookup.return_types.insert(3, ty77);
     let arena = TypeArena::new();
     let ctx = ctx_with(vec![imp("helper", "./utils")]);
-    match apply(&ctx, &lookup, &arena, &seg("helper", true)) {
+    match apply(&ctx, &lookup, &arena, &DEFAULT_PROFILE, &seg("helper", true)) {
         RootImportOutcome::Typed(recv) => assert_eq!(recv.ty, ty77),
         _ => panic!("linked module must type the root"),
     }
@@ -261,7 +222,7 @@ fn relative_import_without_link_stays_unconstrained() {
     let lookup = FakeLookup::default();
     let arena = TypeArena::new();
     let ctx = ctx_with(vec![imp("helper", "./utils")]);
-    let out = apply(&ctx, &lookup, &arena, &seg("helper", true));
+    let out = apply(&ctx, &lookup, &arena, &DEFAULT_PROFILE, &seg("helper", true));
     assert!(matches!(out, RootImportOutcome::Unconstrained));
 }
 
@@ -275,7 +236,7 @@ fn workspace_deep_import_types_from_the_package() {
     );
     let arena = TypeArena::new();
     let ctx = ctx_with(vec![imp("Link", "next/link")]);
-    match apply(&ctx, &lookup, &arena, &seg("Link", false)) {
+    match apply(&ctx, &lookup, &arena, &DEFAULT_PROFILE, &seg("Link", false)) {
         RootImportOutcome::Typed(recv) => assert_eq!(recv.id, Some(21)),
         _ => panic!("workspace deep import must type from the package"),
     }
@@ -287,7 +248,7 @@ fn workspace_package_without_the_name_denies() {
     lookup.packages.insert("next".into(), 5);
     let arena = TypeArena::new();
     let ctx = ctx_with(vec![imp("Missing", "next/link")]);
-    match apply(&ctx, &lookup, &arena, &seg("Missing", false)) {
+    match apply(&ctx, &lookup, &arena, &DEFAULT_PROFILE, &seg("Missing", false)) {
         RootImportOutcome::Deny(c) => assert_eq!(c.kind, CauseKind::ImportUnlinked),
         _ => panic!("workspace package lacking the name must deny"),
     }
@@ -302,7 +263,7 @@ fn uncaptured_return_on_scoped_callable_blames_the_callee() {
     );
     let arena = TypeArena::new();
     let ctx = ctx_with(vec![imp("helper", "./utils")]);
-    match apply(&ctx, &lookup, &arena, &seg("helper", true)) {
+    match apply(&ctx, &lookup, &arena, &DEFAULT_PROFILE, &seg("helper", true)) {
         RootImportOutcome::Deny(c) => {
             assert_eq!(c.kind, CauseKind::UncapturedReturn);
             assert_eq!(c.symbol_id, Some(3));
@@ -318,7 +279,13 @@ fn wildcard_import_never_disciplines() {
     let mut entry = imp("System", "System");
     entry.is_wildcard = true;
     let arena = TypeArena::new();
-    let out = apply(&ctx_with(vec![entry]), &lookup, &arena, &seg("System", false));
+    let out = apply(
+        &ctx_with(vec![entry]),
+        &lookup,
+        &arena,
+        &DEFAULT_PROFILE,
+        &seg("System", false),
+    );
     assert!(matches!(out, RootImportOutcome::Unconstrained));
 }
 
@@ -336,7 +303,7 @@ fn external_value_named_like_the_head_does_not_attest() {
     let arena = TypeArena::new();
     let ctx = ctx_with(vec![imp("SelfProbe", "bench/selfmod")]);
     assert!(matches!(
-        apply(&ctx, &lookup, &arena, &seg("SelfProbe", false)),
+        apply(&ctx, &lookup, &arena, &DEFAULT_PROFILE, &seg("SelfProbe", false)),
         RootImportOutcome::Unconstrained
     ));
 }

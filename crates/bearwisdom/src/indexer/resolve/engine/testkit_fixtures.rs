@@ -48,6 +48,7 @@ pub(crate) fn import(name: &str, module: Option<&str>) -> ImportEntry {
         module_path: module.map(|s| s.to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }
 }
 

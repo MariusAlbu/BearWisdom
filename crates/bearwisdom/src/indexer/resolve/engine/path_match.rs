@@ -4,9 +4,9 @@
 // Every rung that decides "does this symbol's file plausibly belong to that
 // import's module?" goes through these. Two string families meet here and must
 // not be conflated: REAL file paths (extension-bearing, `/`-separated, maybe
-// `ext:<lang>:<pkg>/…`-prefixed) and MODULE specifiers (relative paths, bare
-// package names, or dotted qualified names like `java.util.Map`). Trimming is
-// family-specific — see `trim_path_extension` vs `trim_source_extension`.
+// externally indexed) and MODULE specifiers (relative paths, bare package
+// names, or qualified names). Language profiles adapt source spellings before
+// these primitives compare them.
 // =============================================================================
 
 /// A bare module specifier names a package, not a project-relative path.
@@ -14,7 +14,9 @@
 /// (`C:/`). Callers that scope a specifier to a workspace package's symbol
 /// set must first rule out a relative/absolute path.
 pub(crate) fn is_bare_module_specifier(spec: &str) -> bool {
-    !(spec.starts_with('.') || spec.starts_with('/') || (spec.len() >= 2 && spec.as_bytes()[1] == b':'))
+    !(spec.starts_with('.')
+        || spec.starts_with('/')
+        || (spec.len() >= 2 && spec.as_bytes()[1] == b':'))
 }
 
 /// A specifier is relative — and therefore project-internal — when it starts
@@ -77,24 +79,6 @@ pub(crate) fn trim_path_extension(path: &str) -> &str {
     }
 }
 
-/// Trim a source-file extension off a module/path string for stem comparison.
-pub(crate) fn trim_source_extension(path: &str) -> &str {
-    path.trim_end_matches(".svelte")
-        .trim_end_matches(".vue")
-        .trim_end_matches(".tsx")
-        .trim_end_matches(".jsx")
-        .trim_end_matches(".mts")
-        .trim_end_matches(".cts")
-        .trim_end_matches(".ts")
-        .trim_end_matches(".js")
-        .trim_end_matches(".cs")
-        .trim_end_matches(".cljc")
-        .trim_end_matches(".cljs")
-        .trim_end_matches(".clj")
-        .trim_end_matches(".astro")
-        .trim_end_matches(".mdx")
-}
-
 /// Match a symbol's file path against an import module specifier. Returns `true`
 /// when the path plausibly names the same file as `module`:
 /// - Stem-suffix: the path's extension-stripped form ends with the module's
@@ -105,31 +89,49 @@ pub(crate) fn trim_source_extension(path: &str) -> &str {
 /// - Segment-bounded run: the slash-form of the module appears as a
 ///   `/`-bounded contiguous run inside the path (covers `__init__.py`
 ///   re-exports and deep package paths the stem-suffix check misses).
-pub(crate) fn file_path_matches_module(file_path: &str, module: &str) -> bool {
+pub(crate) fn file_path_matches_module(
+    file_path: &str,
+    module: &str,
+    profile: &crate::type_checker::profile::language_profile::LanguageProfile,
+) -> bool {
     if module.is_empty() {
         return false;
     }
     let normalized = file_path.replace('\\', "/");
-    let module = match super::module_scheme::node_builtin_module_alias(module) {
-        Some(alias) => {
-            // `node:` is Node's builtin namespace, never a project path or an
-            // arbitrary external package. Only its supplied declaration files
-            // under the canonical @types/node virtual root may use the bare
-            // alias for path matching.
-            if !normalized.starts_with("ext:ts:@types/node/") {
-                return false;
-            }
-            alias
-        }
-        None if module.starts_with("node:") => return false,
-        None => module,
-    };
-    file_path_matches_normalized_module(&normalized, module)
+    let adapted = profile.module_path_match(module);
+    if adapted.authority
+        == crate::type_checker::profile::language_profile::ModuleMatchAuthority::Reject
+    {
+        return false;
+    }
+    if adapted.required_file_prefix.is_some_and(|prefix| {
+        !normalized.starts_with(&prefix.replace('\\', "/"))
+    }) {
+        return false;
+    }
+    file_path_matches_normalized_module(
+        &normalized,
+        &adapted.module_path,
+        adapted.compound_extensions,
+    )
 }
 
-fn file_path_matches_normalized_module(normalized: &str, module: &str) -> bool {
-    let cleaned = trim_source_extension(module.trim_start_matches("./").trim_start_matches("../"));
-    let stem = trim_indexed_path_extension(normalized);
+fn file_path_matches_normalized_module(
+    normalized: &str,
+    module: &str,
+    compound_extensions: &[&str],
+) -> bool {
+    let path_like = module.starts_with('.') || module.starts_with('/') || module.contains('/');
+    let module = module.trim_start_matches("./").trim_start_matches("../");
+    if path_suffix_matches(normalized, module) {
+        return true;
+    }
+    let cleaned = if path_like {
+        trim_known_or_final_extension(module, compound_extensions)
+    } else {
+        module
+    };
+    let stem = trim_known_or_final_extension(normalized, compound_extensions);
     if stem.ends_with(cleaned) || stem.ends_with(&cleaned.replace('.', "/")) {
         return true;
     }
@@ -140,17 +142,18 @@ fn file_path_matches_normalized_module(normalized: &str, module: &str) -> bool {
     path_contains_segment_run(&normalized, &dotted)
 }
 
-/// Strip an indexed source path's extension while treating TypeScript
-/// declaration suffixes as one unit. The generic path helper intentionally
-/// removes only the final extension, which would leave `path.d` from
-/// `path.d.ts` and prevent a `path` module from matching its declaration file.
-fn trim_indexed_path_extension(path: &str) -> &str {
-    for suffix in [".d.ts", ".d.mts", ".d.cts"] {
+fn trim_known_or_final_extension<'a>(path: &'a str, compound_extensions: &[&str]) -> &'a str {
+    for suffix in compound_extensions {
         if let Some(stem) = path.strip_suffix(suffix) {
             return stem;
         }
     }
     trim_path_extension(path)
+}
+
+fn path_suffix_matches(path: &str, suffix: &str) -> bool {
+    path.strip_suffix(suffix)
+        .is_some_and(|head| head.is_empty() || head.ends_with('/'))
 }
 
 /// `true` when `run` appears in `path` as a `/`-bounded contiguous segment run.

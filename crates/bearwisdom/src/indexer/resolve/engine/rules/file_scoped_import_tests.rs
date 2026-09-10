@@ -149,6 +149,7 @@ fn binds_symbol_by_name_in_imported_file_pass1() {
         module_path: Some("lib/my_lib.py".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     let r = call_ref("MyKeyword");
     let s = source_symbol("caller");
@@ -182,6 +183,7 @@ fn declines_when_gate_is_off() {
         module_path: Some("lib/my_lib.py".to_string()),
         alias: None,
         is_wildcard: false,
+        binding_kind: None,
     }];
     let r = call_ref("MyKeyword");
     let s = source_symbol("caller");
@@ -212,6 +214,7 @@ fn declines_non_wildcard_import_when_wildcard_only() {
         module_path: Some("lib/my_lib.py".to_string()),
         alias: None,
         is_wildcard: false, // not a wildcard import
+        binding_kind: None,
     }];
     let r = call_ref("MyKeyword");
     let s = source_symbol("caller");
@@ -245,6 +248,7 @@ fn binds_via_alias_decode_type_member() {
         module_path: Some("lib/dispatch.py".to_string()),
         alias: Some("DispatchClass.my_method".to_string()),
         is_wildcard: false,
+        binding_kind: None,
     }];
     let r = call_ref("MyKeyword");
     let s = source_symbol("caller");

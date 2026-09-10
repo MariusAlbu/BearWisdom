@@ -54,7 +54,7 @@ impl LookupRule for ComponentImportRule {
 
             for sym in ctx.lookup.by_name(lookup_name) {
                 if (ctx.kind)(edge_kind, &sym.kind)
-                    && file_path_matches_module(&sym.file_path, module_path)
+                    && file_path_matches_module(&sym.file_path, module_path, ctx.profile)
                 {
                     return LookupResult::Resolved(
                         ctx.resolved(sym.id, "default_component_import"),

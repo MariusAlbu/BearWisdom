@@ -20,7 +20,7 @@
 
 use crate::indexer::resolve::engine::support::{
     file_path_matches_module as shared_file_path_matches_module, import_scoped_package_id,
-    normalize_name, path_contains_segment_run, trim_source_extension,
+    normalize_name, path_contains_segment_run,
 };
 use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
 use crate::type_checker::profile::language_profile::NameNormalization;
@@ -78,7 +78,7 @@ impl LookupRule for ImportedNamespaceRule {
                         );
                     }
                 }
-                if file_path_matches_module(&sym.file_path, module) {
+                if file_path_matches_module(&sym.file_path, module, ctx.profile) {
                     return LookupResult::Resolved(
                         ctx.resolved(sym.id, "default_imported_namespace"),
                     );
@@ -122,13 +122,25 @@ impl LookupRule for ImportedNamespaceRule {
 /// the literal segment-run check fails, both path and run are re-checked with
 /// hyphens folded to underscores. The segment-boundary requirement still
 /// applies after normalization, so `turbo_tasks_macros` never matches `turbo_tasks`.
-fn file_path_matches_module(file_path: &str, module: &str) -> bool {
-    if shared_file_path_matches_module(file_path, module) {
+fn file_path_matches_module(
+    file_path: &str,
+    module: &str,
+    profile: &crate::type_checker::profile::language_profile::LanguageProfile,
+) -> bool {
+    if shared_file_path_matches_module(file_path, module, profile) {
         return true;
     }
+    let adapted = profile.module_path_match(module);
+    if adapted.authority
+        != crate::type_checker::profile::language_profile::ModuleMatchAuthority::Heuristic
+    {
+        return false;
+    }
     let normalized = file_path.replace('\\', "/");
-    let cleaned =
-        trim_source_extension(module.trim_start_matches("./").trim_start_matches("../"));
+    let cleaned = adapted
+        .module_path
+        .trim_start_matches("./")
+        .trim_start_matches("../");
     let dotted = cleaned.replace('.', "/");
     if dotted.is_empty() {
         return false;

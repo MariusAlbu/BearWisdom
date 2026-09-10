@@ -5,6 +5,8 @@
 
 use crate::types::{EdgeKind, SymbolKind};
 
+use super::import_specs::ModulePathAdapter;
+
 /// What a scope function yields relative to its receiver, for the chain
 /// walker's `scope_functions` miss-fallback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -221,7 +223,18 @@ pub enum AccessorSlot {
 /// receiver typed by a simple name (`Repository`, or a method's same-package
 /// return type `Entity`) carries only the bare head — the walker can't step
 /// past it until the bare name is qualified.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub type QualifiedImportTypeCandidates = fn(&str, &str, &str) -> Vec<String>;
+
+/// Adapter-owned behavior for a source-qualified type rooted in an explicit
+/// import. The resolver owns the proof and ambiguity rules; language code owns
+/// source spelling, path normalization, and canonical symbol-name candidates.
+#[derive(Debug, Clone, Copy)]
+pub struct QualifiedImportRoot {
+    pub module_path_adapter: ModulePathAdapter,
+    pub type_candidates: QualifiedImportTypeCandidates,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum ChainQualification {
     /// No mid-chain qualification. The receiver's qname is used verbatim. The
     /// default for every language whose members are keyed under the same
@@ -235,6 +248,9 @@ pub enum ChainQualification {
     /// `com.foo.Bar`). Only promotes to a qname that owns a type or keys a
     /// member, so it can only widen resolution. Java / Groovy / C# / PHP.
     SamePackageAndImports,
+    /// The same bare-receiver qualification plus an adapter for extractors
+    /// that preserve a source-qualified type in one chain-root segment.
+    SamePackageAndImportsWithQualifiedRoot(QualifiedImportRoot),
     /// An import names a PACKAGE, not a type, and members are keyed under the
     /// import's short name (`import "github.com/gin-gonic/gin"` brings short
     /// name `gin`; the function lands as `gin.NewRouter`). A bare member ref
@@ -243,6 +259,22 @@ pub enum ChainQualification {
     /// `{last_path_segment}.{target}`. Distinct from `SamePackageAndImports`,
     /// where the import names the class itself. Go.
     PackageShortName,
+}
+
+impl ChainQualification {
+    pub fn uses_same_package_and_imports(self) -> bool {
+        matches!(
+            self,
+            Self::SamePackageAndImports | Self::SamePackageAndImportsWithQualifiedRoot(_)
+        )
+    }
+
+    pub fn qualified_import_root(self) -> Option<QualifiedImportRoot> {
+        match self {
+            Self::SamePackageAndImportsWithQualifiedRoot(config) => Some(config),
+            _ => None,
+        }
+    }
 }
 
 /// Edge-kind × symbol-kind compatibility entries. An empty table means "any

@@ -78,7 +78,7 @@ Genuinely bare names whose declaration IS in the index.
 - [x] wildcard-import re-export following (`import 'package:test/test.dart'` → `src/expect.dart`; scala `_`, kotlin `*`)
 - [x] transitive `#include` closure + `NamespacelessGlobalRule` reaching supplied external declarations (C `FILE`/`fprintf`: found by name, no rung reaches it)
 - [x] TS import specifier normalization (`node:path` vs `path` — 63% of ts `import_unlinked` are present by qname)
-- [ ] PHP namespace `use` + qualified member (`Illuminate\Database\Eloquent` present, member unlinked)
+- [x] PHP namespace `use` + qualified member (`Illuminate\Database\Eloquent` present, member unlinked)
 - [ ] inherited implicit-receiver members when the enclosing type's parent is external (pascal `Create`, `AddField`)
 - [ ] targeted recapture: dart-serverpod, make-curl, ts-nextjs, php-laravel, pascal-castle-fresh; cascade gate
 
@@ -317,3 +317,12 @@ must carry declaration/binding/type IDs, not re-find declarations by spelling.
   - [ ] Amortize file binding environments across sequential initializer candidates without losing prior-declaration updates; measure prelude cost on large source files.
 - [ ] Rebuild UI → service → database flows on bound call/data-flow edges plus explicit route, message, DI and database-mapping evidence; preserve uncertainty across dynamic boundaries.
 - [ ] Validate IDE navigation, change-impact analysis and AI context retrieval against the same semantic snapshots.
+
+## Generic resolver boundary
+
+- [ ] Move signature syntax and JVM descriptor decoding from the generic chain walker into language/profile adapters.
+- [ ] Move TypeScript compiler intrinsics and Ruby contract/callback syntax out of the generic resolver.
+- [ ] Move Rust wildcard resolution and language path-separator policy out of generic rules.
+- [ ] Move Dart URI/module-entry aliases and TypeScript augmentation policy into language adapters.
+- [ ] Move C/C++ include admission and SQL handling out of generic compilation.
+- [ ] Move npm, Cargo, and NuGet manifest/package grammar out of the generic resolver.

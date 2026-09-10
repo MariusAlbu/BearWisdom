@@ -55,9 +55,9 @@ pub const VUE_PROFILE: LanguageProfile = LanguageProfile {
         alias_module_qname: false,
         module_prefix_rewrites:
             crate::type_checker::profile::language_profile::ModulePrefixRewrites::On {
-                definitely_typed: true,
-                deep_import_peel: true,
-                decline_bare_directory_match: true,
+                module_path_adapter: Some(crate::ecosystem::npm::node_builtin::module_path_match),
+                candidate_prefixes: crate::ecosystem::npm::module_specifier::module_prefix_candidates,
+                declines_directory_match: crate::ecosystem::npm::module_specifier::declines_directory_match,
             },
         workspace_packages: true,
         reexport_barrel_stems: &["index"],

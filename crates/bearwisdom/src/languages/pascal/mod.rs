@@ -107,6 +107,7 @@ impl LanguagePlugin for PascalPlugin {
                 module_path: Some(name.clone()),
                 alias: None,
                 is_wildcard: true,
+                binding_kind: None,
             })
             .collect()
     }
