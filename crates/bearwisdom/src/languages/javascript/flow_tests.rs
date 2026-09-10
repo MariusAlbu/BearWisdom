@@ -180,6 +180,38 @@ fn js_flow_object_destructure_binds_each_field() {
 }
 
 #[test]
+fn js_flow_array_destructure_records_positions_and_elisions() {
+    let source = "const [, reset, report] = makeCounter();\n";
+    let mut symbols = vec![
+        mk_sym("reset", SymbolKind::Variable, 0, 9),
+        mk_sym("report", SymbolKind::Variable, 0, 16),
+    ];
+    let mut refs = vec![mk_call_ref("makeCounter", 0, 27)];
+
+    let meta = run_flow_queries(
+        source,
+        &js_grammar(),
+        &JS_FLOW_CONFIG,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
+
+    let entries = meta
+        .flow_binding_destructure
+        .get(&0)
+        .expect("RHS ref 0 must carry tuple-position bindings");
+    assert!(
+        entries.contains(&(0, "$tuple:1".to_string())),
+        "{entries:?}"
+    );
+    assert!(
+        entries.contains(&(1, "$tuple:2".to_string())),
+        "{entries:?}"
+    );
+}
+
+#[test]
 fn js_flow_object_destructure_await_marks_the_ref_awaited() {
     let source = "const { handle } = await fetchStatus();\n";
     // 'handle' = 8..14, 'await' = 19..24, 'fetchStatus' starts at byte 25.

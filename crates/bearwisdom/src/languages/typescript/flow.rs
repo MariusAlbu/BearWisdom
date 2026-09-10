@@ -154,6 +154,11 @@ pub static TS_FLOW_CONFIG: FlowConfig = FlowConfig {
                     value: (identifier) @destruct.bind)])
             value: (_) @rhs)
 
+        (variable_declarator
+            name: (array_pattern
+                (identifier) @destruct.bind)
+            value: (_) @rhs)
+
         (required_parameter
             pattern: (identifier) @lhs.param
             (type_annotation (_) @type))

@@ -28,6 +28,11 @@ const TS_TEST_FLOW: FlowConfig = FlowConfig {
                     key: (property_identifier) @destruct.key
                     value: (identifier) @destruct.bind)])
             value: (_) @rhs)
+
+        (variable_declarator
+            name: (array_pattern
+                (identifier) @destruct.bind)
+            value: (_) @rhs)
     "#,
     type_guard_query: r#"
         (if_statement
@@ -204,6 +209,63 @@ fn flow_object_destructure_binds_each_field() {
     assert!(
         entries.contains(&(1, "total".to_string())),
         "renamed `total: count` must bind symbol 1 (count) to field \"total\"; got {entries:?}"
+    );
+}
+
+#[test]
+fn flow_array_destructure_records_positions_and_elisions() {
+    let source = "const [, reset, report] = makeCounter();\n";
+    // `reset` = 9, `report` = 16, `makeCounter` = 27.
+    let mut symbols = vec![
+        mk_binding(source, "reset", SymbolKind::Variable, 9),
+        mk_binding(source, "report", SymbolKind::Variable, 16),
+    ];
+    let mut refs = vec![mk_call_ref("makeCounter", 0, 27)];
+
+    let meta = run_flow_queries(
+        source,
+        &ts_grammar(),
+        &TS_TEST_FLOW,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
+
+    let entries = meta
+        .flow_binding_destructure
+        .get(&0)
+        .expect("RHS ref 0 must carry tuple-position bindings");
+    assert!(
+        entries.contains(&(0, "$tuple:1".to_string())),
+        "{entries:?}"
+    );
+    assert!(
+        entries.contains(&(1, "$tuple:2".to_string())),
+        "{entries:?}"
+    );
+}
+
+#[test]
+fn flow_array_destructure_ignores_commas_inside_earlier_elements() {
+    let source = "const [pair(1, 2), reset] = makeCounter();\n";
+    // `reset` = 19, `makeCounter` = 28. The comma in `pair(1, 2)` is not a
+    // tuple separator, so `reset` remains slot 1.
+    let mut symbols = vec![mk_binding(source, "reset", SymbolKind::Variable, 19)];
+    let mut refs = vec![mk_call_ref("makeCounter", 0, 28)];
+
+    let meta = run_flow_queries(
+        source,
+        &ts_grammar(),
+        &TS_TEST_FLOW,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
+
+    assert_eq!(
+        meta.flow_binding_destructure.get(&0),
+        Some(&vec![(0, "$tuple:1".to_string())]),
+        "only the direct binding `reset` belongs to tuple slot 1; meta={meta:?}"
     );
 }
 

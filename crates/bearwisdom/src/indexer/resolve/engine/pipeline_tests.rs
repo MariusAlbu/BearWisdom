@@ -1986,6 +1986,258 @@ fn go_factory_local_uses_captured_pointer_return_without_qname_fallback() {
     assert_eq!(*cause_kind, Some("uncaptured_return"));
 }
 
+/// Flat array destructuring projects only direct tuple elements. The valid
+/// second slot seeds `reset`; the out-of-range slot and scalar return are left
+/// unseeded. Two `run` methods keep a bare-name fallback from hiding either
+/// negative control.
+#[test]
+fn tuple_destructure_projects_positions_and_abstains_when_not_a_tuple_slot() {
+    use crate::type_checker::core::types::{Type, TypeArena, TypeId};
+    use crate::types::{
+        ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, MemberChain, ParsedFile,
+        SegmentKind, SymbolKind, Visibility,
+    };
+
+    fn symbol(
+        name: &str,
+        qname: &str,
+        kind: SymbolKind,
+        parent: Option<usize>,
+        return_type: Option<TypeId>,
+    ) -> ExtractedSymbol {
+        ExtractedSymbol {
+            name: name.into(),
+            qualified_name: qname.into(),
+            kind,
+            visibility: Some(Visibility::Public),
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
+            byte_offset: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: parent.map(|_| "entry".into()),
+            parent_index: parent,
+            declared_type: None,
+            return_type,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        }
+    }
+
+    fn segment(name: &str, kind: SegmentKind, is_call: bool, byte_offset: u32) -> ChainSegment {
+        ChainSegment {
+            name: name.into(),
+            node_kind: String::new(),
+            kind,
+            declared_type: None,
+            type_args: Vec::new(),
+            optional_chaining: false,
+            byte_offset,
+            declared_type_id: None,
+            is_call,
+            call_args: Vec::new(),
+            type_arg_ids: Vec::new(),
+        }
+    }
+
+    fn call_ref(
+        target: &str,
+        chain: Option<MemberChain>,
+        line: u32,
+        byte_offset: u32,
+    ) -> ExtractedRef {
+        ExtractedRef {
+            is_include: false,
+            is_import_binding: false,
+            is_reexport: false,
+            source_symbol_index: 0,
+            target_name: target.into(),
+            kind: EdgeKind::Calls,
+            line,
+            col: 0,
+            module: None,
+            chain,
+            byte_offset,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        }
+    }
+
+    let arena = Arc::new(TypeArena::new());
+    let counter_ty = arena.class("Counter");
+    let reset_ty = arena.class("Reset");
+    let scalar_ty = arena.class("Scalar");
+    let pair_ty = arena.intern(Type::Tuple(vec![counter_ty, reset_ty]));
+    let symbols = vec![
+        symbol("entry", "entry", SymbolKind::Function, None, None), // 0
+        symbol(
+            "counter",
+            "entry.counter",
+            SymbolKind::Variable,
+            Some(0),
+            None,
+        ), // 1
+        symbol("reset", "entry.reset", SymbolKind::Variable, Some(0), None), // 2
+        symbol("out", "entry.out", SymbolKind::Variable, Some(0), None), // 3
+        symbol(
+            "scalar",
+            "entry.scalar",
+            SymbolKind::Variable,
+            Some(0),
+            None,
+        ), // 4
+        symbol(
+            "makePair",
+            "makePair",
+            SymbolKind::Function,
+            None,
+            Some(pair_ty),
+        ), // 5
+        symbol(
+            "makeScalar",
+            "makeScalar",
+            SymbolKind::Function,
+            None,
+            Some(scalar_ty),
+        ), // 6
+        symbol("Counter", "Counter", SymbolKind::Class, None, None), // 7
+        symbol("Reset", "Reset", SymbolKind::Class, None, None),    // 8
+        symbol("run", "Reset.run", SymbolKind::Method, Some(8), None), // 9
+        symbol("Scalar", "Scalar", SymbolKind::Class, None, None),  // 10
+        symbol("run", "Scalar.run", SymbolKind::Method, Some(10), None), // 11
+    ];
+    let refs = vec![
+        call_ref("makePair", None, 1, 10),
+        call_ref(
+            "run",
+            Some(MemberChain {
+                segments: vec![
+                    segment("reset", SegmentKind::Identifier, false, 20),
+                    segment("run", SegmentKind::Property, true, 26),
+                ],
+            }),
+            2,
+            20,
+        ),
+        call_ref(
+            "run",
+            Some(MemberChain {
+                segments: vec![
+                    segment("out", SegmentKind::Identifier, false, 40),
+                    segment("run", SegmentKind::Property, true, 44),
+                ],
+            }),
+            3,
+            40,
+        ),
+        call_ref("makeScalar", None, 4, 60),
+        call_ref(
+            "run",
+            Some(MemberChain {
+                segments: vec![
+                    segment("scalar", SegmentKind::Identifier, false, 70),
+                    segment("run", SegmentKind::Property, true, 77),
+                ],
+            }),
+            5,
+            70,
+        ),
+    ];
+    let mut flow = FlowMeta::default();
+    flow.flow_binding_destructure.insert(
+        0,
+        vec![
+            (1, "$tuple:0".into()),
+            (2, "$tuple:1".into()),
+            (3, "$tuple:2".into()),
+        ],
+    );
+    flow.flow_binding_destructure
+        .insert(3, vec![(4, "$tuple:0".into())]);
+    let pf = ParsedFile {
+        path: "tuple.ts".into(),
+        language: "typescript".into(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols,
+        refs,
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow,
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
+    };
+    let mut id_map = HashMap::new();
+    for (idx, qname) in [
+        "entry",
+        "entry.counter",
+        "entry.reset",
+        "entry.out",
+        "entry.scalar",
+        "makePair",
+        "makeScalar",
+        "Counter",
+        "Reset",
+        "Reset.run",
+        "Scalar",
+        "Scalar.run",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        id_map.insert(("tuple.ts".to_string(), qname.to_string()), idx as i64 + 1);
+    }
+    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
+        std::slice::from_ref(&pf),
+        &id_map.clone().into(),
+        Arc::clone(&arena),
+    );
+    let profiles = super::build_profiles();
+    let solver = super::SemanticModel::production();
+    let (edges, unresolved, _ref_log, _census) = super::resolve_one_file(
+        &pf,
+        &tree,
+        &profiles,
+        &no_plugins(),
+        None,
+        &solver,
+        &id_map.clone().into(),
+        None,
+    );
+
+    assert!(
+        edges.iter().any(|edge| edge.1 == 10),
+        "reset.run() must resolve through tuple slot 1; edges={edges:?}"
+    );
+    assert_eq!(
+        edges.len(),
+        3,
+        "only the factories and reset.run resolve; edges={edges:?}"
+    );
+    assert_eq!(
+        unresolved.len(),
+        2,
+        "out and scalar must remain untyped; unresolved={unresolved:?}"
+    );
+    assert!(
+        unresolved.iter().all(|(_, target, ..)| target == "run"),
+        "only member calls on invalid tuple projections must remain; unresolved={unresolved:?}"
+    );
+}
+
 /// A rename import ref (`use m::Orig as Bound;`) carries the module's original
 /// declared name as a single-segment chain. `build_file_context` must key the
 /// entry on the ORIGINAL name — that is what the module's files declare — with

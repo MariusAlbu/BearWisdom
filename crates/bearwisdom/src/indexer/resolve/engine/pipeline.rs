@@ -24,6 +24,7 @@ use crate::occurrence::Disposition;
 
 use crate::db::Database;
 use crate::ecosystem::symbol_index::SymbolLocationIndex;
+use crate::indexer::flow_assignments::TUPLE_INDEX_KEY_PREFIX;
 use crate::indexer::plugin_state::PluginStateBag;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::cause::CauseKind;
@@ -36,7 +37,7 @@ use crate::indexer::resolve::engine::{
 use crate::indexer::resolve::ResolutionStats;
 use crate::indexer::write::SymbolIds;
 use crate::languages::LanguagePlugin;
-use crate::type_checker::core::types::{TypeArena, TypeId};
+use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -599,11 +600,10 @@ pub(super) fn resolve_one_file<'a>(
                     crate::tracef!("SEED none (ref is not a binding RHS)");
                 }
 
-                // Destructured bindings of this RHS: `const { a, b: c } = f()`.
-                // Each binding types from the FIELD on the call's yield type R,
-                // not from R itself. R is the resolver's yield TypeId, or the
-                // target's id-keyed return / field metadata when the resolver
-                // produced no yield.
+                // Destructured bindings of this RHS: object fields (`const { a,
+                // b: c } = f()`) or flat tuple elements (`const [a, b] = f()`).
+                // Object bindings project a field on the call's yield type R;
+                // tuple bindings project only a direct `Type::Tuple` element.
                 if let Some(entries) = pf.flow.flow_binding_destructure.get(&ref_idx) {
                     if let Some(arena) = tree.type_arena() {
                         // Explicit call type args (`useQuery<Movie>()`), interned for
@@ -662,7 +662,15 @@ pub(super) fn resolve_one_file<'a>(
                                 let Some(lhs_sym) = pf.symbols.get(*lhs_idx) else {
                                     continue;
                                 };
-                                if let Some(field_ty) =
+                                let tuple_index = field_key
+                                    .strip_prefix(TUPLE_INDEX_KEY_PREFIX)
+                                    .and_then(|index| index.parse::<usize>().ok());
+                                let field_ty = if let Some(index) = tuple_index {
+                                    match arena.get(recv_ty) {
+                                        Type::Tuple(elements) => elements.get(index).copied(),
+                                        _ => None,
+                                    }
+                                } else {
                                     crate::indexer::resolve::engine::chain::field_type_on(
                                         &file_lookup,
                                         arena,
@@ -670,7 +678,8 @@ pub(super) fn resolve_one_file<'a>(
                                         None,
                                         field_key,
                                     )
-                                {
+                                };
+                                if let Some(field_ty) = field_ty {
                                     crate::tracef!(
                                         "SEED destructure lhs='{}' field='{}' -> recorded=TypeId",
                                         lhs_sym.name,
@@ -681,30 +690,32 @@ pub(super) fn resolve_one_file<'a>(
                                         &lhs_sym.name,
                                         field_ty,
                                     );
-                                } else if let Some(target_id) =
-                                    crate::indexer::resolve::engine::chain::callable_member_id_on(
+                                } else if tuple_index.is_none() {
+                                    if let Some(target_id) =
+                                        crate::indexer::resolve::engine::chain::callable_member_id_on(
                                         &file_lookup,
                                         arena,
                                         recv_ty,
                                         None,
                                         field_key,
                                     )
-                                {
-                                    // The field is a `$Ret` placeholder member with no
-                                    // type of its own — record a name-only pointer so a
-                                    // later BARE CALL on the binding (`info("hi")`)
-                                    // still binds to this exact declaration.
-                                    crate::tracef!(
-                                        "SEED destructure lhs='{}' field='{}' -> recorded=CallableHead({})",
-                                        lhs_sym.name,
-                                        field_key,
-                                        target_id,
-                                    );
-                                    file_lookup.record_symbol_callable(
-                                        *lhs_idx,
-                                        &lhs_sym.name,
-                                        target_id,
-                                    );
+                                    {
+                                        // The field is a `$Ret` placeholder member with no
+                                        // type of its own — record a name-only pointer so a
+                                        // later BARE CALL on the binding (`info("hi")`)
+                                        // still binds to this exact declaration.
+                                        crate::tracef!(
+                                            "SEED destructure lhs='{}' field='{}' -> recorded=CallableHead({})",
+                                            lhs_sym.name,
+                                            field_key,
+                                            target_id,
+                                        );
+                                        file_lookup.record_symbol_callable(
+                                            *lhs_idx,
+                                            &lhs_sym.name,
+                                            target_id,
+                                        );
+                                    }
                                 }
                             }
                         }

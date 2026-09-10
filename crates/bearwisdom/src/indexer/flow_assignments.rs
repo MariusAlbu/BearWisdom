@@ -6,9 +6,36 @@ use super::flow_bindings::{
 use crate::types::{ExtractedRef, ExtractedSymbol, FlowMeta, SymbolKind};
 use tree_sitter::{Node, QueryCursor, StreamingIterator};
 
+/// Internal `flow_binding_destructure` key for a positional array binding.
+/// Source object keys cannot contain this prefix in a generated key because it
+/// is never emitted from source text for array patterns.
+pub(crate) const TUPLE_INDEX_KEY_PREFIX: &str = "$tuple:";
+
 #[cfg(test)]
 #[path = "flow_assignments_tests.rs"]
 mod tests;
+
+/// Return a flat array binding's positional slot from direct array children.
+/// Direct comma nodes preserve elisions, while commas nested in an earlier
+/// call/object/array element do not contribute. Nested patterns and defaults
+/// deliberately return `None`; their projection needs recursive flow metadata.
+fn array_pattern_index(bind: Node) -> Option<usize> {
+    let pattern = bind.parent()?;
+    if pattern.kind() != "array_pattern" {
+        return None;
+    }
+    let mut separators = 0;
+    for child_index in 0..pattern.child_count() {
+        let child = pattern.child(child_index)?;
+        if child.id() == bind.id() {
+            return Some(separators);
+        }
+        if child.kind() == "," {
+            separators += 1;
+        }
+    }
+    None
+}
 
 pub(super) fn run_assignment_query(
     root: &Node,
@@ -39,10 +66,10 @@ pub(super) fn run_assignment_query(
     // operator (Rust `?`). Correlated to a ref like `@rhs`, but the binding is
     // additionally flagged so the resolver peels one wrapper layer.
     let unwrap_cap = query.capture_index_for_name("rhs_unwrap");
-    // Object-destructure bindings: `@destruct.bind` is the bound identifier,
-    // `@destruct.key` the source field name (absent for shorthand `{ a }`, where
-    // the field equals the bound name). Languages whose query omits these
-    // captures get `None` here and the destructure branch never fires.
+    // Destructure bindings: `@destruct.bind` is the bound identifier.
+    // `@destruct.key` records the source field for object patterns; flat array
+    // patterns instead derive a private positional key from their direct child
+    // index. Languages whose query omits these captures get `None` here.
     let bind_cap = query.capture_index_for_name("destruct.bind");
     let key_cap = query.capture_index_for_name("destruct.key");
 
@@ -75,9 +102,9 @@ pub(super) fn run_assignment_query(
             }
         }
 
-        // Object-destructure binding: `const { a, b: c } = f()`. Each match carries
-        // one bound identifier; type it from the FIELD on the RHS's yield type
-        // (`R["a"]`), recorded against the RHS ref for the seeding loop to resolve.
+        // Object or flat-array destructure binding. Each match carries one bound
+        // identifier; object bindings type from a field on the RHS yield type,
+        // while array bindings record their positional tuple slot.
         if let Some(bind) = bind_node {
             if let (Ok(bind_name), Some(rhs)) = (bind.utf8_text(src), rhs_node) {
                 let slot = match &meta.lexical {
@@ -87,11 +114,16 @@ pub(super) fn run_assignment_query(
                     }
                 };
                 if let Some(lhs_idx) = slot {
-                    // Shorthand `{ a }` → field == bound name; `{ b: c }` → `@destruct.key`.
-                    let field_key = key_node
-                        .and_then(|k| k.utf8_text(src).ok())
-                        .unwrap_or(bind_name)
-                        .to_string();
+                    // Shorthand `{ a }` → field == bound name; `{ b: c }` →
+                    // `@destruct.key`; `[a, b]` → private `$tuple:0/1` keys.
+                    let field_key = array_pattern_index(bind)
+                        .map(|index| format!("{TUPLE_INDEX_KEY_PREFIX}{index}"))
+                        .unwrap_or_else(|| {
+                            key_node
+                                .and_then(|key| key.utf8_text(src).ok())
+                                .unwrap_or(bind_name)
+                                .to_string()
+                        });
                     if let Some(ref_idx) = correlate_rhs_ref(refs, &rhs, cfg.strategy_prefix) {
                         meta.flow_binding_destructure
                             .entry(ref_idx)

@@ -28,7 +28,8 @@ pub static JS_FLOW_CONFIG: FlowConfig = FlowConfig {
     strategy_prefix: "js",
 
     // Matches `let/const/var x = <expr>`, `x = <expr>` reassignment, and
-    // object-destructure declarations (`const { a, b: c } = f()`). The
+    // object/array-destructure declarations (`const { a, b: c } = f()`;
+    // `const [first, second] = f()`). The
     // TypeScript query's annotation arms (the optional `type:` capture and
     // the parameter patterns) are omitted — JavaScript bindings carry no
     // declared type, so every binding types from its initializer.
@@ -47,6 +48,11 @@ pub static JS_FLOW_CONFIG: FlowConfig = FlowConfig {
                  (pair_pattern
                     key: (property_identifier) @destruct.key
                     value: (identifier) @destruct.bind)])
+            value: (_) @rhs)
+
+        (variable_declarator
+            name: (array_pattern
+                (identifier) @destruct.bind)
             value: (_) @rhs)
 
         (formal_parameters

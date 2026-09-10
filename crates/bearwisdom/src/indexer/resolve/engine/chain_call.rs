@@ -1,9 +1,13 @@
 //! Call instantiation keeps method receiver evidence separate from arguments.
 use super::*;
-use crate::indexer::resolve::engine::{bound_call, contract::generic_return, lambda_seed};
+use crate::indexer::resolve::engine::{
+    bound_call,
+    contract::{generic_return, signature_generic_params},
+    lambda_seed,
+};
 use crate::type_checker::{core::types::Type, profile::language_profile::DelegateShape};
 use crate::types::CallArg;
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 /// Owned auto-borrow evidence is allocated at the source call, not copied from
 /// an ordinary argument or invented as a generic declaration parameter.
@@ -95,7 +99,7 @@ pub(super) fn apply_with_receiver(
     let bound = lookup
         .member_info(arena, receiver, callee.id)
         .is_some_and(|info| info.receiver_type_id.is_some());
-    if args.is_empty() && !bound && !source_owned {
+    if args.is_empty() && explicit.is_empty() && !bound && !source_owned {
         return yielded;
     }
     let callee = if bound || source_owned {
@@ -126,27 +130,101 @@ pub(super) fn apply_with_receiver(
     if source_owned {
         return None;
     }
-    let env = bind_arg_generics(lookup, arena, &callee, &actual);
-    if let Some(callback_callee) =
-        uniquely_contextual_callback_callee(lookup, arena, &callee, args, wrappers)
-    {
-        let callback_env = if callback_callee.id == callee.id {
-            env.clone()
-        } else {
-            bind_arg_generics(lookup, arena, &callback_callee, &actual)
-        };
-        seed_lambda_params(
-            lookup,
-            arena,
-            &callback_callee,
-            args,
-            receiver,
-            recv_id,
-            &callback_env,
-            wrappers,
-        );
+    let Some(env) = legacy_callback_env(lookup, arena, &callee, &actual, explicit) else {
+        return None;
+    };
+    if env.callback_seedable {
+        if let Some(callback_callee) =
+            uniquely_contextual_callback_callee(lookup, arena, &callee, args, wrappers)
+        {
+            let callback_env = if callback_callee.id == callee.id {
+                Some(env.clone())
+            } else {
+                legacy_callback_env(lookup, arena, &callback_callee, &actual, explicit)
+            };
+            if let Some(callback_env) = callback_env.filter(|env| env.callback_seedable) {
+                seed_lambda_params(
+                    lookup,
+                    arena,
+                    &callback_callee,
+                    args,
+                    receiver,
+                    recv_id,
+                    &callback_env.bindings,
+                    wrappers,
+                );
+            }
+        }
     }
-    yielded.map(|y| substitute_env(arena, y, &env))
+    yielded.map(|y| substitute_env(arena, y, &env.bindings))
+}
+
+/// The legacy call path has only display call arguments, so it builds its own
+/// generic environment. Explicit method arguments participate in both yielded
+/// return substitution and callback patterns, which still name the callee's
+/// generics.
+///
+/// Explicit arguments override inference for the supplied declaration slots,
+/// matching the call-site generic contract used by chain segments. An excess
+/// argument cannot be matched to any declared slot, so the legacy call is
+/// declined rather than contextually typing an invalid callback.
+fn legacy_callback_env(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    callee: &Symbol,
+    actual: &[TypeId],
+    explicit: &[TypeId],
+) -> Option<LegacyCallbackEnv> {
+    let mut env = bind_arg_generics(lookup, arena, callee, actual);
+    let params = lookup
+        .generic_params_of(callee.id)
+        .or_else(|| lookup.generic_params(&callee.qualified_name))
+        .map(LegacyGenericParams::Metadata)
+        .or_else(|| {
+            callee.signature.as_deref().and_then(|signature| {
+                let params: Vec<_> = signature_generic_params(signature, &callee.name)
+                    .into_iter()
+                    .map(|(name, _, _)| name)
+                    .collect();
+                (!params.is_empty()).then_some(LegacyGenericParams::Signature(params))
+            })
+        });
+    let Some(params) = params else {
+        return Some(LegacyCallbackEnv {
+            bindings: env,
+            // No declaration clause means explicit values cannot be assigned
+            // positionally. Preserve legacy yield inference, while preventing
+            // an open callback generic from entering the local cache.
+            callback_seedable: explicit.is_empty(),
+        });
+    };
+    let (params, from_metadata) = match params {
+        LegacyGenericParams::Metadata(params) => (params, true),
+        LegacyGenericParams::Signature(params) => (params, false),
+    };
+    if explicit.len() > params.len() {
+        return None;
+    }
+    for (name, &argument) in params.iter().zip(explicit) {
+        env.insert(name.clone(), argument);
+    }
+    Some(LegacyCallbackEnv {
+        bindings: env,
+        // A signature clause safely assigns explicit slots, but cannot make
+        // argument inference identify the remaining parameter names.
+        callback_seedable: from_metadata || explicit.len() == params.len(),
+    })
+}
+
+#[derive(Clone)]
+struct LegacyCallbackEnv {
+    bindings: FxHashMap<String, TypeId>,
+    callback_seedable: bool,
+}
+
+enum LegacyGenericParams {
+    Metadata(Vec<String>),
+    Signature(Vec<String>),
 }
 
 /// The one exact-arity overload whose callback positions can contextually type
