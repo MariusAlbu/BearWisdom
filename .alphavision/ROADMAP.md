@@ -59,6 +59,9 @@ ROOT-family rows.
 - [x] pointer-sigil types (`*fiber.Ctx`) intern as the pointee (`922032c0`); go-fiber +7,067 edges once parameters seeded
 - [x] Go local seeded with the callee's QNAME as its type (`client → client.NewWithClient`) — return-type capture vs seed fallback, trace first
 - [ ] pattern / destructuring bindings (`case (key, inputs)`, `const { a } = …`) seed element types
+  - [x] direct TypeScript/JavaScript object and flat-array bindings project exact source fields or tuple positions
+  - [x] direct Scala `val`/`var (key, inputs) = make()` bindings project parenthesized tuple return positions and seed member roots
+  - [ ] Scala `case (key, inputs)` needs case-local binding identity plus scrutinee-to-pattern flow mapping; nested, typed, extractor, wildcard, default, and rest patterns remain fenced until recursive projection exists
 - [x] targeted recapture (14 census projects, `5c893f20`): +23,995 edges (+1.7%), aggregate 63.83% → 64.90%; go-fiber 55.19 → 63.50, php-laravel 50.46 → 56.15, kotlin-ktor +0.7, rust-tantivy +0.8, java-petclinic +1.0, puppet +0.3, python-superset +0.1; nothing regressed
 - [ ] remaining root typing: lambda params from callee params, `this`/self enclosing lookup, Go callee-qname seed, destructuring — the census after M2 still holds untyped_binding 56k + untyped_root 17k on these 14
 

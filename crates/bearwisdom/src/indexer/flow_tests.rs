@@ -246,10 +246,10 @@ fn flow_array_destructure_records_positions_and_elisions() {
 }
 
 #[test]
-fn flow_array_destructure_ignores_commas_inside_earlier_elements() {
+fn flow_array_destructure_abstains_when_an_element_is_not_a_direct_binding() {
     let source = "const [pair(1, 2), reset] = makeCounter();\n";
-    // `reset` = 19, `makeCounter` = 28. The comma in `pair(1, 2)` is not a
-    // tuple separator, so `reset` remains slot 1.
+    // `reset` = 19, `makeCounter` = 28. An expression-shaped sibling means
+    // the complete pattern is outside the flat direct-binding subset.
     let mut symbols = vec![mk_binding(source, "reset", SymbolKind::Variable, 19)];
     let mut refs = vec![mk_call_ref("makeCounter", 0, 28)];
 
@@ -262,10 +262,9 @@ fn flow_array_destructure_ignores_commas_inside_earlier_elements() {
         BindingSymbols::Synthesize,
     );
 
-    assert_eq!(
-        meta.flow_binding_destructure.get(&0),
-        Some(&vec![(0, "$tuple:1".to_string())]),
-        "only the direct binding `reset` belongs to tuple slot 1; meta={meta:?}"
+    assert!(
+        meta.flow_binding_destructure.is_empty(),
+        "unsupported positional patterns must not fall back to object fields; meta={meta:?}"
     );
 }
 

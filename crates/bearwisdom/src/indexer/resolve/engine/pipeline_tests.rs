@@ -1992,7 +1992,7 @@ fn go_factory_local_uses_captured_pointer_return_without_qname_fallback() {
 /// negative control.
 #[test]
 fn tuple_destructure_projects_positions_and_abstains_when_not_a_tuple_slot() {
-    use crate::type_checker::core::types::{Type, TypeArena, TypeId};
+    use crate::type_checker::core::types::{TypeArena, TypeId};
     use crate::types::{
         ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, MemberChain, ParsedFile,
         SegmentKind, SymbolKind, Visibility,
@@ -2066,10 +2066,10 @@ fn tuple_destructure_projects_positions_and_abstains_when_not_a_tuple_slot() {
     }
 
     let arena = Arc::new(TypeArena::new());
-    let counter_ty = arena.class("Counter");
-    let reset_ty = arena.class("Reset");
     let scalar_ty = arena.class("Scalar");
-    let pair_ty = arena.intern(Type::Tuple(vec![counter_ty, reset_ty]));
+    // Exercise the same parenthesized tuple spelling captured from Scala and
+    // Rust signatures before the shared resolver projects its positional flow.
+    let pair_ty = arena.intern_type_str("(Counter, Reset)");
     let symbols = vec![
         symbol("entry", "entry", SymbolKind::Function, None, None), // 0
         symbol(
@@ -2235,6 +2235,142 @@ fn tuple_destructure_projects_positions_and_abstains_when_not_a_tuple_slot() {
     assert!(
         unresolved.iter().all(|(_, target, ..)| target == "run"),
         "only member calls on invalid tuple projections must remain; unresolved={unresolved:?}"
+    );
+}
+
+#[test]
+fn scala_direct_tuple_destructure_flows_signature_return_into_member_resolution() {
+    use crate::indexer::flow::{run_flow_queries, BindingSymbols};
+    use crate::languages::scala::{extract, ScalaPlugin};
+    use crate::languages::LanguagePlugin;
+    use crate::types::{EdgeKind, ParsedFile};
+
+    let source = r#"
+class Key
+class Inputs {
+  def consume(): Unit = ()
+}
+def make(): (Key, Inputs) = (new Key, new Inputs)
+def use(): Unit = {
+  val (key, inputs) = make()
+  inputs.consume()
+}
+"#;
+    let path = "tuple.scala";
+    let mut extracted = extract::extract(source);
+    let grammar = ScalaPlugin.grammar("scala").expect("Scala grammar");
+    let flow = run_flow_queries(
+        source,
+        &grammar,
+        &crate::languages::scala::flow::SCALA_FLOW_CONFIG,
+        &mut extracted.symbols,
+        &mut extracted.refs,
+        BindingSymbols::Synthesize,
+    );
+
+    let make_idx = extracted
+        .symbols
+        .iter()
+        .position(|symbol| symbol.qualified_name == "make")
+        .expect("parsed make symbol");
+    assert_eq!(
+        extracted.symbols[make_idx].signature.as_deref(),
+        Some("def make(): (Key, Inputs)"),
+        "Scala extraction must retain the tuple return annotation"
+    );
+    let inputs_idx = extracted
+        .symbols
+        .iter()
+        .position(|symbol| symbol.name == "inputs")
+        .expect("direct tuple binding symbol for inputs");
+    let make_ref_idx = extracted
+        .refs
+        .iter()
+        .position(|reference| reference.kind == EdgeKind::Calls && reference.target_name == "make")
+        .expect("make call from direct tuple RHS");
+    assert!(
+        flow.flow_binding_destructure
+            .get(&make_ref_idx)
+            .is_some_and(|entries| entries.contains(&(inputs_idx, "$tuple:1".to_string()))),
+        "direct Scala tuple binding must project inputs from the make() RHS: {:?}",
+        flow.flow_binding_destructure
+    );
+    assert!(
+        extracted.refs.iter().any(|reference| {
+            reference.kind == EdgeKind::Calls
+                && reference.target_name == "consume"
+                && reference
+                    .chain
+                    .as_ref()
+                    .and_then(|chain| chain.segments.first())
+                    .is_some_and(|segment| segment.name == "inputs")
+        }),
+        "Scala extraction must retain inputs as the consume receiver"
+    );
+
+    let pf = ParsedFile {
+        path: path.into(),
+        language: "scala".into(),
+        content_hash: String::new(),
+        size: source.len() as u64,
+        line_count: source.lines().count() as u32,
+        mtime: None,
+        package_id: None,
+        symbols: extracted.symbols,
+        refs: extracted.refs,
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow,
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
+    };
+    let mut id_map = HashMap::new();
+    for (index, symbol) in pf.symbols.iter().enumerate() {
+        id_map.insert(
+            (path.to_string(), symbol.qualified_name.clone()),
+            index as i64 + 1,
+        );
+    }
+    let consume_id = id_map[&(path.to_string(), "Inputs.consume".to_string())];
+    let arena = Arc::new(TypeArena::new());
+    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
+        std::slice::from_ref(&pf),
+        &id_map.clone().into(),
+        Arc::clone(&arena),
+    );
+    assert_eq!(
+        tree.return_type_str("make").as_deref(),
+        Some("[Key, Inputs]"),
+        "the parsed Scala method signature must materialize a tuple return"
+    );
+    let profiles = super::build_profiles();
+    let solver = super::SemanticModel::production();
+    let (edges, unresolved, _ref_log, _census) = super::resolve_one_file(
+        &pf,
+        &tree,
+        &profiles,
+        &no_plugins(),
+        None,
+        &solver,
+        &id_map.clone().into(),
+        None,
+    );
+
+    assert!(
+        edges.iter().any(|edge| edge.1 == consume_id),
+        "inputs.consume() must resolve through the second tuple return slot; edges={edges:?}"
+    );
+    assert!(
+        !unresolved.iter().any(|(_, target, ..)| target == "consume"),
+        "inputs.consume() must not remain unresolved: {unresolved:?}"
     );
 }
 

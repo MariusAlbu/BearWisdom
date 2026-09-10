@@ -32,6 +32,16 @@ pub static SCALA_FLOW_CONFIG: FlowConfig = FlowConfig {
             pattern: (identifier) @lhs
             value: (_) @rhs)
 
+        (val_definition
+            pattern: (tuple_pattern
+                (identifier) @destruct.bind)
+            value: (_) @rhs)
+
+        (var_definition
+            pattern: (tuple_pattern
+                (identifier) @destruct.bind)
+            value: (_) @rhs)
+
         (assignment_expression
             left: (identifier) @lhs
             right: (_) @rhs)
@@ -71,3 +81,73 @@ pub static SCALA_FLOW_CONFIG: FlowConfig = FlowConfig {
     "#,
     literal_type_kinds: &[],
 };
+
+#[cfg(test)]
+mod tests {
+    use super::SCALA_FLOW_CONFIG;
+    use crate::indexer::flow::{run_flow_queries, BindingSymbols};
+    use crate::languages::scala::{extract, ScalaPlugin};
+    use crate::languages::LanguagePlugin;
+
+    fn flow_for(source: &str) -> (Vec<crate::types::ExtractedSymbol>, crate::types::FlowMeta) {
+        let mut extracted = extract::extract(source);
+        let grammar = ScalaPlugin.grammar("scala").expect("Scala grammar");
+        let flow = run_flow_queries(
+            source,
+            &grammar,
+            &SCALA_FLOW_CONFIG,
+            &mut extracted.symbols,
+            &mut extracted.refs,
+            BindingSymbols::Synthesize,
+        );
+        (extracted.symbols, flow)
+    }
+
+    #[test]
+    fn direct_tuple_val_and_var_bind_each_identifier_to_their_rhs_positions() {
+        for keyword in ["val", "var"] {
+            let source = format!("object O {{ def f = {{ {keyword} (key, inputs) = make() }} }}");
+            let (symbols, flow) = flow_for(&source);
+            let key_idx = symbols
+                .iter()
+                .position(|symbol| symbol.name == "key")
+                .expect("key symbol");
+            let inputs_idx = symbols
+                .iter()
+                .position(|symbol| symbol.name == "inputs")
+                .expect("inputs symbol");
+            let entries: Vec<_> = flow.flow_binding_destructure.values().flatten().collect();
+
+            assert!(
+                entries
+                    .iter()
+                    .any(|(index, key)| *index == key_idx && key == "$tuple:0"),
+                "{keyword}: {entries:?}"
+            );
+            assert!(
+                entries
+                    .iter()
+                    .any(|(index, key)| *index == inputs_idx && key == "$tuple:1"),
+                "{keyword}: {entries:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn non_direct_tuple_patterns_do_not_record_tuple_projections() {
+        for source in [
+            "object O { def f = { val ((key, inputs), tail) = make() } }",
+            "object O { def f = { val (key: Key, inputs) = make() } }",
+            "object O { def f = { val (_, inputs) = make() } }",
+            "object O { def f = { val (Pair(key), inputs) = make() } }",
+            "object O { def f(x: Any) = x match { case (key, inputs) => make() } }",
+        ] {
+            let (_, flow) = flow_for(source);
+            assert!(
+                flow.flow_binding_destructure.is_empty(),
+                "non-direct tuple pattern must abstain: {source}: {:?}",
+                flow.flow_binding_destructure
+            );
+        }
+    }
+}

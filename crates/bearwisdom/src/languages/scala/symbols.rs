@@ -285,6 +285,17 @@ pub(super) fn push_val_var(
     symbols: &mut Vec<ExtractedSymbol>,
     parent_index: Option<usize>,
 ) {
+    // A flat tuple binds each direct identifier as a distinct local. Anything
+    // other than two-or-more identifier children is intentionally left on the
+    // legacy representative-symbol path below: its positional type mapping is
+    // not sound without recursive pattern support.
+    if let Some(bindings) = direct_tuple_bindings(*node) {
+        for binding in bindings {
+            push_direct_tuple_symbol(node, binding, src, scope_tree, symbols, parent_index);
+        }
+        return;
+    }
+
     // val_definition: pattern field or first identifier child.
     // Also handles pattern-based bindings: tuple_pattern, type_pattern, wildcard, etc.
     let name_opt = node
@@ -374,6 +385,60 @@ pub(super) fn push_val_var(
         scope_path,
         parent_index,
         byte_offset: 0,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    });
+}
+
+/// Return only a directly positional tuple binding. Nested tuples, typed
+/// patterns, extractor/case patterns, wildcards, defaults, and rest patterns
+/// all have a non-identifier direct child and therefore abstain.
+fn direct_tuple_bindings<'tree>(node: Node<'tree>) -> Option<Vec<Node<'tree>>> {
+    let pattern = node
+        .child_by_field_name("pattern")
+        .filter(|pattern| pattern.kind() == "tuple_pattern")?;
+    let mut cursor = pattern.walk();
+    let bindings: Vec<_> = pattern.named_children(&mut cursor).collect();
+    (bindings.len() >= 2
+        && bindings
+            .iter()
+            .all(|binding| binding.kind() == "identifier"))
+    .then_some(bindings)
+}
+
+fn push_direct_tuple_symbol(
+    declaration: &Node,
+    binding: Node,
+    src: &[u8],
+    scope_tree: &scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) {
+    let name = node_text(binding, src);
+    let scope = enclosing_scope(scope_tree, binding.start_byte(), binding.end_byte());
+    let qualified_name = scope_tree::qualify(&name, scope);
+    let scope_path = scope_tree::scope_path(scope);
+    let kw = if node_text(*declaration, src).trim_start().starts_with("val") {
+        "val"
+    } else {
+        "var"
+    };
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name,
+        kind: SymbolKind::Property,
+        visibility: detect_visibility(declaration, src),
+        start_line: binding.start_position().row as u32,
+        end_line: binding.end_position().row as u32,
+        start_col: binding.start_position().column as u32,
+        end_col: binding.end_position().column as u32,
+        signature: Some(format!("{kw} {name}")),
+        doc_comment: extract_doc_comment(declaration, src),
+        scope_path,
+        parent_index,
+        byte_offset: binding.start_byte() as u32,
         declared_type: None,
         return_type: None,
         param_types: Vec::new(),

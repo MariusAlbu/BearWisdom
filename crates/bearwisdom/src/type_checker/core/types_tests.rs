@@ -282,6 +282,54 @@ fn intern_type_str_parses_tuple() {
 }
 
 #[test]
+fn intern_type_str_parses_parenthesized_multi_element_tuples_only() {
+    let mut arena = TypeArena::new();
+    match arena.get(arena.intern_type_str("(Key, Vec<Inputs>)")) {
+        Type::Tuple(elems) => {
+            assert_eq!(elems.len(), 2);
+            assert!(matches!(arena.get(elems[0]), Type::Class(q) if q == "Key"));
+            assert!(matches!(arena.get(elems[1]), Type::Apply { .. }));
+        }
+        other => panic!("expected parenthesized Tuple, got {other:?}"),
+    }
+    // Nesting uses the same bounded tuple syntax but stays nested in the type
+    // graph; this direct-pattern slice never flattens inner tuple elements.
+    match arena.get(arena.intern_type_str("((Key, Inputs), Result)")) {
+        Type::Tuple(elems) => {
+            assert!(matches!(arena.get(elems[0]), Type::Tuple(_)));
+            assert!(matches!(arena.get(elems[1]), Type::Class(q) if q == "Result"));
+        }
+        other => panic!("expected nested parenthesized Tuple, got {other:?}"),
+    }
+    match arena.get(arena.intern_type_str("(Wrapper<(Key) -> Result>, Inputs)")) {
+        Type::Tuple(elems) => {
+            assert_eq!(elems.len(), 2);
+            assert!(
+                matches!(arena.get(elems[0]), Type::Class(q) if q == "Wrapper<(Key) -> Result>")
+            );
+            assert!(matches!(arena.get(elems[1]), Type::Class(q) if q == "Inputs"));
+        }
+        other => panic!("expected parenthesized Tuple, got {other:?}"),
+    }
+    assert!(matches!(
+        arena.get(arena.intern_type_str("(Key, Inputs) -> Result")),
+        Type::Function { .. }
+    ));
+    for opaque in [
+        "(Key)",
+        "(Key,)",
+        "(Key,, Inputs)",
+        "(Key, [Inputs}, Result)",
+        "(Key, Inputs) Extra",
+    ] {
+        assert!(
+            matches!(arena.get(arena.intern_type_str(opaque)), Type::Class(q) if q == opaque),
+            "{opaque} must not be treated as a projectable tuple"
+        );
+    }
+}
+
+#[test]
 fn intern_type_str_parses_rust_fixed_array_and_slice() {
     let mut arena = TypeArena::new();
     // `[T; N]` — a fixed-size array. The length is discarded; the element

@@ -15,26 +15,66 @@ pub(crate) const TUPLE_INDEX_KEY_PREFIX: &str = "$tuple:";
 #[path = "flow_assignments_tests.rs"]
 mod tests;
 
-/// Return a flat array binding's positional slot from direct array children.
-/// Direct comma nodes preserve elisions, while commas nested in an earlier
-/// call/object/array element do not contribute. Nested patterns and defaults
-/// deliberately return `None`; their projection needs recursive flow metadata.
-fn array_pattern_index(bind: Node) -> Option<usize> {
-    let pattern = bind.parent()?;
-    if pattern.kind() != "array_pattern" {
-        return None;
+/// Return a flat array or tuple binding's positional slot from direct pattern
+/// children. A tuple must have at least one direct comma: `(value)` is a
+/// grouping pattern, not a fixed positional destructure.
+/// Direct comma nodes preserve elisions. Any named direct child other than an
+/// identifier makes the whole pattern unsupported: nested, typed, default,
+/// extractor, wildcard, and rest forms need recursive flow metadata.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PositionalPattern {
+    NotPositional,
+    Unsupported,
+    Slot(usize),
+}
+
+/// Classify a destructured binding without letting an unsupported positional
+/// shape fall through to object-field inference.
+fn positional_pattern(bind: Node) -> PositionalPattern {
+    let Some(pattern) = bind.parent() else {
+        return PositionalPattern::NotPositional;
+    };
+    if !matches!(pattern.kind(), "array_pattern" | "tuple_pattern") {
+        let mut ancestor = Some(pattern);
+        while let Some(parent) = ancestor {
+            if matches!(parent.kind(), "array_pattern" | "tuple_pattern") {
+                return PositionalPattern::Unsupported;
+            }
+            ancestor = parent.parent();
+        }
+        return PositionalPattern::NotPositional;
+    }
+    let mut named = pattern.walk();
+    let direct_bindings = pattern.named_children(&mut named).collect::<Vec<_>>();
+    if direct_bindings
+        .iter()
+        .any(|child| child.kind() != "identifier")
+        || (pattern.kind() == "tuple_pattern" && direct_bindings.len() < 2)
+    {
+        return PositionalPattern::Unsupported;
+    }
+    // An inner `[a, b]` / `(a, b)` needs recursive projection from its outer
+    // element. Do not flatten its children onto the initializer's tuple slots.
+    let mut ancestor = pattern.parent();
+    while let Some(parent) = ancestor {
+        if matches!(parent.kind(), "array_pattern" | "tuple_pattern") {
+            return PositionalPattern::Unsupported;
+        }
+        ancestor = parent.parent();
     }
     let mut separators = 0;
     for child_index in 0..pattern.child_count() {
-        let child = pattern.child(child_index)?;
+        let Some(child) = pattern.child(child_index) else {
+            return PositionalPattern::Unsupported;
+        };
         if child.id() == bind.id() {
-            return Some(separators);
+            return PositionalPattern::Slot(separators);
         }
         if child.kind() == "," {
             separators += 1;
         }
     }
-    None
+    PositionalPattern::Unsupported
 }
 
 pub(super) fn run_assignment_query(
@@ -116,14 +156,19 @@ pub(super) fn run_assignment_query(
                 if let Some(lhs_idx) = slot {
                     // Shorthand `{ a }` → field == bound name; `{ b: c }` →
                     // `@destruct.key`; `[a, b]` → private `$tuple:0/1` keys.
-                    let field_key = array_pattern_index(bind)
-                        .map(|index| format!("{TUPLE_INDEX_KEY_PREFIX}{index}"))
-                        .unwrap_or_else(|| {
-                            key_node
-                                .and_then(|key| key.utf8_text(src).ok())
-                                .unwrap_or(bind_name)
-                                .to_string()
-                        });
+                    let field_key = match positional_pattern(bind) {
+                        PositionalPattern::Slot(index) => {
+                            format!("{TUPLE_INDEX_KEY_PREFIX}{index}")
+                        }
+                        // A tuple/array pattern that we cannot project must
+                        // not be reinterpreted as an object binding named
+                        // after its local.
+                        PositionalPattern::Unsupported => continue,
+                        PositionalPattern::NotPositional => key_node
+                            .and_then(|key| key.utf8_text(src).ok())
+                            .unwrap_or(bind_name)
+                            .to_string(),
+                    };
                     if let Some(ref_idx) = correlate_rhs_ref(refs, &rhs, cfg.strategy_prefix) {
                         meta.flow_binding_destructure
                             .entry(ref_idx)

@@ -85,6 +85,32 @@ fn no_package_leaves_qname_unprefixed() {
 }
 
 #[test]
+fn direct_tuple_val_emits_each_identifier_as_a_binding_symbol() {
+    let source = "object O { def f = { val (key, inputs) = make() } }";
+    let result = extract::extract(source);
+    let tuple_bindings: Vec<_> = result
+        .symbols
+        .iter()
+        .filter(|symbol| symbol.kind == SymbolKind::Property)
+        .filter(|symbol| matches!(symbol.name.as_str(), "key" | "inputs"))
+        .collect();
+
+    assert_eq!(tuple_bindings.len(), 2, "{:?}", result.symbols);
+    assert!(
+        tuple_bindings.iter().any(|symbol| {
+            symbol.name == "key" && symbol.byte_offset == source.find("key").unwrap() as u32
+        }),
+        "{tuple_bindings:?}"
+    );
+    assert!(
+        tuple_bindings.iter().any(|symbol| {
+            symbol.name == "inputs" && symbol.byte_offset == source.find("inputs").unwrap() as u32
+        }),
+        "{tuple_bindings:?}"
+    );
+}
+
+#[test]
 fn full_enum_case_emits_enum_member() {
     let r = extract::extract("enum Planet:\n  case Earth(mass: Double, radius: Double)");
     assert!(

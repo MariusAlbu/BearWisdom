@@ -157,6 +157,18 @@ impl TypeArena {
             let args = arms.iter().map(|a| self.intern_type_str(a)).collect();
             return self.intern(Type::Intersection(args));
         }
+        // Parenthesized tuples `(A, B)` are the source spelling used by Rust
+        // and Scala. This runs after top-level function arrows, so `(A, B) ->
+        // R` stays a function type. A grouped `(A)`, singleton `(A,)`, and
+        // malformed/mixed comma form remain opaque: they do not carry a sound
+        // fixed positional element mapping for destructuring.
+        if let Some(elems) = parenthesized_tuple_elements(trimmed) {
+            let ids = elems
+                .iter()
+                .map(|elem| self.intern_type_str(strip_tuple_label(elem)))
+                .collect();
+            return self.intern(Type::Tuple(ids));
+        }
         // Tuple `[A, B, …]` — fully bracket-enclosed with two or more depth-0
         // elements. A `T[]` array suffix is handled above; a single-element `[T]`
         // and a leading-bracket generic (Scala `List[T]`) fall through to the
@@ -241,6 +253,55 @@ impl TypeArena {
         let base = self.class(head);
         self.intern(Type::Apply { base, args })
     }
+}
+
+/// Return the elements of a fully parenthesized multi-element tuple. Empty
+/// interior slots and any mismatched delimiter are rejected; a trailing comma
+/// is accepted only after two real elements, preserving the distinction between
+/// Rust's `(T,)` singleton tuple and the fixed-arity shapes flow can project.
+fn parenthesized_tuple_elements(s: &str) -> Option<Vec<String>> {
+    if !s.starts_with('(') || !s.ends_with(')') || find_matching_close(s, '(', ')')? != s.len() - 1
+    {
+        return None;
+    }
+    let inner = &s[1..s.len() - 1];
+    let mut elements = Vec::new();
+    let mut delimiters = Vec::new();
+    let mut start = 0;
+    for (index, ch) in inner.char_indices() {
+        match ch {
+            '<' | '[' | '(' | '{' => delimiters.push(ch),
+            // This is a return arrow inside a nested function type, not an
+            // angle-bracket close (`Foo<(A) -> B>`).
+            '>' if index > 0 && inner.as_bytes()[index - 1] == b'-' => {}
+            '>' | ']' | ')' | '}' => {
+                let expected_open = match ch {
+                    '>' => '<',
+                    ']' => '[',
+                    ')' => '(',
+                    '}' => '{',
+                    _ => unreachable!(),
+                };
+                if delimiters.pop() != Some(expected_open) {
+                    return None;
+                }
+            }
+            ',' if delimiters.is_empty() => {
+                let element = inner[start..index].trim();
+                if element.is_empty() {
+                    return None;
+                }
+                elements.push(element.to_string());
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    let tail = inner[start..].trim();
+    if !tail.is_empty() {
+        elements.push(tail.to_string());
+    }
+    (delimiters.is_empty() && elements.len() >= 2).then_some(elements)
 }
 
 /// Parse the fixed-arity subset of Python's `Callable` annotation. This
