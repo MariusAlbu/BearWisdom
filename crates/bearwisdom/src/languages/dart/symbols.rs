@@ -367,6 +367,7 @@ fn extract_method(
 
     let qualified_name = qualify(&name, qualified_prefix);
     let idx = symbols.len();
+    let signature = node_text(sig_node, src);
 
     let visibility = if name.starts_with('_') {
         Some(Visibility::Private)
@@ -383,7 +384,7 @@ fn extract_method(
         end_line: node.end_position().row as u32,
         start_col: node.start_position().column as u32,
         end_col: node.end_position().column as u32,
-        signature: None,
+        signature: Some(signature),
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
@@ -515,6 +516,7 @@ pub(super) fn extract_top_level_function(
         None => return,
     };
     let qualified_name = qualify(&name, qualified_prefix);
+    let signature = node_text(*node, src);
     symbols.push(ExtractedSymbol {
         name: name.clone(),
         qualified_name,
@@ -524,7 +526,7 @@ pub(super) fn extract_top_level_function(
         end_line: node.end_position().row as u32,
         start_col: node.start_position().column as u32,
         end_col: node.end_position().column as u32,
-        signature: Some(format!("{name}()")),
+        signature: Some(signature),
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,

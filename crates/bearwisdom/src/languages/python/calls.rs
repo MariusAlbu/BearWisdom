@@ -3,7 +3,9 @@
 // =============================================================================
 
 use super::helpers::node_text;
-use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
+use crate::types::{
+    CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind, SourceSpan,
+};
 use std::collections::HashMap;
 use tree_sitter::Node;
 
@@ -166,34 +168,33 @@ fn extract_arg(node: &Node, src: &str, depth: u32) -> CallArg {
         }
 
         // `lambda u: u.name` — capture the lambda's own positional parameter
-        // names so the chain walker can type them from the higher-order
+        // declarations so the chain walker can type them from the higher-order
         // method's callback-parameter signature.
-        "lambda" => CallArg::Lambda {
-            params: lambda_param_names(node, src),
+        "lambda" => CallArg::LambdaAt {
+            params: lambda_param_spans(node),
         },
 
         _ => CallArg::Other,
     }
 }
 
-/// Collect the positional parameter identifier names of a Python `lambda`
-/// argument. Names live under the `parameters` field as a `lambda_parameters`
-/// node whose children are `identifier`s. A non-identifier binding (tuple
-/// pattern, default, splat) yields an empty slot so positions stay aligned
-/// with the callback signature.
-fn lambda_param_names(node: &Node, src: &str) -> Vec<String> {
+/// Collect the positional parameter declaration spans of a Python `lambda`
+/// argument. Declarations live under the `parameters` field as a `lambda_parameters`
+/// node whose direct `identifier` children have durable source spans. A
+/// non-identifier binding (tuple pattern, default, splat) yields a positional
+/// hole so callback positions stay aligned with the signature.
+fn lambda_param_spans(node: &Node) -> Vec<Option<SourceSpan>> {
     let Some(params) = node.child_by_field_name("parameters") else {
         return Vec::new();
     };
     let mut cursor = params.walk();
     params
         .named_children(&mut cursor)
-        .map(|p| {
-            if p.kind() == "identifier" {
-                node_text(&p, src)
-            } else {
-                String::new()
-            }
+        .map(|param| {
+            (param.kind() == "identifier").then(|| SourceSpan {
+                start: param.start_byte() as u32,
+                end: param.end_byte() as u32,
+            })
         })
         .collect()
 }

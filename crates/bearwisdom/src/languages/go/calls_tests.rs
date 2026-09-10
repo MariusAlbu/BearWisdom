@@ -27,6 +27,20 @@ fn call_args_of(src: &str, name: &str) -> Vec<CallArg> {
         })
 }
 
+fn callback_parameters<'a>(source: &'a str, args: &[CallArg]) -> Vec<Vec<Option<&'a str>>> {
+    args.iter()
+        .filter_map(|arg| match arg {
+            CallArg::LambdaAt { params } => Some(
+                params
+                    .iter()
+                    .map(|span| span.map(|s| &source[s.start as usize..s.end as usize]))
+                    .collect(),
+            ),
+            _ => None,
+        })
+        .collect()
+}
+
 #[test]
 fn spread_argument_produces_spread_variant() {
     // `f(items...)` — variadic spread of a slice argument.
@@ -95,4 +109,56 @@ fn string_literal_argument_preserved() {
         CallArg::StringLit(s) => assert_eq!(s, "hi"),
         other => panic!("expected CallArg::StringLit; got {:?}", other),
     }
+}
+
+#[test]
+fn function_literal_named_parameter_uses_its_exact_span() {
+    let src = r#"package main
+func Visit(fn func(*Item)) {}
+func Run() { Visit(func(item *Item) { item.Touch() }) }
+"#;
+
+    assert_eq!(
+        callback_parameters(src, &call_args_of(src, "Visit")),
+        vec![vec![Some("item")]]
+    );
+}
+
+#[test]
+fn function_literal_grouped_parameters_expand_in_source_order() {
+    let src = r#"package main
+func Visit(fn func(Item, Item)) {}
+func Run() { Visit(func(left, right Item) { left.Touch(); right.Touch() }) }
+"#;
+
+    assert_eq!(
+        callback_parameters(src, &call_args_of(src, "Visit")),
+        vec![vec![Some("left"), Some("right")]]
+    );
+}
+
+#[test]
+fn function_literal_unnamed_parameter_keeps_an_unbound_slot() {
+    let src = r#"package main
+func Visit(fn func(Item)) {}
+func Run() { Visit(func(Item) {}) }
+"#;
+
+    assert_eq!(
+        callback_parameters(src, &call_args_of(src, "Visit")),
+        vec![vec![None]]
+    );
+}
+
+#[test]
+fn function_literal_blank_parameter_keeps_an_unbound_slot() {
+    let src = r#"package main
+func Visit(fn func(Item)) {}
+func Run() { Visit(func(_ Item) {}) }
+"#;
+
+    assert_eq!(
+        callback_parameters(src, &call_args_of(src, "Visit")),
+        vec![vec![None]]
+    );
 }

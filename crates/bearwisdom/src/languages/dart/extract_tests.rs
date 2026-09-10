@@ -72,6 +72,37 @@ typedef JsonMap = Map<String, dynamic>;
 }
 
 #[test]
+fn callable_signatures_retain_dart_function_type_contracts() {
+    let src = r#"
+T map<T>(T Function(T value) transform) => throw UnimplementedError();
+
+class Runner {
+  void use(void Function(User user) callback) {}
+}
+"#;
+    let r = extract::extract(src);
+    let map = r
+        .symbols
+        .iter()
+        .find(|symbol| symbol.name == "map" && symbol.kind == SymbolKind::Function)
+        .expect("top-level map function");
+    assert_eq!(
+        map.signature.as_deref(),
+        Some("T map<T>(T Function(T value) transform)")
+    );
+
+    let use_ = r
+        .symbols
+        .iter()
+        .find(|symbol| symbol.name == "use" && symbol.kind == SymbolKind::Method)
+        .expect("Runner.use method");
+    assert_eq!(
+        use_.signature.as_deref(),
+        Some("void use(void Function(User user) callback)")
+    );
+}
+
+#[test]
 fn getter_setter_extracted_as_methods() {
     let src = r#"
 class Config {

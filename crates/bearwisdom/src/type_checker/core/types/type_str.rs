@@ -52,6 +52,41 @@ impl TypeArena {
         if let Some(inner) = strip_opaque_existential_prefix(trimmed) {
             return self.intern_type_str(inner);
         }
+        // Python's fixed-arity `Callable[[A, B], R]` annotation is a
+        // structural function type. Only the explicit parameter-list form is
+        // representable: `Callable[..., R]`, ParamSpec, and Concatenate carry
+        // calling-convention identity that this compact type does not model.
+        if let Some((params, return_)) = parse_python_callable_type(trimmed) {
+            let params = params
+                .iter()
+                .map(|param| self.intern_type_str(param))
+                .collect();
+            let return_ = self.intern_type_str(&return_);
+            return self.intern(Type::Function { params, return_ });
+        }
+        // Dart writes function types return-first: `R Function(A, B)`. This
+        // spelling is structurally distinct from a nominal generic and needs
+        // to become the same callable shape as arrow function types before the
+        // generic-bracket parser sees its parameter list.
+        if let Some((params, return_)) = parse_dart_function_type(trimmed) {
+            let params = params
+                .iter()
+                .map(|param| self.intern_type_str(strip_dart_function_param_name(param)))
+                .collect();
+            let return_ = self.intern_type_str(&return_);
+            return self.intern(Type::Function { params, return_ });
+        }
+        // Go function types likewise have no arrow: `func(T) R`. Recognition
+        // deliberately rejects variadic and multi-result forms because this
+        // compact Type::Function has no sound representation for either.
+        if let Some((params, return_)) = parse_go_function_type(trimmed) {
+            let params = params
+                .iter()
+                .map(|param| self.intern_type_str(param))
+                .collect();
+            let return_ = self.intern_type_str(&return_);
+            return self.intern(Type::Function { params, return_ });
+        }
         // Function type: a top-level `=>` (`() => User`, TS/JS, Scala `T => R`)
         // or `->` (Rust `Fn() -> T`, Kotlin/Swift `(T) -> R`) marks a callable.
         // Both arrows are 2 bytes, so the return is `trimmed[arrow + 2..]`. The
@@ -206,4 +241,213 @@ impl TypeArena {
         let base = self.class(head);
         self.intern(Type::Apply { base, args })
     }
+}
+
+/// Parse the fixed-arity subset of Python's `Callable` annotation. This
+/// intentionally recognizes only the standard unqualified, `typing.`, and
+/// `collections.abc.` spellings, all with exactly two outer arguments and an
+/// explicit bracketed parameter list. Other aliases are nominal types: their
+/// expansion needs declaration identity rather than text parsing.
+fn parse_python_callable_type(s: &str) -> Option<(Vec<String>, String)> {
+    let open = s.find('[')?;
+    let head = s[..open].trim();
+    if !matches!(
+        head,
+        "Callable" | "typing.Callable" | "collections.abc.Callable"
+    ) {
+        return None;
+    }
+    let close = open + find_matching_close(&s[open..], '[', ']')?;
+    if !s[close + 1..].trim().is_empty() {
+        return None;
+    }
+    let args = split_depth_zero_commas(&s[open + 1..close]);
+    if args.len() != 2 {
+        return None;
+    }
+    let parameter_list = args[0].trim();
+    let return_ = args[1].trim();
+    let inner = parameter_list.strip_prefix('[')?.strip_suffix(']')?;
+    if return_.is_empty()
+        || has_unmodeled_callable_identity(parameter_list)
+        || has_unmodeled_callable_identity(return_)
+    {
+        return None;
+    }
+    let params = split_depth_zero_commas(inner);
+    if params
+        .iter()
+        .any(|param| has_unmodeled_callable_identity(param))
+    {
+        return None;
+    }
+    Some((params, return_.to_string()))
+}
+
+/// These spellings require a binder or calling-convention model. A source
+/// generic parameter such as `T` is left to the later source-aware generic
+/// rebinding path; these forms expose no corresponding declaration identity.
+fn has_unmodeled_callable_identity(s: &str) -> bool {
+    let s = s.trim();
+    s == "..."
+        || s.starts_with('~')
+        || s.contains("TypeVar(")
+        || s.contains("ParamSpec")
+        || s.contains("Concatenate")
+        || s.ends_with(".args")
+        || s.ends_with(".kwargs")
+}
+
+/// Dart function-type slots may retain their source declaration name
+/// (`User user`, `void Function(User) callback`). Remove only one trailing
+/// depth-zero identifier; an unnamed composite type such as
+/// `void Function(User)` ends in `)` and remains untouched.
+fn strip_dart_function_param_name(param: &str) -> &str {
+    let mut depth = 0i32;
+    let mut last_whitespace = None;
+    for (index, ch) in param.char_indices() {
+        match ch {
+            '<' | '[' | '{' | '(' => depth += 1,
+            '>' | ']' | '}' | ')' => depth -= 1,
+            ch if ch.is_whitespace() && depth == 0 => last_whitespace = Some(index),
+            _ => {}
+        }
+    }
+    let Some(split) = last_whitespace else {
+        return param.trim();
+    };
+    let type_ = param[..split].trim_end();
+    let name = param[split..].trim();
+    if !type_.is_empty() && is_dart_identifier(name) {
+        type_
+    } else {
+        param.trim()
+    }
+}
+
+fn is_dart_identifier(s: &str) -> bool {
+    let mut chars = s.chars();
+    matches!(chars.next(), Some('_' | 'a'..='z' | 'A'..='Z'))
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+/// Parse Dart's return-first function type (`R Function(A, B)`) without
+/// treating a nested `Function(...)` inside another type as a top-level type.
+fn parse_dart_function_type(s: &str) -> Option<(Vec<String>, String)> {
+    let mut depth = 0i32;
+    for (index, ch) in s.char_indices() {
+        match ch {
+            '<' | '[' | '{' | '(' => depth += 1,
+            '>' | ']' | '}' | ')' => depth -= 1,
+            'F' if depth == 0 && s[index..].starts_with("Function(") => {
+                let return_ = s[..index].trim();
+                if return_.is_empty()
+                    || !s[..index]
+                        .chars()
+                        .next_back()
+                        .is_some_and(char::is_whitespace)
+                {
+                    continue;
+                }
+                let open = index + "Function".len();
+                let close_rel = find_matching_close(&s[open..], '(', ')')?;
+                let close = open + close_rel;
+                if !s[close + 1..].trim().is_empty() {
+                    return None;
+                }
+                let params = split_depth_zero_commas(&s[open + 1..close]);
+                return Some((params, return_.to_string()));
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Parse the representable subset of a Go function type. The source grammar
+/// permits named and grouped names (`func(a, b T) R`); names are erased here so
+/// each callback position keeps its declared type. Variadics and parenthesized
+/// result groups intentionally fall through as opaque nominal text.
+fn parse_go_function_type(s: &str) -> Option<(Vec<String>, String)> {
+    let rest = s.strip_prefix("func")?.trim_start();
+    if !rest.starts_with('(') {
+        return None;
+    }
+    let close = find_matching_close(rest, '(', ')')?;
+    let return_ = rest[close + 1..].trim();
+    if return_.is_empty() || return_.starts_with('(') {
+        return None;
+    }
+    // `func (recv T) Method(U) R` is a declaration signature, not a function
+    // type. A legitimate function-valued result begins with the `func` keyword;
+    // another ordinary identifier immediately followed by `(` is a method
+    // name, so fail closed instead of structurally misclassifying it.
+    if go_declaration_tail(return_) {
+        return None;
+    }
+    let params = parse_go_function_params(&rest[1..close])?;
+    Some((params, return_.to_string()))
+}
+
+fn go_declaration_tail(tail: &str) -> bool {
+    let name_len = tail
+        .bytes()
+        .take_while(|byte| *byte == b'_' || byte.is_ascii_alphanumeric())
+        .count();
+    let name = &tail[..name_len];
+    !name.is_empty() && name != "func" && tail[name_len..].trim_start().starts_with('(')
+}
+
+fn parse_go_function_params(inner: &str) -> Option<Vec<String>> {
+    if inner.trim().is_empty() {
+        return Some(Vec::new());
+    }
+    let mut params = Vec::new();
+    let mut grouped_names = Vec::new();
+    for part in split_depth_zero_commas(inner) {
+        let part = part.trim();
+        if part.is_empty() || part.contains("...") {
+            return None;
+        }
+        if let Some(type_) = go_named_parameter_type(part) {
+            params.extend(grouped_names.drain(..).map(|_| type_.to_string()));
+            params.push(type_.to_string());
+        } else {
+            // A no-space item is an unnamed type unless a following named
+            // item closes its name group (`a, b T`). Keeping it pending lets
+            // both source forms remain unambiguous without type lookup.
+            grouped_names.push(part.to_string());
+        }
+    }
+    params.extend(grouped_names);
+    Some(params)
+}
+
+/// The type suffix of a single named Go function parameter. A nested function
+/// type has its own spaces (`func(T) R`), so only consider a name/type split
+/// when the left side is a plain identifier and the right side is non-empty.
+fn go_named_parameter_type(part: &str) -> Option<&str> {
+    let mut depth = 0i32;
+    for (index, ch) in part.char_indices() {
+        match ch {
+            '<' | '[' | '{' | '(' => depth += 1,
+            '>' | ']' | '}' | ')' => depth -= 1,
+            ch if ch.is_whitespace() && depth == 0 => {
+                let name = part[..index].trim();
+                let type_ = part[index..].trim();
+                if is_go_identifier(name) && !type_.is_empty() {
+                    return Some(type_);
+                }
+                return None;
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn is_go_identifier(s: &str) -> bool {
+    let mut chars = s.chars();
+    matches!(chars.next(), Some('_' | 'a'..='z' | 'A'..='Z'))
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }

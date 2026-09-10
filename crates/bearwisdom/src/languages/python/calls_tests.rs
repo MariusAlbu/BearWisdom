@@ -15,6 +15,25 @@ fn parse_call_args(src: &str) -> Vec<CallArg> {
         .unwrap_or_default()
 }
 
+fn lambda_param_slices<'a>(src: &'a str, args: &[CallArg]) -> Vec<Vec<Option<&'a str>>> {
+    args.iter()
+        .filter_map(|arg| {
+            let CallArg::LambdaAt { params } = arg else {
+                return None;
+            };
+            Some(
+                params
+                    .iter()
+                    .map(|span| {
+                        span.as_ref()
+                            .map(|span| &src[span.start as usize..span.end as usize])
+                    })
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
 #[test]
 fn call_args_string_literal_preserved() {
     let src = "def caller():\n    fetch('/api/users')\n";
@@ -123,23 +142,67 @@ fn call_args_comparison_operator_produces_binary_variant() {
 }
 
 #[test]
-fn call_args_lambda_single_param_captured() {
+fn call_args_lambda_single_param_records_exact_declaration_span() {
     let src = "def caller(users):\n    users.map(lambda u: u.name)\n";
     let args = parse_call_args(src);
-    assert!(
-        args.iter()
-            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["u"])),
-        "expected Lambda {{ params: [\"u\"] }}, got: {args:?}"
+    assert_eq!(
+        lambda_param_slices(src, &args),
+        vec![vec![Some("u")]],
+        "expected exact lambda declaration span, got: {args:?}"
     );
 }
 
 #[test]
-fn call_args_lambda_multi_param_captured() {
+fn call_args_lambda_multi_param_records_declaration_spans_in_order() {
     let src = "def caller(xs):\n    xs.reduce(lambda a, b: a + b)\n";
     let args = parse_call_args(src);
-    assert!(
-        args.iter()
-            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["a", "b"])),
-        "expected Lambda {{ params: [\"a\", \"b\"] }}, got: {args:?}"
+    assert_eq!(
+        lambda_param_slices(src, &args),
+        vec![vec![Some("a"), Some("b")]],
+        "expected ordered lambda declaration spans, got: {args:?}"
+    );
+}
+
+#[test]
+fn call_args_lambda_underscore_is_a_declaration() {
+    let src = "def caller(users):\n    users.map(lambda _: _.name)\n";
+    let args = parse_call_args(src);
+    assert_eq!(
+        lambda_param_slices(src, &args),
+        vec![vec![Some("_")]],
+        "expected `_` to retain its Python binding span, got: {args:?}"
+    );
+}
+
+#[test]
+fn call_args_lambda_default_parameter_keeps_a_positional_hole() {
+    let src = "def caller(users, default):\n    users.map(lambda item=default: item.name)\n";
+    let args = parse_call_args(src);
+    assert_eq!(
+        lambda_param_slices(src, &args),
+        vec![vec![None]],
+        "expected one default-parameter hole, got: {args:?}"
+    );
+}
+
+#[test]
+fn call_args_lambda_list_splat_parameter_keeps_a_positional_hole() {
+    let src = "def caller(users):\n    users.map(lambda *items: items[0])\n";
+    let args = parse_call_args(src);
+    assert_eq!(
+        lambda_param_slices(src, &args),
+        vec![vec![None]],
+        "expected one list-splat hole, got: {args:?}"
+    );
+}
+
+#[test]
+fn call_args_lambda_dictionary_splat_parameter_keeps_a_positional_hole() {
+    let src = "def caller(users):\n    users.map(lambda **kwargs: kwargs.get(\"name\"))\n";
+    let args = parse_call_args(src);
+    assert_eq!(
+        lambda_param_slices(src, &args),
+        vec![vec![None]],
+        "expected one dictionary-splat hole, got: {args:?}"
     );
 }

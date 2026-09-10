@@ -28,6 +28,49 @@ fn go_free_function_return_does_not_skip_its_parameter_group() {
     );
 }
 
+#[test]
+fn go_function_types_keep_their_sole_parameter_group_while_methods_skip_receivers() {
+    assert_eq!(
+        parse_param_types_from_signature_for_lang("func(T) R", "go"),
+        Some(vec!["T".to_string()]),
+        "a function type has no receiver group"
+    );
+    assert_eq!(
+        parse_return_type_from_signature_for_lang("func(T) R", "go").as_deref(),
+        Some("R")
+    );
+    assert_eq!(
+        parse_return_type_from_signature_for_lang("func(T) func(U) V", "go").as_deref(),
+        Some("func(U) V"),
+        "a function-valued result is not a method-name plus receiver"
+    );
+    assert_eq!(
+        parse_param_types_from_signature_for_lang("func (r Receiver) Method(T) R", "go"),
+        Some(vec!["T".to_string()]),
+        "actual method signatures must still skip their receiver"
+    );
+}
+
+#[test]
+fn dart_prefix_parameters_keep_a_function_typed_callback_intact() {
+    assert_eq!(
+        parse_param_types_from_signature_for_lang(
+            "R transform(A value, R Function(A, B) callback)",
+            "dart",
+        ),
+        Some(vec!["A".to_string(), "R Function(A, B)".to_string()]),
+    );
+}
+
+#[test]
+fn go_callback_signature_preserves_its_full_function_type() {
+    assert_eq!(
+        parse_param_types_from_signature_for_lang("func Apply(cb func(a, b T) R) R", "go"),
+        Some(vec!["func(a, b T) R".to_string()]),
+        "the nested Go callback type must reach TypeArena without losing its parameters"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // parse_top_level_conditional
 // ---------------------------------------------------------------------------

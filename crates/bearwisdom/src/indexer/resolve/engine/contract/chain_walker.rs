@@ -524,8 +524,11 @@ fn initializer_split(s: &str) -> usize {
 
 /// Per-language parameter-type extraction. Recognized shapes:
 ///   - TS / TSX / JSX / JS / Kotlin / Swift / Scala / Python / Rust /
-///     Dart / Haskell / OCaml / F#:
+///     Haskell / OCaml / F#:
 ///       `name(arg: Type, …): Ret` — type lives after the `:` in each arg.
+///   - Dart / C / C++ / Java / C#: `name(Type arg, …)` — type lives before
+///     the variable name (prefix). Dart callback types use this shape too:
+///     `R Function(A, B) callback`.
 ///   - Go: `name(a Type, b Type) Ret` — type lives after a whitespace
 ///     in each arg (postfix, no `:`).
 ///   - C / C++ / Java / C#: `name(Type a, Type b)` — type lives before
@@ -545,11 +548,10 @@ pub(crate) fn parse_param_types_from_signature_for_lang(
         return None;
     }
     // A Go struct method (`func (recv) Name(params) result`) leads with a
-    // RECEIVER paren group; its params live in the SECOND top-level group. Skip
-    // the receiver so params aren't read off `(r *Repo)`. An interface
-    // method_elem (`Name(params) result`) has no `func`/receiver, so the first
-    // group is already the param list.
-    let groups_to_skip = (lang_id == "go" && sig.trim_start().starts_with("func")) as usize;
+    // RECEIVER paren group; its params live in the SECOND top-level group. A
+    // function type (`func(T) R`) also begins with `func (` but its FIRST group
+    // is the actual parameter list, so skip only an attested receiver.
+    let groups_to_skip = (lang_id == "go" && go_has_method_receiver(sig)) as usize;
     // Locate the param-list group's opening `(`: forward-scan for the
     // (groups_to_skip+1)-th `(` at depth 0 across `<` and `[` so generic /
     // index args don't fool us.
@@ -649,7 +651,7 @@ pub(crate) fn parse_param_types_from_signature_for_lang(
     // one parameter slot, after the comma split above.
     let extract = match lang_id {
         "go" => extract_param_type_postfix_no_colon,
-        "c" | "c_lang" | "cpp" | "java" | "csharp" | "vbnet" => extract_param_type_prefix,
+        "dart" | "c" | "c_lang" | "cpp" | "java" | "csharp" | "vbnet" => extract_param_type_prefix,
         _ => extract_param_type_colon_separated,
     };
     let types: Vec<String> = parts
@@ -711,6 +713,16 @@ fn extract_param_type_postfix_no_colon(part: &str) -> String {
     if trimmed.is_empty() {
         return String::new();
     }
+    // A named callback parameter (`cb func(T) R`) contains top-level spaces
+    // inside its function type. Preserve the complete `func…` suffix rather
+    // than taking its final result token (`R`), so TypeArena can normalize it
+    // to `Type::Function` with its own parameter positions intact.
+    if let Some(first_ws) = first_top_level_whitespace(trimmed) {
+        let suffix = trimmed[first_ws..].trim_start();
+        if suffix.starts_with("func(") || suffix.starts_with("func (") {
+            return suffix.to_string();
+        }
+    }
     let mut depth: i32 = 0;
     let mut last_ws: Option<usize> = None;
     for (i, ch) in trimmed.char_indices() {
@@ -726,6 +738,19 @@ fn extract_param_type_postfix_no_colon(part: &str) -> String {
         None => trimmed,
     };
     strip_go_pointer(ty).to_string()
+}
+
+fn first_top_level_whitespace(s: &str) -> Option<usize> {
+    let mut depth = 0i32;
+    for (index, ch) in s.char_indices() {
+        match ch {
+            '<' | '[' | '(' | '{' => depth += 1,
+            '>' | ']' | ')' | '}' => depth -= 1,
+            ch if ch.is_whitespace() && depth == 0 => return Some(index),
+            _ => {}
+        }
+    }
+    None
 }
 
 /// C / C++ / Java / C# style: arg looks like `Type name` (prefix type).
@@ -937,9 +962,7 @@ pub(crate) fn parse_top_level_conditional(rt: &str) -> Option<(String, String)> 
 /// `pointer_type_name`). A void method (nothing after the param list) → `None`.
 fn parse_go_result(sig: &str) -> Option<String> {
     let trimmed = sig.trim();
-    let skip_receiver = trimmed
-        .strip_prefix("func")
-        .is_some_and(|after_func| after_func.trim_start().starts_with('('));
+    let skip_receiver = go_has_method_receiver(trimmed);
     // Index of the first param-list group to skip (the receiver) before the
     // real param list. Only `func (` struct methods carry one; free functions
     // name the function before their sole parameter group, and interface
@@ -980,6 +1003,48 @@ fn parse_go_result(sig: &str) -> Option<String> {
         return Some(after.to_string());
     }
     Some(strip_go_pointer(after).to_string())
+}
+
+/// Whether a `func`-prefixed Go signature has a method receiver rather than a
+/// function type's parameter list. A receiver group must be followed by an
+/// actual method name and that name's parameter group. This keeps `func(T) R`
+/// on its first (and only) group while preserving `func (r R) M(T) U`.
+fn go_has_method_receiver(sig: &str) -> bool {
+    let Some(after_func) = sig.trim_start().strip_prefix("func") else {
+        return false;
+    };
+    let after_func = after_func.trim_start();
+    if !after_func.starts_with('(') {
+        return false;
+    }
+    let Some(close_rel) = find_matching_bracket(after_func, '(', ')') else {
+        return false;
+    };
+    let after_receiver = after_func[close_rel + 1..].trim_start();
+    let Some(first) = after_receiver.as_bytes().first() else {
+        return false;
+    };
+    if !(*first == b'_' || first.is_ascii_alphabetic()) {
+        return false;
+    }
+    let name_len = after_receiver
+        .bytes()
+        .take_while(|byte| *byte == b'_' || byte.is_ascii_alphanumeric())
+        .count();
+    if &after_receiver[..name_len] == "func" {
+        return false;
+    }
+    let mut after_name = after_receiver[name_len..].trim_start();
+    if after_name.starts_with('[') {
+        let Some(close) = find_matching_bracket(after_name, '[', ']') else {
+            return false;
+        };
+        after_name = after_name[close + 1..].trim_start();
+    }
+    // A receiver is followed by a method name (optionally with `[T]`) and its
+    // immediately following parameter group. A function-valued result such as
+    // `func(T) R func(U) V` must not be mistaken for a method.
+    after_name.starts_with('(')
 }
 
 /// Drop leading Go pointer markers (`*`, `**`) so a pointer type interns the

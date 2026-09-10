@@ -3,7 +3,9 @@
 // =============================================================================
 
 use super::helpers::node_text;
-use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
+use crate::types::{
+    CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind, SourceSpan,
+};
 use tree_sitter::Node;
 
 #[cfg(test)]
@@ -161,22 +163,22 @@ fn extract_arg(node: &Node, src: &str, depth: u32) -> CallArg {
         | "shift_expression" => binary_from_node(node, src, depth),
 
         // `(u) => u.name`, `(a, b) => f(a, b)` — capture the closure's own
-        // positional parameter names so the chain walker can type them from the
-        // higher-order method's callback-parameter signature.
-        "function_expression" => CallArg::Lambda {
-            params: dart_lambda_param_names(node, src),
+        // positional parameter declaration spans so the chain walker can type
+        // them from the higher-order method's callback-parameter signature.
+        "function_expression" => CallArg::LambdaAt {
+            params: dart_lambda_param_spans(node, src),
         },
 
         _ => CallArg::Other,
     }
 }
 
-/// Collect the positional parameter identifier names of a Dart
+/// Collect the positional parameter declaration spans of a Dart
 /// `function_expression` argument. The `parameters` field is a
 /// `formal_parameter_list` of `formal_parameter` nodes wrapping an
-/// `identifier`. A parameter without a plain identifier yields an empty slot so
+/// `identifier`. A parameter without a plain identifier yields a `None` slot so
 /// positions stay aligned with the callback signature.
-fn dart_lambda_param_names(node: &Node, src: &str) -> Vec<String> {
+fn dart_lambda_param_spans(node: &Node, src: &str) -> Vec<Option<SourceSpan>> {
     let Some(params) = node.child_by_field_name("parameters") else {
         return Vec::new();
     };
@@ -184,22 +186,25 @@ fn dart_lambda_param_names(node: &Node, src: &str) -> Vec<String> {
     params
         .named_children(&mut cursor)
         .filter(|p| p.kind() == "formal_parameter")
-        .map(|p| dart_first_identifier(&p, src))
+        .map(|p| dart_plain_parameter_span(&p, src))
         .collect()
 }
 
-/// The first `identifier` child of a Dart `formal_parameter`, or an empty
-/// string when the binding is not a plain identifier (so positions stay
-/// aligned with the callback signature).
-fn dart_first_identifier(node: &Node, src: &str) -> String {
+/// The declaration span of a plain identifier `formal_parameter`. A wildcard
+/// (`_`) has no durable local binding, so it remains a positional hole instead
+/// of borrowing a source token as identity evidence.
+fn dart_plain_parameter_span(node: &Node, src: &str) -> Option<SourceSpan> {
     let mut i = 0;
     while let Some(child) = node.named_child(i) {
         if child.kind() == "identifier" {
-            return node_text(child, src);
+            return (node_text(child, src) != "_").then(|| SourceSpan {
+                start: child.start_byte() as u32,
+                end: child.end_byte() as u32,
+            });
         }
         i += 1;
     }
-    String::new()
+    None
 }
 
 /// Detect a subscript argument (`a[i]`). Dart has no `index_expression` node:
@@ -409,6 +414,16 @@ pub(super) fn extract_dart_calls(
                 extract_dart_calls(&child, src, source_symbol_index, refs);
             }
 
+            // Arrow-style closures keep their expression body directly under
+            // `function_expression_body`, without an enclosing statement. The
+            // grammar can surface its selector sequence as siblings instead of
+            // a `postfix_expression`, so apply the same inline extraction once
+            // before recursing. Block-bodied closures have no such siblings.
+            "function_expression_body" => {
+                extract_inline_call_from_statement(&child, src, source_symbol_index, refs);
+                extract_dart_calls(&child, src, source_symbol_index, refs);
+            }
+
             // `new Dog(args)` — emit Calls edge to the constructed type.
             "new_expression" => {
                 extract_new_expression_ref(&child, src, source_symbol_index, refs);
@@ -565,41 +580,32 @@ fn extract_postfix_call(
     }
 
     // Find the callee: last member name from non-argument selectors, or base identifier.
-    let mut last_member: Option<String> = None;
-    let mut callee_from_base: Option<String> = None;
-
-    if let Some(base) = children.first() {
-        // The base is typically `assignable_expression` wrapping an identifier.
-        callee_from_base = ident_from_assignable(*base, src);
-    }
+    // Keep every member selector as well: callback lexical capture needs the
+    // receiver root, not just the selected method's display name.
+    let mut members = Vec::new();
+    let mut chain_supported = true;
+    // The base is typically `assignable_expression` wrapping an identifier.
+    let callee_from_base = children
+        .first()
+        .and_then(|base| ident_node_from_assignable(*base));
 
     for child in children.iter().skip(1) {
-        if child.kind() == "selector" {
-            let selector_children: Vec<_> = {
-                let mut sc = child.walk();
-                child.children(&mut sc).collect()
-            };
-            for s in &selector_children {
-                match s.kind() {
-                    "unconditional_assignable_selector" | "conditional_assignable_selector" => {
-                        let sub: Vec<_> = {
-                            let mut uc = s.walk();
-                            s.children(&mut uc).collect()
-                        };
-                        for u in &sub {
-                            if u.kind() == "identifier" || u.kind() == "type_identifier" {
-                                last_member = Some(node_text(*u, src));
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
+        match selector_member_nodes(*child) {
+            Some(selector_members) => members.extend(selector_members),
+            None => chain_supported = false,
         }
     }
 
-    let target = last_member.or(callee_from_base).unwrap_or_default();
+    let target = members
+        .last()
+        .map(|(member, _)| node_text(*member, src))
+        .or_else(|| callee_from_base.map(|base| node_text(base, src)))
+        .unwrap_or_default();
     if !target.is_empty() {
+        let call_args = extract_dart_call_args(node, src);
+        let chain = callee_from_base
+            .filter(|_| chain_supported && !members.is_empty())
+            .map(|receiver| member_call_chain(receiver, &members, &call_args, src));
         refs.push(ExtractedRef {
             is_include: false,
             is_import_binding: false,
@@ -610,12 +616,59 @@ fn extract_postfix_call(
             line: node.start_position().row as u32,
             col: 0,
             module: None,
-            chain: None,
+            chain,
             byte_offset: node.start_byte() as u32,
             namespace_segments: Vec::new(),
-            call_args: Vec::new(),
+            call_args,
         });
     }
+}
+
+/// Build the receiver-to-selector chain for a Dart member call. Bare
+/// calls intentionally have no chain: there is no receiver identity to attest.
+fn member_call_chain(
+    receiver: Node,
+    members: &[(Node, bool)],
+    call_args: &[CallArg],
+    src: &str,
+) -> MemberChain {
+    let mut segments = Vec::with_capacity(members.len() + 1);
+    segments.push(ChainSegment {
+        name: node_text(receiver, src),
+        node_kind: receiver.kind().to_string(),
+        kind: SegmentKind::Identifier,
+        declared_type: None,
+        type_args: Vec::new(),
+        optional_chaining: false,
+        byte_offset: receiver.start_byte() as u32,
+        declared_type_id: None,
+        is_call: false,
+        call_args: Vec::new(),
+        type_arg_ids: Vec::new(),
+    });
+    let member_count = members.len();
+    segments.extend(
+        members
+            .iter()
+            .enumerate()
+            .map(|(index, (member, optional))| {
+                let is_terminal = index + 1 == member_count;
+                ChainSegment {
+                    name: node_text(*member, src),
+                    node_kind: member.kind().to_string(),
+                    kind: SegmentKind::Property,
+                    declared_type: None,
+                    type_args: Vec::new(),
+                    optional_chaining: *optional,
+                    byte_offset: member.start_byte() as u32,
+                    declared_type_id: None,
+                    is_call: is_terminal,
+                    call_args: is_terminal.then(|| call_args.to_vec()).unwrap_or_default(),
+                    type_arg_ids: Vec::new(),
+                }
+            }),
+    );
+    MemberChain { segments }
 }
 
 /// Handle the Dart grammar 0.1 pattern where a function call is represented as:
@@ -666,51 +719,40 @@ fn extract_inline_call_from_statement(
     };
 
     // The callee: last identifier/type_identifier appearing before the call selector.
-    // Also scan selector children for member access (obj.method()).
-    let mut callee_ident: Option<String> = None;
-    let mut last_member: Option<String> = None;
+    // Also retain member selectors so a method call carries its receiver root.
+    let mut callee_ident: Option<Node> = None;
+    let mut members = Vec::new();
+    let mut chain_supported = true;
 
     // Scan children before the call selector for the last identifier.
     for child in &children[..call_idx] {
         match child.kind() {
             "identifier" | "type_identifier" => {
-                callee_ident = Some(node_text(*child, src));
+                callee_ident = Some(*child);
             }
             "assignable_expression" => {
-                if let Some(name) = ident_from_assignable(*child, src) {
-                    callee_ident = Some(name);
+                if let Some(identifier) = ident_node_from_assignable(*child) {
+                    callee_ident = Some(identifier);
                 }
             }
-            "selector" => {
-                // Non-argument selectors before the call selector = member access.
-                let selector_children: Vec<_> = {
-                    let mut sc = child.walk();
-                    child.children(&mut sc).collect()
-                };
-                for s in &selector_children {
-                    match s.kind() {
-                        "unconditional_assignable_selector" | "conditional_assignable_selector" => {
-                            let sub: Vec<_> = {
-                                let mut uc = s.walk();
-                                s.children(&mut uc).collect()
-                            };
-                            for u in &sub {
-                                if u.kind() == "identifier" || u.kind() == "type_identifier" {
-                                    last_member = Some(node_text(*u, src));
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
+            "selector" => match selector_member_nodes(*child) {
+                Some(selector_members) => members.extend(selector_members),
+                None => chain_supported = false,
+            },
             _ => {}
         }
     }
 
-    let target = last_member.or(callee_ident).unwrap_or_default();
+    let target = members
+        .last()
+        .map(|(member, _)| node_text(*member, src))
+        .or_else(|| callee_ident.map(|identifier| node_text(identifier, src)))
+        .unwrap_or_default();
     if !target.is_empty() {
         let call_args = extract_dart_call_args(node, src);
+        let chain = callee_ident
+            .filter(|_| chain_supported && !members.is_empty())
+            .map(|receiver| member_call_chain(receiver, &members, &call_args, src));
         refs.push(ExtractedRef {
             is_include: false,
             is_import_binding: false,
@@ -721,7 +763,7 @@ fn extract_inline_call_from_statement(
             line: node.start_position().row as u32,
             col: 0,
             module: None,
-            chain: None,
+            chain,
             byte_offset: node.start_byte() as u32,
             namespace_segments: Vec::new(),
             call_args,
@@ -730,29 +772,61 @@ fn extract_inline_call_from_statement(
 }
 
 /// Extract the base identifier from an `assignable_expression` node (or plain identifier).
-fn ident_from_assignable(node: tree_sitter::Node, src: &str) -> Option<String> {
+fn ident_node_from_assignable(node: Node) -> Option<Node> {
     match node.kind() {
-        "identifier" | "type_identifier" => Some(node_text(node, src)),
+        "identifier" | "type_identifier" => Some(node),
         "assignable_expression" => {
             // Walk named children looking for an identifier.
             let mut c = node.walk();
             for child in node.named_children(&mut c) {
                 match child.kind() {
-                    "identifier" | "type_identifier" => return Some(node_text(child, src)),
+                    "identifier" | "type_identifier" => return Some(child),
                     _ => {}
                 }
             }
             // Fallback: first named child recursion
             let mut c2 = node.walk();
             for child in node.named_children(&mut c2) {
-                if let Some(name) = ident_from_assignable(child, src) {
-                    return Some(name);
+                if let Some(identifier) = ident_node_from_assignable(child) {
+                    return Some(identifier);
                 }
             }
             None
         }
         _ => None,
     }
+}
+
+/// Extract member name nodes from one selector, preserving whether the grammar
+/// made that navigation conditional. An unsupported selector returns `None`
+/// so callers decline the full receiver chain rather than eliding a step.
+fn selector_member_nodes(selector: Node) -> Option<Vec<(Node, bool)>> {
+    if selector.kind() != "selector" {
+        return Some(Vec::new());
+    }
+    let mut selector_cursor = selector.walk();
+    let children: Vec<_> = selector.children(&mut selector_cursor).collect();
+    if children
+        .iter()
+        .any(|child| matches!(child.kind(), "argument_part" | "arguments"))
+    {
+        return Some(Vec::new());
+    }
+
+    let mut members = Vec::new();
+    for child in children {
+        let optional = match child.kind() {
+            "unconditional_assignable_selector" => false,
+            "conditional_assignable_selector" => true,
+            _ => continue,
+        };
+        let mut member_cursor = child.walk();
+        let member = child
+            .children(&mut member_cursor)
+            .find(|member| matches!(member.kind(), "identifier" | "type_identifier"))?;
+        members.push((member, optional));
+    }
+    (!members.is_empty()).then_some(members)
 }
 
 /// Emit a Calls edge for `new Dog(args)`.

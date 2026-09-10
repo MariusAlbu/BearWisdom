@@ -96,6 +96,137 @@ fn intern_type_str_preserves_function_param_types() {
 }
 
 #[test]
+fn intern_type_str_parses_fixed_arity_python_callable_annotations() {
+    let mut arena = TypeArena::new();
+    let a = arena.intern_type_str("A");
+    let b = arena.intern_type_str("B");
+    let r = arena.intern_type_str("R");
+    for source in [
+        "Callable[[A, B], R]",
+        "typing.Callable[[A, B], R]",
+        "collections.abc.Callable[[A, B], R]",
+    ] {
+        match arena.get(arena.intern_type_str(source)) {
+            Type::Function { params, return_ } => {
+                assert_eq!(params, vec![a, b], "{source}");
+                assert_eq!(return_, r, "{source}");
+            }
+            other => panic!("expected Python Callable Function for {source}, got {other:?}"),
+        }
+    }
+
+    match arena
+        .get(arena.intern_type_str("typing.Callable[[Callable[[A], B], list[Item]], Result]"))
+    {
+        Type::Function { params, return_ } => {
+            assert_eq!(params.len(), 2);
+            assert!(matches!(arena.get(params[0]), Type::Function { .. }));
+            assert!(matches!(arena.get(params[1]), Type::Apply { .. }));
+            assert!(matches!(arena.get(return_), Type::Class(name) if name == "Result"));
+        }
+        other => panic!("expected nested Python Callable Function, got {other:?}"),
+    }
+
+    match arena.get(arena.intern_type_str("collections.abc.Callable[[], None]")) {
+        Type::Function { params, return_ } => {
+            assert!(params.is_empty());
+            assert!(matches!(arena.get(return_), Type::Class(name) if name == "None"));
+        }
+        other => panic!("expected zero-argument Python Callable Function, got {other:?}"),
+    }
+}
+
+#[test]
+fn intern_type_str_keeps_unmodeled_python_callable_forms_opaque() {
+    let mut arena = TypeArena::new();
+    for source in [
+        "Callable",
+        "CallbackAlias[[A], R]",
+        "typing_extensions.Callable[[A], R]",
+        "Callable[..., R]",
+        "Callable[P, R]",
+        "Callable[Concatenate[A, P], R]",
+        "Callable[[P.args], R]",
+        "Callable[[ParamSpec], R]",
+        "Callable[[~T], ~T]",
+        "Callable[[A], R, Extra]",
+    ] {
+        assert!(
+            !matches!(
+                arena.get(arena.intern_type_str(source)),
+                Type::Function { .. }
+            ),
+            "{source} must stay opaque without callable binder identity"
+        );
+    }
+}
+
+#[test]
+fn intern_type_str_parses_dart_return_first_function_types() {
+    let mut arena = TypeArena::new();
+    let a = arena.intern_type_str("A");
+    let b = arena.intern_type_str("B");
+    let r = arena.intern_type_str("R");
+    match arena.get(arena.intern_type_str("R Function(A, B)")) {
+        Type::Function { params, return_ } => {
+            assert_eq!(params, vec![a, b]);
+            assert_eq!(return_, r);
+        }
+        other => panic!("expected Dart Function type, got {other:?}"),
+    }
+    assert!(
+        matches!(
+            arena.get(arena.intern_type_str("Box<R Function(A)>")),
+            Type::Apply { .. }
+        ),
+        "a nested Dart function type must not turn its outer generic into a function"
+    );
+    let user = arena.intern_type_str("User");
+    let int = arena.intern_type_str("int");
+    match arena.get(arena.intern_type_str("void Function(User user, int count)")) {
+        Type::Function { params, .. } => assert_eq!(params, vec![user, int]),
+        other => panic!("expected named Dart Function slots, got {other:?}"),
+    }
+    match arena.get(arena.intern_type_str("void Function(void Function(User) callback)")) {
+        Type::Function { params, .. } => {
+            assert!(matches!(arena.get(params[0]), Type::Function { .. }))
+        }
+        other => panic!("expected nested named Dart Function slot, got {other:?}"),
+    }
+}
+
+#[test]
+fn intern_type_str_parses_representable_go_function_types() {
+    let mut arena = TypeArena::new();
+    let t = arena.intern_type_str("T");
+    let u = arena.intern_type_str("U");
+    let r = arena.intern_type_str("R");
+    for source in ["func(T) R", "func(value T) R", "func(a, b T, c U) R"] {
+        match arena.get(arena.intern_type_str(source)) {
+            Type::Function { params, return_ } => {
+                let expected = if source.contains("a, b") {
+                    vec![t, t, u]
+                } else {
+                    vec![t]
+                };
+                assert_eq!(params, expected, "{source}");
+                assert_eq!(return_, r, "{source}");
+            }
+            other => panic!("expected Go Function for {source}, got {other:?}"),
+        }
+    }
+    for unsupported in ["func(...T) R", "func(T) (R, error)"] {
+        assert!(
+            !matches!(
+                arena.get(arena.intern_type_str(unsupported)),
+                Type::Function { .. }
+            ),
+            "{unsupported}: unsupported Go function forms must abstain"
+        );
+    }
+}
+
+#[test]
 fn intern_type_str_parses_union() {
     let mut arena = TypeArena::new();
     let a = arena.intern_type_str("A");

@@ -1236,3 +1236,33 @@ fn swift_lambda_at_span_seeds_its_exact_callback_root() {
         "use(f: (Item) -> Void): Void",
     );
 }
+
+#[test]
+fn dart_lambda_at_span_seeds_its_exact_callback_root() {
+    assert_explicit_lambda_at_span_seeds_its_exact_callback_root(
+        "dart",
+        "dart",
+        "void run() { use((item) => item.touch()); }\n",
+        "void use(void Function(Item) f)",
+    );
+}
+
+#[test]
+fn go_lambda_at_span_seeds_its_exact_callback_root() {
+    assert_explicit_lambda_at_span_seeds_its_exact_callback_root(
+        "go",
+        "go",
+        "package callbacks\nfunc run() { use(func(item Item) bool { item.touch(); return true }) }\n",
+        "func use(f func(Item) bool)",
+    );
+}
+
+#[test]
+fn python_lambda_at_span_seeds_its_exact_callback_root() {
+    assert_explicit_lambda_at_span_seeds_its_exact_callback_root(
+        "python",
+        "py",
+        "def run():\n    use(lambda item: item.touch())\n",
+        "def use(callback: typing.Callable[[Item], None]): ...",
+    );
+}

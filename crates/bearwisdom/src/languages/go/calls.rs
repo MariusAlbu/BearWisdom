@@ -9,7 +9,7 @@
 // =============================================================================
 
 use super::helpers::node_text;
-use crate::types::{CallArg, ExtractedRef, ExtractedSymbol};
+use crate::types::{CallArg, ExtractedRef, ExtractedSymbol, SourceSpan};
 use tree_sitter::Node;
 
 // Re-export items external callers (symbols.rs, statements.rs, types.rs) reach
@@ -140,22 +140,23 @@ fn extract_arg(node: &Node, src: &str, depth: u32) -> CallArg {
             }
         }
         // `func(x int) { ... }` — function literal. Capture the closure's own
-        // positional parameter names so the chain walker can type them from the
-        // higher-order function's callback-parameter signature.
-        "func_literal" => CallArg::Lambda {
-            params: func_literal_param_names(node, src),
+        // positional declaration spans so contextual callback typing addresses
+        // its binding identity rather than a file-wide name.
+        "func_literal" => CallArg::LambdaAt {
+            params: func_literal_param_spans(node, src),
         },
         _ => CallArg::Other,
     }
 }
 
-/// Collect the positional parameter identifier names of a Go `func_literal`
+/// Collect the positional parameter declaration spans of a Go `func_literal`
 /// argument. The `parameters` field is a `parameter_list` of
 /// `parameter_declaration` nodes; each declaration may name several parameters
 /// sharing a type (`func(a, b int)`), so every `identifier` child of a
-/// declaration is one positional name. A declaration with no name (`func(int)`)
-/// yields an empty slot so positions stay aligned with the callback signature.
-fn func_literal_param_names(node: &Node, src: &str) -> Vec<String> {
+/// declaration is one positional slot. An unnamed (`func(int)`) or blank
+/// (`func(_ int)`) parameter yields `None` so later positions stay aligned with
+/// the callback signature without inventing a binding.
+fn func_literal_param_spans(node: &Node, src: &str) -> Vec<Option<SourceSpan>> {
     let Some(params) = node.child_by_field_name("parameters") else {
         return Vec::new();
     };
@@ -166,15 +167,23 @@ fn func_literal_param_names(node: &Node, src: &str) -> Vec<String> {
             continue;
         }
         let mut dc = decl.walk();
-        let names: Vec<String> = decl
+        let mut saw_name = false;
+        for name in decl
             .named_children(&mut dc)
-            .filter(|c| c.kind() == "identifier")
-            .map(|c| node_text(&c, src))
-            .collect();
-        if names.is_empty() {
-            out.push(String::new());
-        } else {
-            out.extend(names);
+            .filter(|child| child.kind() == "identifier")
+        {
+            saw_name = true;
+            if node_text(&name, src) == "_" {
+                out.push(None);
+            } else {
+                out.push(Some(SourceSpan {
+                    start: name.start_byte() as u32,
+                    end: name.end_byte() as u32,
+                }));
+            }
+        }
+        if !saw_name {
+            out.push(None);
         }
     }
     out

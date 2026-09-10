@@ -30,7 +30,10 @@ struct BoundCallback {
 }
 
 pub(crate) fn supports(prefix: &str) -> bool {
-    matches!(prefix, "scala" | "java" | "csharp" | "kotlin" | "swift")
+    matches!(
+        prefix,
+        "scala" | "java" | "csharp" | "kotlin" | "swift" | "dart" | "go" | "python"
+    )
 }
 
 /// Capture a graph whose only bindings are callback parameters. The returned
@@ -72,6 +75,12 @@ pub(crate) fn capture(
             let Some(name) = text(source, parameter) else {
                 continue;
             };
+            // Dart and Go callback emitters deliberately leave wildcard / blank
+            // parameters as positional holes. Mirror that contract here rather
+            // than inventing a durable binding for `_`.
+            if matches!(prefix, "dart" | "go") && name == "_" {
+                continue;
+            }
             let name_id = graph.intern(name);
             let binding = graph.declare(scope, name_id, callback.body.start, None);
             graph.declarations.insert(parameter, binding);
@@ -161,6 +170,9 @@ fn callback_kind(prefix: &str, kind: &str) -> bool {
         "scala" | "java" => kind == "lambda_expression",
         "csharp" => matches!(kind, "lambda_expression" | "anonymous_method_expression"),
         "kotlin" | "swift" => kind == "lambda_literal",
+        "dart" => kind == "function_expression",
+        "go" => kind == "func_literal",
+        "python" => kind == "lambda",
         _ => false,
     }
 }
@@ -172,6 +184,9 @@ fn callback(node: Node, prefix: &str) -> Option<Callback> {
     match prefix {
         "kotlin" => kotlin_callback(node),
         "swift" => swift_callback(node),
+        "dart" => dart_callback(node),
+        "go" => go_callback(node),
+        "python" => python_callback(node),
         _ => callback_with_fields(node, prefix),
     }
 }
@@ -243,6 +258,56 @@ fn swift_callback(node: Node) -> Option<Callback> {
         .map(span)
         .collect();
     callback_from_explicit_parameters(node, spans, "swift")
+}
+
+/// Dart function expressions keep their source declaration identifiers in the
+/// `formal_parameter` nodes under the `parameters` field.  Do not fall back to
+/// arbitrary descendants: a type identifier or nested function parameter is
+/// not evidence for this callback binding.
+fn dart_callback(node: Node) -> Option<Callback> {
+    // The field is repeated when a closure has type parameters; select the
+    // actual formal list rather than assuming its field order.
+    let parameters = named_children(node).find(|child| child.kind() == "formal_parameter_list")?;
+    let spans = named_children(parameters)
+        .filter(|parameter| parameter.kind() == "formal_parameter")
+        .filter_map(|parameter| {
+            named_children(parameter).find(|child| child.kind() == "identifier")
+        })
+        .map(span)
+        .collect();
+    let body = node.child_by_field_name("body")?;
+    callback_from_explicit_parameters(body, spans, "dart")
+}
+
+/// Go's `parameter_declaration.name` field is repeated for grouped names
+/// (`func(a, b T)`). The grammar exposes every declaration name as a direct
+/// identifier child; the type is a distinct node kind, so retain precisely
+/// those direct declaration tokens.
+fn go_callback(node: Node) -> Option<Callback> {
+    let parameters = node.child_by_field_name("parameters")?;
+    let spans = named_children(parameters)
+        .filter(|parameter| parameter.kind() == "parameter_declaration")
+        .flat_map(named_children)
+        .filter(|name| name.kind() == "identifier")
+        .map(span)
+        .collect();
+    let body = node.child_by_field_name("body")?;
+    callback_from_explicit_parameters(body, spans, "go")
+}
+
+/// Python lambda parameters have a direct identifier form only. Defaults,
+/// typed/default wrappers, splats, separators, and destructuring are emitted
+/// as callback-signature holes, so this graph must not manufacture a source
+/// declaration for any of them. `_` is an ordinary Python identifier and is
+/// therefore retained.
+fn python_callback(node: Node) -> Option<Callback> {
+    let parameters = node.child_by_field_name("parameters")?;
+    let spans = named_children(parameters)
+        .filter(|parameter| parameter.kind() == "identifier")
+        .map(span)
+        .collect();
+    let body = node.child_by_field_name("body")?;
+    callback_from_explicit_parameters(body, spans, "python")
 }
 
 fn callback_from_explicit_parameters(
@@ -342,6 +407,25 @@ fn ordinary_boundary_kind(prefix: &str, kind: &str) -> bool {
                 | "protocol_declaration"
                 | "enum_declaration"
         ),
+        "dart" => matches!(
+            kind,
+            "local_function_declaration"
+                | "function_declaration"
+                | "class_declaration"
+                | "enum_declaration"
+                | "extension_declaration"
+                | "extension_type_declaration"
+                | "mixin_declaration"
+        ),
+        "go" => matches!(
+            kind,
+            "function_declaration"
+                | "method_declaration"
+                | "type_declaration"
+                | "struct_type"
+                | "interface_type"
+        ),
+        "python" => matches!(kind, "function_definition" | "class_definition"),
         _ => false,
     }
 }
@@ -413,6 +497,77 @@ fn collect_barriers_inner(
                 });
             }
         }
+        ("dart", "assignment_expression") => {
+            if let Some(name) = dart_assignment_name(node) {
+                barriers.push(Barrier {
+                    name: span(name),
+                    range: barrier_range(node, callback_body, prefix),
+                });
+            }
+        }
+        ("python", "assignment" | "augmented_assignment") => {
+            if let Some(name) = node
+                .child_by_field_name("left")
+                .filter(|name| name.kind() == "identifier")
+            {
+                barriers.push(Barrier {
+                    name: span(name),
+                    range: barrier_range(node, callback_body, prefix),
+                });
+            }
+        }
+        ("python", "named_expression") => {
+            if let Some(name) = node
+                .child_by_field_name("name")
+                .filter(|name| name.kind() == "identifier")
+            {
+                barriers.push(Barrier {
+                    name: span(name),
+                    range: barrier_range(node, callback_body, prefix),
+                });
+            }
+        }
+        ("python", "for_in_clause") => {
+            if let Some(scope) = python_comprehension_scope(node) {
+                if let Some(left) = node.child_by_field_name("left") {
+                    for name in python_pattern_identifiers(left) {
+                        barriers.push(Barrier {
+                            name: span(name),
+                            range: span(scope),
+                        });
+                    }
+                }
+            }
+        }
+        ("dart", "initialized_variable_definition") => {
+            if let Some(name) = node
+                .child_by_field_name("name")
+                .filter(|name| name.kind() == "identifier")
+            {
+                barriers.push(Barrier {
+                    name: span(name),
+                    range: barrier_range(node, callback_body, prefix),
+                });
+            }
+        }
+        ("go", "short_var_declaration" | "assignment_statement") => {
+            if let Some(left) = node.child_by_field_name("left") {
+                for name in named_children(left).filter(|name| name.kind() == "identifier") {
+                    barriers.push(Barrier {
+                        name: span(name),
+                        range: barrier_range(node, callback_body, prefix),
+                    });
+                }
+            }
+        }
+        ("go", "var_spec") => {
+            for name in named_children(node).filter(|name| name.kind() == "identifier") {
+                barriers.push(Barrier {
+                    name: span(name),
+                    range: barrier_range(node, callback_body, prefix),
+                });
+            }
+        }
         (_, "assignment_expression") => {
             if let Some(name) = node
                 .child_by_field_name("left")
@@ -438,6 +593,61 @@ fn swift_assignment_name(node: Node) -> Option<Node> {
         return Some(target);
     }
     named_children(target).find(|child| child.kind() == "simple_identifier")
+}
+
+fn dart_assignment_name(node: Node) -> Option<Node> {
+    let left = node.child_by_field_name("left")?;
+    if left.kind() == "identifier" {
+        return Some(left);
+    }
+    // Dart wraps a bare assignment target in `assignable_expression`. Only a
+    // sole direct identifier rebinds the callback parameter; selectors such
+    // as `x.field = value` mutate a member and must not fence `x` itself.
+    if left.kind() == "assignable_expression" {
+        let mut children = named_children(left);
+        let identifier = children
+            .next()
+            .filter(|child| child.kind() == "identifier")?;
+        if children.next().is_none() {
+            return Some(identifier);
+        }
+    }
+    None
+}
+
+fn python_comprehension_scope(node: Node) -> Option<Node> {
+    let mut current = node.parent();
+    while let Some(parent) = current {
+        if matches!(
+            parent.kind(),
+            "list_comprehension"
+                | "set_comprehension"
+                | "dictionary_comprehension"
+                | "generator_expression"
+        ) {
+            return Some(parent);
+        }
+        current = parent.parent();
+    }
+    None
+}
+
+/// Comprehension targets are binding patterns. Keeping only identifier leaves
+/// covers bare and tuple/list targets without treating attributes or arbitrary
+/// expressions as newly scoped names.
+fn python_pattern_identifiers(node: Node) -> Vec<Node> {
+    if node.kind() == "identifier" {
+        return vec![node];
+    }
+    if !matches!(
+        node.kind(),
+        "tuple_pattern" | "list_pattern" | "pattern_list"
+    ) {
+        return Vec::new();
+    }
+    named_children(node)
+        .flat_map(python_pattern_identifiers)
+        .collect()
 }
 
 fn barrier_range(node: Node, callback_body: SourceSpan, prefix: &str) -> SourceSpan {

@@ -1,7 +1,7 @@
 // Tests for calls.rs — extract_dart_call_args recursive CallArg construction.
 
 use super::extract_dart_call_args;
-use crate::types::CallArg;
+use crate::types::{CallArg, EdgeKind};
 use tree_sitter::{Node, Parser, Tree};
 
 fn parse(src: &str) -> Tree {
@@ -31,6 +31,28 @@ fn call_args(src: &str) -> Vec<CallArg> {
     let tree = parse(src);
     let arg_part = find(tree.root_node(), "argument_part").expect("argument_part node in snippet");
     extract_dart_call_args(&arg_part, src)
+}
+
+fn callback_parameters<'a>(source: &'a str, args: &[CallArg]) -> Vec<Vec<Option<&'a str>>> {
+    args.iter()
+        .filter_map(|arg| match arg {
+            CallArg::LambdaAt { params } => Some(
+                params
+                    .iter()
+                    .map(|span| span.map(|s| &source[s.start as usize..s.end as usize]))
+                    .collect(),
+            ),
+            _ => None,
+        })
+        .collect()
+}
+
+fn extracted_calls(src: &str) -> Vec<crate::types::ExtractedRef> {
+    super::super::extract::extract(src)
+        .refs
+        .into_iter()
+        .filter(|reference| reference.kind == EdgeKind::Calls)
+        .collect()
 }
 
 #[test]
@@ -127,23 +149,149 @@ fn call_args_binary_expression_produces_binary_variant() {
 }
 
 #[test]
-fn call_args_function_expression_single_param_captured() {
+fn call_args_function_expression_params_use_exact_declaration_spans() {
     let src = "void caller(xs) { xs.map((u) => u.name); }";
-    let args = call_args(src);
-    assert!(
-        args.iter()
-            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["u"])),
-        "expected Lambda {{ params: [\"u\"] }}, got: {args:?}"
+    assert_eq!(
+        callback_parameters(src, &call_args(src)),
+        vec![vec![Some("u")]]
     );
 }
 
 #[test]
-fn call_args_function_expression_multi_param_captured() {
+fn call_args_function_expression_multi_param_spans_preserve_order() {
     let src = "void caller(xs) { xs.fold((a, b) => f(a, b)); }";
-    let args = call_args(src);
-    assert!(
-        args.iter()
-            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["a", "b"])),
-        "expected Lambda {{ params: [\"a\", \"b\"] }}, got: {args:?}"
+    assert_eq!(
+        callback_parameters(src, &call_args(src)),
+        vec![vec![Some("a"), Some("b")]]
     );
+}
+
+#[test]
+fn call_args_function_expression_wildcard_keeps_a_positional_hole() {
+    let src = "void caller(xs) { xs.map((_) => 0); }";
+    assert_eq!(callback_parameters(src, &call_args(src)), vec![vec![None]]);
+}
+
+#[test]
+fn postfix_member_call_keeps_receiver_chain_and_source_anchor() {
+    let src = "void caller(Item item) { item.touch(); }";
+    let calls = extracted_calls(src);
+    let touches: Vec<_> = calls
+        .iter()
+        .filter(|reference| reference.target_name == "touch")
+        .collect();
+
+    assert_eq!(touches.len(), 1, "expected one item.touch call: {calls:?}");
+    let touch = touches[0];
+    assert_eq!(
+        touch.chain.as_ref().map(|chain| chain
+            .segments
+            .iter()
+            .map(|segment| segment.name.as_str())
+            .collect::<Vec<_>>()),
+        Some(vec!["item", "touch"]),
+        "member call must retain its receiver root: {touch:?}"
+    );
+    let chain = touch.chain.as_ref().expect("member call chain");
+    let receiver_offset = src.find("item.touch").expect("receiver call source");
+    assert_eq!(chain.segments[0].byte_offset as usize, receiver_offset);
+    assert_eq!(
+        chain.segments[1].byte_offset as usize,
+        receiver_offset + "item.".len()
+    );
+    assert!(chain.segments[1].is_call, "terminal selector is invoked");
+    assert!(chain.segments[1].call_args.is_empty());
+    assert_eq!(
+        touch.byte_offset as usize, receiver_offset,
+        "callback lexical capture must be anchored at the receiver call"
+    );
+}
+
+#[test]
+fn postfix_member_call_retains_callback_argument() {
+    let src = "void caller(List<Item> items) { items.map((item) => item.touch()); }";
+    let calls = extracted_calls(src);
+    let map = calls
+        .iter()
+        .find(|reference| reference.target_name == "map")
+        .expect("map call");
+    let chain = map.chain.as_ref().expect("map receiver chain");
+    let receiver_offset = src.find("items.map").expect("map receiver source");
+    assert_eq!(chain.segments[0].byte_offset as usize, receiver_offset);
+    assert_eq!(
+        chain.segments[1].byte_offset as usize,
+        receiver_offset + "items.".len()
+    );
+    assert!(chain.segments[1].is_call, "map selector is invoked");
+    assert_eq!(
+        callback_parameters(src, &map.call_args),
+        vec![vec![Some("item")]]
+    );
+    assert_eq!(
+        callback_parameters(src, &chain.segments[1].call_args),
+        vec![vec![Some("item")]],
+        "the invoked chain segment owns its callback arguments"
+    );
+}
+
+#[test]
+fn conditional_member_call_marks_the_terminal_optional() {
+    let src = "void caller(item) { item?.touch(); }";
+    let calls = extracted_calls(src);
+    let touch = calls
+        .iter()
+        .find(|reference| reference.target_name == "touch")
+        .expect("conditional touch call");
+    let chain = touch.chain.as_ref().expect("conditional member chain");
+    assert!(
+        chain
+            .segments
+            .last()
+            .is_some_and(|segment| segment.optional_chaining),
+        "conditional selector must not become an unconditional member walk: {chain:?}"
+    );
+}
+
+#[test]
+fn indexed_receiver_member_call_declines_an_incomplete_chain() {
+    let src = "void caller(List<Item> items) { items[0].touch(); }";
+    let calls = extracted_calls(src);
+    let touch = calls
+        .iter()
+        .find(|reference| reference.target_name == "touch")
+        .expect("indexed touch call");
+    assert!(
+        touch.chain.is_none(),
+        "an indexed receiver must not be shortened to items.touch: {touch:?}"
+    );
+}
+
+#[test]
+fn expression_bodied_nested_callback_emits_its_member_call_once() {
+    let src = "void f(List<A> xs, List<B> ys) { xs.map((A x) { ys.map((B x) => x.inner()); x.outer(); }); }";
+    let calls = extracted_calls(src);
+
+    for (target, expected_segments) in
+        [("inner", vec!["x", "inner"]), ("outer", vec!["x", "outer"])]
+    {
+        let matches: Vec<_> = calls
+            .iter()
+            .filter(|reference| reference.target_name == target)
+            .collect();
+        assert_eq!(
+            matches.len(),
+            1,
+            "expected exactly one x.{target} call: {calls:?}"
+        );
+        assert_eq!(
+            matches[0].chain.as_ref().map(|chain| chain
+                .segments
+                .iter()
+                .map(|segment| segment.name.as_str())
+                .collect::<Vec<_>>()),
+            Some(expected_segments),
+            "expected receiver chain for x.{target}: {:?}",
+            matches[0]
+        );
+    }
 }
