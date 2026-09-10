@@ -1,6 +1,138 @@
 use super::*;
 
 #[test]
+fn callback_only_identity_is_rebuilt_after_flow_metadata_is_dropped() {
+    let source = "object O { def f(xs: List[A], ys: List[B]) = xs.map(x => { ys.map(x => x.inner()); x.outer() }) }";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("callbacks.scala");
+    std::fs::write(&path, source).unwrap();
+    let arena = crate::type_checker::core::types::TypeArena::new();
+    let mut parsed = crate::indexer::parse_file::parse_file_with_arena(
+        &crate::walker::WalkedFile {
+            relative_path: "ext:scala:pkg/callbacks.scala".into(),
+            absolute_path: path,
+            language: "scala",
+        },
+        crate::languages::default_registry(),
+        &arena,
+    )
+    .unwrap();
+    let fresh = parsed
+        .flow
+        .callback_lexical
+        .as_ref()
+        .expect("fresh Scala callback graph");
+    let expected_declarations = fresh.declarations.clone();
+    let expected_references = fresh.references.clone();
+
+    parsed.flow = Default::default();
+    restore(&mut parsed);
+    let restored = parsed
+        .flow
+        .callback_lexical
+        .as_ref()
+        .expect("source restoration rebuilds callback graph");
+    assert_eq!(restored.declarations, expected_declarations);
+    assert_eq!(restored.references, expected_references);
+    assert!(
+        parsed.flow.lexical.is_none(),
+        "callback graph must not opt into full lexical capture"
+    );
+}
+
+#[test]
+fn cached_lambda_at_span_rebuilds_callback_identity_after_json_round_trip() {
+    use crate::types::CallArg;
+
+    let source = "object O { def f(xs: List[A]) = xs.map(x => x.touch()) }";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("callbacks.scala");
+    std::fs::write(&path, source).unwrap();
+    let arena = crate::type_checker::core::types::TypeArena::new();
+    let parsed = crate::indexer::parse_file::parse_file_with_arena(
+        &crate::walker::WalkedFile {
+            relative_path: "ext:scala:pkg/callbacks.scala".into(),
+            absolute_path: path,
+            language: "scala",
+        },
+        crate::languages::default_registry(),
+        &arena,
+    )
+    .unwrap();
+    let callback = parsed
+        .refs
+        .iter()
+        .find(|reference| {
+            reference.target_name == "map"
+                && reference
+                    .call_args
+                    .iter()
+                    .any(|arg| matches!(arg, CallArg::LambdaAt { .. }))
+        })
+        .expect("fresh parse must retain Scala LambdaAt");
+    let parameter = callback
+        .call_args
+        .iter()
+        .find_map(|arg| match arg {
+            CallArg::LambdaAt { params } => params.first().copied().flatten(),
+            _ => None,
+        })
+        .expect("LambdaAt must retain its exact parameter span");
+    let root = parsed
+        .refs
+        .iter()
+        .find(|reference| {
+            reference.target_name == "touch"
+                && reference
+                    .chain
+                    .as_ref()
+                    .and_then(|chain| chain.segments.first())
+                    .is_some_and(|segment| segment.name == "x")
+        })
+        .expect("x.touch must retain x as its chain root")
+        .byte_offset;
+
+    let payload = super::super::external_parse_payload::CachedParse::from_parsed(&parsed, &arena);
+    let payload: super::super::external_parse_payload::CachedParse =
+        serde_json::from_str(&serde_json::to_string(&payload).unwrap()).unwrap();
+    let cold_arena = crate::type_checker::core::types::TypeArena::new();
+    let mut cold = payload.into_parsed(
+        &cold_arena,
+        &parsed.path,
+        &parsed.content_hash,
+        parsed.size,
+        parsed.mtime,
+    );
+    cold.content = Some(source.into());
+    let restored_parameter = cold
+        .refs
+        .iter()
+        .find(|reference| {
+            reference.target_name == "map"
+                && reference
+                    .call_args
+                    .iter()
+                    .any(|arg| matches!(arg, CallArg::LambdaAt { .. }))
+        })
+        .and_then(|reference| {
+            reference.call_args.iter().find_map(|arg| match arg {
+                CallArg::LambdaAt { params } => params.first().copied().flatten(),
+                _ => None,
+            })
+        });
+    assert_eq!(restored_parameter, Some(parameter));
+
+    restore(&mut cold);
+    let graph = cold
+        .flow
+        .callback_lexical
+        .as_ref()
+        .expect("source restoration must rebuild callback identity");
+    assert!(graph.declarations.contains_key(&parameter));
+    assert!(graph.references.contains_key(&root));
+}
+
+#[test]
 fn ambient_source_units_and_import_origins_survive_contract_filter_and_portable_recapture() {
     let source = "declare module 'provider' { import { Doc } from 'other'; export namespace Nested { export function make(): Doc; } global { interface Catalog { read(): Doc; } } }";
     let dir = tempfile::tempdir().unwrap();

@@ -315,6 +315,42 @@ fn legacy_callback_seeding_abstains_for_equal_arity_callback_overloads() {
 }
 
 #[test]
+fn java_callback_pattern_requires_the_exact_jdk_functional_interface_name() {
+    let custom = sym_with_sig(
+        32,
+        "Use",
+        "Runner.Use",
+        "method",
+        "src/Runner.java",
+        "void Use(com.acme.Function<Left, Result> callback)",
+    );
+    let jdk = sym_with_sig(
+        33,
+        "Use",
+        "Runner.UseJdk",
+        "method",
+        "src/Runner.java",
+        "void Use(java.util.function.BiFunction<Left, Right, Result> callback)",
+    );
+    let lookup = Lookup::new().with(custom.clone()).with(jdk.clone());
+    let arena = lookup.type_arena().expect("arena");
+    let args = vec![CallArg::Lambda {
+        params: vec!["left".into(), "right".into()],
+    }];
+    let wrappers = crate::languages::java::JAVA_PROFILE.delegate_wrappers;
+
+    assert!(super::_test_uniquely_contextual_callback_callee(
+        &lookup, arena, &custom, &args, wrappers,
+    )
+    .is_none());
+    assert_eq!(
+        super::_test_uniquely_contextual_callback_callee(&lookup, arena, &jdk, &args, wrappers)
+            .map(|symbol| symbol.id),
+        Some(jdk.id)
+    );
+}
+
+#[test]
 fn explicit_method_arguments_bind_legacy_callback_generics_by_declaration_order() {
     let callee = sym_with_sig(
         40,

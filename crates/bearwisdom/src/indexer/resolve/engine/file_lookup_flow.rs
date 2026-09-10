@@ -7,6 +7,15 @@ use super::*;
 mod tests;
 
 impl FileLookup<'_> {
+    /// A callback-only graph reserves its lexical binding even before a
+    /// contextual type is available. Legacy name maps must not supply a type
+    /// for that identity, because a nested callback may reuse the spelling.
+    fn callback_binding_at_cursor(&self, name: &str) -> bool {
+        self.callback_lexical
+            .as_ref()
+            .is_some_and(|cache| cache.attested_binding(name).is_some())
+    }
+
     pub(crate) fn record_failed_write(
         &self,
         reference: usize,
@@ -408,10 +417,21 @@ impl<'a> FlowCacheLookup for FileLookup<'a> {
                     .as_ref()
                     .and_then(|cache| cache.reference(byte))
             })
+            .or_else(|| {
+                self.callback_lexical
+                    .as_ref()
+                    .and_then(|cache| cache.reference(byte))
+            })
             .or_else(|| self.namespace_roots.get(&byte).cloned())
     }
     fn record_contextual_type(&self, parameter: crate::types::SourceSpan, ty: TypeId) {
         if let Some(cache) = &self.lexical {
+            if let Some(&binding) = cache.bindings.declarations.get(&parameter) {
+                cache.record_contextual(binding, ty);
+                return;
+            }
+        }
+        if let Some(cache) = &self.callback_lexical {
             if let Some(&binding) = cache.bindings.declarations.get(&parameter) {
                 cache.record_contextual(binding, ty);
             }
@@ -421,6 +441,9 @@ impl<'a> FlowCacheLookup for FileLookup<'a> {
     /// cache. Returns `None` when the name has not been bound by an earlier ref.
     fn local_type(&self, name: &str) -> Option<String> {
         if self.lexical.is_some() {
+            return None;
+        }
+        if self.callback_binding_at_cursor(name) {
             return None;
         }
         self.locals.borrow().get(name).cloned()
@@ -442,7 +465,7 @@ impl<'a> FlowCacheLookup for FileLookup<'a> {
     /// both miss, so a stale hint left behind by an earlier failed seed for
     /// this name is never read once this record succeeds.
     fn record_local_type(&self, name: String, type_name: String) {
-        if self.lexical.is_some() {
+        if self.lexical.is_some() || self.callback_binding_at_cursor(&name) {
             return;
         } // Scoped writes require declaration identity.
         self.locals_id.borrow_mut().remove(&name);
@@ -456,6 +479,11 @@ impl<'a> FlowCacheLookup for FileLookup<'a> {
         if let Some(cache) = &self.lexical {
             return cache.local_type(name);
         }
+        if let Some(cache) = &self.callback_lexical {
+            if let Some(ty) = cache.attested_local_type(name) {
+                return ty;
+            }
+        }
         self.locals_id.borrow().get(name).copied()
     }
 
@@ -464,7 +492,7 @@ impl<'a> FlowCacheLookup for FileLookup<'a> {
     /// resolves to a TypeId supersedes an earlier String binding (and vice
     /// versa via `record_local_type`).
     fn record_local_type_id(&self, name: String, id: TypeId) {
-        if self.lexical.is_some() {
+        if self.lexical.is_some() || self.callback_binding_at_cursor(&name) {
             return;
         } // Never guess a lambda binding from its name.
         self.locals.borrow_mut().remove(&name);
@@ -476,21 +504,21 @@ impl<'a> FlowCacheLookup for FileLookup<'a> {
         name: String,
         cause: crate::indexer::resolve::engine::cause::Cause,
     ) {
-        if self.lexical.is_some() {
+        if self.lexical.is_some() || self.callback_binding_at_cursor(&name) {
             return;
         }
         self.root_cause_hints.borrow_mut().insert(name, cause);
     }
 
     fn local_callable_head(&self, name: &str) -> Option<String> {
-        if self.lexical.is_some() {
+        if self.lexical.is_some() || self.callback_binding_at_cursor(name) {
             return None;
         }
         self.local_callable_heads.borrow().get(name).cloned()
     }
 
     fn record_local_callable_head(&self, name: String, qname: String) {
-        if self.lexical.is_some() {
+        if self.lexical.is_some() || self.callback_binding_at_cursor(&name) {
             return;
         }
         self.local_callable_heads.borrow_mut().insert(name, qname);
@@ -499,6 +527,9 @@ impl<'a> FlowCacheLookup for FileLookup<'a> {
     fn root_cause_hint(&self, name: &str) -> Option<crate::indexer::resolve::engine::cause::Cause> {
         if let Some(cache) = &self.lexical {
             return cache.cause(name);
+        }
+        if self.callback_binding_at_cursor(name) {
+            return None;
         }
         self.root_cause_hints.borrow().get(name).copied()
     }
@@ -509,16 +540,25 @@ impl<'a> FlowCacheLookup for FileLookup<'a> {
         if let Some(cache) = &self.lexical {
             cache.set_cursor(byte);
         }
+        if let Some(cache) = &self.callback_lexical {
+            cache.set_cursor(byte);
+        }
     }
 
     fn has_local_binding(&self, name: &str) -> bool {
         self.lexical
             .as_ref()
             .is_some_and(|cache| cache.binding(name).is_some())
+            || self.callback_binding_at_cursor(name)
     }
 
     fn local_callable_id(&self, name: &str) -> Option<i64> {
-        self.lexical.as_ref()?.callable(name)
+        if let Some(cache) = &self.lexical {
+            return cache.callable(name);
+        }
+        self.callback_lexical
+            .as_ref()
+            .and_then(|cache| cache.attested_callable(name).flatten())
     }
 
     /// No-op: CFG narrowing installation remains separate from lexical identity.
@@ -533,6 +573,9 @@ impl<'a> FlowCacheLookup for FileLookup<'a> {
     /// Evict pass-local inference. The immutable declaration graph is file-owned.
     fn clear_local_cache(&self) {
         if let Some(cache) = &self.lexical {
+            cache.clear();
+        }
+        if let Some(cache) = &self.callback_lexical {
             cache.clear();
         }
         self.locals.borrow_mut().clear();

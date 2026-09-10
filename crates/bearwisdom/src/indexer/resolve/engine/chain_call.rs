@@ -302,8 +302,7 @@ fn callback_pattern(
             let Type::Class(head) = arena.get(base) else {
                 return false;
             };
-            let simple = head.rsplit('.').next().unwrap_or(&head);
-            wrappers.iter().any(|(name, _)| *name == simple)
+            lambda_seed::delegate_wrapper_shape(&head, wrappers).is_some()
         }
         _ => false,
     }

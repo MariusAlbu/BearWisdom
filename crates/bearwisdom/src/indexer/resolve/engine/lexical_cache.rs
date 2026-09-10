@@ -356,6 +356,25 @@ impl<'a> LexicalCache<'a> {
             .binding_at(self.cursor.get(), self.bindings.name_id(name)?)
     }
 
+    /// Return a callback binding only when the current source byte was
+    /// captured as a read of that exact binding. Callback-only graphs are
+    /// intentionally incomplete, so a scope-visible name alone must not hide
+    /// legacy flow facts for an unmodeled local shadow.
+    pub(super) fn attested_binding(&self, name: &str) -> Option<BindingId> {
+        let byte = self.cursor.get();
+        let reference = *self.bindings.references.get(&byte)?;
+        let visible = self
+            .bindings
+            .binding_at(byte, self.bindings.name_id(name)?)?;
+        (reference == visible).then_some(reference)
+    }
+
+    /// `Some(None)` denotes an exact callback identity whose type has not yet
+    /// been contextualized. Callers use it to block legacy name fallbacks.
+    pub(super) fn attested_local_type(&self, name: &str) -> Option<Option<TypeId>> {
+        Some(self.type_of(self.attested_binding(name)?))
+    }
+
     fn function(&self) -> Option<ScopeId> {
         self.function_at(self.cursor.get())
     }
@@ -485,6 +504,10 @@ impl<'a> LexicalCache<'a> {
     }
     pub(super) fn callable(&self, name: &str) -> Option<i64> {
         self.callable_at(self.binding(name)?, self.cursor.get())
+    }
+
+    pub(super) fn attested_callable(&self, name: &str) -> Option<Option<i64>> {
+        Some(self.callable_at(self.attested_binding(name)?, self.cursor.get()))
     }
 
     fn callable_at(&self, binding: BindingId, byte: u32) -> Option<i64> {

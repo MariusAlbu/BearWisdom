@@ -17,6 +17,20 @@ fn parse_call_args(source: &str) -> Vec<CallArg> {
         .unwrap_or_default()
 }
 
+fn callback_parameters<'a>(source: &'a str, args: &[CallArg]) -> Vec<Vec<Option<&'a str>>> {
+    args.iter()
+        .filter_map(|arg| match arg {
+            CallArg::LambdaAt { params } => Some(
+                params
+                    .iter()
+                    .map(|span| span.map(|s| &source[s.start as usize..s.end as usize]))
+                    .collect(),
+            ),
+            _ => None,
+        })
+        .collect()
+}
+
 #[test]
 fn call_args_conditional_expression_produces_ternary_variant() {
     let src = r#"
@@ -133,11 +147,7 @@ fn call_args_lambda_implicit_single_param_captured() {
 class C { void M(System.Collections.Generic.List<int> users) { users.Select(u => u.Name); } }
 "#;
     let args = parse_call_args(src);
-    assert!(
-        args.iter()
-            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["u"])),
-        "expected Lambda {{ params: [\"u\"] }}, got: {args:?}"
-    );
+    assert_eq!(callback_parameters(src, &args), vec![vec![Some("u")]]);
 }
 
 #[test]
@@ -147,10 +157,9 @@ fn call_args_lambda_parenthesized_params_captured() {
 class C { void M(System.Collections.Generic.List<int> xs) { xs.Select((x, y) => f(x, y)); } }
 "#;
     let args = parse_call_args(src);
-    assert!(
-        args.iter()
-            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["x", "y"])),
-        "expected Lambda {{ params: [\"x\", \"y\"] }}, got: {args:?}"
+    assert_eq!(
+        callback_parameters(src, &args),
+        vec![vec![Some("x"), Some("y")]]
     );
 }
 
@@ -168,10 +177,29 @@ class C { void M() { F(name: "Events", columns: table => table); } }
             .any(|a| matches!(a, CallArg::StringLit(s) if s == "Events")),
         "named string arg must capture its value, got: {args:?}"
     );
-    assert!(
-        args.iter()
-            .any(|a| matches!(a, CallArg::Lambda { params } if params == &["table".to_string()])),
-        "named lambda arg must capture its params, got: {args:?}"
+    assert_eq!(callback_parameters(src, &args), vec![vec![Some("table")]]);
+}
+
+#[test]
+fn call_args_explicit_and_anonymous_method_parameters_use_declaration_spans() {
+    let src = r#"
+class C {
+    void M() {
+        F((string name, int count) => name.Trim());
+        F(delegate(string item) { item.ToString(); });
+    }
+}
+"#;
+    let result = extract::extract(src);
+    let callbacks: Vec<_> = result
+        .refs
+        .iter()
+        .filter(|r| r.kind == crate::types::EdgeKind::Calls && r.target_name == "F")
+        .flat_map(|r| callback_parameters(src, &r.call_args))
+        .collect();
+    assert_eq!(
+        callbacks,
+        vec![vec![Some("name"), Some("count")], vec![Some("item")]]
     );
 }
 
@@ -184,7 +212,10 @@ fn predefined_type_receiver_roots_the_chain_on_its_bcl_type() {
         .iter()
         .find(|r| r.target_name == "IsNullOrWhiteSpace")
         .expect("call ref");
-    let chain = r.chain.as_ref().expect("chain must survive a keyword receiver");
+    let chain = r
+        .chain
+        .as_ref()
+        .expect("chain must survive a keyword receiver");
     assert_eq!(chain.segments[0].name, "string");
     assert_eq!(
         chain.segments[0].declared_type.as_deref(),

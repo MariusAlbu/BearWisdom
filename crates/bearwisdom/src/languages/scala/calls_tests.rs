@@ -1,12 +1,12 @@
-// Tests for calls.rs — lambda parameter-name capture in call args, including
+// Tests for calls.rs — lambda parameter-span capture in call args, including
 // the brace-block call form whose args node is a `block`.
 
 use crate::types::{CallArg, EdgeKind, SegmentKind};
 
 /// Parse a Scala snippet and return the args of the first `Calls` ref that
-/// carries a captured lambda argument. Filtering for a `Lambda` arg targets the
+/// carries a captured lambda argument. Filtering for a `LambdaAt` arg targets the
 /// higher-order call specifically — an inner call (`f(a, b)`) in the lambda body
-/// carries `Ident` args, not a `Lambda`, so it is skipped.
+/// carries `Ident` args, not a callback argument, so it is skipped.
 fn parse_lambda_call_args(source: &str) -> Vec<CallArg> {
     let result = super::super::extract::extract(source);
     result
@@ -16,10 +16,24 @@ fn parse_lambda_call_args(source: &str) -> Vec<CallArg> {
             r.kind == crate::types::EdgeKind::Calls
                 && r.call_args
                     .iter()
-                    .any(|a| matches!(a, CallArg::Lambda { .. }))
+                    .any(|a| matches!(a, CallArg::LambdaAt { .. }))
         })
         .map(|r| r.call_args)
         .unwrap_or_default()
+}
+
+fn callback_parameters<'a>(source: &'a str, args: &[CallArg]) -> Vec<Vec<Option<&'a str>>> {
+    args.iter()
+        .filter_map(|arg| match arg {
+            CallArg::LambdaAt { params } => Some(
+                params
+                    .iter()
+                    .map(|span| span.map(|s| &source[s.start as usize..s.end as usize]))
+                    .collect(),
+            ),
+            _ => None,
+        })
+        .collect()
 }
 
 #[test]
@@ -29,11 +43,7 @@ fn call_args_brace_block_lambda_param_captured() {
 object O { def caller(list: List[User]) = list.map { x => x.foo } }
 "#;
     let args = parse_lambda_call_args(src);
-    assert!(
-        args.iter()
-            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["x"])),
-        "expected Lambda {{ params: [\"x\"] }}, got: {args:?}"
-    );
+    assert_eq!(callback_parameters(src, &args), vec![vec![Some("x")]]);
 }
 
 #[test]
@@ -43,10 +53,9 @@ fn call_args_brace_block_multi_param_lambda_captured() {
 object O { def caller(list: List[User]) = list.foldLeft(z) { (a, b) => f(a, b) } }
 "#;
     let args = parse_lambda_call_args(src);
-    assert!(
-        args.iter()
-            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["a", "b"])),
-        "expected Lambda {{ params: [\"a\", \"b\"] }}, got: {args:?}"
+    assert_eq!(
+        callback_parameters(src, &args),
+        vec![vec![Some("a"), Some("b")]]
     );
 }
 
@@ -57,11 +66,7 @@ fn call_args_paren_arguments_lambda_still_captured() {
 object O { def caller(list: List[User]) = list.map(x => x.foo) }
 "#;
     let args = parse_lambda_call_args(src);
-    assert!(
-        args.iter()
-            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["x"])),
-        "expected Lambda {{ params: [\"x\"] }}, got: {args:?}"
-    );
+    assert_eq!(callback_parameters(src, &args), vec![vec![Some("x")]]);
 }
 
 #[test]

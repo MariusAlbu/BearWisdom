@@ -14,6 +14,45 @@ fn call_args_for(src: &str, target: &str) -> Vec<CallArg> {
         .unwrap_or_default()
 }
 
+fn callback_parameters<'a>(source: &'a str, args: &[CallArg]) -> Vec<Vec<Option<&'a str>>> {
+    args.iter()
+        .filter_map(|arg| match arg {
+            CallArg::LambdaAt { params } => Some(
+                params
+                    .iter()
+                    .map(|span| span.map(|s| &source[s.start as usize..s.end as usize]))
+                    .collect(),
+            ),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn call_args_lambda_parameters_use_exact_declaration_spans() {
+    let src = r#"
+class C {
+    void m() {
+        bare(x -> x.run());
+        inferred((left, right) -> left.run());
+        formal((String name, int count) -> name.trim());
+    }
+}
+"#;
+    assert_eq!(
+        callback_parameters(src, &call_args_for(src, "bare")),
+        vec![vec![Some("x")]]
+    );
+    assert_eq!(
+        callback_parameters(src, &call_args_for(src, "inferred")),
+        vec![vec![Some("left"), Some("right")]]
+    );
+    assert_eq!(
+        callback_parameters(src, &call_args_for(src, "formal")),
+        vec![vec![Some("name"), Some("count")]]
+    );
+}
+
 #[test]
 fn call_args_string_literal() {
     let src = r#"
@@ -164,10 +203,7 @@ class Service {
         Some("Collections"),
         "chain root must be the receiver class Collections"
     );
-    assert_eq!(
-        chain.segments.last().map(|s| s.name.as_str()),
-        Some("sort")
-    );
+    assert_eq!(chain.segments.last().map(|s| s.name.as_str()), Some("sort"));
     // No standalone TypeRef edge to the two-segment receiver.
     assert!(
         refs_to(src, EdgeKind::TypeRef, "Collections").is_empty(),

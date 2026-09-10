@@ -153,8 +153,7 @@ fn callback_param_types(
             let Type::Class(head) = arena.get(base) else {
                 return None;
             };
-            let simple = head.rsplit('.').next().unwrap_or(&head);
-            let (_, shape) = delegate_wrappers.iter().find(|(n, _)| *n == simple)?;
+            let shape = delegate_wrapper_shape(&head, delegate_wrappers)?;
             match shape {
                 DelegateShape::AllParams => Some(args),
                 DelegateShape::LastIsReturn => {
@@ -165,6 +164,25 @@ fn callback_param_types(
         }
         _ => None,
     }
+}
+
+/// Match a configured nominal callback wrapper against its structured type
+/// head. Bare configuration names retain the C# simple-name convention;
+/// qualified entries are exact so a project-local `com.acme.Function` cannot
+/// impersonate `java.util.function.Function`.
+pub(super) fn delegate_wrapper_shape(
+    head: &str,
+    delegate_wrappers: &[(&str, DelegateShape)],
+) -> Option<DelegateShape> {
+    delegate_wrappers
+        .iter()
+        .find_map(|(name, shape)| (name.contains('.') && *name == head).then_some(*shape))
+        .or_else(|| {
+            let simple = head.rsplit('.').next().unwrap_or(head);
+            delegate_wrappers.iter().find_map(|(name, shape)| {
+                (!name.contains('.') && *name == simple).then_some(*shape)
+            })
+        })
 }
 
 /// Record each named lambda parameter under the callback parameter type at the

@@ -13,6 +13,7 @@ pub(super) fn restore(pf: &mut ParsedFile) {
     };
     if super::lexical::syntax_for(config.strategy_prefix).is_none()
         && super::namespaces::syntax_for(config.strategy_prefix).is_none()
+        && !super::callback_lexical::supports(config.strategy_prefix)
     {
         return;
     }
@@ -35,6 +36,7 @@ pub(super) fn restore(pf: &mut ParsedFile) {
         super::flow_bindings::BindingSymbols::CorrelateOnly,
     );
     pf.flow.lexical = identity.lexical;
+    pf.flow.callback_lexical = identity.callback_lexical;
     pf.flow.namespaces = identity.namespaces;
 }
 

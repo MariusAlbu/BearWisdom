@@ -431,3 +431,71 @@ fn func_shaped_delegates_drop_the_trailing_return_arg() {
     assert_eq!(seeded[0].0, "w");
     assert_eq!(arena.format_type(seeded[0].1), "Widget");
 }
+
+#[test]
+fn java_functional_interfaces_seed_only_their_callback_input_slots() {
+    let lookup = SeedLookup::new("Runner.Use", &[]);
+    let arena = TypeArena::new();
+    let mut callee = crate::indexer::resolve::engine::testkit::sym(
+        10,
+        "Use",
+        "Runner.Use",
+        "method",
+        "src/Runner.java",
+    );
+    callee.signature =
+        Some("void Use(java.util.function.BiFunction<Left, Right, Result> callback)".to_string());
+    let left = crate::types::SourceSpan { start: 20, end: 24 };
+    let right = crate::types::SourceSpan { start: 26, end: 31 };
+    let args = vec![CallArg::LambdaAt {
+        params: vec![Some(left), Some(right)],
+    }];
+
+    seed_lambda_params(
+        &lookup,
+        &arena,
+        &callee,
+        &args,
+        arena.class("Runner"),
+        None,
+        &FxHashMap::default(),
+        crate::languages::java::JAVA_PROFILE.delegate_wrappers,
+    );
+
+    let contextual = lookup.contextual.borrow();
+    assert_eq!(contextual.len(), 2);
+    assert_eq!(contextual[0].0, left);
+    assert_eq!(arena.format_type(contextual[0].1), "Left");
+    assert_eq!(contextual[1].0, right);
+    assert_eq!(arena.format_type(contextual[1].1), "Right");
+}
+
+#[test]
+fn java_custom_function_name_is_not_a_jdk_callback_wrapper() {
+    let lookup = SeedLookup::new("Runner.Use", &[]);
+    let arena = TypeArena::new();
+    let mut callee = crate::indexer::resolve::engine::testkit::sym(
+        11,
+        "Use",
+        "Runner.Use",
+        "method",
+        "src/Runner.java",
+    );
+    callee.signature = Some("void Use(com.acme.Function<Left, Result> callback)".to_string());
+    let args = vec![CallArg::LambdaAt {
+        params: vec![Some(crate::types::SourceSpan { start: 20, end: 21 })],
+    }];
+
+    seed_lambda_params(
+        &lookup,
+        &arena,
+        &callee,
+        &args,
+        arena.class("Runner"),
+        None,
+        &FxHashMap::default(),
+        crate::languages::java::JAVA_PROFILE.delegate_wrappers,
+    );
+
+    assert!(lookup.contextual.borrow().is_empty());
+}

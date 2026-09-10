@@ -15,6 +15,7 @@ pub(in crate::indexer) fn capture(
     meta.ref_byte_offsets = refs.iter().map(|r| r.byte_offset).collect();
     crate::indexer::namespaces::stamp_calls(root, src, prefix, refs);
     meta.lexical = crate::indexer::lexical::capture(root, src, prefix, symbols, refs, bindings);
+    meta.callback_lexical = crate::indexer::callback_lexical::capture(root, src, prefix, refs);
     meta.namespaces = crate::indexer::namespaces::capture(root, src, prefix, symbols, refs);
     if let Some(data) = &mut meta.namespaces {
         meta.lexical = Some(crate::indexer::namespaces::capture_locals(

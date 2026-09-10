@@ -192,7 +192,9 @@ pub struct LanguageProfile {
     pub name_normalization: NameNormalization,
     /// Nominal DELEGATE wrappers whose generic arguments carry a callback's
     /// parameter types — `Action<T1,T2>` (every argument is a parameter),
-    /// `Func<T1,R>` (the last argument is the return). The lambda seeder
+    /// `Func<T1,R>` (the last argument is the return). An entry without `.`
+    /// matches its simple type name (the C# BCL convention); an entry with `.`
+    /// matches only that exact fully-qualified type name. The lambda seeder
     /// unwraps a callee parameter of this shape into the function type it
     /// wraps, so an un-annotated lambda argument's parameters seed from the
     /// delegate's arguments. Empty (the default) leaves nominal callee

@@ -6,8 +6,8 @@
 
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, ConstructorPattern, DecoratorSyntax, DispatchAxis, KindTable,
-    LanguageProfile, SupertypeDiscovery,
+    ChainQualification, ConstructorPattern, DecoratorSyntax, DelegateShape, DispatchAxis,
+    KindTable, LanguageProfile, SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind, Visibility};
 
@@ -116,7 +116,44 @@ pub const JAVA_PROFILE: LanguageProfile = LanguageProfile {
     ambient_namespace_prefixes: &[],
     wildcard_builtins: &[],
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
-    delegate_wrappers: &[],
+    // Generic JDK callback interfaces. Their callback-parameter positions are
+    // recoverable entirely from their generic arguments. Interfaces with a
+    // fixed primitive or repeated generic parameter position (for example
+    // IntConsumer or BinaryOperator) are intentionally absent because the
+    // generic slots cannot describe their complete callback inputs.
+    delegate_wrappers: &[
+        ("java.util.function.Consumer", DelegateShape::AllParams),
+        ("java.util.function.BiConsumer", DelegateShape::AllParams),
+        ("java.util.function.Function", DelegateShape::LastIsReturn),
+        ("java.util.function.BiFunction", DelegateShape::LastIsReturn),
+        ("java.util.function.Predicate", DelegateShape::AllParams),
+        ("java.util.function.BiPredicate", DelegateShape::AllParams),
+        ("java.util.function.Supplier", DelegateShape::LastIsReturn),
+        // UnaryOperator<T> has one callback parameter of T. BinaryOperator<T>
+        // needs T twice, which the two generic-slot shapes cannot express.
+        ("java.util.function.UnaryOperator", DelegateShape::AllParams),
+        ("java.util.function.ToIntFunction", DelegateShape::AllParams),
+        (
+            "java.util.function.ToLongFunction",
+            DelegateShape::AllParams,
+        ),
+        (
+            "java.util.function.ToDoubleFunction",
+            DelegateShape::AllParams,
+        ),
+        (
+            "java.util.function.ToIntBiFunction",
+            DelegateShape::AllParams,
+        ),
+        (
+            "java.util.function.ToLongBiFunction",
+            DelegateShape::AllParams,
+        ),
+        (
+            "java.util.function.ToDoubleBiFunction",
+            DelegateShape::AllParams,
+        ),
+    ],
     overload_pick_all: false,
     argument_dependent_lookup: false,
     associated_type_projection: false,

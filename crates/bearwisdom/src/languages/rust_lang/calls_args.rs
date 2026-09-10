@@ -3,7 +3,7 @@
 // =============================================================================
 
 use super::helpers::node_text;
-use crate::types::CallArg;
+use crate::types::{CallArg, SourceSpan};
 use tree_sitter::Node;
 
 #[cfg(test)]
@@ -147,22 +147,22 @@ fn extract_arg(node: &Node, source: &str, depth: u32) -> CallArg {
             }
         }
         // `|x| x.foo()`, `|a, b| f(a, b)` — closure expression. Capture the
-        // closure's own positional parameter names so the chain walker can type
+        // closure's own positional parameter spans so the chain walker can type
         // them from the higher-order method's callback-parameter signature.
-        "closure_expression" => CallArg::Lambda {
-            params: closure_param_names(node, source),
+        "closure_expression" => CallArg::LambdaAt {
+            params: closure_param_spans(node),
         },
         _ => CallArg::Other,
     }
 }
 
-/// Collect the positional parameter identifier names of a Rust
+/// Collect the positional parameter declaration spans of a Rust
 /// `closure_expression` argument. The `parameters` field is a
-/// `closure_parameters` node whose children are the parameter patterns; a plain
-/// `identifier` contributes its name, any other pattern (tuple, ref, typed
-/// `pattern: type`) yields an empty slot so positions stay aligned with the
+/// `closure_parameters` node whose children are the parameter patterns; only a
+/// plain `identifier` contributes a span. Mutable, typed, and destructured
+/// patterns retain `None` slots so positions stay aligned with the
 /// callback signature.
-fn closure_param_names(node: &Node, source: &str) -> Vec<String> {
+fn closure_param_spans(node: &Node) -> Vec<Option<SourceSpan>> {
     let Some(params) = node.child_by_field_name("parameters") else {
         return Vec::new();
     };
@@ -170,11 +170,10 @@ fn closure_param_names(node: &Node, source: &str) -> Vec<String> {
     params
         .named_children(&mut cursor)
         .map(|p| {
-            if p.kind() == "identifier" {
-                node_text(&p, source)
-            } else {
-                String::new()
-            }
+            (p.kind() == "identifier").then(|| SourceSpan {
+                start: p.start_byte() as u32,
+                end: p.end_byte() as u32,
+            })
         })
         .collect()
 }

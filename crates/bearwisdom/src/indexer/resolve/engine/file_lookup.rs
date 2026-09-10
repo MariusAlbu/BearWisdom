@@ -31,6 +31,10 @@ pub(super) struct FileLookup<'a> {
     program: Option<super::program_view::Lookup<'a>>,
     module_site: super::module_graph::ModuleSite,
     lexical: Option<super::lexical_cache::LexicalCache<'a>>,
+    /// Callback-only lexical identity for legacy languages. Unlike `lexical`,
+    /// this cache deliberately has no declaration/type installation: it exists
+    /// only to address contextual callback facts by source binding identity.
+    callback_lexical: Option<super::lexical_cache::LexicalCache<'a>>,
     namespace_roots: FxHashMap<u32, super::contract::flow_cache::LocalReference>,
     namespace_selectors: FxHashMap<u32, super::contract::flow_cache::LocalReference>,
     method_calls: FxHashMap<u32, i64>,
@@ -85,6 +89,7 @@ impl<'a> FileLookup<'a> {
             program: None,
             module_site: Default::default(),
             lexical: None,
+            callback_lexical: None,
             namespace_roots: FxHashMap::default(),
             namespace_selectors: FxHashMap::default(),
             method_calls: FxHashMap::default(),
@@ -191,6 +196,10 @@ impl<'a> FileLookup<'a> {
             }
         }
         lookup.lexical = pf.flow.lexical.as_ref().and_then(|bindings| {
+            tree.type_arena()
+                .map(|arena| super::lexical_cache::LexicalCache::new(bindings, arena))
+        });
+        lookup.callback_lexical = pf.flow.callback_lexical.as_ref().and_then(|bindings| {
             tree.type_arena()
                 .map(|arena| super::lexical_cache::LexicalCache::new(bindings, arena))
         });

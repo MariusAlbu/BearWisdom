@@ -5,7 +5,7 @@
 use super::helpers::{node_text, type_node_simple_name};
 use crate::types::{
     CallArg, ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind,
-    SymbolKind,
+    SourceSpan, SymbolKind,
 };
 use tree_sitter::Node;
 
@@ -151,49 +151,54 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
             .map(|n| extract_arg(&n, src, depth + 1))
             .unwrap_or(CallArg::Other),
         // `x -> x.f()`, `(a, b) -> g(a, b)`, `(String s) -> h(s)` — capture the
-        // lambda's own positional parameter names so the chain walker can type
+        // lambda's own positional parameter spans so the chain walker can type
         // them from the higher-order method's callback-parameter signature.
-        "lambda_expression" => CallArg::Lambda {
-            params: lambda_arg_param_names(node, src),
+        "lambda_expression" => CallArg::LambdaAt {
+            params: lambda_arg_param_spans(node),
         },
         _ => CallArg::Other,
     }
 }
 
-/// Collect the positional parameter identifier names of a Java
+/// Collect the positional parameter declaration spans of a Java
 /// `lambda_expression` argument. The `parameters` field is one of: a bare
 /// `identifier` (`x -> ...`), an `inferred_parameters` list of `identifier`s
 /// (`(x, y) -> ...`), or a `formal_parameters` list of `formal_parameter`
-/// nodes carrying a `name` field (`(Type x) -> ...`). A parameter without a
-/// plain `name` identifier yields an empty slot so positions stay aligned with
+/// nodes carrying a `name` field (`(Type x) -> ...`). An unsupported parameter
+/// retains a `None` slot so positions stay aligned with
 /// the callback signature.
-fn lambda_arg_param_names(node: &Node, src: &[u8]) -> Vec<String> {
+fn lambda_arg_param_spans(node: &Node) -> Vec<Option<SourceSpan>> {
     let Some(params) = node.child_by_field_name("parameters") else {
         return Vec::new();
     };
     match params.kind() {
-        "identifier" => vec![node_text(params, src)],
+        "identifier" => vec![Some(source_span(params))],
         "inferred_parameters" => {
             let mut cursor = params.walk();
             params
                 .named_children(&mut cursor)
-                .filter(|p| p.kind() == "identifier")
-                .map(|p| node_text(p, src))
+                .map(|p| (p.kind() == "identifier").then(|| source_span(p)))
                 .collect()
         }
         "formal_parameters" => {
             let mut cursor = params.walk();
             params
                 .named_children(&mut cursor)
-                .filter(|p| p.kind() == "formal_parameter")
                 .map(|p| {
-                    p.child_by_field_name("name")
-                        .map(|n| node_text(n, src))
-                        .unwrap_or_default()
+                    (p.kind() == "formal_parameter")
+                        .then(|| p.child_by_field_name("name").map(source_span))
+                        .flatten()
                 })
                 .collect()
         }
         _ => Vec::new(),
+    }
+}
+
+fn source_span(node: Node) -> SourceSpan {
+    SourceSpan {
+        start: node.start_byte() as u32,
+        end: node.end_byte() as u32,
     }
 }
 
@@ -236,9 +241,8 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     // field. Only emit the prefix TypeRef for nested-namespace
                     // chains (`Stripe.Event.create()`), where the segment
                     // before the method is a genuine intermediate type.
-                    let has_namespace_prefix = chain
-                        .as_ref()
-                        .map_or(false, |c| c.segments.len() >= 3);
+                    let has_namespace_prefix =
+                        chain.as_ref().map_or(false, |c| c.segments.len() >= 3);
                     if has_namespace_prefix {
                         crate::languages::emit_chain_type_ref(
                             &chain,

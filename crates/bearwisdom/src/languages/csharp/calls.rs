@@ -8,7 +8,9 @@ use super::calls_narrowing::{
 };
 use super::helpers::node_text;
 use super::types::simple_type_name;
-use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
+use crate::types::{
+    CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind, SourceSpan,
+};
 use tree_sitter::Node;
 
 /// Maximum nesting depth for recursive `CallArg` construction. Arguments
@@ -201,39 +203,45 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
             }
         }
         // `u => u.Name`, `(x, y) => f(x, y)`, `delegate(int z) { ... }` —
-        // capture the lambda's own positional parameter names so the chain
+        // capture the lambda's own positional parameter spans so the chain
         // walker can type them from the higher-order method's callback-
         // parameter signature.
-        "lambda_expression" | "anonymous_method_expression" => CallArg::Lambda {
-            params: lambda_param_names(node, src),
+        "lambda_expression" | "anonymous_method_expression" => CallArg::LambdaAt {
+            params: lambda_param_spans(node),
         },
         _ => CallArg::Other,
     }
 }
 
-/// Collect the positional parameter identifier names of a C# lambda /
+/// Collect the positional parameter declaration spans of a C# lambda /
 /// anonymous-method argument. The `parameters` field is either a single
 /// `implicit_parameter` (`u => ...`, whose node text IS the name) or a
 /// `parameter_list` of `parameter` nodes carrying a `name` field. A parameter
-/// without a plain `name` identifier yields an empty slot so positions stay
+/// without a plain `name` identifier retains a `None` slot so positions stay
 /// aligned with the callback signature.
-fn lambda_param_names(node: &Node, src: &[u8]) -> Vec<String> {
+fn lambda_param_spans(node: &Node) -> Vec<Option<SourceSpan>> {
     let Some(params) = node.child_by_field_name("parameters") else {
         return Vec::new();
     };
     if params.kind() == "implicit_parameter" {
-        return vec![node_text(params, src)];
+        return vec![Some(source_span(params))];
     }
     let mut cursor = params.walk();
     params
         .named_children(&mut cursor)
-        .filter(|p| p.kind() == "parameter")
         .map(|p| {
-            p.child_by_field_name("name")
-                .map(|n| node_text(n, src))
-                .unwrap_or_default()
+            (p.kind() == "parameter")
+                .then(|| p.child_by_field_name("name").map(source_span))
+                .flatten()
         })
         .collect()
+}
+
+fn source_span(node: Node) -> SourceSpan {
+    SourceSpan {
+        start: node.start_byte() as u32,
+        end: node.end_byte() as u32,
+    }
 }
 
 /// Replace `{...}` interpolation holes in a C# interpolated string with

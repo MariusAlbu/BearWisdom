@@ -16,6 +16,42 @@ fn parse_call_args(src: &str) -> Vec<CallArg> {
         .unwrap_or_default()
 }
 
+fn callback_parameters<'a>(source: &'a str, args: &[CallArg]) -> Vec<Vec<Option<&'a str>>> {
+    args.iter()
+        .filter_map(|arg| match arg {
+            CallArg::LambdaAt { params } => Some(
+                params
+                    .iter()
+                    .map(|span| span.map(|s| &source[s.start as usize..s.end as usize]))
+                    .collect(),
+            ),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn call_args_plain_closure_parameter_uses_its_source_span() {
+    let src = r#"
+fn caller() { f(|item| item.process()); }
+"#;
+    assert_eq!(
+        callback_parameters(src, &parse_call_args(src)),
+        vec![vec![Some("item")]]
+    );
+}
+
+#[test]
+fn call_args_unsupported_closure_patterns_keep_positional_none() {
+    let src = r#"
+fn caller() { f(|(left, right), mut item, typed: Value| typed.process()); }
+"#;
+    assert_eq!(
+        callback_parameters(src, &parse_call_args(src)),
+        vec![vec![None, None, None]]
+    );
+}
+
 #[test]
 fn call_args_array_expression_produces_array_literal_variant() {
     let src = r#"

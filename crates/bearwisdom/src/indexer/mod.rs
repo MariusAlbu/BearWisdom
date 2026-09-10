@@ -1,3 +1,4 @@
+pub(crate) mod callback_lexical;
 pub mod canonical_form;
 pub mod changeset;
 mod contract_bindings;

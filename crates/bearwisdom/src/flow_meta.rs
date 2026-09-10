@@ -6,6 +6,10 @@ use std::collections::HashMap;
 pub struct FlowMeta {
     /// Syntax-derived lexical identity. None means this language/form is not migrated.
     pub lexical: Option<crate::indexer::lexical::LexicalBindings>,
+    /// Callback-only lexical identity for languages that do not yet opt into
+    /// the full source lexical graph. It contains only lambda parameter
+    /// declarations and extracted callback-body root references.
+    pub callback_lexical: Option<crate::indexer::lexical::LexicalBindings>,
     pub namespaces: Option<crate::indexer::namespaces::NamespaceData>,
     pub narrowings: Vec<Narrowing>,
     pub discriminant_narrowings: Vec<DiscriminantNarrowing>,

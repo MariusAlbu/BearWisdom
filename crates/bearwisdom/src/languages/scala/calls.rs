@@ -4,7 +4,9 @@
 
 use super::decorators::extract_match_patterns;
 use super::helpers::{call_target_name, node_text};
-use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
+use crate::types::{
+    CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind, SourceSpan,
+};
 use tree_sitter::Node;
 
 #[cfg(test)]
@@ -31,8 +33,8 @@ pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
                     .named_children(&mut bc)
                     .find(|n| n.kind() == "lambda_expression")
                 {
-                    return vec![CallArg::Lambda {
-                        params: scala_lambda_param_names(&lambda, src),
+                    return vec![CallArg::LambdaAt {
+                        params: scala_lambda_param_spans(&lambda),
                     }];
                 }
                 return Vec::new();
@@ -55,10 +57,10 @@ pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
             "integer_literal" | "floating_point_literal" => CallArg::Literal(node_text(child, src)),
             "boolean_literal" | "null_literal" => CallArg::Literal(child.kind().to_string()),
             // `x => x.foo`, `(a, b) => f(a, b)` — capture the lambda's own
-            // positional parameter names so the chain walker can type them from
+            // positional parameter spans so the chain walker can type them from
             // the higher-order method's callback-parameter signature.
-            "lambda_expression" => CallArg::Lambda {
-                params: scala_lambda_param_names(&child, src),
+            "lambda_expression" => CallArg::LambdaAt {
+                params: scala_lambda_param_spans(&child),
             },
             _ => CallArg::Other,
         };
@@ -67,28 +69,24 @@ pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
     out
 }
 
-/// Collect the positional parameter identifier names of a Scala
+/// Collect the positional parameter declaration spans of a Scala
 /// `lambda_expression` argument. The `parameters` field is either a single
 /// `identifier` (`x => ...`) or a `bindings` node of `binding` children whose
 /// `name` field is the parameter identifier (`(a, b) => ...`). A binding
-/// without a plain `name` identifier yields an empty slot so positions stay
+/// without a plain `name` identifier retains a `None` slot so positions stay
 /// aligned with the callback signature.
-fn scala_lambda_param_names(node: &Node, src: &[u8]) -> Vec<String> {
+fn scala_lambda_param_spans(node: &Node) -> Vec<Option<SourceSpan>> {
     let Some(params) = node.child_by_field_name("parameters") else {
         return Vec::new();
     };
     match params.kind() {
-        "identifier" => vec![node_text(params, src)],
+        "identifier" => vec![Some(source_span(params))],
         "bindings" => {
             let mut cursor = params.walk();
             params
                 .named_children(&mut cursor)
                 .filter(|b| b.kind() == "binding")
-                .map(|b| {
-                    b.child_by_field_name("name")
-                        .map(|n| node_text(n, src))
-                        .unwrap_or_default()
-                })
+                .map(|b| b.child_by_field_name("name").map(source_span))
                 .collect()
         }
         _ => Vec::new(),
@@ -338,6 +336,13 @@ pub(super) fn build_chain(node: &Node, src: &[u8]) -> Option<MemberChain> {
         return None;
     }
     Some(MemberChain { segments })
+}
+
+fn source_span(node: Node) -> SourceSpan {
+    SourceSpan {
+        start: node.start_byte() as u32,
+        end: node.end_byte() as u32,
+    }
 }
 
 /// Mark the final member in a chain as invoked by its containing call node.

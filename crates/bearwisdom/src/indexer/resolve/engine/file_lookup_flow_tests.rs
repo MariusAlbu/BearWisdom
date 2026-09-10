@@ -846,3 +846,256 @@ fn scoped_writes_require_identity_and_clear_removes_inference() {
     assert_eq!(lookup.local_callable_id("value"), None);
     assert!(lookup.root_cause_hint("value").is_none());
 }
+
+#[test]
+fn callback_only_bindings_use_spans_and_block_legacy_same_name_fallbacks() {
+    use crate::types::SourceSpan;
+
+    let arena = Arc::new(TypeArena::new());
+    let tree = Compilation::build(&[], &Default::default(), Arc::clone(&arena));
+    let mut graph = LexicalBindings::default();
+    let root = graph.add_scope(None, 0, 100, true);
+    let outer_scope = graph.add_scope(Some(root), 10, 90, true);
+    let inner_scope = graph.add_scope(Some(outer_scope), 30, 70, true);
+    let name = graph.intern("item");
+    let outer = graph.declare(outer_scope, name, 10, None);
+    let inner = graph.declare(inner_scope, name, 30, None);
+    let outer_parameter = SourceSpan { start: 10, end: 14 };
+    let inner_parameter = SourceSpan { start: 30, end: 34 };
+    graph.declarations.insert(outer_parameter, outer);
+    graph.declarations.insert(inner_parameter, inner);
+    graph.references.insert(20, outer);
+    graph.references.insert(40, inner);
+
+    let mut lookup = FileLookup::new(&tree, "rust");
+    lookup.callback_lexical = Some(super::super::super::lexical_cache::LexicalCache::new(
+        &graph, &arena,
+    ));
+    let outer_type = arena.class("Outer");
+    let inner_type = arena.class("Inner");
+    let conflict = arena.class("Conflict");
+    let legacy = arena.class("Legacy");
+
+    // A legacy name write before either callback remains usable outside their
+    // scopes, but must not become evidence for either `item` declaration.
+    lookup.set_cursor(5);
+    lookup.record_local_type_id("item".into(), legacy);
+    assert_eq!(lookup.local_type_id("item"), Some(legacy));
+    lookup.set_cursor(25);
+    assert!(
+        !lookup.has_local_binding("item"),
+        "a scope-visible callback name is insufficient without an exact read"
+    );
+    assert_eq!(
+        lookup.local_type_id("item"),
+        Some(legacy),
+        "an unmodeled inner shadow remains eligible for legacy flow evidence"
+    );
+    lookup.set_cursor(20);
+    assert!(lookup.has_local_binding("item"));
+    assert_eq!(
+        lookup.local_type_id("item"),
+        None,
+        "a mapped callback with no context must still block the legacy name"
+    );
+    assert_eq!(lookup.local_type("item"), None);
+
+    // Exact declaration spans select their own binding. A nearby span is not
+    // identity and cannot seed either callback.
+    lookup.record_contextual_type(
+        SourceSpan {
+            start: outer_parameter.start,
+            end: outer_parameter.end - 1,
+        },
+        conflict,
+    );
+    lookup.record_contextual_type(outer_parameter, outer_type);
+    lookup.record_contextual_type(inner_parameter, inner_type);
+
+    lookup.set_cursor(20);
+    assert!(lookup.has_local_binding("item"));
+    assert_eq!(lookup.local_type_id("item"), Some(outer_type));
+    assert_eq!(lookup.local_type("item"), None);
+    assert_eq!(
+        lookup
+            .local_reference(20)
+            .and_then(|value| value.value_type),
+        Some(outer_type),
+        "the outer read must use its stored binding identity"
+    );
+
+    lookup.set_cursor(40);
+    assert!(lookup.has_local_binding("item"));
+    assert_eq!(lookup.local_type_id("item"), Some(inner_type));
+    assert_eq!(
+        lookup
+            .local_reference(40)
+            .and_then(|value| value.value_type),
+        Some(inner_type),
+        "the nested same-name callback must not read outer or legacy evidence"
+    );
+
+    // Two incompatible contexts for one exact parameter degrade only that
+    // binding to Unknown; the outer callback remains concrete.
+    lookup.record_contextual_type(inner_parameter, conflict);
+    assert_eq!(
+        lookup.local_type_id("item"),
+        Some(arena.intern(crate::type_checker::core::types::Type::Unknown))
+    );
+    lookup.set_cursor(20);
+    assert_eq!(lookup.local_type_id("item"), Some(outer_type));
+
+    lookup.clear_local_cache();
+    lookup.set_cursor(20);
+    assert_eq!(lookup.local_type_id("item"), None);
+    lookup.set_cursor(5);
+    assert_eq!(lookup.local_type_id("item"), None);
+}
+
+#[test]
+fn full_lexical_context_precedes_an_overlapping_callback_graph() {
+    use crate::types::SourceSpan;
+
+    let arena = Arc::new(TypeArena::new());
+    let tree = Compilation::build(&[], &Default::default(), Arc::clone(&arena));
+    let parameter = SourceSpan { start: 10, end: 14 };
+    let mut full = LexicalBindings::default();
+    let full_scope = full.add_scope(None, 0, 100, true);
+    let full_name = full.intern("item");
+    let full_binding = full.declare(full_scope, full_name, 10, None);
+    full.declarations.insert(parameter, full_binding);
+    full.references.insert(20, full_binding);
+
+    let mut callback = LexicalBindings::default();
+    let callback_scope = callback.add_scope(None, 0, 100, true);
+    let callback_name = callback.intern("item");
+    let callback_binding = callback.declare(callback_scope, callback_name, 10, None);
+    callback.declarations.insert(parameter, callback_binding);
+    callback.references.insert(20, callback_binding);
+
+    let mut lookup = FileLookup::new(&tree, "rust");
+    lookup.lexical = Some(super::super::super::lexical_cache::LexicalCache::new(
+        &full, &arena,
+    ));
+    lookup.callback_lexical = Some(super::super::super::lexical_cache::LexicalCache::new(
+        &callback, &arena,
+    ));
+    let full_type = arena.class("Full");
+    lookup.record_contextual_type(parameter, full_type);
+    lookup.set_cursor(20);
+
+    assert_eq!(lookup.local_type_id("item"), Some(full_type));
+    assert_eq!(
+        lookup
+            .callback_lexical
+            .as_ref()
+            .and_then(|cache| cache.attested_local_type("item"))
+            .flatten(),
+        None,
+        "the callback graph must not receive a context owned by full lexical data"
+    );
+}
+
+#[test]
+fn scala_lambda_at_span_seeds_its_exact_callback_root() {
+    use crate::types::CallArg;
+    use rustc_hash::FxHashMap;
+
+    let source = "class Item { def touch(): Unit = () }\nclass Runner { def use(f: Item => Unit): Unit = () }\nobject P { def run(r: Runner) = r.use(x => x.touch()) }\n";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("callbacks.scala");
+    std::fs::write(&path, source).unwrap();
+    let arena = Arc::new(TypeArena::new());
+    let parsed = crate::indexer::parse_file::parse_file_with_arena(
+        &crate::walker::WalkedFile {
+            relative_path: "callbacks.scala".into(),
+            absolute_path: path,
+            language: "scala",
+        },
+        crate::languages::default_registry(),
+        &arena,
+    )
+    .unwrap();
+    let files = [parsed];
+    let callback = files[0]
+        .refs
+        .iter()
+        .find(|reference| {
+            reference.target_name == "use"
+                && reference
+                    .call_args
+                    .iter()
+                    .any(|arg| matches!(arg, CallArg::LambdaAt { .. }))
+        })
+        .expect("Scala use call must retain its LambdaAt argument");
+    let parameter = callback
+        .call_args
+        .iter()
+        .find_map(|arg| match arg {
+            CallArg::LambdaAt { params } => params.first().copied().flatten(),
+            _ => None,
+        })
+        .expect("Scala callback parameter must retain an exact source span");
+    let root = files[0]
+        .refs
+        .iter()
+        .find(|reference| {
+            reference.target_name == "touch"
+                && reference
+                    .chain
+                    .as_ref()
+                    .and_then(|chain| chain.segments.first())
+                    .is_some_and(|segment| segment.name == "x")
+        })
+        .expect("x.touch must retain x as its chain root")
+        .byte_offset;
+    let graph = files[0]
+        .flow
+        .callback_lexical
+        .as_ref()
+        .expect("Scala LambdaAt must build callback-only identity");
+    assert!(graph.declarations.contains_key(&parameter));
+    assert!(graph.references.contains_key(&root));
+
+    let db = crate::Database::open_in_memory().unwrap();
+    let (_, ids) = crate::indexer::write::write_parsed_files_with_origin(
+        &db,
+        &files,
+        "internal",
+        Some(&arena),
+    )
+    .unwrap();
+    let tree = Compilation::build(&files, &ids, Arc::clone(&arena));
+    let lookup = FileLookup::for_file(&tree, &files[0], &ids);
+    lookup.set_cursor(root);
+    assert_eq!(lookup.local_type_id("x"), None);
+
+    let callee = crate::indexer::resolve::engine::testkit::sym_with_sig(
+        900,
+        "use",
+        "Runner.use",
+        "method",
+        "callbacks.scala",
+        "use(f: (Item) => Unit): Unit",
+    );
+    crate::indexer::resolve::engine::lambda_seed::seed_lambda_params(
+        &lookup,
+        &arena,
+        &callee,
+        &callback.call_args,
+        arena.class("Runner"),
+        None,
+        &FxHashMap::default(),
+        &[],
+    );
+
+    lookup.set_cursor(root);
+    assert_eq!(lookup.local_type_id("x"), Some(arena.class("Item")));
+    assert_eq!(
+        lookup
+            .local_reference(root)
+            .and_then(|value| value.value_type),
+        Some(arena.class("Item")),
+        "the contextual span must be readable only through the exact callback root"
+    );
+}
