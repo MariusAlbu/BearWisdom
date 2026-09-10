@@ -162,6 +162,10 @@ fn rbi_rejects_non_exact_positional_proc_contract_shapes() {
             "sig { params(callback: T.proc.void).void }\n  def each(callback:); end",
         ),
         (
+            "keyrest positional parameter",
+            "sig { params(callback: T.proc.void).void }\n  def each(**callback); end",
+        ),
+        (
             "splat positional parameter",
             "sig { params(callback: T.proc.void).void }\n  def each(*callback); end",
         ),
@@ -284,6 +288,13 @@ end"#,
             r#"class Catalog
   sig { params(name: Name, block: T.proc.void).void }
   def each(name:, &block); end
+end"#,
+        ),
+        (
+            "keyrest method parameter",
+            r#"class Catalog
+  sig { params(name: Name, block: T.proc.void).void }
+  def each(**name, &block); end
 end"#,
         ),
         (

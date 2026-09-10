@@ -14,6 +14,37 @@ fn no_plugins() -> rustc_hash::FxHashMap<&'static str, &'static dyn crate::langu
     rustc_hash::FxHashMap::default()
 }
 
+/// Rehydrate the two parsed files through the portable cache using a fresh
+/// arena, retaining source text so callback lexical identity can be rebuilt.
+fn cold_cache_files(files: &[ParsedFile], arena: &TypeArena) -> (Arc<TypeArena>, Vec<ParsedFile>) {
+    let payloads: Vec<crate::indexer::external_parse_payload::CachedParse> = files
+        .iter()
+        .map(|file| {
+            let payload =
+                crate::indexer::external_parse_payload::CachedParse::from_parsed(file, arena);
+            serde_json::from_str(&serde_json::to_string(&payload).unwrap()).unwrap()
+        })
+        .collect();
+    let cold_arena = Arc::new(TypeArena::new());
+    let cold_files = payloads
+        .into_iter()
+        .zip(files)
+        .map(|(payload, file)| {
+            let mut cold = payload.into_parsed(
+                &cold_arena,
+                &file.path,
+                &file.content_hash,
+                file.size,
+                file.mtime,
+            );
+            cold.content = file.content.clone();
+            crate::indexer::contract_bindings::restore(&mut cold);
+            cold
+        })
+        .collect();
+    (cold_arena, cold_files)
+}
+
 // ---------------------------------------------------------------------------
 // BuiltinSkipRule drain — end-to-end through the full resolve pipeline
 // ---------------------------------------------------------------------------
@@ -183,6 +214,28 @@ fn engine_selects_an_rbs_contract_before_typing_a_ruby_trailing_block() {
         edges.iter().any(|edge| edge.1 == touch_id),
         "the selected RBS callback type must seed item before item.touch resolves; edges={edges:?}; unresolved={unresolved:?}"
     );
+
+    let (cold_arena, cold_files) = cold_cache_files(&files, &arena);
+    let cold_tree = crate::indexer::resolve::engine::compilation::Compilation::build(
+        &cold_files,
+        &ids,
+        Arc::clone(&cold_arena),
+    );
+    let (cold_edges, cold_unresolved, _ref_log, _census) = super::resolve_one_file(
+        &cold_files[1],
+        &cold_tree,
+        &profiles,
+        &no_plugins(),
+        None,
+        &solver,
+        &ids,
+        None,
+    );
+    assert!(
+        cold_edges.iter().any(|edge| edge.1 == visit_id)
+            && cold_edges.iter().any(|edge| edge.1 == touch_id),
+        "cold RBS callback resolution must retain both edges; edges={cold_edges:?}; unresolved={cold_unresolved:?}"
+    );
 }
 
 #[test]
@@ -275,6 +328,28 @@ fn engine_selects_an_rbi_contract_before_typing_a_ruby_trailing_block() {
         edges.iter().any(|edge| edge.1 == touch_id),
         "the selected RBI callback type must seed item before item.touch resolves; edges={edges:?}; unresolved={unresolved:?}"
     );
+
+    let (cold_arena, cold_files) = cold_cache_files(&files, &arena);
+    let cold_tree = crate::indexer::resolve::engine::compilation::Compilation::build(
+        &cold_files,
+        &ids,
+        Arc::clone(&cold_arena),
+    );
+    let (cold_edges, cold_unresolved, _ref_log, _census) = super::resolve_one_file(
+        &cold_files[1],
+        &cold_tree,
+        &profiles,
+        &no_plugins(),
+        None,
+        &solver,
+        &ids,
+        None,
+    );
+    assert!(
+        cold_edges.iter().any(|edge| edge.1 == visit_id)
+            && cold_edges.iter().any(|edge| edge.1 == touch_id),
+        "cold RBI attached-block resolution must retain both edges; edges={cold_edges:?}; unresolved={cold_unresolved:?}"
+    );
 }
 
 #[test]
@@ -366,6 +441,28 @@ fn engine_selects_an_rbi_positional_proc_before_typing_a_ruby_arrow_lambda() {
     assert!(
         edges.iter().any(|edge| edge.1 == touch_id),
         "the selected RBI positional proc must seed item before item.touch resolves; edges={edges:?}; unresolved={unresolved:?}"
+    );
+
+    let (cold_arena, cold_files) = cold_cache_files(&files, &arena);
+    let cold_tree = crate::indexer::resolve::engine::compilation::Compilation::build(
+        &cold_files,
+        &ids,
+        Arc::clone(&cold_arena),
+    );
+    let (cold_edges, cold_unresolved, _ref_log, _census) = super::resolve_one_file(
+        &cold_files[1],
+        &cold_tree,
+        &profiles,
+        &no_plugins(),
+        None,
+        &solver,
+        &ids,
+        None,
+    );
+    assert!(
+        cold_edges.iter().any(|edge| edge.1 == visit_id)
+            && cold_edges.iter().any(|edge| edge.1 == touch_id),
+        "cold RBI positional-proc resolution must retain both edges; edges={cold_edges:?}; unresolved={cold_unresolved:?}"
     );
 }
 

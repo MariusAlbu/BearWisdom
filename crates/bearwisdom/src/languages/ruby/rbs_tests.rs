@@ -43,31 +43,78 @@ end
 }
 
 #[test]
-fn rbs_rejects_non_structural_and_overloaded_contracts() {
-    let source = r#"
-class Catalog
-  def optional: () ?{ (Item) -> void } -> void
-  def generic: [T] () { (T) -> void } -> void
-  def union: () { (Item | Other) -> void } -> void
-  def keys: (name: String) { (Item) -> void } -> void
-  def overload: () { (Item) -> void } -> void
-  def overload: () { (Other) -> void } -> void
-  def broken: () { (Item) -> void -> void
-end
-"#;
-    let extracted = super::rbs::extract(source);
-    assert!(
-        extracted
-            .symbols
-            .iter()
-            .all(|symbol| symbol.kind != SymbolKind::Method),
-        "unsupported RBS shapes must not produce callable contracts: {:?}",
-        extracted
-            .symbols
-            .iter()
-            .map(|symbol| &symbol.qualified_name)
-            .collect::<Vec<_>>()
-    );
+fn rbs_rejects_non_exact_callback_contract_shapes() {
+    let cases = [
+        (
+            "positional splat input",
+            "def visit: (*Item) { (Item) -> void } -> void",
+        ),
+        (
+            "keyword input",
+            "def visit: (name: String) { (Item) -> void } -> void",
+        ),
+        (
+            "keyrest input",
+            "def visit: (**String) { (Item) -> void } -> void",
+        ),
+        (
+            "optional block",
+            "def visit: () ?{ (Item) -> void } -> void",
+        ),
+        (
+            "block self type binding modifier",
+            "def visit: () { (Item) [self: Context] -> void } -> void",
+        ),
+        (
+            "visibility modifier",
+            "private def visit: () { (Item) -> void } -> void",
+        ),
+        (
+            "overloaded declaration",
+            "def visit: () { (Item) -> void } -> void\n  def visit: () { (Other) -> void } -> void",
+        ),
+        (
+            "generic method parameters",
+            "def visit: [T] () { (T) -> void } -> void",
+        ),
+        (
+            "generic ordinary input type",
+            "def visit: (Array[Item]) { (Item) -> void } -> void",
+        ),
+        (
+            "union ordinary input type",
+            "def visit: (Item | Other) { (Item) -> void } -> void",
+        ),
+        (
+            "generic callback input type",
+            "def visit: () { (Array[Item]) -> void } -> void",
+        ),
+        (
+            "union callback input type",
+            "def visit: () { (Item | Other) -> void } -> void",
+        ),
+        (
+            "malformed callback contract",
+            "def visit: () { (Item) -> void -> void",
+        ),
+    ];
+
+    for (label, declaration) in cases {
+        let source = format!("class Catalog\n  {declaration}\nend\n");
+        let extracted = super::rbs::extract(&source);
+        assert!(
+            extracted
+                .symbols
+                .iter()
+                .all(|symbol| symbol.kind != SymbolKind::Method),
+            "{label} must not produce an RBS method contract: {:?}",
+            extracted
+                .symbols
+                .iter()
+                .map(|symbol| &symbol.qualified_name)
+                .collect::<Vec<_>>()
+        );
+    }
 }
 
 #[test]

@@ -843,6 +843,31 @@ mod tests {
     }
 
     #[test]
+    fn ruby_walk_ignores_rbs_and_rbi_files_under_a_gem_lib_tree() {
+        let tmp = std::env::temp_dir().join("bw-test-rubygems-contract-files");
+        let _ = std::fs::remove_dir_all(&tmp);
+        make_ruby_fixture(&tmp, &[("devise", "4.9.3")]);
+        let lib = tmp
+            .join("vendor")
+            .join("bundle")
+            .join("ruby")
+            .join("3.2.0")
+            .join("gems")
+            .join("devise-4.9.3")
+            .join("lib");
+        std::fs::write(lib.join("devise.rbi"), "class Devise; end\n").unwrap();
+        std::fs::write(lib.join("devise.rbs"), "class Devise\nend\n").unwrap();
+
+        let roots = discover_ruby_externals(&tmp);
+        let walked = walk_ruby_root(&roots[0]);
+        assert_eq!(walked.len(), 1, "only Ruby implementation source is walked");
+        assert!(walked
+            .iter()
+            .all(|file| file.relative_path.ends_with(".rb")));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
     fn ruby_locator_returns_empty_without_gemfile() {
         let tmp = std::env::temp_dir().join("bw-test-rubygems-empty");
         let _ = std::fs::remove_dir_all(&tmp);
