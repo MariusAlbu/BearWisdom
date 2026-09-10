@@ -15,8 +15,8 @@
 
 use crate::indexer::resolve::engine::chain::head_qname;
 use crate::indexer::resolve::engine::contract::{is_type_like_kind, Symbol, SymbolLookup};
-use crate::indexer::resolve::engine::support::{normalize_name, strip_self_keyword};
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::support::normalize_name;
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 use crate::type_checker::core::types::Type;
 use crate::type_checker::profile::language_profile::NameNormalization;
 use crate::types::EdgeKind;
@@ -29,7 +29,7 @@ impl LookupRule for ScopeVisibleRule {
     }
 
     fn apply(&self, ctx: &BinderContext) -> LookupResult {
-        let target = strip_self_keyword(ctx.target(), ctx.profile.self_keywords);
+        let target = ctx.profile.normalize_receiver_member_target(ctx.target());
         let edge_kind = ctx.edge_kind();
         let norm = ctx.profile.name_normalization;
         let target_norm = normalize_name(norm, target);
@@ -110,7 +110,10 @@ fn constructed_class_of(lookup: &dyn SymbolLookup, sym: &Symbol) -> Option<i64> 
     if simple == sym.name {
         return None;
     }
-    if let Some(t) = lookup.by_qualified_name(&head).filter(|t| is_type_like_kind(&t.kind)) {
+    if let Some(t) = lookup
+        .by_qualified_name(&head)
+        .filter(|t| is_type_like_kind(&t.kind))
+    {
         return Some(t.id);
     }
     let types = lookup.types_by_name(simple);

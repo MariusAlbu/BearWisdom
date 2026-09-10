@@ -5,22 +5,24 @@ mod declarations;
 pub mod extract;
 mod flow;
 mod helpers;
+mod include_resolution;
 pub mod keywords;
 pub mod macro_catalog;
 mod macro_misparse;
+mod predicates;
 mod preproc;
+pub(crate) mod profile;
 mod salvage_callconv;
 mod salvage_defines;
 mod salvage_funcptr;
 mod salvage_macro_expand;
 mod salvage_template_class;
 mod salvage_text;
+mod source_admission;
 mod templates;
 mod type_refs;
 mod typerefs;
 mod visitor;
-mod predicates;
-pub(crate) mod profile;
 pub use profile::C_LANG_PROFILE;
 
 #[cfg(test)]
@@ -51,6 +53,27 @@ use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::ExtractionResult;
 
+fn c_return_type(signature: &str) -> Option<String> {
+    let first = crate::type_checker::profile::signature_parser::first_top_level_token(
+        signature.trim_start(),
+    );
+    let token = match first {
+        "struct" | "enum" | "union" => {
+            crate::type_checker::profile::signature_parser::first_top_level_token(
+                signature[first.len()..].trim_start(),
+            )
+        }
+        _ => first,
+    };
+    (!token.is_empty()
+        && !token.contains('(')
+        && !token.contains(')')
+        && !matches!(
+            token,
+            "void" | "static" | "extern" | "inline" | "const" | "unsigned" | "signed"
+        ))
+    .then(|| token.to_string())
+}
 pub struct CLangPlugin;
 
 impl LanguagePlugin for CLangPlugin {
@@ -59,7 +82,7 @@ impl LanguagePlugin for CLangPlugin {
     }
 
     fn language_ids(&self) -> &[&str] {
-        &["c", "cpp"]
+        &["c", "cpp", "c++"]
     }
 
     fn extensions(&self) -> &[&str] {
@@ -84,7 +107,7 @@ impl LanguagePlugin for CLangPlugin {
     fn grammar(&self, lang_id: &str) -> Option<tree_sitter::Language> {
         match lang_id {
             "c" => Some(tree_sitter_c::LANGUAGE.into()),
-            "cpp" => Some(tree_sitter_cpp::LANGUAGE.into()),
+            "cpp" | "c++" => Some(tree_sitter_cpp::LANGUAGE.into()),
             _ => None,
         }
     }
@@ -95,6 +118,39 @@ impl LanguagePlugin for CLangPlugin {
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         extract::extract_with_file(source, file_path, lang_id)
+    }
+
+    fn signature_return_type(&self, signature: &str) -> Option<String> {
+        c_return_type(signature)
+    }
+
+    fn signature_parameter_types(&self, signature: &str) -> Option<Vec<String>> {
+        crate::languages::prefix_parameter_types(signature)
+    }
+
+    fn signature_declared_type(&self, signature: &str) -> Option<String> {
+        crate::languages::prefix_declared_type(signature)
+    }
+
+    fn is_generated_source_file(&self, content: &str) -> bool {
+        source_admission::is_generated_platform_header(content)
+    }
+
+    fn is_vendored_source_file(&self, path: &str, content: &str) -> bool {
+        source_admission::is_vendored_source_file(path, content)
+    }
+
+    fn supports_namespace_include_splicing(&self) -> bool {
+        false
+    }
+
+    fn resolve_include_target(
+        &self,
+        source_file: &str,
+        include_specifier: &str,
+        indexed_files: &[(&str, &str)],
+    ) -> Option<String> {
+        include_resolution::resolve(source_file, include_specifier, indexed_files)
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {
@@ -149,12 +205,19 @@ impl LanguagePlugin for CLangPlugin {
         keywords::KEYWORDS
     }
 
+    fn signature_type_application(&self, text: &str) -> (String, Vec<String>) {
+        crate::languages::angle_type_application(text)
+    }
+
+    fn signature_type_head<'a>(&self, text: &'a str) -> &'a str {
+        crate::languages::angle_type_head(text)
+    }
+
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::C_LANG_PROFILE)
     }
-
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::C_FLOW_CONFIG)

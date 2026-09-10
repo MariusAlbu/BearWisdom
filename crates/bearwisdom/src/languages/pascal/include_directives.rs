@@ -96,7 +96,10 @@ pub(super) fn file_stem_of(filename: &str) -> Option<String> {
         .rsplit(|c| c == '/' || c == '\\')
         .next()
         .unwrap_or(filename);
-    let stem = basename.rsplit_once('.').map(|(s, _)| s).unwrap_or(basename);
+    let stem = basename
+        .rsplit_once('.')
+        .map(|(s, _)| s)
+        .unwrap_or(basename);
     if stem.is_empty() {
         None
     } else {

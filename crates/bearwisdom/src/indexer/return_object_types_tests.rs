@@ -26,7 +26,10 @@ fn function(name: &str, line: u32) -> ExtractedSymbol {
 #[test]
 fn literal_return_becomes_an_interface_with_property_members() {
     let mut symbols = vec![function("createLogger", 4)];
-    materialize(&mut symbols, vec![(0, vec!["info".to_string(), "warn".to_string()])]);
+    materialize(
+        &mut symbols,
+        vec![(0, vec!["info".to_string(), "warn".to_string()])],
+    );
 
     assert_eq!(symbols.len(), 4);
     let iface = &symbols[1];

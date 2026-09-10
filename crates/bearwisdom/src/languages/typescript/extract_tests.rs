@@ -148,7 +148,9 @@ fn probe_typeof_imported_samename_member_emits_ref() {
     let r = refs(src);
     let trefs: Vec<_> = r
         .iter()
-        .filter(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "fn" && !rf.is_import_binding)
+        .filter(|rf| {
+            rf.kind == EdgeKind::TypeRef && rf.target_name == "fn" && !rf.is_import_binding
+        })
         .collect();
     assert!(
         !trefs.is_empty(),
@@ -318,8 +320,14 @@ import type {
 fn import_type_single_line_emits_module_tagged_bindings() {
     let bindings = import_bindings(r#"import type { A, B } from "m";"#);
     let module = Some("m".to_string());
-    assert!(bindings.contains(&("A".to_string(), module.clone())), "{bindings:?}");
-    assert!(bindings.contains(&("B".to_string(), module)), "{bindings:?}");
+    assert!(
+        bindings.contains(&("A".to_string(), module.clone())),
+        "{bindings:?}"
+    );
+    assert!(
+        bindings.contains(&("B".to_string(), module)),
+        "{bindings:?}"
+    );
 }
 
 #[test]
@@ -327,9 +335,7 @@ fn node_scheme_import_keeps_raw_module_on_binding_and_use() {
     let src = r#"import { join } from "node:path"; join("a", "b");"#;
     let extracted = extract::extract(src, false);
     assert!(extracted.refs.iter().any(|r| {
-        r.is_import_binding
-            && r.target_name == "join"
-            && r.module.as_deref() == Some("node:path")
+        r.is_import_binding && r.target_name == "join" && r.module.as_deref() == Some("node:path")
     }));
     assert!(extracted.refs.iter().any(|r| {
         r.kind == EdgeKind::Calls
@@ -344,8 +350,14 @@ fn import_mixed_per_specifier_type_keyword_emits_bindings() {
     // only. Both names must still bind with the module.
     let bindings = import_bindings(r#"import { type X, Y } from "m";"#);
     let module = Some("m".to_string());
-    assert!(bindings.contains(&("X".to_string(), module.clone())), "{bindings:?}");
-    assert!(bindings.contains(&("Y".to_string(), module)), "{bindings:?}");
+    assert!(
+        bindings.contains(&("X".to_string(), module.clone())),
+        "{bindings:?}"
+    );
+    assert!(
+        bindings.contains(&("Y".to_string(), module)),
+        "{bindings:?}"
+    );
 }
 
 #[test]
@@ -362,9 +374,7 @@ fn import_type_default_emits_module_tagged_binding() {
 fn module_tagged_type_refs(source: &str) -> Vec<(String, Option<String>)> {
     refs(source)
         .into_iter()
-        .filter(|r| {
-            r.kind == EdgeKind::TypeRef && !r.is_import_binding && r.module.is_some()
-        })
+        .filter(|r| r.kind == EdgeKind::TypeRef && !r.is_import_binding && r.module.is_some())
         .map(|r| (r.target_name, r.module))
         .collect()
 }
@@ -383,9 +393,7 @@ fn import_type_value_annotation_emits_module_tagged_export_ref() {
     );
     // The raw call text must NOT leak as a target.
     assert!(
-        !refs(src)
-            .iter()
-            .any(|r| r.target_name.contains("import(")),
+        !refs(src).iter().any(|r| r.target_name.contains("import(")),
         "raw import-type call text leaked as a ref target: {:?}",
         refs(src)
     );
@@ -2255,7 +2263,9 @@ fn declare_global_let_lookup_type_emits_module_tagged_ref() {
     let src = "declare global { let expect: typeof import('vitest')['expect'] }\nexport {}";
     let r = refs(src);
     let type_refs: Vec<_> = r.iter().filter(|rf| rf.kind == EdgeKind::TypeRef).collect();
-    let has_raw_import = type_refs.iter().any(|rf| rf.target_name.contains("import("));
+    let has_raw_import = type_refs
+        .iter()
+        .any(|rf| rf.target_name.contains("import("));
     assert!(
         !has_raw_import,
         "declare global let lookup_type must not emit raw import('...') text as TypeRef target; got: {type_refs:?}"
@@ -2288,7 +2298,10 @@ fn ambient_declare_const_named_type_enriches_signature() {
 fn ambient_declare_var_generic_named_type_enriches_signature() {
     let src = "declare var q: Registry<Cfg>;\n";
     let s = sym(src);
-    let v = s.iter().find(|x| x.name == "q").expect("declare var symbol");
+    let v = s
+        .iter()
+        .find(|x| x.name == "q")
+        .expect("declare var symbol");
     assert_eq!(v.signature.as_deref(), Some("const q: Registry<Cfg>"));
 }
 
@@ -2327,7 +2340,9 @@ fn ambient_named_type_annotation_fills_declared_type() {
         .iter()
         .find(|x| x.name == "gadget")
         .expect("declare const symbol");
-    let id = v.declared_type.expect("declared_type filled from signature");
+    let id = v
+        .declared_type
+        .expect("declared_type filled from signature");
     assert!(
         matches!(arena.get(id), Type::Class(n) if n == "ApiKind"),
         "declared_type must intern the annotation's named type"

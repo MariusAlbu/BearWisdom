@@ -76,7 +76,10 @@ fn member_refs_on_uncaptured_initializer_group_under_one_cause() {
     let group = &report.groups[0];
     assert_eq!(group.cause_kind, "uncaptured_return");
     assert_eq!(group.cause_symbol_id, Some(factory));
-    assert_eq!(group.cause_qualified_name.as_deref(), Some("mod.createScopedLogger"));
+    assert_eq!(
+        group.cause_qualified_name.as_deref(),
+        Some("mod.createScopedLogger")
+    );
     assert_eq!(group.ref_count, 3);
     assert_eq!(group.samples.len(), 3);
 }
@@ -92,14 +95,31 @@ fn member_missing_groups_separately_from_uncaptured_return() {
     let receiver_type = seed_symbol(&db, file, "Thing", 2);
     let caller = seed_symbol(&db, file, "caller", 10);
 
-    seed_unresolved(&db, caller, "value", 10, Some(factory), Some("uncaptured_return"));
-    seed_unresolved(&db, caller, "missingMethod", 11, Some(receiver_type), Some("member_missing"));
+    seed_unresolved(
+        &db,
+        caller,
+        "value",
+        10,
+        Some(factory),
+        Some("uncaptured_return"),
+    );
+    seed_unresolved(
+        &db,
+        caller,
+        "missingMethod",
+        11,
+        Some(receiver_type),
+        Some("member_missing"),
+    );
 
     let report = unresolved_by_cause(&db, 10, 10).unwrap();
     assert_eq!(report.total_caused, 2);
     assert_eq!(report.groups.len(), 2);
-    let kinds: std::collections::HashSet<&str> =
-        report.groups.iter().map(|g| g.cause_kind.as_str()).collect();
+    let kinds: std::collections::HashSet<&str> = report
+        .groups
+        .iter()
+        .map(|g| g.cause_kind.as_str())
+        .collect();
     assert!(kinds.contains("uncaptured_return"));
     assert!(kinds.contains("member_missing"));
 }
@@ -118,7 +138,11 @@ fn unbound_root_groups_by_target_name_when_symbol_less() {
 
     let report = unresolved_by_cause(&db, 10, 10).unwrap();
     assert_eq!(report.total_caused, 3);
-    assert_eq!(report.groups.len(), 2, "unknownA and unknownB must be separate groups");
+    assert_eq!(
+        report.groups.len(),
+        2,
+        "unknownA and unknownB must be separate groups"
+    );
     let a = report
         .groups
         .iter()
@@ -155,12 +179,30 @@ fn groups_ranked_by_ref_count_desc_and_capped_by_top_n() {
     let caller = seed_symbol(&db, file, "caller", 10);
 
     for i in 0..5 {
-        seed_unresolved(&db, caller, "m", 10 + i, Some(big_cause), Some("uncaptured_return"));
+        seed_unresolved(
+            &db,
+            caller,
+            "m",
+            10 + i,
+            Some(big_cause),
+            Some("uncaptured_return"),
+        );
     }
-    seed_unresolved(&db, caller, "m", 20, Some(small_cause), Some("uncaptured_return"));
+    seed_unresolved(
+        &db,
+        caller,
+        "m",
+        20,
+        Some(small_cause),
+        Some("uncaptured_return"),
+    );
 
     let report = unresolved_by_cause(&db, 1, 10).unwrap();
-    assert_eq!(report.groups.len(), 1, "top_n=1 must cap to the single largest group");
+    assert_eq!(
+        report.groups.len(),
+        1,
+        "top_n=1 must cap to the single largest group"
+    );
     assert_eq!(report.groups[0].cause_symbol_id, Some(big_cause));
     assert_eq!(report.groups[0].ref_count, 5);
 }
@@ -174,7 +216,14 @@ fn samples_capped_independently_of_ref_count() {
     let caller = seed_symbol(&db, file, "caller", 10);
 
     for i in 0..8 {
-        seed_unresolved(&db, caller, "m", 10 + i, Some(cause), Some("uncaptured_return"));
+        seed_unresolved(
+            &db,
+            caller,
+            "m",
+            10 + i,
+            Some(cause),
+            Some("uncaptured_return"),
+        );
     }
 
     let report = unresolved_by_cause(&db, 10, 3).unwrap();

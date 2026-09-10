@@ -64,4 +64,3 @@ fn cmake_kind_table_matches_former_predicate() {
         SymbolKind::Namespace
     ));
 }
-

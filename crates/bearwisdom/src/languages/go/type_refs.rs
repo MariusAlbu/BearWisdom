@@ -126,8 +126,7 @@ pub(super) fn emit_type_refs_from_type_node(
 ) {
     match node.kind() {
         "type_identifier" | "qualified_type" => {
-            if let Some((name, module)) = super::qualified_types::go_type_ref_target(node, source)
-            {
+            if let Some((name, module)) = super::qualified_types::go_type_ref_target(node, source) {
                 if !name.is_empty() && !super::helpers::is_go_builtin_type(&name) {
                     refs.push(ExtractedRef {
                         is_include: false,

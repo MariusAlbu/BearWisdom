@@ -77,5 +77,4 @@ impl LanguagePlugin for HtmlPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::HTML_PROFILE)
     }
-
 }

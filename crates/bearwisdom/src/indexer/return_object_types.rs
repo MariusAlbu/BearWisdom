@@ -14,7 +14,10 @@ use crate::types::{ExtractedSymbol, SymbolKind, Visibility};
 /// Append one `{fn}$Ret` interface plus its property members for every
 /// `(fn_idx, property_names)` pair. A pair whose function index is out of
 /// range is skipped.
-pub(super) fn materialize(symbols: &mut Vec<ExtractedSymbol>, return_objects: Vec<(usize, Vec<String>)>) {
+pub(super) fn materialize(
+    symbols: &mut Vec<ExtractedSymbol>,
+    return_objects: Vec<(usize, Vec<String>)>,
+) {
     for (fn_idx, members) in return_objects {
         let (ret_qname, ret_name, line) = match symbols.get(fn_idx) {
             Some(s) => (
@@ -25,10 +28,22 @@ pub(super) fn materialize(symbols: &mut Vec<ExtractedSymbol>, return_objects: Ve
             None => continue,
         };
         let iface_idx = symbols.len();
-        symbols.push(synthetic(&ret_name, &ret_qname, SymbolKind::Interface, None, line));
+        symbols.push(synthetic(
+            &ret_name,
+            &ret_qname,
+            SymbolKind::Interface,
+            None,
+            line,
+        ));
         for m in &members {
             let m_qname = format!("{ret_qname}.{m}");
-            symbols.push(synthetic(m, &m_qname, SymbolKind::Property, Some(iface_idx), line));
+            symbols.push(synthetic(
+                m,
+                &m_qname,
+                SymbolKind::Property,
+                Some(iface_idx),
+                line,
+            ));
         }
     }
 }

@@ -63,7 +63,10 @@ pub const SCALA_PROFILE: LanguageProfile = LanguageProfile {
     id: "scala",
     qname_separator: ".",
     declaration_merging: crate::type_checker::profile::language_profile::MergeScope::None,
-    self_keywords: &["this", "super"],
+    receiver_spellings: &[
+        crate::type_checker::profile::language_profile::ReceiverSpelling::enclosing("this", "."),
+        crate::type_checker::profile::language_profile::ReceiverSpelling::parent("super", "."),
+    ],
     supertype_discovery: SupertypeDiscovery::Explicit,
     ancestor_order: crate::type_checker::profile::language_profile::AncestorOrder::Bfs,
     members_can_be_external: true,

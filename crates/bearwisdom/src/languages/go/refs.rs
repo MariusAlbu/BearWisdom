@@ -151,8 +151,7 @@ fn dispatch_ref_node(
         // name, with the package qualifier carried on `module` so the resolve
         // engine's module-qualified rungs can bind it.
         "qualified_type" => {
-            if let Some((name, module)) =
-                super::qualified_types::go_type_ref_target(&child, source)
+            if let Some((name, module)) = super::qualified_types::go_type_ref_target(&child, source)
             {
                 if !name.is_empty() && !super::helpers::is_go_builtin_type(&name) {
                     refs.push(ExtractedRef {

@@ -19,7 +19,6 @@ use crate::db::Database;
 use crate::ecosystem::symbol_index::SymbolLocationIndex;
 use crate::indexer::resolve::engine::compilation::Compilation;
 use crate::indexer::resolve::engine::demand_veto::{DemandVeto, FileLanguages};
-use crate::indexer::resolve::engine::relative_imports;
 use crate::indexer::resolve::engine::type_mention_demand;
 use crate::indexer::write::SymbolIds;
 use crate::type_checker::core::types::TypeArena;
@@ -60,6 +59,8 @@ pub(super) fn materialize_externals(
         collect_external_files(&pf.refs, &veto, tree, loc, &mut seen, &mut frontier);
         type_mention_demand::collect_chain_root_type_files(
             &pf.refs,
+            &pf.language,
+            profiles,
             tree,
             loc,
             &mut seen,
@@ -99,14 +100,16 @@ pub(super) fn materialize_externals(
         out
     };
     let mut ext_parsed: Vec<ParsedFile> = Vec::new();
-    // TS module augmentations `(augmented_module, interface, augmenting_qname)`,
-    // scanned from the on-disk source in the closure — the parse cache strips
-    // `content`, so the disk path is the only reliable source here.
-    let mut augmentations: Vec<(String, String, String)> = Vec::new();
+    // Cross-module interface grafts reported by active language plugins while
+    // their external source is available during demand collection.
+    let mut augmentations: Vec<crate::languages::ModuleAugmentation> = Vec::new();
     let mut to_parse = admit_wave(frontier, &mut pulled);
     let mut depth = 0;
     while !to_parse.is_empty() && depth < MAX_CLOSURE_DEPTH {
-        tracing::info!("demand closure wave {depth}: {} candidate files", to_parse.len());
+        tracing::info!(
+            "demand closure wave {depth}: {} candidate files",
+            to_parse.len()
+        );
         // Pair each pulled file with its on-disk path so the closure can also
         // follow the file's RELATIVE imports (resolved against this directory) —
         // a member-declaring sibling module the package's export map never named.
@@ -155,8 +158,13 @@ pub(super) fn materialize_externals(
     // ingest them into the tree so refs bind to those ids.
     let (_files, ext_id_map) = {
         let _t = crate::indexer::phase_timer::scope("demand.write_externals");
-        crate::indexer::write::write_parsed_files_with_origin(db, &ext_parsed, "external", Some(arena))
-            .context("Failed to write external symbols")?
+        crate::indexer::write::write_parsed_files_with_origin(
+            db,
+            &ext_parsed,
+            "external",
+            Some(arena),
+        )
+        .context("Failed to write external symbols")?
     };
     let ambient_qnames = crate::ecosystem::ambient::ambient_global_qnames(&ext_parsed);
     {
@@ -164,9 +172,8 @@ pub(super) fn materialize_externals(
         tree.ingest(&ext_parsed, &ext_id_map, &ambient_qnames);
     }
 
-    // TS module augmentation: graft `declare module 'M' { interface I extends S }`
-    // supertypes onto the interface module `M` exports as `I`, so a member
-    // declared on `S` resolves on the receiver `M`-typed values carry.
+    // Graft language-reported interface augmentations after all external symbols
+    // have entered the compilation.
     if !augmentations.is_empty() {
         tree.apply_module_augmentations(&augmentations);
     }
@@ -181,10 +188,12 @@ pub(super) fn materialize_externals(
         .filter_map(|(module, name, target_file, target_name)| {
             let lang = language_from_file_ext(target_file)?;
             let vpath = virtual_path_for_indexed_file(target_file, lang);
-            let pkg = crate::ecosystem::externals::ts_package_from_virtual_path(&vpath)?;
+            let target_qname = crate::languages::default_registry()
+                .get(lang)
+                .external_reexport_target_qname(&vpath, target_name)?;
             Some((
-                format!("{module}.{name}"),
-                format!("{pkg}.{target_name}"),
+                crate::indexer::resolve::engine::support::join_index_qname(module, name),
+                target_qname,
                 vpath,
             ))
         })
@@ -328,7 +337,7 @@ fn parse_external_file_full(
     if let Some(pf) = crate::ecosystem::externals::materialize_virtual_external(&path_str) {
         return Some(pf);
     }
-    if path_str.starts_with("ext:jar:") || path_str.starts_with("ext:dotnet-type:") {
+    if crate::ecosystem::externals::is_virtual_only_path(&path_str) {
         return None;
     }
 
@@ -339,7 +348,9 @@ fn parse_external_file_full(
     // actually holds. Untagged files (no ecosystem claimed a hint, or the
     // owning ecosystem spans several languages) fall through to extension
     // dispatch as before.
-    let language = loc.language_hint(file).or_else(|| language_from_file_ext(file))?;
+    let language = loc
+        .language_hint(file)
+        .or_else(|| language_from_file_ext(file))?;
     let virtual_path = virtual_path_for_indexed_file(file, language);
     let bytes = std::fs::read(file).ok()?;
     let hash = crate::indexer::external_parse_cache::content_hash(&bytes);
@@ -371,7 +382,7 @@ fn parse_external_file_full(
     .ok()?;
     // External `.d.ts` symbols carry a `<pkg>.` prefix the resolver keys on; this
     // also prefixes the parse pass's `component_selectors` to match.
-    crate::ecosystem::npm::ts_post_process_external(&mut pf, arena);
+    crate::ecosystem::external_policy::post_process(&mut pf, arena);
     crate::indexer::external_parse_cache::put(file, &hash, &pf, arena);
     Some(pf)
 }

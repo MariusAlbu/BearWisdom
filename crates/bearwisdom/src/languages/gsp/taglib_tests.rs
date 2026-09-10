@@ -8,7 +8,8 @@ fn standard_tag_list_is_sorted_for_binary_search() {
     let mut sorted = STANDARD_TAGS.to_vec();
     sorted.sort_unstable();
     assert_eq!(
-        STANDARD_TAGS, &sorted[..],
+        STANDARD_TAGS,
+        &sorted[..],
         "STANDARD_TAGS must stay in ascending order for binary_search"
     );
 }
@@ -18,7 +19,8 @@ fn logical_markup_tag_list_is_sorted_for_binary_search() {
     let mut sorted = LOGICAL_MARKUP_TAGS.to_vec();
     sorted.sort_unstable();
     assert_eq!(
-        LOGICAL_MARKUP_TAGS, &sorted[..],
+        LOGICAL_MARKUP_TAGS,
+        &sorted[..],
         "LOGICAL_MARKUP_TAGS must stay in ascending order for binary_search"
     );
 }
@@ -26,8 +28,15 @@ fn logical_markup_tag_list_is_sorted_for_binary_search() {
 #[test]
 fn markup_scan_recovers_custom_namespaced_tag() {
     // `<warehouse:message ...>` markup → one tag named by its local part.
-    let tags = scan_markup_tags(r#"<title><warehouse:message code="cache.title" default="Cache" /></title>"#);
-    assert_eq!(tags.len(), 1, "expected one markup tag: {:?}", tags.iter().map(|t| &t.name).collect::<Vec<_>>());
+    let tags = scan_markup_tags(
+        r#"<title><warehouse:message code="cache.title" default="Cache" /></title>"#,
+    );
+    assert_eq!(
+        tags.len(),
+        1,
+        "expected one markup tag: {:?}",
+        tags.iter().map(|t| &t.name).collect::<Vec<_>>()
+    );
     assert_eq!(tags[0].name, "message");
 }
 
@@ -44,7 +53,11 @@ fn markup_scan_ignores_plain_html_and_closing_tags() {
     // Plain HTML elements have no `namespace:local` colon and emit nothing;
     // the closing form of a namespaced tag is not a fresh invocation.
     let tags = scan_markup_tags("<div class=\"x\"><span>text</span></div>");
-    assert!(tags.is_empty(), "plain HTML leaked markup tags: {:?}", tags.iter().map(|t| &t.name).collect::<Vec<_>>());
+    assert!(
+        tags.is_empty(),
+        "plain HTML leaked markup tags: {:?}",
+        tags.iter().map(|t| &t.name).collect::<Vec<_>>()
+    );
 }
 
 #[test]

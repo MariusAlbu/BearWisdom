@@ -53,6 +53,18 @@ impl LanguagePlugin for VbNetPlugin {
         extract::extract(source)
     }
 
+    fn signature_return_type(&self, signature: &str) -> Option<String> {
+        crate::languages::prefix_return_type(signature)
+    }
+
+    fn signature_parameter_types(&self, signature: &str) -> Option<Vec<String>> {
+        crate::languages::prefix_parameter_types(signature)
+    }
+
+    fn signature_declared_type(&self, signature: &str) -> Option<String> {
+        crate::languages::prefix_declared_type(signature)
+    }
+
     fn symbol_node_kinds(&self) -> &[&str] {
         &[
             "class_block",
@@ -90,5 +102,4 @@ impl LanguagePlugin for VbNetPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::VBNET_PROFILE)
     }
-
 }

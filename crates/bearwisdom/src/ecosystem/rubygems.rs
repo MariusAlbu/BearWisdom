@@ -23,6 +23,9 @@ use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WA
 use crate::ecosystem::manifest::{ManifestData, ManifestKind, ManifestReader};
 use crate::walker::WalkedFile;
 
+#[path = "rubygems/module_specifier.rs"]
+pub(crate) mod module_specifier;
+
 pub const ID: EcosystemId = EcosystemId::new("rubygems");
 
 const MANIFESTS: &[ManifestSpec] = &[];

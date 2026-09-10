@@ -13,7 +13,7 @@
 // are handled by `reexport_following`.
 // =============================================================================
 
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 use crate::types::EdgeKind;
 
 pub struct ReexportChainRule;
@@ -37,10 +37,16 @@ impl LookupRule for ReexportChainRule {
             .find(|imp| imp.bound_name() == target)
         {
             if let Some(module) = matching.module_path.as_deref() {
-                if !module.is_empty() && !is_relative_specifier(module) {
+                if !module.is_empty()
+                    && !ctx
+                        .profile
+                        .source_module_path_policy(module)
+                        .is_relative(module)
+                {
                     let declared = matching.imported_name.as_str();
-                    if let Some(id) =
-                        ctx.lookup.resolve_external_reexport(declared, declared, module)
+                    if let Some(id) = ctx
+                        .lookup
+                        .resolve_external_reexport(declared, declared, module)
                     {
                         if let Some(sid) =
                             candidate_with_compatible_kind(ctx, declared, id, edge_kind)
@@ -54,29 +60,35 @@ impl LookupRule for ReexportChainRule {
             }
         }
 
-        // Shape (b): dotted target. First segment may be an import alias;
+        // Shape (b): profile-qualified target. First segment may be an import alias;
         // last segment is the actual symbol.
-        if let Some(dot) = target.find('.') {
-            let prefix = &target[..dot];
-            let suffix = target.rsplit('.').next().unwrap_or(target);
-            if !prefix.is_empty() && !suffix.is_empty() && suffix != target {
-                if let Some(matching) = ctx
-                    .file_ctx
-                    .imports
-                    .iter()
-                    .find(|imp| imp.imported_name == prefix)
-                {
-                    if let Some(module) = matching.module_path.as_deref() {
-                        if !module.is_empty() && !is_relative_specifier(module) {
-                            if let Some(id) =
-                                ctx.lookup.resolve_external_reexport(suffix, prefix, module)
+        if !ctx.profile.qname_separator.is_empty() {
+            if let Some((prefix, _)) = target.split_once(ctx.profile.qname_separator) {
+                let suffix = ctx.profile.simple_name(target);
+                if !prefix.is_empty() && !suffix.is_empty() && suffix != target {
+                    if let Some(matching) = ctx
+                        .file_ctx
+                        .imports
+                        .iter()
+                        .find(|imp| imp.imported_name == prefix)
+                    {
+                        if let Some(module) = matching.module_path.as_deref() {
+                            if !module.is_empty()
+                                && !ctx
+                                    .profile
+                                    .source_module_path_policy(module)
+                                    .is_relative(module)
                             {
-                                if let Some(sid) =
-                                    candidate_with_compatible_kind(ctx, suffix, id, edge_kind)
+                                if let Some(id) =
+                                    ctx.lookup.resolve_external_reexport(suffix, prefix, module)
                                 {
-                                    return LookupResult::Resolved(
-                                        ctx.resolved(sid, "default_reexport_chain"),
-                                    );
+                                    if let Some(sid) =
+                                        candidate_with_compatible_kind(ctx, suffix, id, edge_kind)
+                                    {
+                                        return LookupResult::Resolved(
+                                            ctx.resolved(sid, "default_reexport_chain"),
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -96,16 +108,16 @@ fn candidate_with_compatible_kind(
     id: i64,
     edge_kind: EdgeKind,
 ) -> Option<i64> {
-    let candidate = ctx.lookup.by_name(name).into_iter().find(|sym| sym.id == id)?;
+    let candidate = ctx
+        .lookup
+        .by_name(name)
+        .into_iter()
+        .find(|sym| sym.id == id)?;
     if (ctx.kind)(edge_kind, &candidate.kind) {
         Some(id)
     } else {
         None
     }
-}
-
-fn is_relative_specifier(spec: &str) -> bool {
-    spec.starts_with("./") || spec.starts_with("../")
 }
 
 #[cfg(test)]

@@ -20,6 +20,7 @@ use crate::types::AliasTargetIds;
 use super::chain::{apply_args, expand_receiver, head_qname, lookup_member_on_bounded, Receiver};
 use super::generics::substitute_env;
 use super::substitution::receiver_env;
+use super::support::{index_qname_is_or_ends_with, index_qname_parent};
 
 /// Re-root an alias branch on the declaration it resolved to, keeping the
 /// branch's applied arguments: branch `Matchers<void, T>` resolved to the
@@ -86,12 +87,10 @@ pub(crate) fn lookup_member_on_intersection(
         }
         for cand in lookup.types_by_name(&branch).iter() {
             let recv = expand_receiver(
-                Receiver::new(
-                    applied_as(arena, branch_id, &cand.qualified_name),
-                    cand.id,
-                ),
+                Receiver::new(applied_as(arena, branch_id, &cand.qualified_name), cand.id),
                 lookup,
                 arena,
+                None,
                 None,
             );
             // A branch that resolves back to the intersection itself makes no
@@ -99,7 +98,8 @@ pub(crate) fn lookup_member_on_intersection(
             if head_qname(arena, recv.ty).as_deref() == Some(head) {
                 continue;
             }
-            if let Some(m) = lookup_member_on_bounded(lookup, arena, recv, member, accept, depth - 1)
+            if let Some(m) =
+                lookup_member_on_bounded(lookup, arena, recv, member, accept, depth - 1)
             {
                 return Some(m);
             }
@@ -164,19 +164,18 @@ pub(crate) fn lookup_member_on_union(
         let mut branch_hit: Option<Symbol> = None;
         for cand in candidates {
             let recv = expand_receiver(
-                Receiver::new(
-                    applied_as(arena, branch_id, &cand.qualified_name),
-                    cand.id,
-                ),
+                Receiver::new(applied_as(arena, branch_id, &cand.qualified_name), cand.id),
                 lookup,
                 arena,
+                None,
                 None,
             );
             // A branch that resolves back to the union itself makes no progress.
             if head_qname(arena, recv.ty).as_deref() == Some(head) {
                 continue;
             }
-            if let Some(m) = lookup_member_on_bounded(lookup, arena, recv, member, accept, depth - 1)
+            if let Some(m) =
+                lookup_member_on_bounded(lookup, arena, recv, member, accept, depth - 1)
             {
                 branch_hit = Some(m);
                 break;
@@ -210,7 +209,7 @@ pub(crate) fn declaring_branch_receiver(
     recv_ty: TypeId,
     member: &Symbol,
 ) -> Option<TypeId> {
-    let (declaring, _) = member.qualified_name.rsplit_once('.')?;
+    let declaring = index_qname_parent(&member.qualified_name)?;
     let head = head_qname(arena, recv_ty)?;
     if declaring == head {
         return None;
@@ -226,7 +225,7 @@ pub(crate) fn declaring_branch_receiver(
         let Some(branch_head) = head_qname(arena, branch) else {
             continue;
         };
-        if branch_head == declaring || declaring.ends_with(&format!(".{branch_head}")) {
+        if index_qname_is_or_ends_with(declaring, &branch_head) {
             return Some(applied_as(arena, branch, declaring));
         }
     }

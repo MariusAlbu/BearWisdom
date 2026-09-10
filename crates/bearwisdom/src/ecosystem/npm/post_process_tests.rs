@@ -72,7 +72,10 @@ fn variable_declared_type_apply_head_requalified_args_untouched() {
     let arena = TypeArena::new();
     let base = arena.class("Registry");
     let arg = arena.class("Cfg");
-    let applied = arena.intern(Type::Apply { base, args: vec![arg] });
+    let applied = arena.intern(Type::Apply {
+        base,
+        args: vec![arg],
+    });
     let mut v = sym("q", SymbolKind::Variable);
     v.declared_type = Some(applied);
     let mut pf = pf_with(vec![v]);
@@ -145,13 +148,21 @@ fn function_typed_variable_keeps_its_shape_with_requalified_return() {
     let param = arena.class("Opts");
     let ret_base = arena.class("Client");
     let ret_arg = arena.class("Cfg");
-    let ret = arena.intern(Type::Apply { base: ret_base, args: vec![ret_arg] });
-    let f = arena.intern(Type::Function { params: vec![param], return_: ret });
+    let ret = arena.intern(Type::Apply {
+        base: ret_base,
+        args: vec![ret_arg],
+    });
+    let f = arena.intern(Type::Function {
+        params: vec![param],
+        return_: ret,
+    });
     let mut v = sym("make", SymbolKind::Variable);
     v.declared_type = Some(f);
     let mut pf = pf_with(vec![v]);
     prefix_ts_external_symbols(&mut pf, "fake-ui", &arena);
-    let id = pf.symbols[0].declared_type.expect("function type survives prefixing");
+    let id = pf.symbols[0]
+        .declared_type
+        .expect("function type survives prefixing");
     let Type::Function { params, return_ } = arena.get(id) else {
         panic!("expected Function, got {:?}", arena.get(id));
     };
@@ -166,10 +177,17 @@ fn function_typed_variable_keeps_its_shape_with_requalified_return() {
 fn function_typed_variable_with_primitive_return_passes_through() {
     let arena = TypeArena::new();
     let ret = arena.primitive(crate::type_checker::core::types::PrimKind::Bool);
-    let f = arena.intern(Type::Function { params: Vec::new(), return_: ret });
+    let f = arena.intern(Type::Function {
+        params: Vec::new(),
+        return_: ret,
+    });
     let mut v = sym("flag", SymbolKind::Variable);
     v.declared_type = Some(f);
     let mut pf = pf_with(vec![v]);
     prefix_ts_external_symbols(&mut pf, "fake-ui", &arena);
-    assert_eq!(pf.symbols[0].declared_type, Some(f), "unrequalifiable return keeps the annotation as written");
+    assert_eq!(
+        pf.symbols[0].declared_type,
+        Some(f),
+        "unrequalifiable return keeps the annotation as written"
+    );
 }

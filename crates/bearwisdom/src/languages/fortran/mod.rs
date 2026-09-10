@@ -12,9 +12,9 @@ pub mod extract;
 mod extractors;
 pub mod fypp;
 pub mod keywords;
-mod walk;
 mod predicates;
 pub(crate) mod profile;
+mod walk;
 pub use profile::FORTRAN_PROFILE;
 
 #[cfg(test)]
@@ -86,5 +86,4 @@ impl LanguagePlugin for FortranPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::FORTRAN_PROFILE)
     }
-
 }

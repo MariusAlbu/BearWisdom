@@ -47,5 +47,4 @@ impl LanguagePlugin for TemplPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::TEMPL_PROFILE)
     }
-
 }

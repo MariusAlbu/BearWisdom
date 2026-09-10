@@ -32,7 +32,9 @@ fn decl(name: &str, kind: SymbolKind, start: u32, end: u32) -> ExtractedSymbol {
 /// Parse `src` as TypeScript and hand the first identifier node named `text`
 /// to `f`.
 fn with_identifier<R>(src: &str, text: &str, f: impl FnOnce(&tree_sitter::Node) -> R) -> R {
-    let plugin = default_registry().get_dedicated("typescript").expect("ts plugin");
+    let plugin = default_registry()
+        .get_dedicated("typescript")
+        .expect("ts plugin");
     let grammar = plugin.grammar("typescript").expect("ts grammar");
     let mut parser = tree_sitter::Parser::new();
     parser.set_language(&grammar).expect("set language");
@@ -58,7 +60,13 @@ fn uncorrelated_binding_is_synthesized_under_the_enclosing_declaration() {
     let src = "function f(x: Foo) {\n  return x;\n}\n";
     let mut symbols = vec![decl("f", SymbolKind::Function, 0, 2)];
     let idx = with_identifier(src, "x", |n| {
-        binding_symbol("x", n, SymbolKind::Parameter, &mut symbols, BindingSymbols::Synthesize)
+        binding_symbol(
+            "x",
+            n,
+            SymbolKind::Parameter,
+            &mut symbols,
+            BindingSymbols::Synthesize,
+        )
     });
     assert_eq!(idx, Some(1));
     let sym = &symbols[1];
@@ -121,7 +129,13 @@ fn binding_outside_every_declaration_is_not_synthesized() {
 ";
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let idx = with_identifier(src, "x", |n| {
-        binding_symbol("x", n, SymbolKind::Variable, &mut symbols, BindingSymbols::Synthesize)
+        binding_symbol(
+            "x",
+            n,
+            SymbolKind::Variable,
+            &mut symbols,
+            BindingSymbols::Synthesize,
+        )
     });
     assert_eq!(idx, None);
     assert!(symbols.is_empty());
@@ -132,7 +146,13 @@ fn correlate_only_skips_an_uncorrelated_binding() {
     let src = "function f(x: Foo) {}\n";
     let mut symbols = vec![decl("f", SymbolKind::Function, 0, 0)];
     let idx = with_identifier(src, "x", |n| {
-        binding_symbol("x", n, SymbolKind::Parameter, &mut symbols, BindingSymbols::CorrelateOnly)
+        binding_symbol(
+            "x",
+            n,
+            SymbolKind::Parameter,
+            &mut symbols,
+            BindingSymbols::CorrelateOnly,
+        )
     });
     assert_eq!(idx, None);
     assert_eq!(symbols.len(), 1);
@@ -148,11 +168,22 @@ fn flow_for(lang: &str, ext: &str, src: &str) -> (Vec<ExtractedSymbol>, FlowMeta
         .get_dedicated(lang)
         .unwrap_or_else(|| panic!("plugin {lang}"));
     let result = plugin.extract(src, &format!("t.{ext}"), lang);
-    let grammar = plugin.grammar(lang).unwrap_or_else(|| panic!("grammar {lang}"));
-    let cfg = plugin.flow_config().unwrap_or_else(|| panic!("flow config {lang}"));
+    let grammar = plugin
+        .grammar(lang)
+        .unwrap_or_else(|| panic!("grammar {lang}"));
+    let cfg = plugin
+        .flow_config()
+        .unwrap_or_else(|| panic!("flow config {lang}"));
     let mut symbols = result.symbols;
     let mut refs = result.refs;
-    let meta = run_flow_queries(src, &grammar, cfg, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        src,
+        &grammar,
+        cfg,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
     (symbols, meta)
 }
 
@@ -170,7 +201,10 @@ fn seeded_types(lang: &str, ext: &str, src: &str, name: &str) -> Vec<Option<Stri
     assert!(
         !out.is_empty(),
         "{lang}: no symbol named `{name}`; symbols = {:?}",
-        symbols.iter().map(|s| (s.name.as_str(), s.kind)).collect::<Vec<_>>()
+        symbols
+            .iter()
+            .map(|s| (s.name.as_str(), s.kind))
+            .collect::<Vec<_>>()
     );
     out
 }
@@ -187,7 +221,10 @@ fn assert_typed(lang: &str, ext: &str, src: &str, name: &str, ty: &str) {
 /// `name` has a binding and none of its bindings seeds a type.
 fn assert_untyped(lang: &str, ext: &str, src: &str, name: &str) {
     let types = seeded_types(lang, ext, src, name);
-    assert!(types.iter().all(|t| t.is_none()), "{lang}: `{name}` should seed nothing, got {types:?}");
+    assert!(
+        types.iter().all(|t| t.is_none()),
+        "{lang}: `{name}` should seed nothing, got {types:?}"
+    );
 }
 
 /// The synthesized kind for a binding the extractor never emitted.
@@ -209,7 +246,10 @@ fn typescript_parameter_and_local() {
 ";
     assert_typed("typescript", "ts", src, "text", "string");
     assert_untyped("typescript", "ts", src, "n");
-    assert_eq!(synthesized_kind("typescript", "ts", src, "n"), SymbolKind::Parameter);
+    assert_eq!(
+        synthesized_kind("typescript", "ts", src, "n"),
+        SymbolKind::Parameter
+    );
     assert_typed("typescript", "ts", src, "y", "Foo");
 }
 
@@ -220,7 +260,10 @@ fn javascript_parameter_is_synthesized() {
 }
 ";
     assert_untyped("javascript", "js", src, "x");
-    assert_eq!(synthesized_kind("javascript", "js", src, "x"), SymbolKind::Parameter);
+    assert_eq!(
+        synthesized_kind("javascript", "js", src, "x"),
+        SymbolKind::Parameter
+    );
 }
 
 #[test]
@@ -274,7 +317,10 @@ fn scala_parameter_lambda_binding_and_typed_val() {
     assert_typed("scala", "scala", src, "x", "Foo");
     assert_typed("scala", "scala", src, "y", "Foo");
     assert_untyped("scala", "scala", src, "n");
-    assert_eq!(synthesized_kind("scala", "scala", src, "n"), SymbolKind::Parameter);
+    assert_eq!(
+        synthesized_kind("scala", "scala", src, "n"),
+        SymbolKind::Parameter
+    );
 }
 
 #[test]
@@ -312,7 +358,10 @@ fn dart_parameter_and_typed_local() {
 ";
     assert_typed("dart", "dart", src, "x", "Foo");
     assert_untyped("dart", "dart", src, "y");
-    assert_eq!(synthesized_kind("dart", "dart", src, "y"), SymbolKind::Parameter);
+    assert_eq!(
+        synthesized_kind("dart", "dart", src, "y"),
+        SymbolKind::Parameter
+    );
     assert_typed("dart", "dart", src, "z", "Foo");
 }
 

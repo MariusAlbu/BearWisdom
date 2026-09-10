@@ -28,7 +28,9 @@ pub(super) fn find_child_text(node: &Node, kind: &str, src: &str) -> Option<Stri
 /// that need to inspect its structure rather than just its source span.
 pub(super) fn find_child<'a>(node: &Node<'a>, kind: &str) -> Option<Node<'a>> {
     let mut cursor = node.walk();
-    return node.children(&mut cursor).find(|&child| child.kind() == kind);
+    return node
+        .children(&mut cursor)
+        .find(|&child| child.kind() == kind);
 }
 
 /// Extract the qualifier (module) from an `invokation_expression` node.

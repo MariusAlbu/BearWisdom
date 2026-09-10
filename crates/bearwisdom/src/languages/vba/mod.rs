@@ -66,5 +66,4 @@ impl LanguagePlugin for VbaPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::VBA_PROFILE)
     }
-
 }

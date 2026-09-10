@@ -40,3 +40,25 @@ fn npm_directory_fallback_accepts_only_path_specifiers() {
     assert!(!declines_directory_match("./react"));
     assert!(!declines_directory_match("C:/react"));
 }
+
+#[test]
+fn npm_external_paths_own_scoped_package_entry_keys() {
+    assert_eq!(
+        package_entry_key("ext:ts:@scope/pkg/dist/index.d.ts").as_deref(),
+        Some("@scope/pkg")
+    );
+    assert_eq!(
+        package_entry_key("ext:ts:lodash/fp.js").as_deref(),
+        Some("lodash")
+    );
+    assert_eq!(package_entry_key("ext:dart:matcher/expect.dart"), None);
+}
+
+#[test]
+fn npm_reexport_candidates_keep_js_family_suffixes_in_the_adapter() {
+    let candidates = relative_reexport_candidate_paths("packages/q/src/member");
+    assert!(candidates.contains(&"packages/q/src/member.ts".to_string()));
+    assert!(candidates.contains(&"packages/q/src/member/index.tsx".to_string()));
+    assert!(candidates.contains(&"packages/q/src/member.vue".to_string()));
+    assert!(candidates.contains(&"packages/q/src/member".to_string()));
+}

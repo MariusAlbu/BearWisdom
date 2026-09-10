@@ -17,7 +17,14 @@ fn flow_for(src: &str) -> FlowMeta {
     let cfg = GoPlugin.flow_config().unwrap();
     let mut refs = result.refs;
     let mut symbols = result.symbols;
-    run_flow_queries(src, &lang, cfg, &mut symbols, &mut refs, BindingSymbols::Synthesize)
+    run_flow_queries(
+        src,
+        &lang,
+        cfg,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    )
 }
 
 /// The narrowings recorded for the variable named `name`.

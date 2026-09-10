@@ -74,4 +74,11 @@ impl LanguagePlugin for GraphQlPlugin {
         Some(&profile::GRAPHQL_PROFILE)
     }
 
+    fn plugin_flow_emissions(
+        &self,
+        source: &str,
+        _file_path: &str,
+    ) -> Vec<(u32, crate::indexer::resolve::flow_emit::FlowEmission)> {
+        connectors::extract_schema_starts(source)
+    }
 }

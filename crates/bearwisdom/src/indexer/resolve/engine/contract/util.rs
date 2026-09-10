@@ -3,8 +3,7 @@
 //
 // Small predicates and helpers with no dependency on SymbolIndex or the
 // resolve loop's state: scope-chain construction from a qualified name,
-// type-kind classification, npm-package extraction from external paths and
-// import specifiers.
+// type-kind classification, and import specifiers.
 // =============================================================================
 
 pub(crate) fn is_type_like_kind(kind: &str) -> bool {
@@ -25,9 +24,9 @@ pub(crate) fn is_type_like_kind(kind: &str) -> bool {
     )
 }
 
-pub(crate) fn common_prefix_len(a: &str, b: &str) -> usize {
-    a.split('.')
-        .zip(b.split('.'))
+pub(crate) fn common_prefix_len(a: &str, b: &str, separator: &str) -> usize {
+    a.split(separator)
+        .zip(b.split(separator))
         .take_while(|(x, y)| x == y)
         .count()
 }
@@ -99,7 +98,10 @@ pub fn camel_to_kebab(s: &str) -> Option<String> {
 /// Build the scope chain from a symbol's scope_path.
 ///
 /// scope_path = "A.B.C" → ["A.B.C", "A.B", "A"]
-pub fn build_scope_chain(scope_path: Option<&str>) -> Vec<String> {
+pub fn build_scope_chain(
+    scope_path: Option<&str>,
+    profile: &crate::type_checker::profile::language_profile::LanguageProfile,
+) -> Vec<String> {
     let Some(path) = scope_path else {
         return Vec::new();
     };
@@ -108,84 +110,32 @@ pub fn build_scope_chain(scope_path: Option<&str>) -> Vec<String> {
     }
 
     let mut chain = Vec::new();
-    let mut current = path.to_string();
+    let mut current = profile.index_qname_from_source(path);
     chain.push(current.clone());
 
-    while let Some(dot_pos) = current.rfind('.') {
-        current.truncate(dot_pos);
+    while let Some(parent) = crate::indexer::resolve::engine::support::index_qname_parent(&current)
+    {
+        current.truncate(parent.len());
         chain.push(current.clone());
     }
 
     chain
 }
 
-/// Extract the npm package name from an external file path.
-///
-/// External paths from the TS externals walker look like:
-///   `ext:ts:@scope/pkg/dist/whatever.d.ts` → `@scope/pkg`
-///   `ext:ts:lodash/index.d.ts`             → `lodash`
-///
-/// Returns None when the path isn't an `ext:ts:` external or doesn't have
-/// a recognisable package prefix. Used by the cross-package re-export
-/// chain resolver to bucket files by their owning npm package.
-pub fn npm_package_from_external_path(path: &str) -> Option<String> {
-    let rest = path.strip_prefix("ext:ts:")?;
-    if rest.starts_with('@') {
-        let mut parts = rest.splitn(3, '/');
-        match (parts.next(), parts.next()) {
-            (Some(scope), Some(name)) if !scope.is_empty() && !name.is_empty() => {
-                Some(format!("{scope}/{name}"))
-            }
-            _ => None,
-        }
-    } else {
-        let pkg = rest.split('/').next().unwrap_or("");
-        if pkg.is_empty() {
-            None
-        } else {
-            Some(pkg.to_string())
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::type_checker::profile::language_profile::{LanguageProfile, DEFAULT_PROFILE};
+
+    #[test]
+    fn canonical_scope_chain_does_not_follow_source_separator() {
+        let profile = LanguageProfile {
+            qname_separator: "::",
+            ..DEFAULT_PROFILE
+        };
+        assert_eq!(
+            build_scope_chain(Some("pkg.Outer.Inner"), &profile),
+            vec!["pkg.Outer.Inner", "pkg.Outer", "pkg"]
+        );
     }
 }
-
-/// Extract the npm package name from an import / re-export specifier.
-///
-/// Specifiers can carry sub-paths: `@scope/pkg/sub`, `lodash/fp`. We keep
-/// only the first segment (or first two for scoped packages). Returns
-/// None for relative specifiers (`./x`, `../y`) since those don't cross
-/// package boundaries.
-pub fn npm_package_from_specifier(spec: &str) -> Option<String> {
-    if spec.starts_with("./") || spec.starts_with("../") || spec.is_empty() {
-        return None;
-    }
-    if spec.starts_with('@') {
-        let mut parts = spec.splitn(3, '/');
-        match (parts.next(), parts.next()) {
-            (Some(scope), Some(name)) if !scope.is_empty() && !name.is_empty() => {
-                Some(format!("{scope}/{name}"))
-            }
-            _ => None,
-        }
-    } else {
-        let pkg = spec.split('/').next().unwrap_or("");
-        if pkg.is_empty() {
-            None
-        } else {
-            Some(pkg.to_string())
-        }
-    }
-}
-
-/// Test whether `file_path` belongs to the given npm package (`pkg`).
-/// Matches the synthetic `ext:ts:<pkg>/...` prefix as well as raw
-/// `node_modules/<pkg>/...` substring (for files that landed via
-/// non-prefixed paths in older indexes).
-pub fn file_belongs_to_npm_package(file_path: &str, pkg: &str) -> bool {
-    let needle_ext = format!("ext:ts:{pkg}/");
-    if file_path.starts_with(&needle_ext) {
-        return true;
-    }
-    let needle_nm = format!("node_modules/{pkg}/");
-    file_path.contains(&needle_nm)
-}
-

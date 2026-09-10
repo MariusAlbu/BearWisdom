@@ -6,8 +6,21 @@ use super::is_fortran_intrinsic;
 
 #[test]
 fn recognizes_intrinsic_procedures_across_categories() {
-    for name in ["abs", "size", "real", "allocated", "max", "present", "reshape", "min", "mod"] {
-        assert!(is_fortran_intrinsic(name), "expected '{name}' to be intrinsic");
+    for name in [
+        "abs",
+        "size",
+        "real",
+        "allocated",
+        "max",
+        "present",
+        "reshape",
+        "min",
+        "mod",
+    ] {
+        assert!(
+            is_fortran_intrinsic(name),
+            "expected '{name}' to be intrinsic"
+        );
     }
 }
 
@@ -42,11 +55,32 @@ fn matches_case_insensitively() {
 #[test]
 fn declines_names_commonly_shadowed_by_project_generic_interfaces() {
     for name in [
-        "adjustl", "adjustr", "char", "count", "iachar", "ichar", "index", "len", "len_trim",
-        "lge", "lgt", "lle", "llt", "merge", "random_seed", "repeat", "scan", "transpose",
-        "trim", "unpack", "verify",
+        "adjustl",
+        "adjustr",
+        "char",
+        "count",
+        "iachar",
+        "ichar",
+        "index",
+        "len",
+        "len_trim",
+        "lge",
+        "lgt",
+        "lle",
+        "llt",
+        "merge",
+        "random_seed",
+        "repeat",
+        "scan",
+        "transpose",
+        "trim",
+        "unpack",
+        "verify",
     ] {
-        assert!(!is_fortran_intrinsic(name), "expected '{name}' NOT to be drained");
+        assert!(
+            !is_fortran_intrinsic(name),
+            "expected '{name}' NOT to be drained"
+        );
     }
 }
 

@@ -46,12 +46,17 @@ fn open_declarations_are_wildcard_imports() {
     // wildcards and source their module path from the ref's `module` field
     // (which `extract_open` / `extract_hash_r_directives` always set).
     assert!(FSHARP_PROFILE.imports.namespace_imports_are_wildcards);
-    assert_eq!(FSHARP_PROFILE.imports.import_module_path, ImportModulePath::FromModuleField);
+    assert_eq!(
+        FSHARP_PROFILE.imports.import_module_path,
+        ImportModulePath::FromModuleField
+    );
 }
 
 #[test]
 fn builtin_skip_is_wired_to_the_prelude_operator_predicate() {
-    let skip = FSHARP_PROFILE.builtin_skip.expect("F# drains prelude operators");
+    let skip = FSHARP_PROFILE
+        .builtin_skip
+        .expect("F# drains prelude operators");
     assert!(skip("sprintf"));
     assert!(!skip("Some"));
 }

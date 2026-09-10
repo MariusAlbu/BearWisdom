@@ -4,9 +4,7 @@ use crate::indexer::resolve::engine::testkit::{
     accept_any, call_ref, file_ctx, import, ref_ctx, source_symbol, sym, Lookup,
 };
 use crate::indexer::resolve::engine::{BinderContext, LookupResult};
-use crate::type_checker::profile::language_profile::{
-    LanguageProfile, DEFAULT_PROFILE,
-};
+use crate::type_checker::profile::language_profile::{LanguageProfile, DEFAULT_PROFILE};
 
 const ENABLED_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
@@ -41,7 +39,13 @@ fn resolve(
 #[test]
 fn binds_when_module_last_segment_matches_target() {
     // `import NSData from 'Foundation.NSData'` — only one internal symbol named NSData.
-    let lookup = Lookup::new().with(sym(40, "NSData", "Foundation.NSData", "class", "src/a.swift"));
+    let lookup = Lookup::new().with(sym(
+        40,
+        "NSData",
+        "Foundation.NSData",
+        "class",
+        "src/a.swift",
+    ));
     let imports = vec![ImportEntry {
         imported_name: "NSData".to_string(),
         module_path: Some("Foundation.NSData".to_string()),
@@ -57,7 +61,13 @@ fn binds_when_module_last_segment_matches_target() {
 
 #[test]
 fn declines_when_gate_is_off() {
-    let lookup = Lookup::new().with(sym(41, "NSData", "Foundation.NSData", "class", "src/a.swift"));
+    let lookup = Lookup::new().with(sym(
+        41,
+        "NSData",
+        "Foundation.NSData",
+        "class",
+        "src/a.swift",
+    ));
     let imports = vec![ImportEntry {
         imported_name: "NSData".to_string(),
         module_path: Some("Foundation.NSData".to_string()),
@@ -66,10 +76,7 @@ fn declines_when_gate_is_off() {
         binding_kind: None,
     }];
     // DEFAULT_PROFILE has explicit_member_import: false.
-    assert_eq!(
-        resolve(&lookup, "NSData", imports, &DEFAULT_PROFILE),
-        None
-    );
+    assert_eq!(resolve(&lookup, "NSData", imports, &DEFAULT_PROFILE), None);
 }
 
 #[test]
@@ -85,10 +92,7 @@ fn declines_when_multiple_internal_candidates_exist() {
         is_wildcard: false,
         binding_kind: None,
     }];
-    assert_eq!(
-        resolve(&lookup, "NSData", imports, &ENABLED_PROFILE),
-        None
-    );
+    assert_eq!(resolve(&lookup, "NSData", imports, &ENABLED_PROFILE), None);
 }
 
 #[test]

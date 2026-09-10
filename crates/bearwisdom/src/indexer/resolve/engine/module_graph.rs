@@ -708,7 +708,7 @@ fn link(
         return module_paths::find(&base, &input.paths, |path| paths.get(path).copied())
             .map(redirect);
     }
-    // Only configured package entries/path aliases are candidates. The global
+    // Only configured package entries/module aliases are candidates. The global
     // declaration-name and file-suffix indexes are not module evidence.
     if let Some(path) = lookup.resolve_module_from(&input.path, spec) {
         return paths
@@ -716,7 +716,7 @@ fn link(
             .copied()
             .map(redirect);
     }
-    let alias = lookup.resolve_path_alias(lookup.package_id_for_file(&input.path), spec)?;
+    let alias = lookup.resolve_module_alias(lookup.package_id_for_file(&input.path), spec)?;
     module_paths::find(&module_paths::normalize(&alias), &input.paths, |path| {
         paths.get(path).copied()
     })

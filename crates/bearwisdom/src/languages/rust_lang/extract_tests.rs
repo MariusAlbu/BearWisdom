@@ -728,7 +728,10 @@ fn macro_export_hoists_qname_out_of_enclosing_mod() {
 }"#;
     let r = extract::extract(source);
     let sym = r.symbols.iter().find(|s| s.name == "assert");
-    assert!(sym.is_some(), "expected assert symbol from nested macro_rules!");
+    assert!(
+        sym.is_some(),
+        "expected assert symbol from nested macro_rules!"
+    );
     assert_eq!(
         sym.unwrap().qualified_name,
         "assert",
@@ -745,7 +748,10 @@ fn macro_rules_without_macro_export_keeps_mod_qualification() {
 }"#;
     let r = extract::extract(source);
     let sym = r.symbols.iter().find(|s| s.name == "helper");
-    assert!(sym.is_some(), "expected helper symbol from nested macro_rules!");
+    assert!(
+        sym.is_some(),
+        "expected helper symbol from nested macro_rules!"
+    );
     assert_eq!(
         sym.unwrap().qualified_name,
         "inner.helper",
@@ -794,7 +800,10 @@ pub fn after() -> bool {
     true
 }"#;
     let r = extract::extract(source);
-    assert!(!r.has_errors, "macro-2.0 single-rule def must not corrupt the parse");
+    assert!(
+        !r.has_errors,
+        "macro-2.0 single-rule def must not corrupt the parse"
+    );
     assert!(
         r.symbols.iter().any(|s| s.name == "after"),
         "symbol following a macro-2.0 def must still be extracted, got: {:?}",

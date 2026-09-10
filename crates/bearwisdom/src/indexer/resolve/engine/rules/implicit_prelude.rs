@@ -23,7 +23,7 @@
 // bare-name declaration always wins.
 // =============================================================================
 
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 use crate::types::EdgeKind;
 
 /// Outcome of scanning the prelude namespaces for one candidate name.

@@ -23,7 +23,7 @@ pub const CMAKE_PROFILE: LanguageProfile = LanguageProfile {
     id: "cmake",
     qname_separator: ".",
     declaration_merging: crate::type_checker::profile::language_profile::MergeScope::None,
-    self_keywords: &[],
+    receiver_spellings: &[],
     supertype_discovery: SupertypeDiscovery::Explicit,
     ancestor_order: crate::type_checker::profile::language_profile::AncestorOrder::Bfs,
     members_can_be_external: false,

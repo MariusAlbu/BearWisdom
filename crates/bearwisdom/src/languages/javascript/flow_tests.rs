@@ -73,6 +73,29 @@ fn js_config_registered_on_plugin() {
     );
 }
 
+#[test]
+fn js_plugin_preserves_graphql_flow_extraction() {
+    let source = r#"
+const Schema = gql`
+  type Query {
+    me: User
+  }
+`
+"#;
+    assert!(JavascriptPlugin
+        .plugin_flow_emissions(source, "schema.js")
+        .iter()
+        .any(|(_, emission)| matches!(
+            emission,
+            crate::indexer::resolve::flow_emit::FlowEmission::NamedChannel {
+                kind: crate::indexer::resolve::flow_emit::NamedChannelKind::GraphQLOp,
+                name,
+                role: crate::indexer::resolve::flow_emit::ChannelRole::Producer,
+                ..
+            } if name == "me"
+        )));
+}
+
 /// The shared guard queries and the return query are written once for the
 /// JS-family grammars; each must compile against the JavaScript grammar too.
 #[test]

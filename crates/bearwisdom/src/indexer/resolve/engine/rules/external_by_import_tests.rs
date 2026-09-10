@@ -2,9 +2,7 @@ use super::*;
 use crate::indexer::resolve::engine::testkit::{
     accept_any, file_ctx, import, ref_ctx, source_symbol, sym, Lookup,
 };
-use crate::type_checker::profile::language_profile::{
-    ExtMatch, ExternalByImport, DEFAULT_PROFILE,
-};
+use crate::type_checker::profile::language_profile::{ExtMatch, ExternalByImport, DEFAULT_PROFILE};
 
 fn resolve(
     lookup: &Lookup,
@@ -15,7 +13,8 @@ fn resolve(
     use crate::indexer::resolve::engine::testkit::call_ref;
     let r = call_ref(target);
     let s = source_symbol("caller");
-    let fc = file_ctx(imports, None);
+    let mut fc = file_ctx(imports, None);
+    fc.language = profile.id.to_string();
     let rc = ref_ctx(&r, &s, vec![]);
     let kind = accept_any;
     let ctx = BinderContext {
@@ -34,9 +33,20 @@ fn resolve(
 /// Gate is `Off` by default (no `external_by_import` set) — rule passes.
 #[test]
 fn passes_when_gate_off() {
-    let lookup = Lookup::new().with(sym(1, "useState", "useState", "function", "ext:ts:react/index.d.ts"));
+    let lookup = Lookup::new().with(sym(
+        1,
+        "useState",
+        "useState",
+        "function",
+        "ext:ts:react/index.d.ts",
+    ));
     assert_eq!(
-        resolve(&lookup, "useState", vec![import("react", Some("react"))], &DEFAULT_PROFILE),
+        resolve(
+            &lookup,
+            "useState",
+            vec![import("react", Some("react"))],
+            &DEFAULT_PROFILE
+        ),
         None
     );
 }
@@ -46,16 +56,22 @@ fn passes_when_gate_off() {
 fn pkg_segment_matches_import_root() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
+            id: "typescript",
             implicit_root_types: &[],
             imports: crate::type_checker::profile::language_profile::ImportAxes {
                 external_by_import: Some(ExternalByImport),
                 ext_match: ExtMatch::PkgSegment,
                 ..DEFAULT_PROFILE.imports
             },
-            ..DEFAULT_PROFILE
+            ..crate::languages::nim::NIM_PROFILE
         };
-    let lookup =
-        Lookup::new().with(sym(10, "useState", "useState", "function", "ext:ts:react/index.d.ts"));
+    let lookup = Lookup::new().with(sym(
+        10,
+        "useState",
+        "useState",
+        "function",
+        "ext:ts:react/index.d.ts",
+    ));
     let imports = vec![import("useState", Some("react"))];
     assert_eq!(resolve(&lookup, "useState", imports, &PROFILE), Some(10));
 }
@@ -63,16 +79,6 @@ fn pkg_segment_matches_import_root() {
 /// `PkgSegment` mode: gem family match — `aws-sdk-s3` under import root `aws`.
 #[test]
 fn pkg_segment_matches_family_prefix() {
-    static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
-        crate::type_checker::profile::language_profile::LanguageProfile {
-            implicit_root_types: &[],
-            imports: crate::type_checker::profile::language_profile::ImportAxes {
-                external_by_import: Some(ExternalByImport),
-                ext_match: ExtMatch::PkgSegment,
-                ..DEFAULT_PROFILE.imports
-            },
-            ..DEFAULT_PROFILE
-        };
     let lookup = Lookup::new().with(sym(
         20,
         "Client",
@@ -81,10 +87,19 @@ fn pkg_segment_matches_family_prefix() {
         "ext:ruby:aws-sdk-s3/lib/client.rb",
     ));
     let imports = vec![import("Aws", Some("aws"))];
-    assert_eq!(resolve(&lookup, "Client", imports, &PROFILE), Some(20));
+    assert_eq!(
+        resolve(
+            &lookup,
+            "Client",
+            imports,
+            &crate::languages::ruby::RUBY_PROFILE
+        ),
+        Some(20)
+    );
 }
 
-/// `FileStemOrDir` mode: external file's basename-stem matches import leaf.
+/// `FileStemOrDir` mode: external file's basename-stem matches an
+/// adapter-supplied import-path term.
 #[test]
 fn file_stem_or_dir_matches_import_leaf() {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
@@ -93,19 +108,29 @@ fn file_stem_or_dir_matches_import_leaf() {
             imports: crate::type_checker::profile::language_profile::ImportAxes {
                 external_by_import: Some(ExternalByImport),
                 ext_match: ExtMatch::FileStemOrDir,
+                module_prefix_rewrites:
+                    crate::type_checker::profile::language_profile::ModulePrefixRewrites::On {
+                        module_path_adapter: Some(
+                            crate::languages::nim::module_paths::module_path_match,
+                        ),
+                        candidate_prefixes:
+                            crate::languages::nim::module_paths::module_prefix_candidates,
+                        declines_directory_match:
+                            crate::languages::nim::module_paths::declines_directory_match,
+                    },
                 ..DEFAULT_PROFILE.imports
             },
-            ..DEFAULT_PROFILE
+            ..crate::languages::nim::NIM_PROFILE
         };
     let lookup = Lookup::new().with(sym(
         30,
-        "newHttpClient",
-        "newHttpClient",
+        "Client",
+        "Client",
         "function",
-        "ext:nim:httpclient/httpclient.nim",
+        "ext:test:network/client.unit",
     ));
-    let imports = vec![import("httpclient", Some("httpclient"))];
-    assert_eq!(resolve(&lookup, "newHttpClient", imports, &PROFILE), Some(30));
+    let imports = vec![import("Client", Some("network/client"))];
+    assert_eq!(resolve(&lookup, "Client", imports, &PROFILE), Some(30));
 }
 
 /// Non-external symbol is skipped even when the name matches.
@@ -122,8 +147,13 @@ fn skips_non_external_symbols() {
             ..DEFAULT_PROFILE
         };
     // File path does NOT start with `ext:`.
-    let lookup =
-        Lookup::new().with(sym(40, "useState", "useState", "function", "src/hooks/state.ts"));
+    let lookup = Lookup::new().with(sym(
+        40,
+        "useState",
+        "useState",
+        "function",
+        "src/hooks/state.ts",
+    ));
     let imports = vec![import("useState", Some("react"))];
     assert_eq!(resolve(&lookup, "useState", imports, &PROFILE), None);
 }

@@ -320,9 +320,20 @@ must carry declaration/binding/type IDs, not re-find declarations by spelling.
 
 ## Generic resolver boundary
 
-- [ ] Move signature syntax and JVM descriptor decoding from the generic chain walker into language/profile adapters.
-- [ ] Move TypeScript compiler intrinsics and Ruby contract/callback syntax out of the generic resolver.
-- [ ] Move Rust wildcard resolution and language path-separator policy out of generic rules.
-- [ ] Move Dart URI/module-entry aliases and TypeScript augmentation policy into language adapters.
-- [ ] Move C/C++ include admission and SQL handling out of generic compilation.
-- [ ] Move npm, Cargo, and NuGet manifest/package grammar out of the generic resolver.
+- [x] Move signature syntax and JVM descriptor decoding from the generic chain walker into language/profile adapters.
+- [x] Move TypeScript compiler intrinsics and Ruby contract/callback syntax out of the generic resolver.
+- [x] Move Rust wildcard resolution and language path-separator policy out of generic rules.
+- [x] Move Dart URI/module-entry aliases and TypeScript augmentation policy into language adapters.
+- [x] Move C/C++ include admission and SQL handling out of generic compilation.
+- [x] Move npm, Cargo, and NuGet manifest/package grammar out of the generic resolver.
+- [ ] Move callback lexical syntax, specialized flow passes, namespace forms, and lexical language-family switches out of the generic indexer.
+- [ ] Move external virtual-path layouts, secondary package scans, stage-link language policies, builtin dispatch, and discovery inventories into language/ecosystem adapters.
+- [ ] Replace concrete plugin lifecycle state and route/embedded-region branches in full and incremental indexing with registry-owned hooks and opaque state.
+- [ ] Move source-language type-text parsing and formatting out of the generic TypeArena/core; keep only normalized semantic types and canonical serialization in core.
+- [ ] Move remaining source separators and member-chain recognition from canonical/workspace helpers into active language profiles.
+- [ ] Replace the concrete module-resolver constructor registry and Go/Dart manifest inputs with registry-owned factories and opaque adapter configuration.
+- [ ] Move host-language script-tag dispatch, web-asset extension grammar, and ASP.NET asset-layout rules into language/ecosystem adapters.
+- [ ] Replace generic external virtual-path prefix and colon-segment inspection with registry-owned opaque origin metadata.
+- [ ] Move URI schemes, package-short-name rules, module-leaf parsing, and relative module joining/normalization out of resolver rules into adapters.
+- [x] Move concrete receiver keywords and parent/enclosing receiver semantics out of generic resolver rules into language profiles.
+- [ ] Move source literal classification and concrete collection-literal type construction out of generic argument typing into language adapters.

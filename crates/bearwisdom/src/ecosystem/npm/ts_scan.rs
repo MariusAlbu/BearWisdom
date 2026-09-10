@@ -109,7 +109,8 @@ pub(crate) fn scan_ts_file_exports(source: &str, language: &str) -> FileExports 
     // top-level `declare const`/`var`/`function`/… to the ambient scope — the
     // shape `@types/jest` uses for `expect`, `describe`, `it`, … which the
     // `declare global` / `declare namespace` sweep above does not reach.
-    out.globals.extend(scan_global_script_top_level_decls(source));
+    out.globals
+        .extend(scan_global_script_top_level_decls(source));
 
     // `declare module 'vue' { interface GlobalComponents { ... } }` —
     // member names are auto-registered as global Vue template components

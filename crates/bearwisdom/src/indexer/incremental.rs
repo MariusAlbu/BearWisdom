@@ -475,7 +475,12 @@ fn run_incremental_pipeline(
     psp::populate_pre_externals(registry, &mut project_ctx, &parsed, project_root);
     psp::populate_post_externals(registry, &mut project_ctx, &parsed, project_root, None);
     psp::synthesize_and_persist(
-        registry, &project_ctx, &mut parsed, db, &mut symbol_id_map, workspace_arena.as_ref(),
+        registry,
+        &project_ctx,
+        &mut parsed,
+        db,
+        &mut symbol_id_map,
+        workspace_arena.as_ref(),
     )?;
 
     let rstats = resolve::resolve_and_write_incremental_and_arena(

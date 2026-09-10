@@ -24,11 +24,7 @@ fn apply(lookup: &Lookup, target: &str, imports: Vec<ImportEntry>) -> Option<i64
     }
 }
 
-fn apply_with_gate(
-    lookup: &Lookup,
-    target: &str,
-    imports: Vec<ImportEntry>,
-) -> Option<i64> {
+fn apply_with_gate(lookup: &Lookup, target: &str, imports: Vec<ImportEntry>) -> Option<i64> {
     static PROFILE: crate::type_checker::profile::language_profile::LanguageProfile =
         crate::type_checker::profile::language_profile::LanguageProfile {
             implicit_root_types: &[],

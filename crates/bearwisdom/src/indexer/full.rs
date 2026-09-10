@@ -431,36 +431,40 @@ fn full_index_inner(
             // Stamp package_id based on path prefix match.
             pf.package_id = package_id_for_path(&pf.path);
 
-            // Vendored-C detection uses content — do it before slim-down.
+            // Language-owned vendored-source admission uses content — do it before slim-down.
             // Wrapped in catch_unwind because this is the drain loop's only
             // content-sensitive call site: if the scanner ever panics again
             // the pipeline must not hang waiting for workers that can no
             // longer deliver to a vanished receiver (see panic_hook.rs).
-            let is_vendored_c = matches!(pf.language.as_str(), "c" | "cpp")
-                && match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    is_c_vendored_file(&pf.language, &pf.path, pf.content.as_deref().unwrap_or(""))
+            let is_language_vendored =
+                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    is_vendored_source_file(
+                        &pf.language,
+                        &pf.path,
+                        pf.content.as_deref().unwrap_or(""),
+                    )
                 })) {
                     Ok(flag) => flag,
                     Err(e) => {
                         let msg = panic_message(&e);
                         warn!(
-                            "is_c_vendored_file panicked on {}: {msg} — treating as non-vendored",
-                            pf.path,
-                        );
+                        "is_vendored_source_file panicked on {}: {msg} — treating as non-vendored",
+                        pf.path,
+                    );
                         false
                     }
                 };
-            if is_vendored_c {
+            if is_language_vendored {
                 let original = pf.path.clone();
-                pf.path = format!("ext:c:{original}");
-                debug!("C/C++ vendored external: {original}");
+                pf.path = format!("ext:source:{original}");
+                debug!("language-admitted vendored external: {original}");
             }
 
             // Files inside a declared git-submodule subtree are vendored
-            // dependencies (any language). `is_vendored_c` already prefixed the
-            // C/C++ subset matched by a vendor dir / banner; this catches the
+            // dependencies (any language). `is_language_vendored` already prefixed the
+            // language-owned subset matched by its admission policy; this catches the
             // rest by the `.gitmodules` declaration.
-            let is_vendored_submodule = !is_vendored_c
+            let is_vendored_submodule = !is_language_vendored
                 && crate::ecosystem::vendored_submodules::is_under_submodule(
                     &pf.path,
                     &submodule_prefixes,
@@ -473,7 +477,7 @@ fn full_index_inner(
 
             // Toolchain-payload subtrees (Zig/Odin shipped stdlib + vendored
             // system libraries) are external, same as a vendored submodule.
-            let is_toolchain_payload = !is_vendored_c
+            let is_toolchain_payload = !is_language_vendored
                 && !is_vendored_submodule
                 && crate::ecosystem::toolchain_payload::is_under_toolchain_payload(
                     &pf.path,
@@ -488,7 +492,7 @@ fn full_index_inner(
             // Subtrees declaring their own foreign `package.json` / `bower.json`
             // are vendored third-party packages — external, same as a vendored
             // submodule.
-            let is_self_declared_vendor = !is_vendored_c
+            let is_self_declared_vendor = !is_language_vendored
                 && !is_vendored_submodule
                 && !is_toolchain_payload
                 && crate::ecosystem::vendored_self_declared::is_under_self_declared_vendor(
@@ -504,7 +508,7 @@ fn full_index_inner(
             // Per-locale Jupyter notebook copies under `translations/<locale>/`
             // are duplicates of the canonical notebook — classify as external so
             // only the canonical copy counts toward the resolution rate.
-            let is_translated_notebook = !is_vendored_c
+            let is_translated_notebook = !is_language_vendored
                 && !is_vendored_submodule
                 && !is_toolchain_payload
                 && !is_self_declared_vendor
@@ -522,7 +526,7 @@ fn full_index_inner(
             // into these files still resolve normally; the files remain
             // lookup targets via the same externals-merge path as every
             // other `ext:` category.
-            let vendor_or_generated = if is_vendored_c
+            let vendor_or_generated = if is_language_vendored
                 || is_vendored_submodule
                 || is_toolchain_payload
                 || is_self_declared_vendor
@@ -546,7 +550,7 @@ fn full_index_inner(
                 debug!("checked-in {tag} external: {original}");
             }
 
-            let is_vendored = is_vendored_c
+            let is_vendored = is_language_vendored
                 || is_vendored_submodule
                 || is_toolchain_payload
                 || is_self_declared_vendor
@@ -801,8 +805,7 @@ fn full_index_inner(
     // declared library names are the project-driven demand signal; an
     // undeclared package is never pulled.
     let mut robot_external_parsed: Vec<ParsedFile> = Vec::new();
-    let mut robot_external_sources =
-        crate::languages::robot::RobotExternalSources::default();
+    let mut robot_external_sources = crate::languages::robot::RobotExternalSources::default();
     {
         let declared_libs =
             crate::languages::robot::library_map::collect_declared_library_names(&parsed);
@@ -892,7 +895,7 @@ fn full_index_inner(
         }
     }
 
-    // Vendored C/C++ files are already persisted with origin="external"
+    // Language-admitted vendored files are already persisted with origin="external"
     // by the streaming pipeline above; nothing to do here.
 
     // Combined slice the resolver sees. External files are skipped by the
@@ -1236,16 +1239,16 @@ pub(crate) use super::stage_discover::{
 
 // Single-file parsing helpers live in `parse_file.rs`. Re-export the
 // public surface (`parse_file`, `parse_file_with_demand`,
-// `is_c_vendored_file`) so other indexer submodules and tests keep the
+// `is_vendored_source_file`) so other indexer submodules and tests keep the
 // `crate::indexer::full::*` import path they had before the carve.
 pub(crate) use super::parse_file::{
-    is_c_vendored_file, parse_file, parse_file_with_arena_and_demand, parse_file_with_demand,
+    is_vendored_source_file, parse_file, parse_file_with_arena_and_demand, parse_file_with_demand,
 };
 // `panic_message` is consumed by `full_index`'s catch_unwind guards;
-// `is_generated_platform_header` is re-exported so `full_tests.rs` can
+// `is_generated_source_file` is re-exported so `full_tests.rs` can
 // keep referring to it via `super::*` after the carve.
 #[cfg(test)]
-pub(super) use super::parse_file::is_generated_platform_header;
+pub(super) use super::parse_file::is_generated_source_file;
 use super::parse_file::panic_message;
 
 // External-source discovery and external virtual-path plumbing live in

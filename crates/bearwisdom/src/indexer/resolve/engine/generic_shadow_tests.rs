@@ -143,7 +143,13 @@ fn a_declaring_type_param_left_in_the_yield_becomes_a_generic_marker() {
     let arena = lookup.type_arena().unwrap();
     let member = sym(11, "Id", "NamedId.Id", "property", "src/NamedId.cs");
     let yielded = arena.intern_type_str("T");
-    let marked = mark_unbound_member_params(&lookup, arena, &member, yielded);
+    let marked = mark_unbound_member_params(
+        &lookup,
+        arena,
+        &member,
+        yielded,
+        DEFAULT_PROFILE.qname_separator,
+    );
     assert_ne!(marked, yielded, "the nominal param leaf must be rewritten");
     assert!(matches!(arena.get(marked), Type::Generic { .. }));
 }
@@ -154,7 +160,13 @@ fn a_method_own_param_inside_an_application_becomes_a_generic_marker() {
     let arena = lookup.type_arena().unwrap();
     let member = sym(40, "Sync", "App.Resolvers.Sync", "method", "src/R.cs");
     let yielded = arena.intern_type_str("Func<TSource, T>");
-    let marked = mark_unbound_member_params(&lookup, arena, &member, yielded);
+    let marked = mark_unbound_member_params(
+        &lookup,
+        arena,
+        &member,
+        yielded,
+        DEFAULT_PROFILE.qname_separator,
+    );
     match arena.get(marked) {
         Type::Apply { args, .. } => {
             assert_eq!(args.len(), 2);
@@ -176,7 +188,13 @@ fn a_concrete_yield_is_untouched() {
     let member = sym(11, "Id", "NamedId.Id", "property", "src/NamedId.cs");
     let yielded = arena.intern_type_str("DomainId");
     assert_eq!(
-        mark_unbound_member_params(&lookup, arena, &member, yielded),
+        mark_unbound_member_params(
+            &lookup,
+            arena,
+            &member,
+            yielded,
+            DEFAULT_PROFILE.qname_separator,
+        ),
         yielded
     );
 }

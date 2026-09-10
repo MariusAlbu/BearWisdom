@@ -47,7 +47,11 @@ fn grouped_use_emits_one_ref_per_member() {
         .expect("expected a User import from the group");
     assert_eq!(user.module.as_deref(), Some("App\\Models"));
     assert_eq!(
-        user.chain.as_ref().expect("grouped class import shape").segments[0].kind,
+        user.chain
+            .as_ref()
+            .expect("grouped class import shape")
+            .segments[0]
+            .kind,
         SegmentKind::TypeAccess
     );
 
@@ -71,14 +75,20 @@ fn use_function_and_use_const_extract_target_and_module() {
         .find(|r| r.target_name == "enum_value")
         .expect("expected the function import");
     assert_eq!(func.module.as_deref(), Some("App\\Support"));
-    assert!(func.chain.is_none(), "unaliased function import is value-shaped");
+    assert!(
+        func.chain.is_none(),
+        "unaliased function import is value-shaped"
+    );
 
     let konst = refs
         .iter()
         .find(|r| r.target_name == "MAX_SIZE")
         .expect("expected the const import");
     assert_eq!(konst.module.as_deref(), Some("App\\Support"));
-    assert!(konst.chain.is_none(), "unaliased const import is value-shaped");
+    assert!(
+        konst.chain.is_none(),
+        "unaliased const import is value-shaped"
+    );
 }
 
 #[test]

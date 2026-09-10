@@ -20,9 +20,9 @@
 
 use crate::indexer::resolve::engine::support::{
     file_path_matches_module as shared_file_path_matches_module, import_scoped_package_id,
-    normalize_name, path_contains_segment_run,
+    normalize_name,
 };
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 use crate::type_checker::profile::language_profile::NameNormalization;
 
 pub struct ImportedNamespaceRule;
@@ -65,13 +65,17 @@ impl LookupRule for ImportedNamespaceRule {
                 // own tree — an `ext:` candidate can never be its target,
                 // whatever its stem looks like (`./types` must not match an
                 // unrelated dependency's `…/internal/types.d.ts`).
-                if (module.starts_with("./") || module.starts_with("../"))
+                if ctx
+                    .profile
+                    .source_module_path_policy(module)
+                    .is_relative(module)
                     && sym.file_path.starts_with("ext:")
                 {
                     continue;
                 }
-                if sym.qualified_name.starts_with(module.as_str()) {
-                    let rest = &sym.qualified_name[module.len()..];
+                let indexed_module = ctx.profile.index_qname_from_source(module);
+                if sym.qualified_name.starts_with(&indexed_module) {
+                    let rest = &sym.qualified_name[indexed_module.len()..];
                     if rest.is_empty() || rest.starts_with('.') {
                         return LookupResult::Resolved(
                             ctx.resolved(sym.id, "default_imported_namespace"),
@@ -95,9 +99,10 @@ impl LookupRule for ImportedNamespaceRule {
                 let Some(module) = &import.module_path else {
                     continue;
                 };
-                let expected = format!("{module}.{target}");
+                let expected = ctx.profile.index_qname_join(module, target);
                 let expected_norm = normalize_name(norm, &expected);
-                for sym in ctx.lookup.in_namespace(module) {
+                let indexed_module = ctx.profile.index_qname_from_source(module);
+                for sym in ctx.lookup.in_namespace(&indexed_module) {
                     if normalize_name(norm, &sym.qualified_name) == expected_norm
                         && (ctx.kind)(edge_kind, &sym.kind)
                     {
@@ -130,24 +135,9 @@ fn file_path_matches_module(
     if shared_file_path_matches_module(file_path, module, profile) {
         return true;
     }
-    let adapted = profile.module_path_match(module);
-    if adapted.authority
-        != crate::type_checker::profile::language_profile::ModuleMatchAuthority::Heuristic
-    {
-        return false;
-    }
-    let normalized = file_path.replace('\\', "/");
-    let cleaned = adapted
-        .module_path
-        .trim_start_matches("./")
-        .trim_start_matches("../");
-    let dotted = cleaned.replace('.', "/");
-    if dotted.is_empty() {
-        return false;
-    }
-    let path_norm = normalized.replace('-', "_");
-    let run_norm = dotted.replace('-', "_");
-    path_contains_segment_run(&path_norm, &run_norm)
+    (profile
+        .source_module_path_policy(module)
+        .bare_module_matches_file)(file_path, module)
 }
 
 #[cfg(test)]

@@ -22,7 +22,7 @@
 // ref, or an Imports edge kind) the guard passes through.
 // =============================================================================
 
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 use crate::type_checker::profile::language_profile::ModuleAnchor;
 use crate::types::EdgeKind;
 

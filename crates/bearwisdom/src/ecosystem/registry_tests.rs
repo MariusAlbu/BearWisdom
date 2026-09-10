@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
+use crate::ecosystem::externals::ExternalDepRoot;
 use crate::ecosystem::{
     default_registry, Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind,
     EcosystemRegistry, LocateContext,
 };
-use crate::ecosystem::externals::ExternalDepRoot;
 
 #[test]
 fn default_registry_contains_package_ecosystems() {

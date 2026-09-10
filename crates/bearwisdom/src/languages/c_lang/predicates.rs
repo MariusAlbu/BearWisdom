@@ -208,10 +208,7 @@ pub(super) fn is_template_param(name: &str) -> bool {
         let bytes = name.as_bytes();
         let last = bytes[bytes.len() - 1];
         let before = bytes[bytes.len() - 2];
-        if last == b'T'
-            && before.is_ascii_lowercase()
-            && bytes[0].is_ascii_uppercase()
-        {
+        if last == b'T' && before.is_ascii_lowercase() && bytes[0].is_ascii_uppercase() {
             return true;
         }
     }

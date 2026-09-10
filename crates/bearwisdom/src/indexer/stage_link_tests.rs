@@ -58,4 +58,3 @@ fn canonical_dedup_path_falls_back_when_path_does_not_exist() {
     let missing = Path::new("/definitely/does/not/exist/on/this/machine");
     assert_eq!(canonical_dedup_path(missing), missing);
 }
-

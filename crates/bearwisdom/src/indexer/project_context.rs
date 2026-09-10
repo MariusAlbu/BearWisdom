@@ -292,21 +292,20 @@ pub fn build_project_context_with_packages(
         }
         workspace_pkg_by_declared_name.insert(declared.clone(), id);
     }
-    // A hyphenated declared name (Cargo's convention, e.g. `loco-rs`) is
-    // referenced in source under its identifier-safe form (`use loco_rs::`
-    // — Rust identifiers can't contain `-`). Register the underscored
-    // spelling too, once every package's own exact declared_name has already
-    // claimed its slot above, so the alias never pre-empts a package that
-    // genuinely declares that exact (underscored) spelling itself.
+    // Ecosystems may contribute source-name aliases after every package's
+    // exact manifest spelling has claimed its slot. An alias therefore never
+    // pre-empts another package that genuinely declares that exact spelling.
+    let ecosystems = crate::ecosystem::default_registry();
     for pkg in packages {
         let Some(id) = pkg.id else { continue };
         let Some(declared) = &pkg.declared_name else {
             continue;
         };
-        if declared.contains('-') {
-            workspace_pkg_by_declared_name
-                .entry(declared.replace('-', "_"))
-                .or_insert(id);
+        let Some(kind) = pkg.kind.as_deref() else {
+            continue;
+        };
+        for alias in ecosystems.workspace_package_name_aliases(kind, declared) {
+            workspace_pkg_by_declared_name.entry(alias).or_insert(id);
         }
     }
 
@@ -336,51 +335,6 @@ pub fn build_project_context_with_packages(
 // ---------------------------------------------------------------------------
 // Phase 4 seam — ProjectContext::initialize
 // ---------------------------------------------------------------------------
-
-/// Map from `EcosystemId` to the `ManifestKind`s that ecosystem owns.
-///
-/// Drives the per-ecosystem `ManifestMatch` activation: an ecosystem's
-/// `ManifestMatch` clause is satisfied iff at least one of its kinds is
-/// present in `ProjectContext::manifests`.
-///
-/// Ecosystems without any `ManifestKind` coverage (cabal, nimble, cpan and
-/// stdlib-shape entries) return an empty slice; their `ManifestMatch`
-/// clause then evaluates to `false` and they must rely on a sibling
-/// `LanguagePresent` / `TransitiveOn` clause inside an `Any(...)`
-/// composite to activate.
-pub(crate) fn manifest_kinds_for_ecosystem(id: EcosystemId) -> &'static [ManifestKind] {
-    match id.as_str() {
-        "maven" => &[
-            ManifestKind::Maven,
-            ManifestKind::Gradle,
-            ManifestKind::Sbt,
-            ManifestKind::Clojure,
-        ],
-        "npm" => &[ManifestKind::Npm],
-        "pypi" => &[ManifestKind::PyProject],
-        "cargo" => &[ManifestKind::Cargo],
-        "hex" => &[ManifestKind::Mix, ManifestKind::Gleam],
-        "nuget" => &[ManifestKind::NuGet],
-        "spm" => &[ManifestKind::SwiftPM],
-        "go-mod" => &[ManifestKind::GoMod],
-        "rubygems" => &[ManifestKind::Gemfile],
-        "composer" => &[ManifestKind::Composer],
-        "cran" => &[ManifestKind::Description],
-        "pub" => &[ManifestKind::Pubspec],
-        "opam" => &[ManifestKind::Opam],
-        "luarocks" => &[ManifestKind::Rockspec],
-        "zig-pkg" => &[ManifestKind::ZigZon],
-        "puppet-forge" => &[ManifestKind::Puppet],
-        "cabal" => &[ManifestKind::Cabal],
-        "cpan" => &[ManifestKind::Cpan],
-        "nimble" => &[ManifestKind::Nimble],
-        "alire" => &[ManifestKind::Alire],
-        "psgallery" => &[ManifestKind::Psd1],
-        "bazel-central-registry" => &[ManifestKind::ModuleBazel],
-        "tf-registry" => &[ManifestKind::Terraform],
-        _ => &[],
-    }
-}
 
 impl ProjectContext {
     /// Phase 4 entry point. Constructs a fully populated `ProjectContext`:
@@ -723,12 +677,13 @@ fn evaluate_activation_scoped(
     }
 }
 
-/// `ManifestMatch` evaluation. Returns `true` iff at least one
-/// `ManifestKind` claimed by the ecosystem is present in the scope's
-/// manifest set. Ecosystems with no claimed kinds (returned empty from
-/// `manifest_kinds_for_ecosystem`) always evaluate to `false`.
+/// `ManifestMatch` evaluation. Returns `true` iff at least one manifest kind
+/// supplied by the ecosystem adapter is present in the scope's manifest set.
 fn ecosystem_manifest_present_scoped(eco_id: EcosystemId, scope: &ActivationScope<'_>) -> bool {
-    let kinds = manifest_kinds_for_ecosystem(eco_id);
+    let kinds = crate::ecosystem::default_registry()
+        .get(eco_id)
+        .map(|ecosystem| ecosystem.manifest_kinds())
+        .unwrap_or_default();
     if kinds.is_empty() {
         return false;
     }

@@ -81,5 +81,4 @@ impl LanguagePlugin for DockerfilePlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::DOCKERFILE_PROFILE)
     }
-
 }

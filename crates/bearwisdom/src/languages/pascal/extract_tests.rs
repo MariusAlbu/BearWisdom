@@ -665,12 +665,19 @@ end.
 "#;
     let result = extract(source);
     for unit in ["Classes", "SysUtils", "CastleVectors"] {
-        let found = result.refs.iter().find(|r| {
-            r.kind == EdgeKind::Imports && r.target_name.eq_ignore_ascii_case(unit)
-        });
+        let found = result
+            .refs
+            .iter()
+            .find(|r| r.kind == EdgeKind::Imports && r.target_name.eq_ignore_ascii_case(unit));
         let Some(r) = found else {
-            panic!("expected an Imports ref for unit `{unit}`; got: {:?}",
-                result.refs.iter().map(|r| (r.kind, r.target_name.as_str())).collect::<Vec<_>>());
+            panic!(
+                "expected an Imports ref for unit `{unit}`; got: {:?}",
+                result
+                    .refs
+                    .iter()
+                    .map(|r| (r.kind, r.target_name.as_str()))
+                    .collect::<Vec<_>>()
+            );
         };
         assert_eq!(
             r.module.as_deref(),
@@ -697,10 +704,16 @@ end.
 "#;
     let result = extract(source);
     assert!(
-        result.refs.iter().any(|r| r.kind == EdgeKind::Imports
-            && r.target_name.eq_ignore_ascii_case("Math")),
+        result
+            .refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::Imports && r.target_name.eq_ignore_ascii_case("Math")),
         "expected an Imports ref for implementation-section unit `Math`; got: {:?}",
-        result.refs.iter().map(|r| (r.kind, r.target_name.as_str())).collect::<Vec<_>>()
+        result
+            .refs
+            .iter()
+            .map(|r| (r.kind, r.target_name.as_str()))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -726,8 +739,10 @@ end.
 "#;
     let result = extract(source);
     assert!(
-        result.refs.iter().any(|r| r.kind == EdgeKind::Imports
-            && r.target_name.eq_ignore_ascii_case("helpers")),
+        result
+            .refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::Imports && r.target_name.eq_ignore_ascii_case("helpers")),
         "expected an Imports ref for the included file stem `helpers`; got: {:?}",
         result
             .refs
@@ -743,8 +758,14 @@ fn include_directive_short_form_and_unquoted_and_subdir() {
     // `{$i name}` short form, no quotes, and a directory prefix all reduce to
     // the bare file stem.
     for (source, stem) in [
-        ("unit U;\ninterface\n{$i helpers.inc}\nimplementation\nend.\n", "helpers"),
-        ("unit U;\ninterface\n{$I helpers.inc}\nimplementation\nend.\n", "helpers"),
+        (
+            "unit U;\ninterface\n{$i helpers.inc}\nimplementation\nend.\n",
+            "helpers",
+        ),
+        (
+            "unit U;\ninterface\n{$I helpers.inc}\nimplementation\nend.\n",
+            "helpers",
+        ),
         (
             "unit U;\ninterface\n{$include 'inc/shared_defs.inc'}\nimplementation\nend.\n",
             "shared_defs",
@@ -752,8 +773,10 @@ fn include_directive_short_form_and_unquoted_and_subdir() {
     ] {
         let result = extract(source);
         assert!(
-            result.refs.iter().any(|r| r.kind == EdgeKind::Imports
-                && r.target_name.eq_ignore_ascii_case(stem)),
+            result
+                .refs
+                .iter()
+                .any(|r| r.kind == EdgeKind::Imports && r.target_name.eq_ignore_ascii_case(stem)),
             "expected an Imports ref for stem `{stem}` from source `{source}`; got: {:?}",
             result
                 .refs

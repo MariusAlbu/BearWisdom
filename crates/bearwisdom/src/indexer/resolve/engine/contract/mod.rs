@@ -10,7 +10,6 @@
 
 pub mod chain_walker;
 pub mod flow_cache;
-pub mod generic_clause;
 pub mod generic_return;
 pub mod lookup;
 mod lookup_display;
@@ -32,16 +31,5 @@ pub use types::{
 pub type Resolution = SymbolInfo;
 pub use util::{build_scope_chain, camel_to_kebab, lexical_normalize};
 
-pub(crate) use chain_walker::{
-    first_generic_arg, is_jvm_language, is_plain_type_name,
-    parse_declared_type_from_signature_for_lang, parse_object_type_members,
-    parse_param_types_from_signature, parse_return_type_from_jvm_descriptor,
-    parse_return_type_from_signature, parse_return_type_positional, parse_return_type_trailing,
-    parse_top_level_conditional, parse_type_head_and_args, parse_type_head_and_args_bracket,
-    resolve_type_name_in_scope,
-};
-pub(crate) use generic_clause::signature_generic_params;
-pub(crate) use util::{
-    common_prefix_len, file_belongs_to_npm_package, is_type_like_kind,
-    npm_package_from_external_path, npm_package_from_specifier,
-};
+pub(crate) use chain_walker::resolve_type_name_in_scope;
+pub(crate) use util::{common_prefix_len, is_type_like_kind};

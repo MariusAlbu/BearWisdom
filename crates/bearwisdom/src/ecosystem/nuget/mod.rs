@@ -30,10 +30,12 @@ use crate::walker::WalkedFile;
 mod assembly_cache;
 mod clr_projection;
 mod cs_header;
+pub(crate) mod declared_deps;
 mod dll_locator;
 mod dll_metadata;
 mod dotscope_worker;
 mod manifest;
+pub(crate) mod resolver_policy;
 mod signature_format;
 mod source_discovery;
 mod symbol_index;
@@ -49,10 +51,10 @@ pub use manifest::{
     NuGetCoord, NuGetManifest,
 };
 
-pub(crate) use dotscope_worker::crack_one_dll_type;
-pub(crate) use dotscope_worker::flush_assembly_cache;
 use dll_locator::locate_dlls_for_project;
 pub(crate) use dll_metadata::list_dll_type_names;
+pub(crate) use dotscope_worker::crack_one_dll_type;
+pub(crate) use dotscope_worker::flush_assembly_cache;
 use symbol_index::{build_nuget_source_symbol_index, resolve_nuget_source_symbols};
 
 pub const ID: EcosystemId = EcosystemId::new("nuget");
@@ -189,4 +191,3 @@ fn dll_roots_for_project(project_root: &Path) -> Vec<ExternalDepRoot> {
 #[cfg(test)]
 #[path = "mod_tests.rs"]
 mod tests;
-

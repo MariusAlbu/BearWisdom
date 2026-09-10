@@ -112,3 +112,38 @@ fn class_builder_spec_is_const_friendly() {
         ClassNameSource::LhsThenArg(0)
     ));
 }
+#[test]
+fn source_qname_conversion_uses_the_profile_separator() {
+    let mut profile = super::DEFAULT_PROFILE;
+    profile.qname_separator = "::";
+    assert_eq!(profile.simple_name("crate::net::Client"), "Client");
+    assert_eq!(
+        profile.index_qname_join("crate::net", "Client"),
+        "crate.net.Client"
+    );
+    assert_eq!(
+        profile.index_qname_from_source("crate.net.Client"),
+        "crate.net.Client"
+    );
+    assert_eq!(
+        profile.index_qname_path_from_source("crate::net::Client"),
+        "crate/net/Client"
+    );
+}
+
+#[test]
+fn member_surface_adapters_are_opt_in_and_fail_closed() {
+    assert_eq!(DEFAULT_PROFILE.primitive_member_head("string"), None);
+    assert!(!DEFAULT_PROFILE.has_homogeneous_computed_access("Array"));
+
+    let ts = &crate::languages::typescript::TYPESCRIPT_PROFILE;
+    assert_eq!(
+        ts.primitive_member_head("string").as_deref(),
+        Some("String")
+    );
+    assert!(ts.has_homogeneous_computed_access("ReadonlyArray"));
+
+    let rust = &crate::languages::rust_lang::RUST_PROFILE;
+    assert!(rust.has_homogeneous_computed_access("Vec"));
+    assert!(!rust.has_homogeneous_computed_access("Array"));
+}

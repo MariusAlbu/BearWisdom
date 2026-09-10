@@ -19,6 +19,48 @@ use tree_sitter::{Node, Parser};
 #[path = "selectors_tests.rs"]
 mod tests;
 
+/// Translate Angular's CSS-like selector syntax to the keys a template may
+/// reference. Attribute directives bind by attribute name; element selectors
+/// bind by their tag. This grammar is intentionally kept with the TypeScript
+/// Angular-decorator extractor rather than the generic compilation store.
+pub(crate) fn selector_binding_keys(raw: &str) -> Vec<String> {
+    let mut keys = Vec::new();
+    for part in raw.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        let mut had_attr = false;
+        let mut rest = part;
+        while let Some(open) = rest.find('[') {
+            let Some(close) = rest[open..].find(']') else {
+                break;
+            };
+            let attr = rest[open + 1..open + close].trim();
+            let attr = attr
+                .split(['=', '~', '|', '^', '$', '*'])
+                .next()
+                .unwrap_or(attr)
+                .trim();
+            if !attr.is_empty() {
+                keys.push(attr.to_string());
+                had_attr = true;
+            }
+            rest = &rest[open + close + 1..];
+        }
+        if !had_attr {
+            let tag: String = part
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
+                .collect();
+            if !tag.is_empty() {
+                keys.push(tag);
+            }
+        }
+    }
+    keys
+}
+
 // ---------------------------------------------------------------------------
 // Angular @Component selector extraction (called by full-index pipeline)
 // ---------------------------------------------------------------------------

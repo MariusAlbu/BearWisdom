@@ -39,10 +39,17 @@ fn user_imports_picks_up_static_from_clauses() {
 fn user_imports_picks_up_multiline_from_clause() {
     // A multi-line import puts `from '<spec>'` on a `}`-leading continuation
     // line the leading-keyword scan misses; the package must still be detected.
-    let src = "import {\n  a,\n  b,\n} from '@scope/multi';\nexport {\n  c,\n} from 'multi-reexport';\n";
+    let src =
+        "import {\n  a,\n  b,\n} from '@scope/multi';\nexport {\n  c,\n} from 'multi-reexport';\n";
     let got = extract(src);
-    assert!(got.contains("@scope/multi"), "multi-line import spec missed: {got:?}");
-    assert!(got.contains("multi-reexport"), "multi-line re-export spec missed: {got:?}");
+    assert!(
+        got.contains("@scope/multi"),
+        "multi-line import spec missed: {got:?}"
+    );
+    assert!(
+        got.contains("multi-reexport"),
+        "multi-line re-export spec missed: {got:?}"
+    );
 }
 
 #[test]
@@ -372,7 +379,6 @@ fn probe_global_decl_files_finds_jest_d_ts_at_root() {
     assert!(paths.iter().any(|p| p.ends_with("jest.d.ts")), "{paths:?}");
 }
 
-
 #[test]
 fn discover_ts_externals_falls_back_to_keep_all_when_no_user_source() {
     // Manifest-only checkout (e.g. a generator template). With no
@@ -475,7 +481,9 @@ fn lexically_normalize_collapses_dot_and_parent_components() {
     use std::path::Path;
 
     assert_eq!(
-        lexically_normalize(Path::new("/pkg/primitives/event-dispatch/../../event_dispatcher.d.ts")),
+        lexically_normalize(Path::new(
+            "/pkg/primitives/event-dispatch/../../event_dispatcher.d.ts"
+        )),
         Path::new("/pkg/event_dispatcher.d.ts")
     );
     assert_eq!(
@@ -564,7 +572,10 @@ declare namespace jest {
 }
 "#;
     let names = scan_global_script_top_level_decls(src);
-    assert!(names.iter().any(|n| n == "expect"), "expect lifted: {names:?}");
+    assert!(
+        names.iter().any(|n| n == "expect"),
+        "expect lifted: {names:?}"
+    );
     assert!(names.iter().any(|n| n == "describe"));
     assert!(names.iter().any(|n| n == "it"));
     assert!(names.iter().any(|n| n == "beforeAll"));
@@ -1228,7 +1239,10 @@ fn resolve_package_subpath_entries_resolves_concrete_subpaths_skips_root_and_wil
     let entries = resolve_package_subpath_entries(&dep);
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].0, "/hooks");
-    assert_eq!(entries[0].1, root.join("hooks").join("src").join("index.d.ts"));
+    assert_eq!(
+        entries[0].1,
+        root.join("hooks").join("src").join("index.d.ts")
+    );
 }
 
 #[test]
@@ -1239,11 +1253,22 @@ fn resolve_package_subpath_entries_probes_flat_file_subpath_from_demand() {
     let tmp = tempfile::TempDir::new().unwrap();
     let root = tmp.path().join("node_modules").join("next");
     std::fs::create_dir_all(&root).unwrap();
-    std::fs::write(root.join("package.json"), r#"{"name":"next","types":"index.d.ts"}"#).unwrap();
+    std::fs::write(
+        root.join("package.json"),
+        r#"{"name":"next","types":"index.d.ts"}"#,
+    )
+    .unwrap();
     std::fs::write(root.join("index.d.ts"), "export const x: 1;").unwrap();
-    std::fs::write(root.join("server.d.ts"), "export declare class NextRequest {}").unwrap();
-    std::fs::write(root.join("navigation.d.ts"), "export declare function redirect(): void;")
-        .unwrap();
+    std::fs::write(
+        root.join("server.d.ts"),
+        "export declare class NextRequest {}",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("navigation.d.ts"),
+        "export declare function redirect(): void;",
+    )
+    .unwrap();
 
     let mut dep = mkdep(root.clone(), "next");
     dep.requested_imports = vec!["next/server".to_string()];

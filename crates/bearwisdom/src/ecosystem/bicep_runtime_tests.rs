@@ -107,18 +107,31 @@ fn vendored_surface_supplies_builtin_function_and_decorator_names() {
     assert_eq!(roots.len(), 1, "vendored fallback root present");
 
     let files = synthesise_bicep_namespace_file(&roots[0].root);
-    assert_eq!(files.len(), 1, "vendored surface synthesises one ParsedFile");
+    assert_eq!(
+        files.len(),
+        1,
+        "vendored surface synthesises one ParsedFile"
+    );
     let names: Vec<&str> = files[0].symbols.iter().map(|s| s.name.as_str()).collect();
 
     // Functions the template-only corpus leaves unresolved without a clone.
-    assert!(names.contains(&"resourceGroup"), "az ns fn from vendored asset");
-    assert!(names.contains(&"resourceId"), "resolved-constant fn present");
+    assert!(
+        names.contains(&"resourceGroup"),
+        "az ns fn from vendored asset"
+    );
+    assert!(
+        names.contains(&"resourceId"),
+        "resolved-constant fn present"
+    );
     assert!(names.contains(&"subscription"), "az ns fn present");
     assert!(names.contains(&"union"), "system fn present");
     assert!(names.contains(&"concat"), "system fn present");
     assert!(names.contains(&"uniqueString"), "system fn present");
     // Decorators.
-    assert!(names.contains(&"description"), "decorator from vendored asset");
+    assert!(
+        names.contains(&"description"),
+        "decorator from vendored asset"
+    );
     assert!(names.contains(&"secure"), "decorator present");
     // Namespace aliases.
     assert!(names.contains(&"sys"), "sys namespace alias present");
@@ -179,9 +192,15 @@ fn vendored_surface_asset_parses_and_is_nonempty() {
         "vendored surface should expose the full ARM builtin set, got {}",
         named.len()
     );
-    assert!(named.iter().any(|(n, m, _)| n == "resourceGroup" && *m == "bicep.builtins"));
-    assert!(named.iter().any(|(n, m, _)| n == "description" && *m == "bicep.decorators"));
-    assert!(named.iter().any(|(n, m, _)| n == "sys" && *m == "bicep.namespace"));
+    assert!(named
+        .iter()
+        .any(|(n, m, _)| n == "resourceGroup" && *m == "bicep.builtins"));
+    assert!(named
+        .iter()
+        .any(|(n, m, _)| n == "description" && *m == "bicep.decorators"));
+    assert!(named
+        .iter()
+        .any(|(n, m, _)| n == "sys" && *m == "bicep.namespace"));
 }
 
 #[test]

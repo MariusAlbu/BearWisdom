@@ -80,13 +80,7 @@ fn resolution_breakdown_distinguishes_resolved_from_unknown() {
     assert_eq!(rb.precision, rb.internal_resolution_rate);
 }
 
-
-fn seed_symbol_origin_lang(
-    db: &Database,
-    file_id: i64,
-    name: &str,
-    origin_language: &str,
-) -> i64 {
+fn seed_symbol_origin_lang(db: &Database, file_id: i64, name: &str, origin_language: &str) -> i64 {
     db.conn()
         .execute(
             "INSERT INTO symbols
@@ -126,7 +120,10 @@ fn rate_by_language_splits_two_languages() {
 
     let rb = resolution_breakdown(&db).unwrap();
 
-    assert_eq!(rb.internal_edges_by_lang.get("typescript").copied(), Some(3));
+    assert_eq!(
+        rb.internal_edges_by_lang.get("typescript").copied(),
+        Some(3)
+    );
     assert_eq!(rb.internal_edges_by_lang.get("go").copied(), Some(1));
 
     assert_eq!(rb.rate_by_language.get("typescript").copied(), Some(75.0));
@@ -391,7 +388,10 @@ fn generated_filter_is_dart_only() {
     // Neither is Dart, so both still count and nothing is excluded.
     assert_eq!(rb.internal_unresolved, 2);
     assert_eq!(rb.generated_excluded, 0);
-    assert_eq!(rb.unresolved_by_lang_kind.get("typescript.calls").copied(), Some(1));
+    assert_eq!(
+        rb.unresolved_by_lang_kind.get("typescript.calls").copied(),
+        Some(1)
+    );
     assert_eq!(rb.unresolved_by_lang_kind.get("go.calls").copied(), Some(1));
 }
 
@@ -415,12 +415,7 @@ fn vendored_and_generated_files_counted_by_ext_prefix() {
         "javascript",
         "external",
     );
-    seed_file(
-        &db,
-        "ext:generated:proto/service.pb.go",
-        "go",
-        "external",
-    );
+    seed_file(&db, "ext:generated:proto/service.pb.go", "go", "external");
     seed_file(&db, "src/app.ts", "typescript", "internal");
 
     let rb = resolution_breakdown(&db).unwrap();

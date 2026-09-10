@@ -5,7 +5,7 @@ use crate::types::{EdgeKind, SymbolKind};
 #[test]
 fn swift_profile_identity() {
     assert_eq!(SWIFT_PROFILE.id, "swift");
-    assert_eq!(SWIFT_PROFILE.self_keywords, &["self", "Self", "super"]);
+    assert_eq!(SWIFT_PROFILE.receiver_spellings, &["self", "Self", "super"]);
 }
 
 #[test]

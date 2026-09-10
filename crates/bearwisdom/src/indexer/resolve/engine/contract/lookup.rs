@@ -281,12 +281,15 @@ pub trait SymbolLookup: FlowCacheLookup {
     /// external and need not be resolved against the project index.
     fn is_external_name(&self, name: &str, language: &str) -> bool;
 
-    /// Whether `spec` — a module specifier, probed whole and by its bare
-    /// package head — is declared as a dependency in the manifest visible to
-    /// `package_id` (the package's own manifest when per-package data exists,
-    /// the workspace union otherwise). Cause-attribution evidence only; never
-    /// a resolution input.
-    fn is_declared_dependency(&self, _package_id: Option<i64>, _spec: &str) -> bool {
+    /// Whether `spec` is declared by the manifest visible to `package_id`.
+    /// The source `language` selects its owning ecosystem's spelling policy;
+    /// this is cause-attribution evidence only, never a resolution input.
+    fn is_declared_dependency(
+        &self,
+        _package_id: Option<i64>,
+        _language: &str,
+        _spec: &str,
+    ) -> bool {
         false
     }
 
@@ -333,9 +336,8 @@ pub trait SymbolLookup: FlowCacheLookup {
         SymbolSet::empty()
     }
 
-    /// Does `path` lie inside a package declared as ambient by the project's
-    /// own configuration (TypeScript `tsconfig.json#compilerOptions.types`,
-    /// `@types/*` packages, or `globals.d.ts` files)?
+    /// Does `path` lie inside a package declared as ambient by project
+    /// configuration or an ecosystem adapter?
     ///
     /// Ambient packages contribute symbols the user can reference without an
     /// `import` statement. The DefaultResolver's `ambient_package` strategy
@@ -343,8 +345,7 @@ pub trait SymbolLookup: FlowCacheLookup {
     /// when a bare-name ref could otherwise match thousands of identically-
     /// named symbols across the project.
     ///
-    /// Default returns `false` — synthetic test lookups and non-TS projects
-    /// pay nothing.
+    /// Default returns `false`.
     fn is_ambient_path(&self, _path: &str) -> bool {
         false
     }
@@ -406,14 +407,9 @@ pub trait SymbolLookup: FlowCacheLookup {
         false
     }
 
-    /// Resolve an import specifier through the project's declared path
-    /// aliases. Returns the rewritten bare path (e.g. `@/utils` → `src/utils`,
-    /// `$lib/x` → `src/lib/x`) or `None` when no alias matches.
-    ///
-    /// The alias table is populated per ecosystem from whatever config
-    /// declares it — TS `tsconfig.json#paths`, `jsconfig.json`, framework
-    /// configs — so the resolver tower can rewrite aliased specifiers without
-    /// baking any one config format into the language-agnostic path.
+    /// Resolve a source-module alias through ecosystem-normalized resolver
+    /// facts. Returns the canonical module spelling, or `None` when no fact
+    /// applies.
     /// Namespaces the build manifest opens for EVERY file of a package
     /// without a written import — `<ImplicitUsings>` / `<Using Include>`
     /// global usings. Consulted by the wildcard-import rung alongside the
@@ -423,13 +419,12 @@ pub trait SymbolLookup: FlowCacheLookup {
         &[]
     }
 
-    fn resolve_path_alias(&self, _package_id: Option<i64>, _specifier: &str) -> Option<String> {
+    fn resolve_module_alias(&self, _package_id: Option<i64>, _specifier: &str) -> Option<String> {
         None
     }
 
-    /// Target package name a consumer-scoped Cargo dependency rename maps an
-    /// alias to. None when the consumer declares no such rename.
-    fn dep_rename(&self, _consumer_pkg: Option<i64>, _alias: &str) -> Option<&str> {
+    /// Canonical package name for a consumer-scoped package alias.
+    fn resolve_package_alias(&self, _consumer_pkg: Option<i64>, _alias: &str) -> Option<&str> {
         None
     }
 

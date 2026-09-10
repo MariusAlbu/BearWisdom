@@ -36,11 +36,7 @@ impl ScanAttribution {
         for &i in &order {
             let s = &symbols[i];
             let end = (s.end_line as usize).min(max_line);
-            for slot in by_line
-                .iter_mut()
-                .take(end + 1)
-                .skip(s.start_line as usize)
-            {
+            for slot in by_line.iter_mut().take(end + 1).skip(s.start_line as usize) {
                 *slot = i;
             }
         }

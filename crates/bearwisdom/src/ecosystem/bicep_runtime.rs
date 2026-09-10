@@ -49,8 +49,7 @@ const VENDORED_FALLBACK_ROOT: &str = "ext:bicep-runtime:vendored-surface";
 
 /// Distilled function/decorator/namespace surface, vendored from the Bicep
 /// compiler's `{System,Az}NamespaceType.cs` registrations at a pinned tag.
-const VENDORED_NAMESPACE_SURFACE: &str =
-    include_str!("../../assets/bicep/namespace_surface.json");
+const VENDORED_NAMESPACE_SURFACE: &str = include_str!("../../assets/bicep/namespace_surface.json");
 
 pub struct BicepRuntimeEcosystem;
 

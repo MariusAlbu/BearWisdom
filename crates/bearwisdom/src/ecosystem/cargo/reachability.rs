@@ -71,7 +71,9 @@ pub(super) fn resolve_crate_entry(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     };
     let mut out = Vec::new();
     let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
-    expand_rust_mods_into(dep, &dep.root, &entry, &enabled, &mut out, &mut seen, 0, max_depth);
+    expand_rust_mods_into(
+        dep, &dep.root, &entry, &enabled, &mut out, &mut seen, 0, max_depth,
+    );
     out
 }
 
@@ -185,7 +187,16 @@ fn expand_rust_mods_into(
         let Some(next) = resolve_rust_mod_path(file, &decl.name) else {
             continue;
         };
-        expand_rust_mods_into(dep, crate_root, &next, enabled, out, seen, depth + 1, max_depth);
+        expand_rust_mods_into(
+            dep,
+            crate_root,
+            &next,
+            enabled,
+            out,
+            seen,
+            depth + 1,
+            max_depth,
+        );
     }
 
     // Follow intra-crate `pub use crate::a::b::Type;` / `pub use self::x;`
@@ -194,7 +205,16 @@ fn expand_rust_mods_into(
     // walked file enters `out` and its own children expand under the same gate.
     for module_path in extract_rust_pub_use_modules(&src) {
         for next in resolve_rust_use_module_files(crate_root, file, &module_path) {
-            expand_rust_mods_into(dep, crate_root, &next, enabled, out, seen, depth + 1, max_depth);
+            expand_rust_mods_into(
+                dep,
+                crate_root,
+                &next,
+                enabled,
+                out,
+                seen,
+                depth + 1,
+                max_depth,
+            );
         }
     }
 }

@@ -7,23 +7,21 @@ use super::*;
 #[test]
 fn go_free_function_return_does_not_skip_its_parameter_group() {
     assert_eq!(
-        parse_return_type_from_signature_for_lang(
+        crate::languages::default_registry().get("go").signature_return_type(
             "func NewWithClient(c *fasthttp.Client) *Client",
-            "go",
         )
         .as_deref(),
         Some("Client"),
     );
     assert_eq!(
-        parse_return_type_from_signature_for_lang(
+        crate::languages::default_registry().get("go").signature_return_type(
             "func (c *Client) SetRetryConfig(config *RetryConfig) *Client",
-            "go",
         )
         .as_deref(),
         Some("Client"),
     );
     assert_eq!(
-        parse_return_type_from_signature_for_lang("func NewWithoutReturn(c *Client)", "go"),
+        crate::languages::default_registry().get("go").signature_return_type("func NewWithoutReturn(c *Client)"),
         None,
     );
 }
@@ -31,21 +29,21 @@ fn go_free_function_return_does_not_skip_its_parameter_group() {
 #[test]
 fn go_function_types_keep_their_sole_parameter_group_while_methods_skip_receivers() {
     assert_eq!(
-        parse_param_types_from_signature_for_lang("func(T) R", "go"),
+        crate::languages::default_registry().get("go").signature_parameter_types("func(T) R"),
         Some(vec!["T".to_string()]),
         "a function type has no receiver group"
     );
     assert_eq!(
-        parse_return_type_from_signature_for_lang("func(T) R", "go").as_deref(),
+        crate::languages::default_registry().get("go").signature_return_type("func(T) R").as_deref(),
         Some("R")
     );
     assert_eq!(
-        parse_return_type_from_signature_for_lang("func(T) func(U) V", "go").as_deref(),
+        crate::languages::default_registry().get("go").signature_return_type("func(T) func(U) V").as_deref(),
         Some("func(U) V"),
         "a function-valued result is not a method-name plus receiver"
     );
     assert_eq!(
-        parse_param_types_from_signature_for_lang("func (r Receiver) Method(T) R", "go"),
+        crate::languages::default_registry().get("go").signature_parameter_types("func (r Receiver) Method(T) R"),
         Some(vec!["T".to_string()]),
         "actual method signatures must still skip their receiver"
     );
@@ -54,9 +52,8 @@ fn go_function_types_keep_their_sole_parameter_group_while_methods_skip_receiver
 #[test]
 fn dart_prefix_parameters_keep_a_function_typed_callback_intact() {
     assert_eq!(
-        parse_param_types_from_signature_for_lang(
+        crate::languages::default_registry().get("dart").signature_parameter_types(
             "R transform(A value, R Function(A, B) callback)",
-            "dart",
         ),
         Some(vec!["A".to_string(), "R Function(A, B)".to_string()]),
     );
@@ -65,9 +62,8 @@ fn dart_prefix_parameters_keep_a_function_typed_callback_intact() {
 #[test]
 fn php_prefix_parameters_keep_an_enriched_callback_type_intact() {
     assert_eq!(
-        parse_param_types_from_signature_for_lang(
+        crate::languages::default_registry().get("php").signature_parameter_types(
             "function use((Item, Context) -> Result $callback, int $limit): void",
-            "php",
         ),
         Some(vec![
             "(Item, Context) -> Result".to_string(),
@@ -75,9 +71,8 @@ fn php_prefix_parameters_keep_an_enriched_callback_type_intact() {
         ]),
     );
     assert_eq!(
-        parse_param_types_from_signature_for_lang(
+        crate::languages::default_registry().get("php").signature_parameter_types(
             "function use(callable $callback, Closure $fallback): void",
-            "php",
         ),
         Some(vec!["callable".to_string(), "Closure".to_string()]),
         "native callable markers remain nominal until a supported PHPDoc contract enriches them",
@@ -87,7 +82,7 @@ fn php_prefix_parameters_keep_an_enriched_callback_type_intact() {
 #[test]
 fn go_callback_signature_preserves_its_full_function_type() {
     assert_eq!(
-        parse_param_types_from_signature_for_lang("func Apply(cb func(a, b T) R) R", "go"),
+        crate::languages::default_registry().get("go").signature_parameter_types("func Apply(cb func(a, b T) R) R"),
         Some(vec!["func(a, b T) R".to_string()]),
         "the nested Go callback type must reach TypeArena without losing its parameters"
     );
@@ -150,7 +145,7 @@ fn extends_requires_identifier_boundaries() {
     assert_eq!(parse_top_level_conditional("Textends U ? A : B"), None);
 }
 
-// --- parse_declared_type_from_signature_for_lang: initializer split ---------
+// --- declared type layout: initializer split ---------------------------------
 
 #[test]
 fn declared_type_keeps_generic_defaults_and_arrow() {
@@ -159,7 +154,7 @@ fn declared_type_keeps_generic_defaults_and_arrow() {
     // starts an initializer.
     let sig = "const make: <A extends B | undefined = undefined, E = string>(opts?: Opts<A, E>) => Client<E, A>";
     assert_eq!(
-        parse_declared_type_from_signature_for_lang(sig, "typescript").as_deref(),
+        parse_declared_type_from_signature(sig, DeclaredTypeLayout::Annotation).as_deref(),
         Some("<A extends B | undefined = undefined, E = string>(opts?: Opts<A, E>) => Client<E, A>")
     );
 }
@@ -167,7 +162,7 @@ fn declared_type_keeps_generic_defaults_and_arrow() {
 #[test]
 fn declared_type_still_strips_a_real_initializer() {
     assert_eq!(
-        parse_declared_type_from_signature_for_lang("const api: ApiType = make()", "typescript")
+        parse_declared_type_from_signature("const api: ApiType = make()", DeclaredTypeLayout::Annotation)
             .as_deref(),
         Some("ApiType")
     );
@@ -176,29 +171,34 @@ fn declared_type_still_strips_a_real_initializer() {
 #[test]
 fn declared_type_keeps_a_bare_arrow_annotation() {
     assert_eq!(
-        parse_declared_type_from_signature_for_lang("const h: (e: Event) => Response", "typescript")
+        parse_declared_type_from_signature("const h: (e: Event) => Response", DeclaredTypeLayout::Annotation)
             .as_deref(),
         Some("(e: Event) => Response")
     );
 }
 
-// --- extension_receiver_type + this-param alignment --------------------------
+// --- extension receiver adapter ----------------------------------------------
 
 #[test]
-fn extension_receiver_type_reads_the_this_marked_param() {
+fn csharp_extension_receiver_adapter_reads_the_marked_param() {
     assert_eq!(
-        extension_receiver_type(
+        crate::languages::default_registry().get("csharp").signature_extension_receiver(
             "void UseSnapshot<T, TEntity>(this ModelBuilder builder, IJsonSerializer json, Action<EntityTypeBuilder<TEntity>>? configure = null)"
         ).as_deref(),
         Some("ModelBuilder")
     );
     assert_eq!(
-        extension_receiver_type(
+        crate::languages::default_registry().get("csharp").signature_extension_receiver(
             "PropertyBuilder<DomainId> AsString(this PropertyBuilder<DomainId> propertyBuilder)"
         ).as_deref(),
         Some("PropertyBuilder<DomainId>")
     );
-    assert_eq!(extension_receiver_type("void Configure(ModelBuilder builder)"), None);
+    assert_eq!(
+        crate::languages::default_registry()
+            .get("csharp")
+            .signature_extension_receiver("void Configure(ModelBuilder builder)"),
+        None
+    );
 }
 
 #[test]

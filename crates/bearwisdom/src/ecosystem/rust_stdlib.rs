@@ -67,7 +67,6 @@ impl Ecosystem for RustStdlibEcosystem {
     ) -> crate::ecosystem::symbol_index::SymbolLocationIndex {
         super::cargo::build_cargo_symbol_index(dep_roots)
     }
-
 }
 
 impl ExternalSourceLocator for RustStdlibEcosystem {

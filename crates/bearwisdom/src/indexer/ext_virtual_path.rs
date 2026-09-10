@@ -309,7 +309,9 @@ fn py_virtual_from_remainder(rel: &str) -> Option<String> {
     if rel.contains('/') {
         return Some(format!("ext:py:{rel}"));
     }
-    let stem = rel.strip_suffix(".pyi").or_else(|| rel.strip_suffix(".py"))?;
+    let stem = rel
+        .strip_suffix(".pyi")
+        .or_else(|| rel.strip_suffix(".py"))?;
     if stem.is_empty() {
         return None;
     }

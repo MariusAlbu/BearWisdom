@@ -43,7 +43,10 @@ fn bare_package_resolves_only_to_a_root_index() {
         Some("packages/next/index.ts".to_string())
     );
     let no_index = ["packages/next/link.js"];
-    assert_eq!(resolver().resolve_to_file("next", "src/a.ts", &no_index), None);
+    assert_eq!(
+        resolver().resolve_to_file("next", "src/a.ts", &no_index),
+        None
+    );
 }
 
 #[test]
@@ -57,10 +60,8 @@ fn scoped_name_matches_before_shorter_heads() {
 
 #[test]
 fn qualified_separator_normalizes_to_slash() {
-    let r = WorkspacePackageResolver::new(vec![(
-        "tantivy".to_string(),
-        "crates/tantivy".to_string(),
-    )]);
+    let r =
+        WorkspacePackageResolver::new(vec![("tantivy".to_string(), "crates/tantivy".to_string())]);
     let files = ["crates/tantivy/schema.rs"];
     assert_eq!(
         r.resolve_to_file("tantivy::schema", "src/main.rs", &files),
@@ -71,6 +72,9 @@ fn qualified_separator_normalizes_to_slash() {
 #[test]
 fn unknown_head_and_relative_specs_decline() {
     let files = ["packages/next/link.js"];
-    assert_eq!(resolver().resolve_to_file("react/jsx", "a.ts", &files), None);
+    assert_eq!(
+        resolver().resolve_to_file("react/jsx", "a.ts", &files),
+        None
+    );
     assert_eq!(resolver().resolve_to_file("./link", "a.ts", &files), None);
 }

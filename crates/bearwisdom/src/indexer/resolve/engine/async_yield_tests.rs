@@ -17,9 +17,15 @@ fn unwrap_preserves_the_inner_type_id() {
 #[test]
 fn legacy_string_adapter_keeps_existing_behavior() {
     assert_eq!(
-        unwrap_async_yield_str("Promise<Response>", &["Promise"]),
-        Some("Response")
+        unwrap_async_yield_str("Promise<Response>", "typescript", &["Promise"]),
+        Some("Response".to_string())
     );
-    assert_eq!(unwrap_async_yield_str("Response", &["Promise"]), None);
-    assert_eq!(unwrap_async_yield_str("Promise<Response>", &[]), None);
+    assert_eq!(
+        unwrap_async_yield_str("Response", "typescript", &["Promise"]),
+        None
+    );
+    assert_eq!(
+        unwrap_async_yield_str("Promise<Response>", "typescript", &[]),
+        None
+    );
 }

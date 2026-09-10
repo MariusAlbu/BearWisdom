@@ -115,7 +115,10 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     // `this` is the only receiver keyword TS surfaces at the chain-walker
     // root; `super` is handled by the resolver via parent-class lookup
     // (no SelfRef SegmentKind today carries `super`).
-    self_keywords: &["this"],
+    receiver_spellings: &[
+        crate::type_checker::profile::language_profile::ReceiverSpelling::enclosing("this", "."),
+        crate::type_checker::profile::language_profile::ReceiverSpelling::parent("super", "."),
+    ],
     // Both: TS interfaces are structural ("any object with these members
     // satisfies"), classes are nominal (must `extends`). Engine treats
     // both as supertype edges so member lookup is uniform.
@@ -198,8 +201,10 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
         module_prefix_rewrites:
             crate::type_checker::profile::language_profile::ModulePrefixRewrites::On {
                 module_path_adapter: Some(crate::ecosystem::npm::node_builtin::module_path_match),
-                candidate_prefixes: crate::ecosystem::npm::module_specifier::module_prefix_candidates,
-                declines_directory_match: crate::ecosystem::npm::module_specifier::declines_directory_match,
+                candidate_prefixes:
+                    crate::ecosystem::npm::module_specifier::module_prefix_candidates,
+                declines_directory_match:
+                    crate::ecosystem::npm::module_specifier::declines_directory_match,
             },
         workspace_packages: true,
         reexport_barrel_stems: &["index"],

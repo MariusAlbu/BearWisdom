@@ -385,8 +385,8 @@ impl SymbolLookup for Lookup<'_> {
     fn package_id_for_file(&self, file: &str) -> Option<i64> {
         self.tree.package_id_for_file(file)
     }
-    fn resolve_path_alias(&self, package: Option<i64>, spec: &str) -> Option<String> {
-        self.tree.resolve_path_alias(package, spec)
+    fn resolve_module_alias(&self, package: Option<i64>, spec: &str) -> Option<String> {
+        self.tree.resolve_module_alias(package, spec)
     }
     fn enclosing_type_id_of(&self, id: i64) -> Option<i64> {
         self.tree

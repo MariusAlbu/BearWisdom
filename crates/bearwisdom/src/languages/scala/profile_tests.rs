@@ -6,7 +6,7 @@ use crate::types::{EdgeKind, SymbolKind};
 fn scala_profile_identity() {
     assert_eq!(SCALA_PROFILE.id, "scala");
     assert_eq!(SCALA_PROFILE.qname_separator, ".");
-    assert_eq!(SCALA_PROFILE.self_keywords, &["this", "super"]);
+    assert_eq!(SCALA_PROFILE.receiver_spellings, &["this", "super"]);
 }
 
 #[test]

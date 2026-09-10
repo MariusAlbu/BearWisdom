@@ -1112,8 +1112,7 @@ fn taglib_closure_recovered_under_gstring_error_recovery() {
         "closure tag must be a callable Method so a Calls edge can bind"
     );
     assert_eq!(
-        message.qualified_name,
-        "org.pih.warehouse.MessageTagLib.message",
+        message.qualified_name, "org.pih.warehouse.MessageTagLib.message",
         "closure must be scoped to its taglib class"
     );
     assert!(

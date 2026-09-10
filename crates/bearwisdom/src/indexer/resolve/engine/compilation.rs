@@ -12,22 +12,17 @@ use std::sync::Arc;
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::ecosystem::externals::ts_package_from_virtual_path;
-use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::contract::{
-    build_scope_chain, chain_walker::parse_return_type_from_signature_for_lang, is_jvm_language,
-    parse_object_type_members, parse_param_types_from_signature,
-    parse_return_type_from_jvm_descriptor, parse_return_type_from_signature,
-    parse_return_type_positional, parse_top_level_conditional, parse_type_head_and_args,
-    resolve_type_name_in_scope, signature_generic_params, FileContext, ImportEntry, RefContext,
-    Symbol, SymbolLookup, SymbolSet, TypeInfo,
+    build_scope_chain, resolve_type_name_in_scope, FileContext, ImportEntry, RefContext, Symbol,
+    SymbolLookup, SymbolSet, TypeInfo,
 };
 use crate::indexer::resolve::engine::ext_lang_visibility::ExtLangVisibility;
 use crate::indexer::resolve::engine::import_qualify;
 use crate::indexer::resolve::engine::module_specifier;
 use crate::indexer::resolve::engine::support::resolve_module_exported_value_type;
 use crate::indexer::write::SymbolIds;
+use crate::languages::LanguagePlugin;
 use crate::type_checker::core::types::{GenericParamData, GenericParamId, Type, TypeArena, TypeId};
 use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::{
@@ -184,6 +179,10 @@ pub struct Compilation {
     /// of that exact head, captured when the edge was recorded. The one
     /// signal that survives homonyms when a head binds to a declaration.
     inherits_import_evidence: FxHashMap<(String, String), String>,
+    /// Profile qname separator captured from the file that declared each
+    /// inheritance edge. Parent resolution runs after parsing, so this keeps
+    /// source-language path evidence with the edge rather than guessing.
+    inherits_qname_separators: FxHashMap<String, String>,
     /// Nearest enclosing type-kind ancestor: source_qname → enclosing_type_qname.
     enclosing_type: FxHashMap<String, String>,
     /// Identity twin: source row id → enclosing type's row id.
@@ -201,27 +200,18 @@ pub struct Compilation {
     /// use site that resolves `Logger` to a specific declaration expands the right
     /// target. See `alias_target_by_id`.
     alias_target_by_id: FxHashMap<i64, AliasTargetIds>,
-    /// Workspace-package declared name → package id — ecosystem-agnostic (npm,
-    /// cargo, go workspaces). Snapshot of `ProjectContext::workspace_pkg_by_declared_name`.
+    /// Workspace-package declared name → package id. Snapshot of
+    /// `ProjectContext::workspace_pkg_by_declared_name`.
     workspace_pkg_by_declared_name: FxHashMap<String, i64>,
-    /// Per-package tsconfig/jsconfig path aliases (`@/` → `./`), snapshot of the
-    /// npm manifest's `path_aliases`. A package present here is per-package
-    /// isolated — its own aliases apply (even when empty), never the global set —
-    /// mirroring `ProjectContext::manifests_for`.
-    path_aliases_by_pkg: FxHashMap<i64, Vec<(String, String)>>,
-    /// Workspace-wide path aliases, for files not under a per-package manifest.
-    path_aliases_global: Vec<(String, String)>,
+    /// Resolver facts supplied by ecosystem adapters. A package present here is
+    /// isolated: its policy applies even when it contains no aliases.
+    resolver_policy_by_pkg:
+        FxHashMap<i64, crate::ecosystem::manifest::resolver_policy::ResolverManifestPolicy>,
+    /// Workspace-wide resolver facts for files outside an isolated package.
+    resolver_policy_global: crate::ecosystem::manifest::resolver_policy::ResolverManifestPolicy,
     /// Manifest-declared dependency names, per package + union. Backs
     /// `is_declared_dependency` — cause-attribution evidence only.
-    declared_deps: super::declared_deps::DeclaredDeps,
-    /// Manifest-declared implicit/global namespace imports (`<ImplicitUsings>`,
-    /// `<Using Include>`), per package and workspace-wide. Backs
-    /// `SymbolLookup::implicit_wildcard_namespaces`.
-    implicit_namespaces_by_pkg: FxHashMap<i64, Vec<String>>,
-    implicit_namespaces_global: Vec<String>,
-    /// Per-package Cargo dependency renames: (alias, target_package_name),
-    /// snapshot of the cargo manifest's dep_renames. Per-consumer only.
-    dep_renames_by_pkg: FxHashMap<i64, Vec<(String, String)>>,
+    declared_deps: crate::ecosystem::manifest::declared_deps::DeclaredDeps,
     /// Symbols grouped by their owning workspace package id, for package-scoped
     /// lookups. Built from each symbol's `package_id` during ingest.
     by_package: FxHashMap<i64, Vec<Symbol>>,
@@ -269,8 +259,8 @@ impl Compilation {
 
     /// Build the store, snapshotting the GENERIC project data the engine needs
     /// from `project_ctx` (workspace-package names). Language- and ecosystem-
-    /// specific project state (ambient packages, tsconfig types, framework
-    /// registries) is deliberately NOT read here — those concerns live in the
+    /// specific project state (ambient packages and framework registries) is
+    /// deliberately NOT read here — those concerns live in the
     /// profile / hook / ecosystem layer, not in the generic store.
     ///
     /// `ambient_qnames` is the ambient classification the pipeline computed for
@@ -291,9 +281,7 @@ impl Compilation {
         tree
     }
 
-    /// Copy the generic, ecosystem-agnostic project data the engine resolves
-    /// against: the workspace-package declared-name → id map and the tsconfig /
-    /// jsconfig path aliases (per-package and workspace-wide).
+    /// Copy the workspace identity map and ecosystem-normalized resolver facts.
     fn snapshot_project_context(&mut self, ctx: &ProjectContext) {
         self.workspace_pkg_by_declared_name = ctx
             .workspace_pkg_by_declared_name
@@ -302,36 +290,16 @@ impl Compilation {
             .collect();
         self.module_specifier.snapshot_manifests(ctx);
         self.modules.snapshot_configuration(ctx);
-        // One entry per isolated package (so an alias-less package declines rather
-        // than borrowing the global set) plus the workspace-wide fallback. The
-        // `AliasedImportRule` consults these via `resolve_path_alias`.
+        // One policy per isolated package (so a package with no aliases does not
+        // borrow workspace facts) plus the workspace-wide fallback.
         for (&pkg_id, manifests) in &ctx.by_package {
-            let aliases = manifests
-                .get(&ManifestKind::Npm)
-                .map(|m| m.path_aliases.clone())
-                .unwrap_or_default();
-            self.path_aliases_by_pkg.insert(pkg_id, aliases);
-            let renames = manifests
-                .get(&ManifestKind::Cargo)
-                .map(|m| m.dep_renames.clone())
-                .unwrap_or_default();
-            self.dep_renames_by_pkg.insert(pkg_id, renames);
-            if let Some(usings) = manifests
-                .get(&ManifestKind::NuGet)
-                .map(|m| m.global_usings.clone())
-                .filter(|u| !u.is_empty())
-            {
-                self.implicit_namespaces_by_pkg.insert(pkg_id, usings);
-            }
+            let policy = crate::ecosystem::manifest::resolver_policy::from_manifests(manifests);
+            self.resolver_policy_by_pkg.insert(pkg_id, policy);
         }
-        if let Some(npm) = ctx.manifests.get(&ManifestKind::Npm) {
-            self.path_aliases_global = npm.path_aliases.clone();
-        }
-        if let Some(nuget) = ctx.manifests.get(&ManifestKind::NuGet) {
-            self.implicit_namespaces_global = nuget.global_usings.clone();
-        }
+        self.resolver_policy_global =
+            crate::ecosystem::manifest::resolver_policy::from_manifests(&ctx.manifests);
         self.ext_langs = ExtLangVisibility::snapshot(ctx);
-        self.declared_deps = super::declared_deps::DeclaredDeps::snapshot(ctx);
+        self.declared_deps = crate::ecosystem::manifest::declared_deps::DeclaredDeps::snapshot(ctx);
     }
 
     /// The candidate-language codes whose EXTERNAL declarations a file of
@@ -384,18 +352,16 @@ impl Compilation {
             merge_groups: super::merge_canonical::MergeGroups::default(),
             merge_canonical: FxHashMap::default(),
             inherits_import_evidence: FxHashMap::default(),
+            inherits_qname_separators: FxHashMap::default(),
             enclosing_type: FxHashMap::default(),
             enclosing_type_by_id: FxHashMap::default(),
             enclosing_namespace: FxHashMap::default(),
             alias_target: FxHashMap::default(),
             alias_target_by_id: FxHashMap::default(),
             workspace_pkg_by_declared_name: FxHashMap::default(),
-            path_aliases_by_pkg: FxHashMap::default(),
-            path_aliases_global: Vec::new(),
-            declared_deps: super::declared_deps::DeclaredDeps::default(),
-            implicit_namespaces_by_pkg: FxHashMap::default(),
-            implicit_namespaces_global: Vec::new(),
-            dep_renames_by_pkg: FxHashMap::default(),
+            resolver_policy_by_pkg: FxHashMap::default(),
+            resolver_policy_global: Default::default(),
+            declared_deps: crate::ecosystem::manifest::declared_deps::DeclaredDeps::default(),
             by_package: FxHashMap::default(),
             ambient_scope: FxHashMap::default(),
             reexport_alias: FxHashMap::default(),
@@ -444,10 +410,11 @@ impl Compilation {
         let mut pending_field_types: Vec<(String, i64, TypeId)> = Vec::new();
         let profiles = super::file_context::build_profiles();
         for pf in parsed {
-            let merge_scope = profiles
+            let profile = profiles
                 .get(pf.language.as_str())
-                .map(|p| p.declaration_merging)
-                .unwrap_or(crate::type_checker::profile::language_profile::MergeScope::None);
+                .copied()
+                .unwrap_or(&crate::type_checker::profile::language_profile::DEFAULT_PROFILE);
+            let merge_scope = profile.declaration_merging;
             let file_arc: Arc<str> = Arc::from(pf.path.as_str());
 
             // External file: record its parse language for the cross-language
@@ -626,12 +593,15 @@ impl Compilation {
                 // `inherits_args` so a member found on a generic supertype can bind
                 // that supertype's parameters from the `extends Base<Arg>` edge.
                 let (parent_head_raw, parent_args) =
-                    super::contract::chain_walker::parse_type_head_and_args(&r.target_name);
+                    crate::languages::signature_type_application(&pf.language, &r.target_name);
                 let parent_head = parent_head_raw.to_string();
                 let parents = self
                     .inherits
                     .entry(child_sym.qualified_name.clone())
                     .or_default();
+                self.inherits_qname_separators
+                    .entry(child_sym.qualified_name.clone())
+                    .or_insert_with(|| profile.qname_separator.to_string());
                 if !parents.contains(&parent_head) {
                     parents.push(parent_head.clone());
                 }
@@ -762,54 +732,12 @@ impl Compilation {
             .file_paths
             .extend(module_specifier::internal_file_paths(parsed));
 
-        // Selector → class qname. Backs SymbolLookup::selector_qname, which
-        // SelectorMapRule consults to bind an Angular/CSS selector ref (`<nb-card>`,
-        // `nbButton`) to its decorated class. An element selector (`nb-card`) keys on
-        // its tag; an attribute directive (`button[nbButton],a[nbButton]`) keys on
-        // each attribute name — the template binds a directive by its attribute, not
-        // the element qualifier. First-writer-wins (a duplicate selector is an
-        // Angular error).
-        fn selector_binding_keys(raw: &str) -> Vec<String> {
-            let mut keys = Vec::new();
-            for part in raw.split(',') {
-                let part = part.trim();
-                if part.is_empty() {
-                    continue;
-                }
-                let mut had_attr = false;
-                let mut rest = part;
-                while let Some(open) = rest.find('[') {
-                    let Some(close) = rest[open..].find(']') else {
-                        break;
-                    };
-                    let attr = rest[open + 1..open + close].trim();
-                    // `[type=button]` / `[attr^="v"]` → the attribute NAME only.
-                    let attr = attr
-                        .split(['=', '~', '|', '^', '$', '*'])
-                        .next()
-                        .unwrap_or(attr)
-                        .trim();
-                    if !attr.is_empty() {
-                        keys.push(attr.to_string());
-                        had_attr = true;
-                    }
-                    rest = &rest[open + close + 1..];
-                }
-                if !had_attr {
-                    let tag: String = part
-                        .chars()
-                        .take_while(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
-                        .collect();
-                    if !tag.is_empty() {
-                        keys.push(tag);
-                    }
-                }
-            }
-            keys
-        }
+        // Selector grammar is owned by the parsed file's language plugin.
+        // The generic compilation store only records its resulting lookup keys.
         for pf in parsed {
+            let plugin = crate::languages::default_registry().get(&pf.language);
             for (selector, class_qname) in &pf.component_selectors {
-                for key in selector_binding_keys(selector) {
+                for key in plugin.selector_binding_keys(selector) {
                     self.selector_to_qname
                         .entry(key)
                         .or_insert_with(|| class_qname.clone());
@@ -897,6 +825,7 @@ impl Compilation {
             &pairs,
             &self.by_id,
             &self.inherits_arg_ids,
+            &self.inherits_qname_separators,
             &mut self.inherits_args_by_pair,
         );
     }
@@ -908,6 +837,7 @@ impl Compilation {
             self,
             &self.inherits,
             &self.inherits_import_evidence,
+            &self.inherits_qname_separators,
             &self.inherits_arg_ids,
         );
         self.inherits_by_id = by_id;
@@ -915,26 +845,26 @@ impl Compilation {
         self.rebind_base_types();
     }
 
-    /// Merge TypeScript module-augmentation supertypes into the augmented
-    /// interface. A `declare module 'M' { interface I extends S {} }` in one
-    /// package declares its `I` under THAT package, disconnected from the `I`
-    /// module `M` exports — which is the type a value of `M`'s API carries.
-    /// Resolve the target through `M`'s re-export and graft the augmentation's
-    /// supertypes onto it, so a member declared on `S` resolves on the receiver.
-    ///
-    /// Each tuple is `(augmented_module, interface_name, augmenting_qname)`. The
-    /// augmenting interface's own supertypes are read from `self.inherits`.
-    pub(crate) fn apply_module_augmentations(&mut self, augs: &[(String, String, String)]) {
+    /// Merge language-reported module augmentations into the target interface.
+    /// The plugin supplies normalized module, interface, and augmenting
+    /// declaration names; the compilation resolves exports and performs the
+    /// structural supertype graft.
+    pub(crate) fn apply_module_augmentations(
+        &mut self,
+        augs: &[crate::languages::ModuleAugmentation],
+    ) {
         let mut changed = false;
-        for (module, iface, aug_qname) in augs {
-            let supertypes = match self.inherits.get(aug_qname) {
+        for augmentation in augs {
+            let supertypes = match self.inherits.get(&augmentation.augmenting_qname) {
                 Some(v) if !v.is_empty() => v.clone(),
                 _ => continue,
             };
-            let Some(target) = self.resolve_module_export_interface(module, iface) else {
+            let Some(target) =
+                self.resolve_module_export_interface(&augmentation.module, &augmentation.interface)
+            else {
                 continue;
             };
-            if &target == aug_qname {
+            if target == augmentation.augmenting_qname {
                 continue;
             }
             let entry = self.inherits.entry(target).or_default();
@@ -986,15 +916,14 @@ impl Compilation {
     /// `None` when neither names an indexed symbol — the augmentation then merges
     /// nowhere rather than guessing a same-named interface in an unrelated package.
     fn resolve_module_export_interface(&self, module: &str, iface: &str) -> Option<String> {
-        for (file, entries) in &self.reexport_map {
-            if ts_package_from_virtual_path(file) != Some(module) {
-                continue;
-            }
-            for (name, src_module) in entries {
-                if name == iface {
-                    let target = format!("{src_module}.{iface}");
-                    if self.by_qname.contains_key(&target) {
-                        return Some(target);
+        if let Some(file) = self.module_entry.get(module) {
+            if let Some(entries) = self.reexport_map.get(file) {
+                for (name, src_module) in entries {
+                    if name == iface {
+                        let target = format!("{src_module}.{iface}");
+                        if self.by_qname.contains_key(&target) {
+                            return Some(target);
+                        }
                     }
                 }
             }
@@ -1028,6 +957,11 @@ impl Compilation {
         symbol_id_map: &SymbolIds,
         pending: &mut Vec<PendingModuleValue>,
     ) {
+        let profiles = super::file_context::build_profiles();
+        let Some(profile) = profiles.get(pf.language.as_str()) else {
+            return;
+        };
+
         // Collect TypeRef refs (excluding import bindings) per symbol index. The
         // module tag is preserved alongside the name so the value arm can tell a
         // `typeof import('m')['k']` value-export ref (which self-resolves to the
@@ -1118,6 +1052,7 @@ impl Compilation {
                             first,
                             sym.scope_path.as_deref(),
                             &self.by_qname,
+                            profile,
                         );
                         // A module-tagged ref that scope-resolves to the symbol
                         // ITSELF is the `typeof import('m')['k']` value-export shape:
@@ -1160,38 +1095,33 @@ impl Compilation {
                         };
                         let fid = intern_head_and_args(&self.arena, &resolved, &arg_strs);
                         derived = Some((resolved, arg_strs, fid));
-                    } else if is_jvm_language(&pf.language) {
-                        if let Some(decoded) = sym
-                            .signature
-                            .as_deref()
-                            .and_then(parse_return_type_from_jvm_descriptor)
-                        {
-                            let resolved = resolve_type_name_in_scope(
-                                &decoded,
-                                sym.scope_path.as_deref(),
-                                &self.by_qname,
-                            );
-                            let fid = self.arena.class(&resolved);
-                            derived = Some((resolved, Vec::new(), fid));
-                        }
-                    } else if pf.language == "typescript" || pf.language == "tsx" {
-                        // A bare type-param field (`value: T` on `class Wrapper<T>`)
-                        // has no TypeRef (the post-filter drops it to keep T off the
-                        // unresolved-ref surface) but records the param name as the
-                        // field's signature. Use it so substitute_through can rebind T
-                        // to the applied argument. Guard: bare identifier only —
-                        // discriminant literals set signature to a quoted string.
-                        if let Some(sig) = sym.signature.as_deref() {
-                            if is_bare_type_identifier(sig) {
-                                let resolved = resolve_type_name_in_scope(
-                                    sig,
-                                    sym.scope_path.as_deref(),
-                                    &self.by_qname,
-                                );
-                                let fid = self.arena.intern_type_str(&resolved);
-                                derived = Some((resolved, Vec::new(), fid));
-                            }
-                        }
+                    } else if let Some(decoded) = sym.signature.as_deref().and_then(|signature| {
+                        crate::ecosystem::signature::return_type_for_language(
+                            &pf.language,
+                            signature,
+                        )
+                    }) {
+                        let resolved = resolve_type_name_in_scope(
+                            &decoded,
+                            sym.scope_path.as_deref(),
+                            &self.by_qname,
+                            profile,
+                        );
+                        let fid = self.arena.class(&resolved);
+                        derived = Some((resolved, Vec::new(), fid));
+                    } else if let Some(field_type) = sym.signature.as_deref().and_then(|sig| {
+                        crate::languages::default_registry()
+                            .get(&pf.language)
+                            .signature_field_type(sig)
+                    }) {
+                        let resolved = resolve_type_name_in_scope(
+                            &field_type,
+                            sym.scope_path.as_deref(),
+                            &self.by_qname,
+                            profile,
+                        );
+                        let fid = self.arena.intern_type_str(&resolved);
+                        derived = Some((resolved, Vec::new(), fid));
                     }
 
                     // A value whose qname is ALSO an indexed type — the builtin
@@ -1233,15 +1163,16 @@ impl Compilation {
                         .entry(sym.qualified_name.clone())
                         .or_default();
                     if ti.return_type_id.is_none() {
-                        if let Some(rt) = sym
-                            .signature
-                            .as_deref()
-                            .and_then(parse_return_type_from_signature)
-                        {
+                        if let Some(rt) = sym.signature.as_deref().and_then(|signature| {
+                            crate::languages::default_registry()
+                                .get(&pf.language)
+                                .signature_return_type(signature)
+                        }) {
                             let resolved = resolve_type_name_in_scope(
                                 &rt,
                                 sym.scope_path.as_deref(),
                                 &self.by_qname,
+                                profile,
                             );
                             ti.return_type_id = Some(self.arena.intern_type_str(&resolved));
                         }
@@ -1263,28 +1194,25 @@ impl Compilation {
                                 first,
                                 sym.scope_path.as_deref(),
                                 &self.by_qname,
+                                profile,
                             );
                             ti.field_type_id = Some(self.arena.intern_type_str(&resolved));
                         }
                     }
                 }
                 SymbolKind::Method | SymbolKind::Function | SymbolKind::Constructor => {
-                    // Signature-based return type, with JVM fallback.
+                    // Signature policy belongs to the source plugin or its
+                    // owning ecosystem. The generic resolver only consumes the
+                    // resulting type evidence.
                     let sig_rt: Option<String> = sym.signature.as_deref().and_then(|s| {
-                        parse_return_type_from_signature_for_lang(s, &pf.language)
+                        crate::languages::default_registry()
+                            .get(&pf.language)
+                            .signature_return_type(s)
                             .or_else(|| {
-                                if sym.kind == SymbolKind::Constructor {
-                                    None
-                                } else {
-                                    parse_return_type_positional(s)
-                                }
-                            })
-                            .or_else(|| {
-                                if is_jvm_language(&pf.language) {
-                                    parse_return_type_from_jvm_descriptor(s)
-                                } else {
-                                    None
-                                }
+                                crate::ecosystem::signature::return_type_for_language(
+                                    &pf.language,
+                                    s,
+                                )
                             })
                     });
 
@@ -1293,7 +1221,8 @@ impl Compilation {
                     // bind element types without re-splitting the string.
                     let sig_generic: Option<(String, Vec<String>)> =
                         sig_rt.as_deref().and_then(|rt| {
-                            let (head, args) = parse_type_head_and_args(rt);
+                            let (head, args) =
+                                crate::languages::signature_type_application(&pf.language, rt);
                             let head_is_name = !head.is_empty()
                                 && head
                                     .chars()
@@ -1313,9 +1242,10 @@ impl Compilation {
                     // package (the qname slot's first-winner) does not hide it.
                     let computed: Option<(String, Option<TypeId>)> = if let Some(obj) = sig_rt
                         .as_deref()
-                        .filter(|s| {
-                            let t = s.trim();
-                            t.starts_with('{') && t.ends_with('}')
+                        .filter(|result| {
+                            crate::languages::default_registry()
+                                .get(&pf.language)
+                                .signature_is_inline_object_result(result)
                         })
                         .filter(|_| {
                             self.by_qname
@@ -1328,7 +1258,10 @@ impl Compilation {
                         // destructuring of the call result resolves on the real members
                         // rather than a member-less inline-object-type string.
                         let synth = format!("{}$Ret", sym.qualified_name);
-                        for (mname, mtype) in parse_object_type_members(obj) {
+                        for (mname, mtype) in crate::languages::default_registry()
+                            .get(&pf.language)
+                            .signature_object_type_members(obj)
+                        {
                             let mqname = format!("{synth}.{mname}");
                             if !self.by_qname.contains_key(&mqname) {
                                 continue;
@@ -1337,6 +1270,7 @@ impl Compilation {
                                 &mtype,
                                 sym.scope_path.as_deref(),
                                 &self.by_qname,
+                                profile,
                             );
                             let rid = self.arena.intern_type_str(&resolved);
                             let mti = self.type_info.entry(mqname.clone()).or_default();
@@ -1360,29 +1294,38 @@ impl Compilation {
                         // keep the member-less string. `set_return_both` forces both.
                         self.set_return_both(&sym.qualified_name, synth.clone(), sid);
                         Some((synth, Some(sid)))
-                    } else if matches!(sig_rt.as_deref(), Some("this") | Some("Self")) {
+                    } else if sig_rt.as_deref().is_some_and(|result| {
+                        profile.receiver_role(result.trim())
+                            == Some(
+                                crate::type_checker::profile::language_profile::ReceiverRole::EnclosingType,
+                            )
+                    }) {
                         // A fluent self-returning method (`m(fn: P): this`)
                         // yields the receiver. Its `this` return emits no
                         // TypeRef, so the `type_refs.last()` arm below would
                         // otherwise pick the LAST PARAMETER type — capture
                         // `this` verbatim so the chain walker's self-head rebind
                         // returns the receiver instead.
-                        let rid = self.arena.intern_type_str("this");
-                        Some(("this".to_string(), Some(rid)))
-                    } else if let Some(rt) = sig_rt.as_deref().filter(|s| {
-                        let t = s.trim();
-                        t.starts_with('[') && t.ends_with(']')
+                        let result = sig_rt.as_deref().unwrap_or_default().trim();
+                        let rid = self.arena.intern_type_str(result);
+                        Some((result.to_string(), Some(rid)))
+                    } else if let Some(rt) = sig_rt.as_deref().filter(|result| {
+                        crate::languages::default_registry()
+                            .get(&pf.language)
+                            .signature_is_tuple_result(result)
                     }) {
                         // A tuple return (`useState(): [S, Dispatch<…>]`) interns
-                        // directly as `Type::Tuple`; `parse_type_head_and_args`
+                        // directly as `Type::Tuple`; application normalization
                         // (the `sig_generic` arm) would mis-read the `[A, B]` as a
                         // generic application and drop the positional structure a
                         // destructure binding indexes.
                         let rid = self.arena.intern_type_str(rt);
                         Some((self.arena.format_type(rid), Some(rid)))
-                    } else if let Some((tb, fb)) =
-                        sig_rt.as_deref().and_then(parse_top_level_conditional)
-                    {
+                    } else if let Some((tb, fb)) = sig_rt.as_deref().and_then(|rt| {
+                        crate::languages::default_registry()
+                            .get(&pf.language)
+                            .signature_conditional_branches(rt)
+                    }) {
                         // A conditional return (`… extends … ? A : B`) is
                         // undecidable here; carry its BRANCHES, not its check —
                         // the member-lookup semantics an undecidable conditional
@@ -1393,7 +1336,8 @@ impl Compilation {
                         // scope-qualified like every other return head, so a
                         // package-local name binds its declaration.
                         let intern_branch = |branch: &str| -> TypeId {
-                            let (head, args) = parse_type_head_and_args(branch);
+                            let (head, args) =
+                                crate::languages::signature_type_application(&pf.language, branch);
                             let head_is_name = !head.is_empty()
                                 && head
                                     .chars()
@@ -1402,9 +1346,10 @@ impl Compilation {
                                 return self.arena.intern_type_str(branch);
                             }
                             let resolved = resolve_type_name_in_scope(
-                                head,
+                                &head,
                                 sym.scope_path.as_deref(),
                                 &self.by_qname,
+                                profile,
                             );
                             let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
                             intern_head_and_args(&self.arena, &resolved, &args)
@@ -1423,6 +1368,7 @@ impl Compilation {
                             &head,
                             sym.scope_path.as_deref(),
                             &self.by_qname,
+                            profile,
                         );
                         let rid = intern_head_and_args(&self.arena, &resolved, &args);
                         Some((resolved, Some(rid)))
@@ -1436,7 +1382,10 @@ impl Compilation {
                         match sig_rt.as_deref().map(str::trim) {
                             Some(rt) => {
                                 last == rt || {
-                                    let (head, _) = parse_type_head_and_args(rt);
+                                    let (head, _) = crate::languages::signature_type_application(
+                                        &pf.language,
+                                        rt,
+                                    );
                                     !head.is_empty() && last == head
                                 }
                             }
@@ -1447,7 +1396,11 @@ impl Compilation {
                             None => sym
                                 .signature
                                 .as_deref()
-                                .and_then(parse_param_types_from_signature)
+                                .and_then(|signature| {
+                                    crate::languages::default_registry()
+                                        .get(&pf.language)
+                                        .signature_parameter_types(signature)
+                                })
                                 .map_or(true, |params| params.is_empty()),
                         }
                     }) {
@@ -1455,6 +1408,7 @@ impl Compilation {
                             last,
                             sym.scope_path.as_deref(),
                             &self.by_qname,
+                            profile,
                         );
                         let rid = self.arena.intern_type_str(&resolved);
                         Some((resolved, Some(rid)))
@@ -1463,6 +1417,7 @@ impl Compilation {
                             rt,
                             sym.scope_path.as_deref(),
                             &self.by_qname,
+                            profile,
                         );
                         let rid = self.arena.intern_type_str(&resolved);
                         Some((resolved, Some(rid)))
@@ -1541,7 +1496,9 @@ impl Compilation {
             let Some(sig) = &sym.signature else {
                 continue;
             };
-            let gparams = signature_generic_params(sig, &sym.name);
+            let gparams = crate::languages::default_registry()
+                .get(&pf.language)
+                .signature_generic_params(sig, &sym.name);
             if gparams.is_empty() {
                 continue;
             }
@@ -1744,14 +1701,24 @@ impl Compilation {
                     .get(&sym.qualified_name)
                     .and_then(|ti| ti.return_type_id)
                     .map(|id| self.arena.format_type(id))
-                    .filter(|rt| rt.contains("typeof"))
+                    .filter(|result| {
+                        crate::languages::default_registry()
+                            .get(&pf.language)
+                            .signature_has_callable_return_extraction(result)
+                    })
                 else {
                     continue;
                 };
                 let id = self.arena.intern_type_str(&rt);
-                if let Some(resolved) =
-                    super::chain::resolve_return_type_extraction(id, self, &self.arena, &file_ctx)
-                {
+                if let Some(resolved) = super::chain::resolve_return_type_extraction(
+                    id,
+                    self,
+                    &self.arena,
+                    &file_ctx,
+                    crate::languages::default_registry()
+                        .get(&file_ctx.language)
+                        .profile(),
+                ) {
                     rewrites.push((sym.qualified_name.clone(), resolved));
                 }
             }
@@ -1825,8 +1792,14 @@ impl Compilation {
     /// is recorded, mirroring the peel `resolve_one_file`'s binding seed applies.
     /// See `instantiated_type` — the instance type a `new X(...)` initializer
     /// builds, via in-scope value indirection before class scope-resolution.
-    fn instantiated_type(&self, name: &str, scope_path: Option<&str>, file: &str) -> TypeId {
-        super::instantiated_type::instantiated_type(self, name, scope_path, file)
+    fn instantiated_type(
+        &self,
+        name: &str,
+        scope_path: Option<&str>,
+        file: &str,
+        profile: &LanguageProfile,
+    ) -> TypeId {
+        super::instantiated_type::instantiated_type(self, name, scope_path, file, profile)
     }
 
     pub(crate) fn infer_field_init_types(
@@ -1837,10 +1810,11 @@ impl Compilation {
     ) {
         let mut updates: Vec<(String, Option<i64>, TypeId)> = Vec::new();
         for pf in parsed.iter().filter(|p| !p.path.starts_with("ext:")) {
-            let async_wrappers = profiles
+            let profile = profiles
                 .get(pf.language.as_str())
-                .map(|p| p.async_wrappers)
-                .unwrap_or_default();
+                .copied()
+                .unwrap_or(&crate::type_checker::profile::language_profile::DEFAULT_PROFILE);
+            let async_wrappers = profile.async_wrappers;
             let file_ctx = init_pass_file_ctx(pf);
             // Syntax-migrated files identify the whole initializer by source
             // address. Class fields need not emit a separate TypeRef marker.
@@ -1921,13 +1895,10 @@ impl Compilation {
                 }
                 scoped.set_cursor(r.byte_offset);
                 let ty_id = if r.chain.as_ref().is_some_and(|c| c.segments.len() > 1) {
-                    let Some(profile) = profiles.get(pf.language.as_str()) else {
-                        continue;
-                    };
                     let ref_ctx = RefContext {
                         extracted_ref: r,
                         source_symbol: field,
-                        scope_chain: build_scope_chain(field.scope_path.as_deref()),
+                        scope_chain: build_scope_chain(field.scope_path.as_deref(), profile),
                         file_package_id: pf.package_id,
                         source_symbol_id: field_id,
                     };
@@ -1948,6 +1919,7 @@ impl Compilation {
                                 &r.target_name,
                                 field.scope_path.as_deref(),
                                 &pf.path,
+                                profile,
                             )),
                         },
                         // `call(...)` — the field is the callee's return, with the
@@ -2069,7 +2041,7 @@ impl Compilation {
                     let ref_ctx = RefContext {
                         extracted_ref: r,
                         source_symbol: field,
-                        scope_chain: build_scope_chain(field.scope_path.as_deref()),
+                        scope_chain: build_scope_chain(field.scope_path.as_deref(), profile),
                         file_package_id: pf.package_id,
                         source_symbol_id: field_id,
                     };
@@ -2184,6 +2156,15 @@ impl Compilation {
     /// Canonical id of a merge-set member; identity for everything else.
     fn canon_id(&self, id: i64) -> i64 {
         self.merge_canonical.get(&id).copied().unwrap_or(id)
+    }
+
+    fn resolver_policy_for(
+        &self,
+        package_id: Option<i64>,
+    ) -> &crate::ecosystem::manifest::resolver_policy::ResolverManifestPolicy {
+        package_id
+            .and_then(|id| self.resolver_policy_by_pkg.get(&id))
+            .unwrap_or(&self.resolver_policy_global)
     }
 }
 
@@ -2397,41 +2378,11 @@ impl SymbolLookup for Compilation {
     }
 
     fn resolve_module_from(&self, source_file: &str, spec: &str) -> Option<&str> {
-        // Bare package specifier → its indexed entry file. Relative specifiers are
-        // resolved by the relative re-export path in `reexport_following`; returning
-        // None here preserves that fallback.
-        if super::support::is_relative_specifier(spec) {
-            return None;
-        }
-
-        // A Dart export URI without a scheme is relative to the exporting
-        // library. External Pub files use `ext:dart:<pkg>/<library>` paths, and
-        // `module_entry` stores every exact library under its corresponding
-        // `package:<pkg>/<library>` URI. Rebuild that key from the current file
-        // so nested `export 'src/expect.dart'` hops stay exact and package-local.
-        if let Some(source) = source_file.strip_prefix("ext:dart:") {
-            if !spec.contains(':') {
-                if let Some((package, source_library)) = source.split_once('/') {
-                    let source_dir = source_library.rsplit_once('/').map_or("", |(dir, _)| dir);
-                    let joined = if source_dir.is_empty() {
-                        spec.to_string()
-                    } else {
-                        format!("{source_dir}/{spec}")
-                    };
-                    let mut normalized = Vec::new();
-                    for segment in joined.split('/') {
-                        match segment {
-                            "" | "." => {}
-                            ".." => {
-                                normalized.pop()?;
-                            }
-                            part => normalized.push(part),
-                        }
-                    }
-                    let key = format!("package:{package}/{}", normalized.join("/"));
-                    return self.module_entry.get(&key).map(String::as_str);
-                }
-            }
+        // Adapter-produced keys supply any source-file-sensitive lookup. The
+        // engine does not classify specifier spelling before consuming them.
+        if let Some(key) = crate::ecosystem::module_specifier::relative_entry_key(source_file, spec)
+        {
+            return self.module_entry.get(&key).map(String::as_str);
         }
         self.module_entry.get(spec).map(String::as_str)
     }
@@ -2448,7 +2399,7 @@ impl SymbolLookup for Compilation {
             spec,
             self.package_id_for_file(source_file),
             &self.workspace_pkg_by_declared_name,
-            self.module_specifier.go_module_path.as_deref(),
+            &self.module_specifier.resolver_inputs,
             &self.module_specifier.workspace_packages,
             &self.module_specifier.file_paths,
         )
@@ -2475,7 +2426,7 @@ impl SymbolLookup for Compilation {
             &|_, _| true,
             self,
             0,
-            &["index"],
+            &crate::type_checker::profile::language_profile::DEFAULT_PROFILE,
         )
         .map(|info| info.target_symbol_id)
     }
@@ -2497,8 +2448,8 @@ impl SymbolLookup for Compilation {
             || !self.ambient_symbols(name).is_empty()
     }
 
-    fn is_declared_dependency(&self, package_id: Option<i64>, spec: &str) -> bool {
-        self.declared_deps.contains(package_id, spec)
+    fn is_declared_dependency(&self, package_id: Option<i64>, language: &str, spec: &str) -> bool {
+        self.declared_deps.contains(package_id, language, spec)
     }
 
     fn include_reaches(&self, source_file: &str, candidate_file: &str) -> bool {
@@ -2594,28 +2545,10 @@ impl SymbolLookup for Compilation {
     }
 
     fn workspace_package_id(&self, specifier: &str) -> Option<i64> {
-        // `::` (Rust's qualification separator) canonicalizes to `/` so a
-        // deep `tantivy::schema` import peels the same way `@org/utils/sub`
-        // does below.
-        let normalized;
-        let specifier: &str = if specifier.contains("::") {
-            normalized = specifier.replace("::", "/");
-            &normalized
-        } else {
-            specifier
-        };
-        if let Some(&id) = self.workspace_pkg_by_declared_name.get(specifier) {
-            return Some(id);
-        }
-        // Deep import: peel trailing `/seg` until the declared name matches.
-        let mut path = specifier;
-        while let Some(slash) = path.rfind('/') {
-            path = &path[..slash];
-            if let Some(&id) = self.workspace_pkg_by_declared_name.get(path) {
-                return Some(id);
-            }
-        }
-        None
+        crate::ecosystem::module_specifier::workspace_package_id(
+            specifier,
+            &self.workspace_pkg_by_declared_name,
+        )
     }
 
     fn is_workspace_declared_name(&self, name: &str) -> bool {
@@ -2623,38 +2556,18 @@ impl SymbolLookup for Compilation {
     }
 
     fn implicit_wildcard_namespaces(&self, package_id: Option<i64>) -> &[String] {
-        match package_id.and_then(|id| self.implicit_namespaces_by_pkg.get(&id)) {
-            Some(per_pkg) => per_pkg.as_slice(),
-            None => self.implicit_namespaces_global.as_slice(),
-        }
+        self.resolver_policy_for(package_id).implicit_namespaces()
     }
 
-    fn resolve_path_alias(&self, package_id: Option<i64>, specifier: &str) -> Option<String> {
-        // Per-package isolation: an isolated package uses its own aliases (even
-        // when empty); a file outside the per-package map uses the global set.
-        // Mirrors `ProjectContext::resolve_path_alias` — longest alias prefix wins.
-        let aliases = match package_id.and_then(|id| self.path_aliases_by_pkg.get(&id)) {
-            Some(per_pkg) => per_pkg.as_slice(),
-            None => self.path_aliases_global.as_slice(),
-        };
-        let mut best: Option<&(String, String)> = None;
-        for entry in aliases {
-            if specifier.starts_with(entry.0.as_str())
-                && best.map_or(true, |(b, _)| entry.0.len() > b.len())
-            {
-                best = Some(entry);
-            }
-        }
-        let (alias, target) = best?;
-        Some(format!("{target}{}", &specifier[alias.len()..]))
+    fn resolve_module_alias(&self, package_id: Option<i64>, specifier: &str) -> Option<String> {
+        self.resolver_policy_for(package_id)
+            .resolve_module_alias(specifier)
     }
 
-    fn dep_rename(&self, consumer_pkg: Option<i64>, alias: &str) -> Option<&str> {
-        let renames = self.dep_renames_by_pkg.get(&consumer_pkg?)?;
-        renames
-            .iter()
-            .find(|(a, _)| a == alias)
-            .map(|(_, pkg)| pkg.as_str())
+    fn resolve_package_alias(&self, consumer_pkg: Option<i64>, alias: &str) -> Option<&str> {
+        self.resolver_policy_by_pkg
+            .get(&consumer_pkg?)?
+            .resolve_package_alias(alias)
     }
 
     fn package_id_for_file(&self, file_path: &str) -> Option<i64> {
@@ -2827,38 +2740,9 @@ impl Compilation {
             }
         }
 
-        // Persisted include edges restore header visibility for incremental
-        // resolution. Load every C-family file, including symbol-free bridge
-        // headers, then attach only rows explicitly marked as preprocessor
-        // includes. Freshly parsed files remain authoritative in the closure.
-        let mut include_files = Vec::new();
-        if let Ok(mut files_stmt) =
-            conn.prepare("SELECT path FROM files WHERE language IN ('c', 'cpp')")
-        {
-            if let Ok(file_rows) = files_stmt.query_map([], |row| row.get::<_, String>(0)) {
-                include_files.extend(file_rows.flatten());
-            }
-        }
-        let mut include_specs: FxHashMap<String, Vec<String>> = include_files
-            .iter()
-            .cloned()
-            .map(|path| (path, Vec::new()))
-            .collect();
-        if let Ok(mut imports_stmt) = conn.prepare(
-            "SELECT f.path, COALESCE(i.module_path, i.imported_name) \
-             FROM imports i JOIN files f ON f.id = i.file_id \
-             WHERE f.language IN ('c', 'cpp') AND i.is_include = 1",
-        ) {
-            if let Ok(import_rows) = imports_stmt.query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            }) {
-                for (source, spec) in import_rows.flatten() {
-                    include_specs.entry(source).or_default().push(spec);
-                }
-            }
-        }
-        self.include_closure
-            .ingest_persisted(include_files, include_specs);
+        // Persisted semantic include evidence restores incremental visibility;
+        // the closure owns its storage projection and language-domain selection.
+        self.include_closure.ingest_from_db(conn);
 
         // 2) Persisted type_info — restore TypeIds from the raw index columns.
         //    The arena was restored from its snapshot before this pass so raw
@@ -2963,7 +2847,7 @@ impl Compilation {
                     // row, so `inherits_args` cannot be recovered on this incremental
                     // reload path — the supertype-arg binding is populated only by the
                     // full-reindex Pass 3 (which reads `r.target_name` with its args).
-                    let head = parent.split('<').next().unwrap_or(&parent).to_string();
+                    let head = parent.clone();
                     let parents = self.inherits.entry(child).or_default();
                     if !parents.contains(&head) {
                         parents.push(head);
@@ -3062,23 +2946,6 @@ fn intern_head_and_args(arena: &TypeArena, head: &str, args: &[String]) -> TypeI
             args: arg_ids,
         })
     }
-}
-
-/// Returns `true` when `s` is a bare type-identifier: starts with an ASCII
-/// letter or underscore, contains only `[A-Za-z0-9_]`, and is not a
-/// TypeScript primitive-value literal (`true`, `false`, `null`, `undefined`).
-/// Excludes quoted string discriminants, numeric literals, and arrow-type
-/// signatures (`() => T`).
-fn is_bare_type_identifier(s: &str) -> bool {
-    if matches!(s, "true" | "false" | "null" | "undefined") {
-        return false;
-    }
-    let mut chars = s.chars();
-    match chars.next() {
-        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
-        _ => return false,
-    }
-    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// Test-only re-export of the type-like predicate so `tree_tests.rs` can

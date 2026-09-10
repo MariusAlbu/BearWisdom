@@ -30,10 +30,22 @@ fn composer_declared_package_classifies_external() {
 fn namespace_without_composer_is_not_external() {
     // No ProjectContext → no manifest → not external (honest-unresolved). The
     // formerly hardcoded framework roots no longer short-circuit.
-    assert!(!is_external_php_namespace("Illuminate.Support.Collection", None));
-    assert!(!is_external_php_namespace("Symfony.Component.Console", None));
-    assert!(!is_external_php_namespace("Doctrine.ORM.EntityManager", None));
-    assert!(!is_external_php_namespace("PHPUnit.Framework.TestCase", None));
+    assert!(!is_external_php_namespace(
+        "Illuminate.Support.Collection",
+        None
+    ));
+    assert!(!is_external_php_namespace(
+        "Symfony.Component.Console",
+        None
+    ));
+    assert!(!is_external_php_namespace(
+        "Doctrine.ORM.EntityManager",
+        None
+    ));
+    assert!(!is_external_php_namespace(
+        "PHPUnit.Framework.TestCase",
+        None
+    ));
 
     // Empty composer.json present but the package isn't declared → not external.
     let ctx = ctx_with_composer(&[]);

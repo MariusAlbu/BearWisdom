@@ -12,7 +12,8 @@
 // bare-name rules handle it.
 // =============================================================================
 
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::support::index_qname_is_or_ends_with;
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 
 pub struct AmbientNamespacePathRule;
 
@@ -24,19 +25,21 @@ impl LookupRule for AmbientNamespacePathRule {
     fn apply(&self, ctx: &BinderContext) -> LookupResult {
         let target = ctx.target();
         let edge_kind = ctx.edge_kind();
-        if !target.contains('.') {
+        if !ctx.profile.is_qualified_name(target) {
             return LookupResult::Pass;
         }
-        let leaf = target.rsplit('.').next().unwrap_or(target);
-        let suffix = format!(".{target}");
+        let leaf = ctx.profile.simple_name(target);
+        let target = ctx.profile.index_qname_from_source(target);
         let candidates = ctx.lookup.by_name(leaf);
         let best = candidates
             .iter()
-            .filter(|sym| sym.qualified_name.ends_with(&suffix))
+            .filter(|sym| index_qname_is_or_ends_with(&sym.qualified_name, &target))
             .filter(|sym| (ctx.kind)(edge_kind, &sym.kind))
             .min_by_key(|sym| sym.file_path.matches('/').count());
         match best {
-            Some(sym) => LookupResult::Resolved(ctx.resolved(sym.id, "default_ambient_namespace_path")),
+            Some(sym) => {
+                LookupResult::Resolved(ctx.resolved(sym.id, "default_ambient_namespace_path"))
+            }
             None => LookupResult::Pass,
         }
     }

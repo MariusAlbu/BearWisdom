@@ -62,7 +62,7 @@ pub const NIM_PROFILE: LanguageProfile = LanguageProfile {
     id: "nim",
     qname_separator: ".",
     declaration_merging: crate::type_checker::profile::language_profile::MergeScope::None,
-    self_keywords: &[],
+    receiver_spellings: &[],
     supertype_discovery: SupertypeDiscovery::Explicit,
     ancestor_order: crate::type_checker::profile::language_profile::AncestorOrder::Bfs,
     members_can_be_external: true,
@@ -99,7 +99,11 @@ pub const NIM_PROFILE: LanguageProfile = LanguageProfile {
         file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
         alias_module_qname: false,
         module_prefix_rewrites:
-            crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+            crate::type_checker::profile::language_profile::ModulePrefixRewrites::On {
+                module_path_adapter: Some(super::module_paths::module_path_match),
+                candidate_prefixes: super::module_paths::module_prefix_candidates,
+                declines_directory_match: super::module_paths::declines_directory_match,
+            },
         workspace_packages: false,
         reexport_barrel_stems: &["index"],
         self_package_root: None,

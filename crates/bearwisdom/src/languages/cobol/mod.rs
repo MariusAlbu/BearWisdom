@@ -69,5 +69,4 @@ impl LanguagePlugin for CobolPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::COBOL_PROFILE)
     }
-
 }

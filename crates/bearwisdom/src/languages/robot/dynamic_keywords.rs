@@ -95,8 +95,7 @@ pub fn build_robot_dynamic_keyword_map(
     library_paths: &[&str],
     reader: impl Fn(&str) -> Option<String>,
 ) -> RobotDynamicKeywordMap {
-    let entries: Vec<(&str, Vec<&str>)> =
-        library_paths.iter().map(|p| (*p, Vec::new())).collect();
+    let entries: Vec<(&str, Vec<&str>)> = library_paths.iter().map(|p| (*p, Vec::new())).collect();
     build_robot_dynamic_keyword_map_with_members(&entries, reader)
 }
 

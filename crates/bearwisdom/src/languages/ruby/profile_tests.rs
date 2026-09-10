@@ -6,7 +6,7 @@ use crate::types::{EdgeKind, SymbolKind};
 fn ruby_profile_identity() {
     assert_eq!(RUBY_PROFILE.id, "ruby");
     assert_eq!(RUBY_PROFILE.qname_separator, "::");
-    assert_eq!(RUBY_PROFILE.self_keywords, &["self"]);
+    assert_eq!(RUBY_PROFILE.receiver_spellings, &["self"]);
 }
 
 #[test]

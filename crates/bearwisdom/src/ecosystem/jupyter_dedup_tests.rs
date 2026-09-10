@@ -33,18 +33,14 @@ fn translations_localization_files_are_not_notebook_copies() {
     // duplicated notebook, must not be reclassified.
     assert!(!is_translated_notebook_copy("translations/en.json"));
     assert!(!is_translated_notebook_copy("translations/index.js"));
-    assert!(!is_translated_notebook_copy(
-        "translations/ar/README.ar.md"
-    ));
+    assert!(!is_translated_notebook_copy("translations/ar/README.ar.md"));
 }
 
 #[test]
 fn translations_must_be_followed_by_locale_then_notebook() {
     // A notebook directly inside translations/ with no locale segment between
     // it and the file is not the per-locale copy pattern.
-    assert!(!is_translated_notebook_copy(
-        "translations/notebook.ipynb"
-    ));
+    assert!(!is_translated_notebook_copy("translations/notebook.ipynb"));
 }
 
 #[test]

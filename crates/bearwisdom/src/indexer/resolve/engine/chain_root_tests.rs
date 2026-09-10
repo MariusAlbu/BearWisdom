@@ -80,12 +80,11 @@ fn qualified_type_candidates(module: &str, _imported: &str, tail: &str) -> Vec<S
 
 fn qualified_import_profile() -> LanguageProfile {
     let mut profile = DEFAULT_PROFILE;
-    profile.chain_qualification = ChainQualification::SamePackageAndImportsWithQualifiedRoot(
-        QualifiedImportRoot {
+    profile.chain_qualification =
+        ChainQualification::SamePackageAndImportsWithQualifiedRoot(QualifiedImportRoot {
             module_path_adapter: qualified_module_path,
             type_candidates: qualified_type_candidates,
-        },
-    );
+        });
     profile
 }
 
@@ -99,13 +98,7 @@ fn qualified_type_import_anchors_static_receiver() {
             "class",
             "vendor/alpha/models/Item.gen",
         ))
-        .with(sym(
-            41,
-            "Item",
-            "other.Item",
-            "class",
-            "src/other/Item.gen",
-        ))
+        .with(sym(41, "Item", "other.Item", "class", "src/other/Item.gen"))
         .with_member_id(
             40,
             sym(
@@ -146,7 +139,10 @@ fn aliased_qualified_type_import_anchors_nested_type() {
                 "vendor/alpha/models/factories/Factory.gen",
             ),
         );
-    let fc = file_ctx(vec![named_import("models", "alpha.models", Some("M"))], None);
+    let fc = file_ctx(
+        vec![named_import("models", "alpha.models", Some("M"))],
+        None,
+    );
     let segs = vec![type_access("M.factories.Factory"), member("new")];
     let profile = qualified_import_profile();
 
@@ -223,10 +219,22 @@ fn drive_with_profile(
 #[test]
 fn namespace_root_anchors_on_the_indexed_type_prefix() {
     let lookup = Lookup::new()
-        .with(sym(1, "Console", "System.Console", "class", "ext:dotnet:corelib.cs"))
+        .with(sym(
+            1,
+            "Console",
+            "System.Console",
+            "class",
+            "ext:dotnet:corelib.cs",
+        ))
         .with_member_id(
             1,
-            sym(2, "WriteLine", "System.Console.WriteLine", "method", "ext:dotnet:corelib.cs"),
+            sym(
+                2,
+                "WriteLine",
+                "System.Console.WriteLine",
+                "method",
+                "ext:dotnet:corelib.cs",
+            ),
         );
     let segs = vec![seg("System"), seg("Console"), member("WriteLine")];
 
@@ -239,8 +247,23 @@ fn namespace_root_anchors_on_the_indexed_type_prefix() {
 #[test]
 fn three_segment_namespace_prefix_anchors_on_the_longest_run() {
     let lookup = Lookup::new()
-        .with(sym(1, "Widget", "Alpha.Beta.Widget", "class", "src/widget.cs"))
-        .with_member_id(1, sym(2, "Spin", "Alpha.Beta.Widget.Spin", "method", "src/widget.cs"));
+        .with(sym(
+            1,
+            "Widget",
+            "Alpha.Beta.Widget",
+            "class",
+            "src/widget.cs",
+        ))
+        .with_member_id(
+            1,
+            sym(
+                2,
+                "Spin",
+                "Alpha.Beta.Widget.Spin",
+                "method",
+                "src/widget.cs",
+            ),
+        );
     let segs = vec![seg("Alpha"), seg("Beta"), seg("Widget"), member("Spin")];
 
     assert_eq!(bind(&lookup, segs, &file_ctx(vec![], None)), Some(2));
@@ -253,10 +276,22 @@ fn three_segment_namespace_prefix_anchors_on_the_longest_run() {
 #[test]
 fn open_namespace_qualifies_a_single_segment_root() {
     let lookup = Lookup::new()
-        .with(sym(1, "System.Console", "System.Console", "class", "ext:dotnet:corelib.cs"))
+        .with(sym(
+            1,
+            "System.Console",
+            "System.Console",
+            "class",
+            "ext:dotnet:corelib.cs",
+        ))
         .with_member_id(
             1,
-            sym(2, "WriteLine", "System.Console.WriteLine", "method", "ext:dotnet:corelib.cs"),
+            sym(
+                2,
+                "WriteLine",
+                "System.Console.WriteLine",
+                "method",
+                "ext:dotnet:corelib.cs",
+            ),
         );
     let fc = file_ctx(vec![wildcard_import("System")], None);
     let segs = vec![seg("Console"), member("WriteLine")];

@@ -108,7 +108,8 @@ fn extract_import_specifier(fragment: &str) -> Option<String> {
 /// land as their own `Name` keys).
 fn is_binding_name(s: &str) -> bool {
     !s.is_empty()
-        && s.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '$')
+        && s.chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '$')
         && s.chars()
             .next()
             .is_some_and(|c| c.is_alphabetic() || c == '_' || c == '$')

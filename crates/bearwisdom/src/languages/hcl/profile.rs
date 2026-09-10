@@ -13,7 +13,10 @@ pub const HCL_PROFILE: LanguageProfile = LanguageProfile {
     declaration_merging: crate::type_checker::profile::language_profile::MergeScope::None,
     // `var.X` / `local.X` carry a sigil head the bare-name probes strip so the
     // reference binds to the same-file `X` Variable / `local` attribute.
-    self_keywords: &["var", "local"],
+    receiver_spellings: &[
+        crate::type_checker::profile::language_profile::ReceiverSpelling::prefix("var", "."),
+        crate::type_checker::profile::language_profile::ReceiverSpelling::prefix("local", "."),
+    ],
     supertype_discovery: SupertypeDiscovery::Explicit,
     ancestor_order: crate::type_checker::profile::language_profile::AncestorOrder::Bfs,
     members_can_be_external: false,

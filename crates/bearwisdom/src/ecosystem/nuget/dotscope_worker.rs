@@ -133,6 +133,10 @@ pub(crate) fn crack_one_dll_type(
         virtual_path: virtual_path.to_string(),
         reply,
     };
-    DOTSCOPE_TX.lock().ok()?.send(DotscopeMsg::Crack(req)).ok()?;
+    DOTSCOPE_TX
+        .lock()
+        .ok()?
+        .send(DotscopeMsg::Crack(req))
+        .ok()?;
     reply_rx.recv().ok()?
 }

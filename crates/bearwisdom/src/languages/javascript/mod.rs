@@ -2,6 +2,7 @@
 
 mod calls;
 pub(crate) mod chains;
+pub(crate) mod component_tags;
 pub mod extract;
 pub(crate) mod flow;
 mod globals;
@@ -116,10 +117,49 @@ impl LanguagePlugin for JavascriptPlugin {
         keywords::KEYWORDS
     }
 
+    fn primitive_member_head(&self, head: &str) -> Option<String> {
+        match head {
+            "string" => Some("String".to_string()),
+            "number" => Some("Number".to_string()),
+            "bigint" => Some("BigInt".to_string()),
+            "boolean" => Some("Boolean".to_string()),
+            "symbol" => Some("Symbol".to_string()),
+            _ => None,
+        }
+    }
+
+    fn has_homogeneous_computed_access(&self, head: &str) -> bool {
+        head == "Array"
+    }
+
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::JAVASCRIPT_PROFILE)
+    }
+
+    fn component_tag_head<'a>(&self, target: &'a str) -> Option<&'a str> {
+        component_tags::component_tag_head(target)
+    }
+
+    fn is_component_file(&self, path: &str) -> bool {
+        component_tags::is_component_file(path)
+    }
+
+    fn component_selectors(
+        &self,
+        source: &str,
+        symbols: &[crate::types::ExtractedSymbol],
+    ) -> Vec<(String, String)> {
+        crate::languages::typescript::selectors::extract_custom_element_defines(source, symbols)
+    }
+
+    fn plugin_flow_emissions(
+        &self,
+        source: &str,
+        _file_path: &str,
+    ) -> Vec<(u32, crate::indexer::resolve::flow_emit::FlowEmission)> {
+        crate::languages::typescript::connectors::extract_typescript_graphql(source)
     }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {

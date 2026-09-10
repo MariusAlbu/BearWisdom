@@ -12,11 +12,13 @@
 //             symbol: named member > named owning type > fallback_kind dispatch.
 // =============================================================================
 
-use crate::indexer::resolve::engine::support::normalize_name;
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
 use crate::indexer::resolve::engine::contract::SymbolInfo;
 use crate::indexer::resolve::engine::contract::RESOLVED_CONFIDENCE;
-use crate::type_checker::profile::language_profile::{AliasDecode, FileScopedImports, NameNormalization};
+use crate::indexer::resolve::engine::support::normalize_name;
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
+use crate::type_checker::profile::language_profile::{
+    AliasDecode, FileScopedImports, NameNormalization,
+};
 use crate::types::EdgeKind;
 
 pub struct FileScopedImportRule;

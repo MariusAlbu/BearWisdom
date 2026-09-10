@@ -40,7 +40,7 @@ fn pascal_calls_row_accepts_type_constructors_without_dropping_functions() {
 #[test]
 fn pascal_profile_identity_and_shadow_mode() {
     assert_eq!(PASCAL_PROFILE.id, "pascal");
-    assert_eq!(PASCAL_PROFILE.self_keywords, &["Self"]);
+    assert_eq!(PASCAL_PROFILE.receiver_spellings, &["Self"]);
 }
 
 #[test]
@@ -49,7 +49,9 @@ fn pascal_builtin_skip_drains_casts_declines_project_declared_names() {
     // drain; names the Pascal reference corpus declares internally (an
     // RTL-compat shim, a GTK binding, a code-generated field-type class)
     // fall through to the ladder's normal lookup rungs instead.
-    let skip = PASCAL_PROFILE.builtin_skip.expect("pascal builtin_skip set");
+    let skip = PASCAL_PROFILE
+        .builtin_skip
+        .expect("pascal builtin_skip set");
     assert!(skip("Integer"));
     assert!(skip("single")); // case-insensitive: Pascal identifiers fold case
     assert!(!skip("FreeAndNil"));

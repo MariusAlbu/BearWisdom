@@ -4,7 +4,12 @@ use crate::indexer::resolve::engine::testkit::{
 };
 use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
 
-fn resolve(lookup: &Lookup, target: &str, source_qname: &str, scope_chain: Vec<String>) -> Option<i64> {
+fn resolve(
+    lookup: &Lookup,
+    target: &str,
+    source_qname: &str,
+    scope_chain: Vec<String>,
+) -> Option<i64> {
     let r = call_ref(target);
     // source_symbol already sets qualified_name = name, so passing the full
     // qname here is sufficient.
@@ -40,10 +45,21 @@ fn binds_generic_param_from_enclosing_scope() {
     // The enclosing class `Container` has generic param `V`; a method inside it
     // references `V` — the rule finds it through the scope chain.
     let lookup = Lookup::new()
-        .with(sym(2, "Container", "Container", "class", "src/container.ts"))
+        .with(sym(
+            2,
+            "Container",
+            "Container",
+            "class",
+            "src/container.ts",
+        ))
         .with_generics("Container", &["V"]);
     // source symbol is `Container.method`, scope chain includes `Container`.
-    let got = resolve(&lookup, "V", "Container.method", vec!["Container".to_string()]);
+    let got = resolve(
+        &lookup,
+        "V",
+        "Container.method",
+        vec!["Container".to_string()],
+    );
     assert_eq!(got, Some(2));
 }
 

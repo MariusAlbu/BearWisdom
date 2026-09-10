@@ -119,5 +119,4 @@ impl LanguagePlugin for ZigPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::ZIG_PROFILE)
     }
-
 }

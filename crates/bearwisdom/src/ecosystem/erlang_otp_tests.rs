@@ -228,7 +228,6 @@ fn walk_language_is_erlang() {
     }
 }
 
-
 #[test]
 fn extract_module_name_parses_attribute() {
     let tmp = TempDir::new().unwrap();

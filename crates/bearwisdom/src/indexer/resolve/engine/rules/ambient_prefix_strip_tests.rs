@@ -8,8 +8,13 @@ use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
 #[test]
 fn passes_when_no_prefixes_configured() {
     // DEFAULT_PROFILE has ambient_namespace_prefixes = &[], so always Pass.
-    let lookup =
-        Lookup::new().with_ambient(sym(1, "concat", "concat", "function", "ext:ts:lib/util.d.ts"));
+    let lookup = Lookup::new().with_ambient(sym(
+        1,
+        "concat",
+        "concat",
+        "function",
+        "ext:ts:lib/util.d.ts",
+    ));
     let r = call_ref("sys.concat");
     let s = source_symbol("caller");
     let fc = file_ctx(vec![], None);
@@ -22,7 +27,10 @@ fn passes_when_no_prefixes_configured() {
         kind: &kind,
         profile: &DEFAULT_PROFILE,
     };
-    assert!(matches!(AmbientPrefixStripRule.apply(&ctx), LookupResult::Pass));
+    assert!(matches!(
+        AmbientPrefixStripRule.apply(&ctx),
+        LookupResult::Pass
+    ));
 }
 
 #[test]
@@ -80,7 +88,10 @@ fn passes_when_prefix_not_present_in_target() {
         kind: &kind,
         profile: &p,
     };
-    assert!(matches!(AmbientPrefixStripRule.apply(&ctx), LookupResult::Pass));
+    assert!(matches!(
+        AmbientPrefixStripRule.apply(&ctx),
+        LookupResult::Pass
+    ));
 }
 
 #[test]
@@ -101,5 +112,17 @@ fn passes_when_leaf_not_ambient() {
         kind: &kind,
         profile: &p,
     };
-    assert!(matches!(AmbientPrefixStripRule.apply(&ctx), LookupResult::Pass));
+    assert!(matches!(
+        AmbientPrefixStripRule.apply(&ctx),
+        LookupResult::Pass
+    ));
+}
+
+#[test]
+fn uses_the_profile_separator_for_alias_prefixes() {
+    assert_eq!(
+        strip_ambient_prefix("sys::concat", &["sys"], "::"),
+        Some("concat")
+    );
+    assert_eq!(strip_ambient_prefix("sys.concat", &["sys"], "::"), None);
 }

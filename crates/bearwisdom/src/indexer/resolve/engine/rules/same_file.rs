@@ -7,13 +7,12 @@
 // (non-wildcard) import that binds the same name — true lexical locals are
 // already handled by scope_visible (which runs first).
 //
-// `self_keywords` and `name_normalization` are threaded in from the language
-// profile; both are identity for case-sensitive languages, so the probe is
-// byte-identical in the common case.
+// Receiver-prefix and name normalization are profile-owned and inert unless
+// the active language explicitly declares them.
 // =============================================================================
 
-use crate::indexer::resolve::engine::support::{normalize_name, strip_self_keyword};
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::support::normalize_name;
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 
 pub struct SameFileRule;
 
@@ -23,7 +22,7 @@ impl LookupRule for SameFileRule {
     }
 
     fn apply(&self, ctx: &BinderContext) -> LookupResult {
-        let target = strip_self_keyword(ctx.target(), ctx.profile.self_keywords);
+        let target = ctx.profile.normalize_receiver_member_target(ctx.target());
         // Yield to an explicit (non-wildcard) import that binds this name. True
         // lexical locals are already handled by scope_visible (which runs first);
         // a file-level sibling that isn't in the scope chain must not shadow an

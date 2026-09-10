@@ -17,7 +17,7 @@
 // A dotted or qualified target is not a generic parameter — declined early.
 // =============================================================================
 
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 
 pub struct GenericParamRule;
 
@@ -28,7 +28,7 @@ impl LookupRule for GenericParamRule {
 
     fn apply(&self, ctx: &BinderContext) -> LookupResult {
         let target = ctx.target();
-        if target.is_empty() || target.contains('.') || target.contains("::") {
+        if target.is_empty() || ctx.profile.is_qualified_name(target) {
             return LookupResult::Pass;
         }
 

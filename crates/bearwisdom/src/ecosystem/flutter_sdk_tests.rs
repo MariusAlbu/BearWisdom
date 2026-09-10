@@ -149,5 +149,8 @@ fn walk_dep_root_flutter_package_still_uses_flutter_sdk_scheme() {
     };
     let files = walk_dep_root(&dep);
     assert_eq!(files.len(), 1);
-    assert_eq!(files[0].relative_path, "ext:flutter-sdk:flutter/src/framework.dart");
+    assert_eq!(
+        files[0].relative_path,
+        "ext:flutter-sdk:flutter/src/framework.dart"
+    );
 }

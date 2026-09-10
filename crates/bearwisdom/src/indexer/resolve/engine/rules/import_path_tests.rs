@@ -6,7 +6,7 @@ use crate::indexer::resolve::engine::contract::{FileContext, Symbol, SymbolLooku
 use crate::indexer::resolve::engine::testkit::{accept_any, ref_ctx, source_symbol};
 use crate::indexer::resolve::engine::{BinderContext, LookupResult};
 use crate::type_checker::profile::language_profile::{
-    CandidateDirs, DEFAULT_PROFILE, ImportResolution, LanguageProfile, StemMatch,
+    CandidateDirs, ImportResolution, LanguageProfile, StemMatch, DEFAULT_PROFILE,
 };
 use crate::types::{EdgeKind, ExtractedRef};
 
@@ -164,16 +164,14 @@ fn resolve(lookup: &FileLookup, source_file: &str, target: &str) -> Option<i64> 
 #[test]
 fn binds_sibling_template_by_stem() {
     // `src/views/page.hbs` includes `header` — resolved to `src/views/header.hbs`.
-    let lookup = FileLookup::new()
-        .with_file_sym("src/views/header.hbs", 3, "header", "template");
+    let lookup = FileLookup::new().with_file_sym("src/views/header.hbs", 3, "header", "template");
     assert_eq!(resolve(&lookup, "src/views/page.hbs", "header"), Some(3));
 }
 
 #[test]
 fn declines_non_imports_edge_kind() {
     // The rule must pass on any non-Imports edge even when a profile is set.
-    let lookup = FileLookup::new()
-        .with_file_sym("src/views/header.hbs", 3, "header", "template");
+    let lookup = FileLookup::new().with_file_sym("src/views/header.hbs", 3, "header", "template");
     let r = crate::indexer::resolve::engine::testkit::call_ref("header");
     let s = source_symbol("template");
     let fc = FileContext {
@@ -197,8 +195,7 @@ fn declines_non_imports_edge_kind() {
 #[test]
 fn declines_when_no_import_resolution_configured() {
     // DEFAULT_PROFILE has `import_resolution: None` — the rule is inert.
-    let lookup = FileLookup::new()
-        .with_file_sym("src/views/header.hbs", 3, "header", "template");
+    let lookup = FileLookup::new().with_file_sym("src/views/header.hbs", 3, "header", "template");
     let r = imports_ref("header");
     let s = source_symbol("template");
     let fc = FileContext {
@@ -224,7 +221,6 @@ fn binds_underscore_variant() {
     // With `underscore_variant: true`, `header` also tries `_header.hbs`.
     // StemExact checks `sym.name == file_stem`; for `_header.hbs` the stem is
     // `_header`, so the symbol must be named `_header` to match.
-    let lookup = FileLookup::new()
-        .with_file_sym("src/views/_header.hbs", 7, "_header", "template");
+    let lookup = FileLookup::new().with_file_sym("src/views/_header.hbs", 7, "_header", "template");
     assert_eq!(resolve(&lookup, "src/views/page.hbs", "header"), Some(7));
 }

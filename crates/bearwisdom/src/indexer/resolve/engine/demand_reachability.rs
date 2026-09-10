@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 
 use rustc_hash::FxHashMap;
 
+use crate::ecosystem::external_policy;
 use crate::ecosystem::symbol_index::SymbolLocationIndex;
 use crate::indexer::phase_timer;
 use crate::type_checker::profile::language_profile::LanguageProfile;
@@ -21,7 +22,7 @@ use crate::types::ParsedFile;
 
 use super::compilation::Compilation;
 use super::demand_veto::{DemandVeto, FileLanguages};
-use super::{externals_demand, module_augmentation, relative_imports, type_mention_demand};
+use super::{externals_demand, type_mention_demand};
 
 /// Collect the demand frontier one materialized external file exposes.
 #[allow(clippy::too_many_arguments)]
@@ -34,7 +35,7 @@ pub(super) fn collect(
     loc: &SymbolLocationIndex,
     seen: &mut HashSet<PathBuf>,
     next: &mut Vec<PathBuf>,
-    augmentations: &mut Vec<(String, String, String)>,
+    augmentations: &mut Vec<crate::languages::ModuleAugmentation>,
 ) {
     let veto = DemandVeto::new(&pf.language, profiles, file_langs);
     {
@@ -43,6 +44,7 @@ pub(super) fn collect(
         type_mention_demand::collect_return_type_files(
             &pf.symbols,
             &pf.language,
+            profiles,
             tree,
             loc,
             seen,
@@ -57,18 +59,19 @@ pub(super) fn collect(
             seen,
             next,
         );
-        relative_imports::collect_relative_supertype_imports(abs, &pf.refs, seen, next);
+        external_policy::collect_relative_supertypes(&pf.language, abs, &pf.refs, seen, next);
     }
-    // Per-language extra reachability (e.g. Angular NgModule → component
-    // .d.ts) — dispatched to the file's plugin so framework specifics stay
-    // out of the generic resolve pipeline.
-    {
-        let _t = phase_timer::scope("demand.decl_reachables");
-        if let Ok(content) = std::fs::read_to_string(abs) {
-            let plugin = crate::languages::default_registry().get(&pf.language);
+    // Per-language source-derived demand records stay with the file's active
+    // plugin. The resolver reads source once and forwards normalized results.
+    if let Ok(content) = std::fs::read_to_string(abs) {
+        let plugin = crate::languages::default_registry().get(&pf.language);
+        {
+            let _t = phase_timer::scope("demand.decl_reachables");
             if let Some(dir) = abs.parent() {
                 for spec in plugin.external_declaration_reachables(&pf.path, &content) {
-                    if let Some(file) = relative_imports::resolve_relative_ts_module(dir, &spec) {
+                    if let Some(file) =
+                        external_policy::resolve_relative_module(&pf.language, dir, &spec)
+                    {
                         if seen.insert(file.clone()) {
                             next.push(file);
                         }
@@ -76,7 +79,7 @@ pub(super) fn collect(
                 }
             }
         }
+        let _t = phase_timer::scope("demand.augmentations");
+        augmentations.extend(plugin.external_module_augmentations(&content, &pf.path));
     }
-    let _t = phase_timer::scope("demand.aug_scan");
-    module_augmentation::collect_module_augmentations(abs, &pf.path, augmentations);
 }

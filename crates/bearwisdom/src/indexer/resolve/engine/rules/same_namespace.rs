@@ -8,8 +8,8 @@
 // byte-exact probe alone.
 // =============================================================================
 
-use crate::indexer::resolve::engine::support::normalize_name;
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::support::{join_index_qname, normalize_name};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 use crate::type_checker::profile::language_profile::NameNormalization;
 
 pub struct SameNamespaceRule;
@@ -29,7 +29,7 @@ impl LookupRule for SameNamespaceRule {
             _ => return LookupResult::Pass,
         };
 
-        let expected = format!("{ns}.{target}");
+        let expected = join_index_qname(ns, target);
 
         // Byte-exact probe via `by_name`: fast path for case-sensitive languages.
         for sym in ctx.lookup.by_name(target) {

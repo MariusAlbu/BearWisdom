@@ -457,7 +457,6 @@ pub(super) fn walk_children(
     }
 }
 
-
 /// Emit a bare-callee `Calls` ref for `name` unless it is a local binding,
 /// fails the callable-text shape, or names a Fortran statement keyword
 /// (statement forms parse as call expressions but reference no procedure).

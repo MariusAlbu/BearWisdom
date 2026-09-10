@@ -153,8 +153,9 @@ fn imported_qualified_root_anchor(
     profile: &LanguageProfile,
     segments: &[ChainSegment],
 ) -> QualifiedRootAnchor {
-    let Some((binding, qualified_tail)) =
-        segments.first().and_then(|root| split_import_qualified_root(profile, root))
+    let Some((binding, qualified_tail)) = segments
+        .first()
+        .and_then(|root| split_import_qualified_root(profile, root))
     else {
         return QualifiedRootAnchor::NotImported;
     };
@@ -173,7 +174,11 @@ fn imported_qualified_root_anchor(
             continue;
         }
         imported = true;
-        let Some(module) = import.module_path.as_deref().filter(|module| !module.is_empty()) else {
+        let Some(module) = import
+            .module_path
+            .as_deref()
+            .filter(|module| !module.is_empty())
+        else {
             continue;
         };
         for qname in (config.type_candidates)(module, &import.imported_name, qualified_tail) {

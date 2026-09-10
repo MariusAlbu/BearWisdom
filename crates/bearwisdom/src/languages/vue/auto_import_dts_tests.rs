@@ -23,8 +23,7 @@ declare module 'vue' {
 fn parse_component_map_bare_package_reexport() {
     // unplugin-vue-components emits `Name: typeof import('pkg')['Name']` when
     // the component comes from an external library, not a local file.
-    let src =
-        "    ExtWidget: typeof import('@scope/ui')['ExtWidget']";
+    let src = "    ExtWidget: typeof import('@scope/ui')['ExtWidget']";
     let entries = parse_dts(src);
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].name, "ExtWidget");

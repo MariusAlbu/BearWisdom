@@ -1,10 +1,10 @@
 // =============================================================================
-// engine/include_closure — fail-closed C/C++ header visibility
+// engine/include_closure — fail-closed include-edge visibility
 //
-// C declarations live in a flat namespace, but an external header declaration
-// is visible only when the translation unit reaches that header through its
-// transitive #include graph. This store retains raw include spellings and
-// derives source-file -> reachable-file paths whenever the Compilation grows.
+// A declaration supplied through an include edge is visible only when the
+// source reaches that file through the transitive include graph. Language
+// plugins resolve source spellings to exact indexed paths; this store retains
+// those edges and computes their transitive closure.
 // =============================================================================
 
 use std::collections::VecDeque;
@@ -15,7 +15,7 @@ use crate::types::{EdgeKind, ParsedFile};
 
 #[derive(Default)]
 pub(super) struct IncludeClosure {
-    known_files: FxHashSet<String>,
+    file_languages: FxHashMap<String, String>,
     direct_specs: FxHashMap<String, Vec<String>>,
     parsed_sources: FxHashSet<String>,
     reachable: FxHashMap<String, FxHashSet<String>>,
@@ -23,8 +23,9 @@ pub(super) struct IncludeClosure {
 
 impl IncludeClosure {
     pub(super) fn ingest_parsed(&mut self, files: &[ParsedFile]) {
-        for file in files.iter().filter(|file| is_c_family(&file.language)) {
-            self.known_files.insert(file.path.clone());
+        for file in files {
+            self.file_languages
+                .insert(file.path.clone(), file.language.clone());
             self.parsed_sources.insert(file.path.clone());
             self.direct_specs.insert(
                 file.path.clone(),
@@ -47,16 +48,55 @@ impl IncludeClosure {
     /// remain authoritative when an incremental build overlays the database.
     pub(super) fn ingest_persisted(
         &mut self,
-        files: impl IntoIterator<Item = String>,
+        files: impl IntoIterator<Item = (String, String)>,
         specs: FxHashMap<String, Vec<String>>,
     ) {
-        self.known_files.extend(files);
+        self.file_languages.extend(files);
         for (source, includes) in specs {
             if !self.parsed_sources.contains(&source) {
                 self.direct_specs.insert(source, includes);
             }
         }
         self.rebuild();
+    }
+
+    /// Restore persisted include evidence without exposing the storage schema
+    /// to the compilation coordinator.
+    pub(super) fn ingest_from_db(&mut self, conn: &rusqlite::Connection) {
+        let mut files: Vec<(String, String)> = Vec::new();
+        if let Ok(mut statement) = conn.prepare(
+            "SELECT path, language FROM files
+             WHERE language IN (
+                 SELECT DISTINCT f.language
+                 FROM imports i JOIN files f ON f.id = i.file_id
+                 WHERE i.is_include = 1
+             )",
+        ) {
+            if let Ok(rows) = statement.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            }) {
+                files.extend(rows.flatten());
+            }
+        }
+
+        let mut specs: FxHashMap<String, Vec<String>> = files
+            .iter()
+            .map(|(path, _)| (path.clone(), Vec::new()))
+            .collect();
+        if let Ok(mut statement) = conn.prepare(
+            "SELECT f.path, COALESCE(i.module_path, i.imported_name) \
+             FROM imports i JOIN files f ON f.id = i.file_id \
+             WHERE i.is_include = 1",
+        ) {
+            if let Ok(rows) = statement.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            }) {
+                for (source, spec) in rows.flatten() {
+                    specs.entry(source).or_default().push(spec);
+                }
+            }
+        }
+        self.ingest_persisted(files, specs);
     }
 
     pub(super) fn reaches(&self, source_file: &str, candidate_file: &str) -> bool {
@@ -100,66 +140,16 @@ impl IncludeClosure {
     }
 
     fn resolve_unique(&self, source: &str, spec: &str) -> Option<String> {
-        let source = normalize(source);
-        let explicit_relative = spec
-            .replace('\\', "/")
-            .split('/')
-            .next()
-            .is_some_and(|part| matches!(part, "." | ".."));
-        let spec = normalize(spec);
-        if spec.is_empty() {
-            return None;
-        }
-
-        // Include refs currently retain the path but not the quote/angle
-        // delimiter. Only an explicit ./ or ../ spelling can therefore use
-        // the including file's directory without risking that <stdio.h>
-        // incorrectly selects a same-named project header over an SDK header.
-        if explicit_relative {
-            let source_dir = source.rsplit_once('/').map_or("", |(dir, _)| dir);
-            let relative = normalize(&format!("{source_dir}/{spec}"));
-            let exact: Vec<&String> = self
-                .known_files
-                .iter()
-                .filter(|path| normalize(path) == relative && normalize(path) != source)
-                .collect();
-            return (exact.len() == 1).then(|| exact[0].clone());
-        }
-
-        // Supplied SDK headers keep an external virtual-path prefix. Match the
-        // compiler-visible include spelling only at a path boundary and only
-        // when it identifies one indexed file. Ambiguity deliberately fails.
-        let suffix = format!("/{spec}");
-        let matches: Vec<&String> = self
-            .known_files
+        let source_language = self.file_languages.get(source)?;
+        let indexed_files: Vec<(&str, &str)> = self
+            .file_languages
             .iter()
-            .filter(|path| {
-                let path = normalize(path);
-                path != source && (path == spec || path.ends_with(&suffix))
-            })
+            .map(|(path, language)| (path.as_str(), language.as_str()))
             .collect();
-        (matches.len() == 1 && matches[0].starts_with("ext:")).then(|| matches[0].clone())
+        crate::languages::default_registry()
+            .get(source_language)
+            .resolve_include_target(source, spec, &indexed_files)
     }
-}
-
-fn is_c_family(language: &str) -> bool {
-    matches!(language, "c" | "cpp")
-}
-
-fn normalize(path: &str) -> String {
-    let replaced = path.replace('\\', "/");
-    let mut parts: Vec<&str> = Vec::new();
-    for part in replaced.split('/') {
-        match part {
-            "" | "." => {}
-            ".." if parts.last().is_some_and(|prior| *prior != "..") => {
-                parts.pop();
-            }
-            ".." => parts.push(part),
-            _ => parts.push(part),
-        }
-    }
-    parts.join("/")
 }
 
 #[cfg(test)]
@@ -168,9 +158,13 @@ mod tests {
     use crate::types::{ExtractedRef, FlowMeta};
 
     fn file(path: &str, includes: &[&str]) -> ParsedFile {
+        file_with_language(path, "c", includes)
+    }
+
+    fn file_with_language(path: &str, language: &str, includes: &[&str]) -> ParsedFile {
         ParsedFile {
             path: path.into(),
-            language: "c".into(),
+            language: language.into(),
             content_hash: String::new(),
             size: 0,
             line_count: 0,
@@ -280,12 +274,25 @@ mod tests {
         ]);
         closure.ingest_persisted(
             [
-                "src/main.c".to_string(),
-                "ext:idx:/sdk/include/stdio.h".to_string(),
+                ("src/main.c".to_string(), "c".to_string()),
+                ("ext:idx:/sdk/include/stdio.h".to_string(), "c".to_string()),
             ],
             FxHashMap::from_iter([("src/main.c".to_string(), vec!["stdio.h".to_string()])]),
         );
 
         assert!(!closure.reaches("src/main.c", "ext:idx:/sdk/include/stdio.h"));
+    }
+
+    #[test]
+    fn languages_without_include_policy_fail_closed() {
+        let mut closure = IncludeClosure::default();
+        closure.ingest_parsed(&[
+            file_with_language("src/main.custom", "custom", &["api.h"]),
+            file_with_language("ext:idx:/custom/include/api.h", "custom", &[]),
+            file_with_language("ext:idx:/unrelated/include/api.h", "unrelated", &[]),
+        ]);
+
+        assert!(!closure.reaches("src/main.custom", "ext:idx:/custom/include/api.h"));
+        assert!(!closure.reaches("src/main.custom", "ext:idx:/unrelated/include/api.h"));
     }
 }

@@ -106,15 +106,38 @@ fn diff_detects_retargeting_when_the_same_ref_site_binds_a_different_candidate()
     let target_a = insert_symbol(&db, a_file, "thing", "A.thing");
     let target_b = insert_symbol(&db, b_file, "thing", "B.thing");
 
-    insert_ref_resolution(&db, source_sym, "thing", "calls", 5, 2, "resolved", Some(target_a));
+    insert_ref_resolution(
+        &db,
+        source_sym,
+        "thing",
+        "calls",
+        5,
+        2,
+        "resolved",
+        Some(target_a),
+    );
     let old = export_ref_snapshot(&db).unwrap();
 
-    db.conn().execute("DELETE FROM ref_resolutions", []).unwrap();
-    insert_ref_resolution(&db, source_sym, "thing", "calls", 5, 2, "resolved", Some(target_b));
+    db.conn()
+        .execute("DELETE FROM ref_resolutions", [])
+        .unwrap();
+    insert_ref_resolution(
+        &db,
+        source_sym,
+        "thing",
+        "calls",
+        5,
+        2,
+        "resolved",
+        Some(target_b),
+    );
     let new = export_ref_snapshot(&db).unwrap();
 
     let report = diff_snapshots(&old, &new, 20);
-    assert_eq!(report.retargeted.count, 1, "the winner must be flagged as retargeted");
+    assert_eq!(
+        report.retargeted.count, 1,
+        "the winner must be flagged as retargeted"
+    );
     assert_eq!(report.newly_resolved.count, 0);
     assert_eq!(report.newly_unresolved.count, 0);
     assert_eq!(report.drain_transitions.count, 0);

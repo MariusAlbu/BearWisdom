@@ -97,7 +97,7 @@ fn probe_bound_evidence(
         // link stays ImportUnlinked: supply exists, the link inside it
         // failed.
         if let Some(spec) = imp.module_path.as_deref() {
-            if lookup.is_declared_dependency(file_package_id, spec)
+            if lookup.is_declared_dependency(file_package_id, &file_ctx.language, spec)
                 && lookup
                     .resolve_module_from(&file_ctx.file_path, spec)
                     .is_none()

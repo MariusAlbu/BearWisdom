@@ -16,14 +16,17 @@
 // NOTE: `gemfile` manifest reader migrated to `crate::ecosystem::rubygems` in Phase 2+3.
 // NOTE: `go_mod` manifest reader migrated to `crate::ecosystem::go_mod` in Phase 2+3.
 pub mod ansible;
+pub(crate) mod declared_deps;
 pub mod gradle;
 pub mod js_config_aliases;
 pub mod maven;
 pub mod mix;
 pub mod module_config;
 pub mod npm;
+pub(crate) mod ownership;
 pub mod pip_requirements;
 pub mod rebar;
+pub(crate) mod resolver_policy;
 pub mod vcpkg;
 // NOTE: `nuget` manifest reader migrated to `crate::ecosystem::nuget` in Phase 2+3.
 pub mod sbt;

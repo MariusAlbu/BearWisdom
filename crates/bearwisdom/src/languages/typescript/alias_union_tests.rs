@@ -24,7 +24,10 @@ fn branches_of(src: &str) -> (Vec<String>, bool) {
 #[test]
 fn two_arm_union_keeps_both_branches() {
     let (branches, has_object) = branches_of("type Keys = 'click' | 'change';");
-    assert_eq!(branches, vec!["'click'".to_string(), "'change'".to_string()]);
+    assert_eq!(
+        branches,
+        vec!["'click'".to_string(), "'change'".to_string()]
+    );
     assert!(!has_object);
 }
 

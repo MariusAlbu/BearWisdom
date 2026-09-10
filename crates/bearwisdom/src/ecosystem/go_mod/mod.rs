@@ -112,6 +112,7 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
 
 mod discovery;
 mod manifest;
+pub(crate) mod module_specifier;
 mod reachability;
 mod symbol_index;
 

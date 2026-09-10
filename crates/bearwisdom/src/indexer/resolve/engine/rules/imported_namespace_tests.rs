@@ -17,7 +17,7 @@ fn resolve(lookup: &Lookup, target: &str, imports: Vec<ImportEntry>) -> Option<i
         ref_ctx: &rc,
         lookup,
         kind: &kind,
-        profile: &DEFAULT_PROFILE,
+        profile: &crate::languages::rust_lang::RUST_PROFILE,
     };
     match ImportedNamespaceRule.apply(&ctx) {
         LookupResult::Resolved(res) => Some(res.target_symbol_id),
@@ -143,11 +143,23 @@ fn import_scope_picks_the_workspace_package_candidate_over_first_by_name() {
         .with_workspace_pkg("@tanstack/query-core", 10)
         .with_in_package(
             19,
-            sym(900, "useQuery", "useQuery", "function", "packages/solid-query/src/useQuery.ts"),
+            sym(
+                900,
+                "useQuery",
+                "useQuery",
+                "function",
+                "packages/solid-query/src/useQuery.ts",
+            ),
         )
         .with_in_package(
             10,
-            sym(910, "useQuery", "useQuery", "function", "packages/query-core/src/useQuery.ts"),
+            sym(
+                910,
+                "useQuery",
+                "useQuery",
+                "function",
+                "packages/query-core/src/useQuery.ts",
+            ),
         );
     let imports = vec![import("useQuery", Some("@tanstack/query-core"))];
     assert_eq!(resolve(&lookup, "useQuery", imports), Some(910));

@@ -133,7 +133,9 @@ fn nested_use_injection_with_no_downstream_data_produces_no_entry() {
     let state = state_with_injections(injections);
     let file = file_with_refs(vec![use_ref("DataCase", "Plausible.DataCase")]);
 
-    assert!(ElixirPlugin.extra_wildcard_imports(&state, &file).is_empty());
+    assert!(ElixirPlugin
+        .extra_wildcard_imports(&state, &file)
+        .is_empty());
 }
 
 /// A nested `use N` inside M's own quote block, where N itself has a
@@ -180,7 +182,9 @@ fn alias_directive_is_not_treated_as_a_use_site() {
     let state = state_with_injections(injections);
     let file = file_with_refs(vec![alias_ref("DataCase", "Plausible.DataCase")]);
 
-    assert!(ElixirPlugin.extra_wildcard_imports(&state, &file).is_empty());
+    assert!(ElixirPlugin
+        .extra_wildcard_imports(&state, &file)
+        .is_empty());
 }
 
 /// A `use` of a module with no recorded injections (never defines
@@ -191,7 +195,9 @@ fn use_of_module_with_no_injections_yields_nothing() {
     let state = state_with_injections(HashMap::new());
     let file = file_with_refs(vec![use_ref("Enum", "Enum")]);
 
-    assert!(ElixirPlugin.extra_wildcard_imports(&state, &file).is_empty());
+    assert!(ElixirPlugin
+        .extra_wildcard_imports(&state, &file)
+        .is_empty());
 }
 
 /// No `ElixirProjectState` stored in the bag at all (e.g. a project with no
@@ -201,12 +207,18 @@ fn missing_project_state_yields_nothing() {
     let state = PluginStateBag::new();
     let file = file_with_refs(vec![use_ref("DataCase", "Plausible.DataCase")]);
 
-    assert!(ElixirPlugin.extra_wildcard_imports(&state, &file).is_empty());
+    assert!(ElixirPlugin
+        .extra_wildcard_imports(&state, &file)
+        .is_empty());
 }
 
 fn module_symbol(qualified_name: &str) -> crate::types::ExtractedSymbol {
     crate::types::ExtractedSymbol {
-        name: qualified_name.rsplit('.').next().unwrap_or(qualified_name).to_string(),
+        name: qualified_name
+            .rsplit('.')
+            .next()
+            .unwrap_or(qualified_name)
+            .to_string(),
         qualified_name: qualified_name.to_string(),
         kind: crate::types::SymbolKind::Module,
         visibility: Some(crate::types::Visibility::Public),

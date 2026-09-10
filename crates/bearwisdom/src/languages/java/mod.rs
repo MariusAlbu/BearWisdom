@@ -9,9 +9,9 @@ pub(crate) mod flow;
 mod helpers;
 pub(crate) mod keywords;
 mod lombok;
-mod symbols;
 mod predicates;
 pub mod profile;
+mod symbols;
 pub use profile::JAVA_PROFILE;
 
 #[cfg(test)]
@@ -65,6 +65,18 @@ impl LanguagePlugin for JavaPlugin {
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
         extract::extract(source)
+    }
+
+    fn signature_return_type(&self, signature: &str) -> Option<String> {
+        crate::languages::prefix_return_type(signature)
+    }
+
+    fn signature_parameter_types(&self, signature: &str) -> Option<Vec<String>> {
+        crate::languages::prefix_parameter_types(signature)
+    }
+
+    fn signature_declared_type(&self, signature: &str) -> Option<String> {
+        crate::languages::prefix_declared_type(signature)
     }
 
     fn embedded_regions(
@@ -124,12 +136,19 @@ impl LanguagePlugin for JavaPlugin {
         keywords::KEYWORDS
     }
 
+    fn signature_type_application(&self, text: &str) -> (String, Vec<String>) {
+        crate::languages::angle_type_application(text)
+    }
+
+    fn signature_type_head<'a>(&self, text: &'a str) -> &'a str {
+        crate::languages::angle_type_head(text)
+    }
+
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&JAVA_PROFILE)
     }
-
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::JAVA_FLOW_CONFIG)

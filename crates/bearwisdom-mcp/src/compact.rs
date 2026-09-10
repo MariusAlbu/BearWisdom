@@ -933,7 +933,10 @@ pub fn unresolved_by_cause(report: &ByCauseReport) -> String {
                 body.push(' ');
             }
             let fr = f.fref(&s.file);
-            let line = s.line.map(|l| l.to_string()).unwrap_or_else(|| "-".to_string());
+            let line = s
+                .line
+                .map(|l| l.to_string())
+                .unwrap_or_else(|| "-".to_string());
             let _ = write!(body, "{fr}:{line}->{}", s.target_name);
         }
         body.push('\n');

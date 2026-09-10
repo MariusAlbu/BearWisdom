@@ -12,6 +12,7 @@ pub mod extract;
 pub(crate) mod flow;
 mod helpers;
 pub(crate) mod keywords;
+pub(crate) mod module_paths;
 pub(crate) mod namespaces;
 mod owners;
 mod patterns;
@@ -138,6 +139,35 @@ impl LanguagePlugin for RustLangPlugin {
 
     fn keywords(&self) -> &'static [&'static str] {
         keywords::KEYWORDS
+    }
+
+    fn signature_type_application(&self, text: &str) -> (String, Vec<String>) {
+        crate::languages::angle_type_application(text)
+    }
+
+    fn signature_type_head<'a>(&self, text: &'a str) -> &'a str {
+        crate::languages::angle_type_head(text)
+    }
+
+    fn signature_return_type(&self, signature: &str) -> Option<String> {
+        signature
+            .rfind("->")
+            .map(|marker| signature[marker + 2..].trim())
+            .filter(|result| !result.is_empty())
+            .map(str::to_string)
+    }
+
+    fn signature_parameter_types(&self, signature: &str) -> Option<Vec<String>> {
+        crate::languages::colon_parameter_types(signature).map(|params| {
+            params
+                .into_iter()
+                .filter(|param| !matches!(param.as_str(), "self" | "&self" | "&mut self"))
+                .collect()
+        })
+    }
+
+    fn has_homogeneous_computed_access(&self, head: &str) -> bool {
+        head == "Vec"
     }
 
     fn profile(

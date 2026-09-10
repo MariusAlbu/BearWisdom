@@ -254,7 +254,10 @@ fn empty_primary_returns_empty() {
 
 #[test]
 fn normalize_folds_parent_segment() {
-    assert_eq!(lexically_normalize(Path::new("a/b/../c")), PathBuf::from("a/c"));
+    assert_eq!(
+        lexically_normalize(Path::new("a/b/../c")),
+        PathBuf::from("a/c")
+    );
 }
 
 #[test]
@@ -267,7 +270,10 @@ fn normalize_folds_repeated_parents() {
 
 #[test]
 fn normalize_drops_current_dir_segment() {
-    assert_eq!(lexically_normalize(Path::new("a/./b")), PathBuf::from("a/b"));
+    assert_eq!(
+        lexically_normalize(Path::new("a/./b")),
+        PathBuf::from("a/b")
+    );
 }
 
 #[test]
@@ -396,9 +402,15 @@ fn bare_and_root_relative_specifiers_unaffected_by_folding() {
     let primary = vec![make_walked(root, "src/app.ts", "typescript")];
     let extra = pull_gitignored_imports(root, &primary);
 
-    assert_eq!(extra.len(), 1, "expected only the project-relative file; got {extra:?}");
+    assert_eq!(
+        extra.len(),
+        1,
+        "expected only the project-relative file; got {extra:?}"
+    );
     assert_eq!(extra[0].relative_path, "ext:gen:src/generated/db.ts");
-    assert!(extra.iter().all(|f| !f.relative_path.contains("node_modules")));
+    assert!(extra
+        .iter()
+        .all(|f| !f.relative_path.contains("node_modules")));
 }
 
 #[test]
@@ -429,7 +441,11 @@ fn pulls_tsconfig_alias_import_tagged_generated() {
     let primary = vec![make_walked(root, "apps/web/app.ts", "typescript")];
     let extra = pull_gitignored_imports(root, &primary);
 
-    assert_eq!(extra.len(), 1, "expected the aliased generated client; got {extra:?}");
+    assert_eq!(
+        extra.len(),
+        1,
+        "expected the aliased generated client; got {extra:?}"
+    );
     assert_eq!(
         extra[0].relative_path,
         "ext:gen:apps/web/generated/prisma/client.ts"

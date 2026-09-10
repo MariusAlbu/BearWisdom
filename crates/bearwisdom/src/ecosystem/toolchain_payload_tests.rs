@@ -44,10 +44,7 @@ fn zig_toolchain_marks_libc_and_libcxx_subtrees() {
     ));
     // The Zig stdlib (lib/std) and the compiler's own src stay internal —
     // lib/std is indexed as the zig-std ecosystem, not toolchain payload.
-    assert!(!is_under_toolchain_payload(
-        "lib/std/mem.zig",
-        &prefixes
-    ));
+    assert!(!is_under_toolchain_payload("lib/std/mem.zig", &prefixes));
     assert!(!is_under_toolchain_payload("src/main.zig", &prefixes));
 
     let _ = std::fs::remove_dir_all(&tmp);
@@ -61,7 +58,13 @@ fn zig_toolchain_marks_bundled_clang_headers_and_tsan_runtime() {
     // ThreadSanitizer runtime) are vendored LLVM/clang payload, not Zig code.
     make_dirs(
         &tmp,
-        &["lib/std", "lib/include", "lib/libtsan", "lib/compiler", "src"],
+        &[
+            "lib/std",
+            "lib/include",
+            "lib/libtsan",
+            "lib/compiler",
+            "src",
+        ],
     );
 
     let prefixes = toolchain_payload_prefixes(&tmp);
@@ -125,20 +128,14 @@ fn odin_toolchain_marks_core_and_vendor() {
         "vendor payload missing; got: {prefixes:?}"
     );
 
-    assert!(is_under_toolchain_payload(
-        "core/fmt/fmt.odin",
-        &prefixes
-    ));
+    assert!(is_under_toolchain_payload("core/fmt/fmt.odin", &prefixes));
     assert!(is_under_toolchain_payload(
         "vendor/raylib/raylib.odin",
         &prefixes
     ));
     // The compiler's own sources stay internal.
     assert!(!is_under_toolchain_payload("src/main.odin", &prefixes));
-    assert!(!is_under_toolchain_payload(
-        "examples/demo.odin",
-        &prefixes
-    ));
+    assert!(!is_under_toolchain_payload("examples/demo.odin", &prefixes));
 
     let _ = std::fs::remove_dir_all(&tmp);
 }
@@ -165,10 +162,7 @@ fn under_payload_matches_subtree_not_prefix_sibling() {
     let prefixes = vec!["lib/libc".to_string(), "core".to_string()];
     assert!(is_under_toolchain_payload("lib/libc/x.c", &prefixes));
     assert!(is_under_toolchain_payload("core", &prefixes)); // the declared dir itself
-    assert!(!is_under_toolchain_payload(
-        "lib/libcxx/x.cpp",
-        &prefixes
-    )); // not a declared prefix
+    assert!(!is_under_toolchain_payload("lib/libcxx/x.cpp", &prefixes)); // not a declared prefix
     assert!(!is_under_toolchain_payload("corelib/x.odin", &prefixes)); // prefix sibling
 }
 

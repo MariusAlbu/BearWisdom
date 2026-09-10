@@ -72,5 +72,4 @@ impl LanguagePlugin for MakePlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::MAKE_PROFILE)
     }
-
 }

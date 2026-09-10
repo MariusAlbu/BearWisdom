@@ -457,7 +457,6 @@ fn extract_for_range_vars(
                 generic_params: Vec::new(),
             });
         }
-
     }
 }
 

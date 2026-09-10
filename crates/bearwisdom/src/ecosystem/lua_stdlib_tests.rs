@@ -158,7 +158,10 @@ fn discover_uses_env_override_when_lstrlib_present() {
     let roots = discover_lua_source();
     std::env::remove_var("BEARWISDOM_LUA_SRC");
 
-    assert!(!roots.is_empty(), "override with lstrlib.c must produce a root");
+    assert!(
+        !roots.is_empty(),
+        "override with lstrlib.c must produce a root"
+    );
     assert_eq!(roots[0].module_path, TAG);
     assert_eq!(roots[0].root, tmp.path());
 }

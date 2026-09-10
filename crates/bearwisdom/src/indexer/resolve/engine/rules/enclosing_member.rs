@@ -12,9 +12,9 @@
 // candidates.
 // =============================================================================
 
-use crate::indexer::resolve::engine::kinds::is_type_kind;
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
 use crate::indexer::resolve::engine::contract::Symbol;
+use crate::indexer::resolve::engine::kinds::is_type_kind;
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 
 /// Maximum inheritance chain depth to walk before giving up. Prevents
 /// unbounded iteration on pathological or cyclic inheritance graphs.
@@ -38,9 +38,7 @@ fn enclosing_type<'a>(ctx: &'a BinderContext<'_>) -> Option<&'a Symbol> {
             return Some(sym);
         }
     }
-    if let Some(type_qname) =
-        lk.enclosing_type_qname(&ctx.ref_ctx.source_symbol.qualified_name)
-    {
+    if let Some(type_qname) = lk.enclosing_type_qname(&ctx.ref_ctx.source_symbol.qualified_name) {
         if let Some(sym) = lk.by_qualified_name(type_qname) {
             if is_type_kind(&sym.kind) {
                 return Some(sym);
@@ -66,7 +64,7 @@ impl LookupRule for EnclosingMemberRule {
 
     fn apply(&self, ctx: &BinderContext) -> LookupResult {
         let target = ctx.target();
-        if target.is_empty() || target.contains('.') || target.contains("::") {
+        if target.is_empty() || ctx.profile.is_qualified_name(target) {
             return LookupResult::Pass;
         }
         let edge_kind = ctx.edge_kind();

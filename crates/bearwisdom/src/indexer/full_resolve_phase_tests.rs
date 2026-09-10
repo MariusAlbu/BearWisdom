@@ -105,9 +105,13 @@ end
     };
 
     let mut db = Database::open_in_memory().unwrap();
-    let (_files, mut symbol_id_map) =
-        crate::indexer::write::write_parsed_files_with_origin(&db, std::slice::from_ref(&consumer), "internal", None)
-            .unwrap();
+    let (_files, mut symbol_id_map) = crate::indexer::write::write_parsed_files_with_origin(
+        &db,
+        std::slice::from_ref(&consumer),
+        "internal",
+        None,
+    )
+    .unwrap();
 
     let mut project_ctx = ProjectContext::default();
     project_ctx.language_presence.insert("elixir".to_string());

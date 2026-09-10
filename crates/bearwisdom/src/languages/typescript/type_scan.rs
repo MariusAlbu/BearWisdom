@@ -64,7 +64,10 @@ fn first_non_literal_descendant_text(node: tree_sitter::Node, src: &[u8]) -> Opt
                 }
             }
             // Reference-bearing leaves — the first real type name in the composite.
-            "type_identifier" | "identifier" | "generic_type" | "nested_type_identifier"
+            "type_identifier"
+            | "identifier"
+            | "generic_type"
+            | "nested_type_identifier"
             | "member_expression" => return Some(helpers::node_text(child, src)),
             // Structured / non-reference members (object_type, function_type,
             // mapped_type, conditional_type, predefined_type, template_literal_type,
@@ -138,8 +141,8 @@ fn coverage_target_for_type_node(tn: tree_sitter::Node, src: &[u8]) -> String {
         // (`'400' | Foo` → `Foo`, `User[]` → `User`). A composite of only
         // literals / structured members (`{ wow: boolean } | undefined`,
         // `'a' | 'b'`) carries no ref → sentinel.
-        "union_type" | "intersection_type" | "array_type" | "tuple_type"
-        | "parenthesized_type" | "readonly_type" => first_non_literal_descendant_text(tn, src)
+        "union_type" | "intersection_type" | "array_type" | "tuple_type" | "parenthesized_type"
+        | "readonly_type" => first_non_literal_descendant_text(tn, src)
             .map(|t| root_of(&t))
             .unwrap_or_else(|| "_primitive".to_string()),
         // Structured types — the first identifier in the text is a property
@@ -457,8 +460,8 @@ pub(super) fn collect_type_param_scopes(
                     // walk up to the enclosing mapped_type / object_type to cover
                     // the body; falling back to the clause leaks body uses of the
                     // binder on later lines.
-                    let scope_node = enclosing_of_kind(&node, &["mapped_type", "object_type"])
-                        .unwrap_or(node);
+                    let scope_node =
+                        enclosing_of_kind(&node, &["mapped_type", "object_type"]).unwrap_or(node);
                     out.push((
                         name.to_string(),
                         scope_node.start_position().row as u32,

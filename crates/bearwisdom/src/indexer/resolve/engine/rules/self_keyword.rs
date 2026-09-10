@@ -1,18 +1,17 @@
 // =============================================================================
-// engine/rules/self_keyword — `this`/`self`/`Self`/`super`/`base` refs
+// engine/rules/self_keyword — profile-declared receiver refs
 //
-// A bare keyword that refers to the enclosing type resolves to that type;
-// `super`/`base` resolve to its direct parent via `parent_class_qname`.
-// Catches `super(...)` constructor delegation and bare-keyword refs that carry
-// no member chain for the chain walker to follow.
+// A bare profile-declared receiver resolves to either the enclosing type or its
+// direct parent. Concrete spellings and their semantics are language data.
 //
 // `enclosing_type` walks the scope chain innermost-first then falls back to
 // the source symbol's `scope_path`; it accepts whichever scope is a type kind.
 // =============================================================================
 
-use crate::indexer::resolve::engine::kinds::is_type_kind;
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
 use crate::indexer::resolve::engine::contract::Symbol;
+use crate::indexer::resolve::engine::kinds::is_type_kind;
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
+use crate::type_checker::profile::language_profile::ReceiverRole;
 
 pub struct SelfKeywordRule;
 
@@ -23,9 +22,7 @@ fn enclosing_type<'a>(ctx: &'a BinderContext<'_>) -> Option<&'a Symbol> {
     let lk = ctx.lookup;
     // Structured first: the containment edge names the enclosing type by kind,
     // derived from the `parent_index` chain — immune to qname-assembly bugs.
-    if let Some(type_qname) =
-        lk.enclosing_type_qname(&ctx.ref_ctx.source_symbol.qualified_name)
-    {
+    if let Some(type_qname) = lk.enclosing_type_qname(&ctx.ref_ctx.source_symbol.qualified_name) {
         if let Some(sym) = lk.by_qualified_name(type_qname) {
             if is_type_kind(&sym.kind) {
                 return Some(sym);
@@ -52,20 +49,22 @@ impl LookupRule for SelfKeywordRule {
     }
 
     fn apply(&self, ctx: &BinderContext) -> LookupResult {
-        let target = ctx.target();
+        let Some(role) = ctx.profile.receiver_role(ctx.target()) else {
+            return LookupResult::Pass;
+        };
         let edge_kind = ctx.edge_kind();
         let Some(enclosing) = enclosing_type(ctx) else {
             return LookupResult::Pass;
         };
-        match target {
-            "this" | "self" | "Self" => {
+        match role {
+            ReceiverRole::EnclosingType => {
                 if (ctx.kind)(edge_kind, &enclosing.kind) {
                     LookupResult::Resolved(ctx.resolved(enclosing.id, "engine_self_keyword"))
                 } else {
                     LookupResult::Pass
                 }
             }
-            "super" | "base" => {
+            ReceiverRole::DirectParent => {
                 // The direct parent by id, not a qname re-search: a base whose
                 // qname is shared with an unrelated type in another package binds
                 // the SPECIFIC parent recorded for this child.
@@ -82,7 +81,6 @@ impl LookupRule for SelfKeywordRule {
                     LookupResult::Pass
                 }
             }
-            _ => LookupResult::Pass,
         }
     }
 }

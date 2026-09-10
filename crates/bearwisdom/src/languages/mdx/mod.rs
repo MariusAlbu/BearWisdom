@@ -76,5 +76,4 @@ impl LanguagePlugin for MdxPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::MDX_PROFILE)
     }
-
 }

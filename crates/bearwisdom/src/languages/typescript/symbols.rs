@@ -539,7 +539,7 @@ pub(super) fn push_index_signature(
         end_line: node.end_position().row as u32,
         start_col: node.start_position().column as u32,
         end_col: node.end_position().column as u32,
-        signature: None,
+        signature: Some(crate::types::INDEX_SIGNATURE_MARKER.to_string()),
         doc_comment: None,
         scope_path,
         parent_index,

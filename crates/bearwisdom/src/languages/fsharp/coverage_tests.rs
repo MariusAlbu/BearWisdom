@@ -676,8 +676,14 @@ fn union_case_in_pattern_position_emits_ref() {
         .filter(|f| f.kind == EdgeKind::Calls)
         .map(|f| f.target_name.as_str())
         .collect();
-    assert!(names.contains(&"Some"), "pattern `Some x` case name: {names:?}");
-    assert!(names.contains(&"None"), "pattern `None` case name: {names:?}");
+    assert!(
+        names.contains(&"Some"),
+        "pattern `Some x` case name: {names:?}"
+    );
+    assert!(
+        names.contains(&"None"),
+        "pattern `None` case name: {names:?}"
+    );
 }
 
 #[test]

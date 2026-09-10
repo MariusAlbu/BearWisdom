@@ -35,7 +35,10 @@ fn binds_type_in_same_namespace() {
         "class",
         "src/model.cs",
     ));
-    assert_eq!(resolve(&lookup, "CatalogItem", Some("eShop.Catalog")), Some(20));
+    assert_eq!(
+        resolve(&lookup, "CatalogItem", Some("eShop.Catalog")),
+        Some(20)
+    );
 }
 
 #[test]

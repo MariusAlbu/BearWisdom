@@ -5,7 +5,11 @@ use crate::types::{FlowMeta, Visibility};
 
 fn module_symbol(qualified_name: &str) -> ExtractedSymbol {
     ExtractedSymbol {
-        name: qualified_name.rsplit('.').next().unwrap_or(qualified_name).to_string(),
+        name: qualified_name
+            .rsplit('.')
+            .next()
+            .unwrap_or(qualified_name)
+            .to_string(),
         qualified_name: qualified_name.to_string(),
         kind: SymbolKind::Module,
         visibility: Some(Visibility::Public),
@@ -144,7 +148,10 @@ fn module_with_no_flattened_defs_yields_nothing() {
         }],
     );
     let state = state_with(injections);
-    let pf = ex_file("test/support/data_case.ex", vec![module_symbol("Plausible.DataCase")]);
+    let pf = ex_file(
+        "test/support/data_case.ex",
+        vec![module_symbol("Plausible.DataCase")],
+    );
 
     let out = synthesize_def_members(&state, &[pf]);
 

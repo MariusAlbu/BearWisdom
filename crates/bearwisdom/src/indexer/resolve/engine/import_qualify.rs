@@ -18,6 +18,8 @@
 
 use std::collections::BTreeMap;
 
+use crate::ecosystem::package_specifier;
+
 use rustc_hash::FxHashMap;
 
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
@@ -35,6 +37,9 @@ pub(crate) struct PendingFile {
     pub(crate) imports: FxHashMap<String, Vec<String>>,
     /// Ids of this file's symbols (the `type_info_by_id` keys to rewrite).
     pub(crate) symbol_ids: Vec<i64>,
+    /// Active language's qualified-name separator. Missing profile evidence
+    /// disables spelling-sensitive requalification for this file.
+    pub(crate) qname_separator: Option<&'static str>,
 }
 
 /// Build a file's pending entry from its import-describing refs. `None` when
@@ -44,6 +49,9 @@ pub(crate) fn collect_pending(
     symbol_id_map: &crate::indexer::write::SymbolIds,
 ) -> Option<PendingFile> {
     let mut imports: FxHashMap<String, Vec<String>> = FxHashMap::default();
+    let profile = crate::languages::default_registry()
+        .get(&pf.language)
+        .profile();
     for r in &pf.refs {
         if !(r.is_import_binding || r.kind == EdgeKind::Imports) {
             continue;
@@ -51,7 +59,12 @@ pub(crate) fn collect_pending(
         let Some(module) = r.module.as_deref() else {
             continue;
         };
-        if module.starts_with('.') || r.target_name == "*" {
+        let module_policy = profile
+            .map(|profile| profile.source_module_path_policy(module))
+            .unwrap_or_else(
+                crate::type_checker::profile::language_profile::SourceModulePathPolicy::unsupported,
+            );
+        if !module_policy.is_bare(module) || r.target_name == "*" {
             continue;
         }
         // A rename import carries the module's ORIGINAL declared name as a
@@ -66,8 +79,8 @@ pub(crate) fn collect_pending(
             })
             .unwrap_or(&r.target_name);
         let mut cands = vec![format!("{module}.{original}")];
-        let root = package_root(module);
-        if root != module {
+        let root = package_specifier::package_root(&pf.language, module);
+        if let Some(root) = root.as_deref().filter(|root| *root != module) {
             cands.push(format!("{root}.{original}"));
         }
         imports.entry(r.target_name.clone()).or_insert(cands);
@@ -85,6 +98,10 @@ pub(crate) fn collect_pending(
         path: pf.path.clone(),
         imports,
         symbol_ids,
+        qname_separator: crate::languages::default_registry()
+            .get(&pf.language)
+            .profile()
+            .map(|profile| profile.qname_separator),
     })
 }
 
@@ -127,13 +144,13 @@ pub(crate) fn apply_pending(
                 };
                 if let Some(new) = ti
                     .return_type_id
-                    .and_then(|t| requalify_type(arena, t, &resolved))
+                    .and_then(|t| requalify_type(arena, t, &resolved, entry.qname_separator))
                 {
                     ti.return_type_id = Some(new);
                 }
                 if let Some(new) = ti
                     .field_type_id
-                    .and_then(|t| requalify_type(arena, t, &resolved))
+                    .and_then(|t| requalify_type(arena, t, &resolved, entry.qname_separator))
                 {
                     ti.field_type_id = Some(new);
                 }
@@ -150,10 +167,12 @@ fn requalify_type(
     arena: &TypeArena,
     ty: TypeId,
     resolve: &FxHashMap<String, String>,
+    qname_separator: Option<&str>,
 ) -> Option<TypeId> {
     match arena.get(ty) {
         Type::Class(name) => {
-            if name.contains('.') || name.contains("::") {
+            let separator = qname_separator?;
+            if !separator.is_empty() && name.contains(separator) {
                 return None;
             }
             resolve.get(&name).map(|q| arena.class(q))
@@ -161,10 +180,10 @@ fn requalify_type(
         // A bound nominal is not a bare name; requalification never touches it.
         Type::Decl { .. } => None,
         Type::Apply { base, args } => {
-            let new_base = requalify_type(arena, base, resolve);
+            let new_base = requalify_type(arena, base, resolve, qname_separator);
             let new_args: Vec<Option<TypeId>> = args
                 .iter()
-                .map(|&a| requalify_type(arena, a, resolve))
+                .map(|&a| requalify_type(arena, a, resolve, qname_separator))
                 .collect();
             if new_base.is_none() && new_args.iter().all(Option::is_none) {
                 return None;
@@ -179,33 +198,26 @@ fn requalify_type(
                 args,
             }))
         }
-        Type::Optional(inner) => {
-            requalify_type(arena, inner, resolve).map(|i| arena.intern(Type::Optional(i)))
-        }
-        Type::AsyncWrapper(inner) => {
-            requalify_type(arena, inner, resolve).map(|i| arena.intern(Type::AsyncWrapper(i)))
-        }
-        Type::Iterator(inner) => {
-            requalify_type(arena, inner, resolve).map(|i| arena.intern(Type::Iterator(i)))
-        }
-        Type::Constructor(inner) => {
-            requalify_type(arena, inner, resolve).map(|i| arena.intern(Type::Constructor(i)))
-        }
-        Type::Union(arms) => {
-            requalify_arms(arena, &arms, resolve).map(|arms| arena.intern(Type::Union(arms)))
-        }
-        Type::Intersection(arms) => {
-            requalify_arms(arena, &arms, resolve).map(|arms| arena.intern(Type::Intersection(arms)))
-        }
-        Type::Tuple(items) => {
-            requalify_arms(arena, &items, resolve).map(|items| arena.intern(Type::Tuple(items)))
-        }
+        Type::Optional(inner) => requalify_type(arena, inner, resolve, qname_separator)
+            .map(|i| arena.intern(Type::Optional(i))),
+        Type::AsyncWrapper(inner) => requalify_type(arena, inner, resolve, qname_separator)
+            .map(|i| arena.intern(Type::AsyncWrapper(i))),
+        Type::Iterator(inner) => requalify_type(arena, inner, resolve, qname_separator)
+            .map(|i| arena.intern(Type::Iterator(i))),
+        Type::Constructor(inner) => requalify_type(arena, inner, resolve, qname_separator)
+            .map(|i| arena.intern(Type::Constructor(i))),
+        Type::Union(arms) => requalify_arms(arena, &arms, resolve, qname_separator)
+            .map(|arms| arena.intern(Type::Union(arms))),
+        Type::Intersection(arms) => requalify_arms(arena, &arms, resolve, qname_separator)
+            .map(|arms| arena.intern(Type::Intersection(arms))),
+        Type::Tuple(items) => requalify_arms(arena, &items, resolve, qname_separator)
+            .map(|items| arena.intern(Type::Tuple(items))),
         Type::Function { params, return_ } => {
             let new_params: Vec<Option<TypeId>> = params
                 .iter()
-                .map(|&p| requalify_type(arena, p, resolve))
+                .map(|&p| requalify_type(arena, p, resolve, qname_separator))
                 .collect();
-            let new_return = requalify_type(arena, return_, resolve);
+            let new_return = requalify_type(arena, return_, resolve, qname_separator);
             if new_return.is_none() && new_params.iter().all(Option::is_none) {
                 return None;
             }
@@ -237,10 +249,11 @@ fn requalify_arms(
     arena: &TypeArena,
     arms: &[TypeId],
     resolve: &FxHashMap<String, String>,
+    qname_separator: Option<&str>,
 ) -> Option<Vec<TypeId>> {
     let rewritten: Vec<Option<TypeId>> = arms
         .iter()
-        .map(|&a| requalify_type(arena, a, resolve))
+        .map(|&a| requalify_type(arena, a, resolve, qname_separator))
         .collect();
     if rewritten.iter().all(Option::is_none) {
         return None;
@@ -251,19 +264,6 @@ fn requalify_arms(
             .map(|(&old, new)| new.unwrap_or(old))
             .collect(),
     )
-}
-
-/// The package root of a module specifier: the first path segment, or the
-/// first two for a scoped npm package (`@scope/pkg/sub` → `@scope/pkg`).
-fn package_root(module: &str) -> &str {
-    if let Some(rest) = module.strip_prefix('@') {
-        match rest.match_indices('/').nth(1) {
-            Some((i, _)) => &module[..i + 1],
-            None => module,
-        }
-    } else {
-        module.split('/').next().unwrap_or(module)
-    }
 }
 
 #[cfg(test)]

@@ -73,7 +73,10 @@ pub const CSHARP_PROFILE: LanguageProfile = LanguageProfile {
     id: "csharp",
     qname_separator: ".",
     declaration_merging: crate::type_checker::profile::language_profile::MergeScope::SamePackage,
-    self_keywords: &["this", "base"],
+    receiver_spellings: &[
+        crate::type_checker::profile::language_profile::ReceiverSpelling::enclosing("this", "."),
+        crate::type_checker::profile::language_profile::ReceiverSpelling::parent("base", "."),
+    ],
     supertype_discovery: SupertypeDiscovery::Explicit,
     ancestor_order: crate::type_checker::profile::language_profile::AncestorOrder::Bfs,
     // NuGet metadata + dotnet-stdlib externals.

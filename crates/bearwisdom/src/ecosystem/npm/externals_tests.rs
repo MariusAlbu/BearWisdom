@@ -104,7 +104,11 @@ fn discover_keeps_dep_imported_only_from_test_files() {
 
     // Production source imports the runtime package only.
     std::fs::create_dir_all(root.join("src")).unwrap();
-    std::fs::write(root.join("src/index.ts"), "import { x } from 'runtime-pkg';\n").unwrap();
+    std::fs::write(
+        root.join("src/index.ts"),
+        "import { x } from 'runtime-pkg';\n",
+    )
+    .unwrap();
     // The assertion library is named only in a test file.
     std::fs::create_dir_all(root.join("__tests__")).unwrap();
     std::fs::write(
@@ -216,9 +220,10 @@ fn extractor_emits_member_rows_for_assertion_container() {
     // The member's declared return type is exposed as a TypeRef the resolve
     // pass interns into the member's yield type, so the chain walker can
     // advance from `expect(x).toBe(...)` onto the container again.
-    let has_return_typeref = result.refs.iter().any(|r| {
-        r.kind == crate::types::EdgeKind::TypeRef && r.target_name == "Assertion"
-    });
+    let has_return_typeref = result
+        .refs
+        .iter()
+        .any(|r| r.kind == crate::types::EdgeKind::TypeRef && r.target_name == "Assertion");
     assert!(
         has_return_typeref,
         "the member's declared return type must be exposed as a TypeRef: {:?}",
@@ -251,9 +256,10 @@ fn extractor_emits_member_rows_for_object_literal_supertype() {
         Some(qc),
         "getByText must be a member row of the query container"
     );
-    let has_query_return = result.refs.iter().any(|r| {
-        r.kind == crate::types::EdgeKind::TypeRef && r.target_name == "HTMLElement"
-    });
+    let has_query_return = result
+        .refs
+        .iter()
+        .any(|r| r.kind == crate::types::EdgeKind::TypeRef && r.target_name == "HTMLElement");
     assert!(
         has_query_return,
         "query member declared return type must be exposed as a TypeRef: {:?}",
@@ -263,9 +269,10 @@ fn extractor_emits_member_rows_for_object_literal_supertype() {
     // The composing container declares the supertype via an Inherits ref, so
     // the inherits map carries the edge the chain walker climbs to reach the
     // query members.
-    let has_inherits = result.refs.iter().any(|r| {
-        r.kind == crate::types::EdgeKind::Inherits && r.target_name == "QueryContainer"
-    });
+    let has_inherits = result
+        .refs
+        .iter()
+        .any(|r| r.kind == crate::types::EdgeKind::Inherits && r.target_name == "QueryContainer");
     assert!(
         has_inherits,
         "RenderResult must emit an Inherits ref to its query supertype: {:?}",
@@ -289,9 +296,10 @@ fn extractor_records_root_function_return_type() {
     // The root's declared return type is exposed as a TypeRef the resolve pass
     // interns into the function's return-type id, giving the chain walker its
     // first hop into the matcher container.
-    let has_root_return = result.refs.iter().any(|r| {
-        r.kind == crate::types::EdgeKind::TypeRef && r.target_name == "ExpectTypeOf"
-    });
+    let has_root_return = result
+        .refs
+        .iter()
+        .any(|r| r.kind == crate::types::EdgeKind::TypeRef && r.target_name == "ExpectTypeOf");
     assert!(
         has_root_return,
         "root function declared return type must be exposed as a TypeRef: {:?}",
@@ -319,11 +327,7 @@ fn transitive_typeless_pkg_drags_in_types_companion() {
     .unwrap();
     let nm = root.join("node_modules");
     // The runner re-exports a value/type from the typeless sibling.
-    write_pkg(
-        &nm,
-        "runner",
-        "export { assertOn } from 'core-assert';\n",
-    );
+    write_pkg(&nm, "runner", "export { assertOn } from 'core-assert';\n");
     // The sibling is reachable but typeless — only a `.js`, no `types` field.
     write_typeless_pkg(&nm, "core-assert", "module.exports = {};\n");
     // The declared members live in the DefinitelyTyped companion.

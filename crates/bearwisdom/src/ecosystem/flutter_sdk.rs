@@ -86,7 +86,6 @@ impl Ecosystem for FlutterSdkEcosystem {
     fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         super::dart_sdk::build_dart_symbol_index(dep_roots)
     }
-
 }
 
 impl ExternalSourceLocator for FlutterSdkEcosystem {

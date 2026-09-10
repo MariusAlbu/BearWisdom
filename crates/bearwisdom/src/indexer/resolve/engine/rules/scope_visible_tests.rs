@@ -27,7 +27,11 @@ fn resolve(lookup: &Lookup, target: &str, scope_chain: Vec<String>) -> Option<i6
 #[test]
 fn binds_member_of_innermost_scope() {
     let lookup = Lookup::new().with(sym(42, "helper", "Foo.Bar.helper", "function", "src/a.ts"));
-    let got = resolve(&lookup, "helper", vec!["Foo.Bar".to_string(), "Foo".to_string()]);
+    let got = resolve(
+        &lookup,
+        "helper",
+        vec!["Foo.Bar".to_string(), "Foo".to_string()],
+    );
     assert_eq!(got, Some(42));
 }
 
@@ -65,8 +69,20 @@ fn instantiates_through_a_constructor_valued_param_resolves_the_class() {
     // through its constructor type to the class it builds.
     use crate::type_checker::core::types::Type;
     let lookup = Lookup::new()
-        .with(sym(1, "Observer", "useBaseQuery.Observer", "property", "src/u.ts"))
-        .with(sym(2, "QueryObserver", "QueryObserver", "class", "src/q.ts"));
+        .with(sym(
+            1,
+            "Observer",
+            "useBaseQuery.Observer",
+            "property",
+            "src/u.ts",
+        ))
+        .with(sym(
+            2,
+            "QueryObserver",
+            "QueryObserver",
+            "class",
+            "src/q.ts",
+        ));
     let arena = lookup.type_arena().unwrap();
     let ctor = arena.intern(Type::Constructor(arena.class("QueryObserver")));
     let lookup = lookup.with_field_type_id("useBaseQuery.Observer", ctor);

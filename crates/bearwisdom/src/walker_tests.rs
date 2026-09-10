@@ -249,7 +249,10 @@ fn detect_pp_pascal_with_long_brace_header() {
             "    This file is part of the Free Component Library and is distributed\n    under the terms of the library license as documented in the header.\n",
         );
     }
-    assert!(content.len() > 512, "header must exceed the old sniff window");
+    assert!(
+        content.len() > 512,
+        "header must exceed the old sniff window"
+    );
     content.push_str("}\nunit Foo;\n\ninterface\n\nimplementation\n\nend.\n");
     fs::write(&pp, content).unwrap();
     assert_eq!(detect_language(&pp), Some("pascal"));

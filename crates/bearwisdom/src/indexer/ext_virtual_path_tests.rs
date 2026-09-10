@@ -121,9 +121,7 @@ fn dart_pulled_flutter_package_file_matches_eager_walker_shape() {
     // dir, so its `rel` (and therefore the virtual path) excludes the `lib/`
     // segment — the demand-pulled shape must match exactly for the
     // `already_walked` dedupe to recognize a re-pulled file.
-    let abs = Path::new(
-        r"C:\flutter\packages\flutter\lib\src\widgets\framework.dart",
-    );
+    let abs = Path::new(r"C:\flutter\packages\flutter\lib\src\widgets\framework.dart");
     assert_eq!(
         virtual_path_for_pulled(abs, "dart").as_deref(),
         Some("ext:flutter-sdk:flutter/src/widgets/framework.dart"),
@@ -154,9 +152,7 @@ fn dart_pulled_pub_cache_file_matches_eager_walker_shape() {
 
 #[test]
 fn dart_pulled_pub_cache_file_with_subdir() {
-    let abs = Path::new(
-        "/home/u/.pub-cache/hosted/pub.dev/riverpod-2.4.0/lib/src/framework.dart",
-    );
+    let abs = Path::new("/home/u/.pub-cache/hosted/pub.dev/riverpod-2.4.0/lib/src/framework.dart");
     assert_eq!(
         virtual_path_for_pulled(abs, "dart").as_deref(),
         Some("ext:dart:riverpod/src/framework.dart"),
@@ -208,9 +204,8 @@ fn dart_pulled_project_lib_file_falls_through() {
 fn elixir_pulled_stdlib_file_gets_stdlib_ecosystem_segment() {
     // The `elixir-stdlib` segment is what `is_ambient_global_lib_path`
     // classifies as ambient scope — bare `Enum`/`Map` binding depends on it.
-    let abs = Path::new(
-        r"C:\Users\u\scoop\apps\elixir\current\lib\ex_unit\lib\ex_unit\case_template.ex",
-    );
+    let abs =
+        Path::new(r"C:\Users\u\scoop\apps\elixir\current\lib\ex_unit\lib\ex_unit\case_template.ex");
     assert_eq!(
         virtual_path_for_pulled(abs, "elixir").as_deref(),
         Some("ext:elixir-stdlib:ex_unit/ex_unit/case_template.ex"),
@@ -301,9 +296,8 @@ fn pascal_pulled_system_pp_gets_stdlib_ecosystem_segment() {
     // `system.pp` is System's own unit body — implicit in every Pascal file,
     // no `uses System;` ever appears, so it must resolve through the
     // ambient_scope rung.
-    let abs = Path::new(
-        r"C:\Users\u\scoop\apps\lazarus\current\fpc\3.2.2\source\rtl\win64\system.pp",
-    );
+    let abs =
+        Path::new(r"C:\Users\u\scoop\apps\lazarus\current\fpc\3.2.2\source\rtl\win64\system.pp");
     assert_eq!(
         virtual_path_for_pulled(abs, "pascal").as_deref(),
         Some("ext:fpc-stdlib:system/system.pp"),

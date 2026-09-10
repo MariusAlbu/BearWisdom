@@ -431,8 +431,7 @@ fn resolve_coursier_submodule_jars_empty_when_no_siblings() {
 fn resolve_gradle_bytecode_jar_finds_jar_with_explicit_version() {
     let tmp = TempDir::new().unwrap();
     let cache = tmp.path();
-    let expected =
-        make_gradle_cache_entry(cache, "org.example", "lib", "1.0.0", "lib-1.0.0.jar");
+    let expected = make_gradle_cache_entry(cache, "org.example", "lib", "1.0.0", "lib-1.0.0.jar");
     let coord = MavenCoord {
         group_id: "org.example".to_string(),
         artifact_id: "lib".to_string(),
@@ -446,7 +445,13 @@ fn resolve_gradle_bytecode_jar_excludes_classifier_jars() {
     let tmp = TempDir::new().unwrap();
     let cache = tmp.path();
     // Only the -sources.jar is present; the bytecode probe must not match it.
-    make_gradle_cache_entry(cache, "org.example", "lib", "1.0.0", "lib-1.0.0-sources.jar");
+    make_gradle_cache_entry(
+        cache,
+        "org.example",
+        "lib",
+        "1.0.0",
+        "lib-1.0.0-sources.jar",
+    );
     let coord = MavenCoord {
         group_id: "org.example".to_string(),
         artifact_id: "lib".to_string(),
@@ -460,8 +465,7 @@ fn resolve_gradle_bytecode_jar_falls_back_to_largest_version() {
     let tmp = TempDir::new().unwrap();
     let cache = tmp.path();
     make_gradle_cache_entry(cache, "org.example", "lib", "1.0.0", "lib-1.0.0.jar");
-    let expected =
-        make_gradle_cache_entry(cache, "org.example", "lib", "2.0.0", "lib-2.0.0.jar");
+    let expected = make_gradle_cache_entry(cache, "org.example", "lib", "2.0.0", "lib-2.0.0.jar");
     let coord = MavenCoord {
         group_id: "org.example".to_string(),
         artifact_id: "lib".to_string(),

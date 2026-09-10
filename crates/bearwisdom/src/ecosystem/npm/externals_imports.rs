@@ -11,9 +11,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use super::walk::{
-    extract_relative_reexports, resolve_relative_ts_path, REEXPORT_MAX_DEPTH,
-};
+use super::walk::{extract_relative_reexports, resolve_relative_ts_path, REEXPORT_MAX_DEPTH};
 use super::{is_valid_npm_module_path, npm_package_name_from_spec};
 
 #[cfg(test)]
@@ -188,7 +186,10 @@ pub(crate) fn collect_ts_user_imports(project_root: &Path) -> std::collections::
 /// drives the demand gate; the subpaths drive flat-file subpath materialization.
 pub(crate) fn collect_ts_user_imports_and_subpaths(
     project_root: &Path,
-) -> (std::collections::HashSet<String>, std::collections::HashSet<String>) {
+) -> (
+    std::collections::HashSet<String>,
+    std::collections::HashSet<String>,
+) {
     let mut imports = std::collections::HashSet::new();
     let mut subpaths = std::collections::HashSet::new();
     scan_ts_user_imports_recursive(project_root, &mut imports, &mut subpaths, 0);

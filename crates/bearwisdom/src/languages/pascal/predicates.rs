@@ -54,7 +54,9 @@ use crate::types::EdgeKind;
 /// gap upstream of this predicate) — `TObject` belongs behind the ladder's
 /// external lookup once that gap closes, not behind a drain.
 pub(super) fn is_pascal_builtin_cast_or_intrinsic(name: &str) -> bool {
-    PASCAL_BUILTIN_SKIP.iter().any(|b| name.eq_ignore_ascii_case(b))
+    PASCAL_BUILTIN_SKIP
+        .iter()
+        .any(|b| name.eq_ignore_ascii_case(b))
 }
 
 const PASCAL_BUILTIN_SKIP: &[&str] = &[

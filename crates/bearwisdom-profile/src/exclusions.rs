@@ -163,7 +163,9 @@ pub fn project_exclude_dirs(root: &Path) -> Vec<&'static str> {
     if !is_git_repo(root) {
         return base;
     }
-    base.into_iter().filter(|dir| !is_reclassifiable(dir)).collect()
+    base.into_iter()
+        .filter(|dir| !is_reclassifiable(dir))
+        .collect()
 }
 
 /// Returns true if `name` matches any canonical exclude dir.

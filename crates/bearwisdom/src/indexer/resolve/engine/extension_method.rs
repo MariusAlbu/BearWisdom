@@ -4,11 +4,10 @@
 // marks its first parameter with `this`.
 // =============================================================================
 
-use crate::indexer::resolve::engine::contract::chain_walker::{
-    extension_receiver_type, parse_type_head_and_args,
-};
 use crate::indexer::resolve::engine::contract::{Symbol, SymbolLookup};
+use crate::languages::LanguagePlugin;
 use crate::type_checker::core::types::TypeArena;
+use crate::type_checker::profile::language_profile::LanguageProfile;
 
 use super::chain::{head_qname, is_callable, Receiver, MAX_SUPERTYPE_DEPTH};
 
@@ -32,7 +31,7 @@ pub(super) fn lookup_extension_method(
     arena: &TypeArena,
     recv: Receiver,
     member: &str,
-    implicit_root_types: &[&str],
+    profile: &LanguageProfile,
 ) -> Option<Symbol> {
     let recv_head = head_qname(arena, recv.ty)?;
     // The receiver's simple name plus its supertypes', climbed breadth-first
@@ -55,7 +54,7 @@ pub(super) fn lookup_extension_method(
         }
         frontier = next;
     }
-    for root in implicit_root_types {
+    for root in profile.implicit_root_types {
         if !recv_names.iter().any(|n| n == root) {
             recv_names.push((*root).to_string());
         }
@@ -68,11 +67,15 @@ pub(super) fn lookup_extension_method(
         let Some(sig) = cand.signature.as_deref() else {
             continue;
         };
-        let Some(recv_param) = extension_receiver_type(sig) else {
+        let Some(recv_param) = crate::languages::default_registry()
+            .get(profile.id)
+            .signature_extension_receiver(sig)
+        else {
             continue;
         };
-        let (param_head, _args) = parse_type_head_and_args(&recv_param);
-        let param_simple = param_head.rsplit('.').next().unwrap_or(param_head);
+        let (param_head, _args) =
+            crate::languages::signature_type_application(profile.id, &recv_param);
+        let param_simple = param_head.rsplit('.').next().unwrap_or(&param_head);
         let Some(dist) = recv_names.iter().position(|n| n == param_simple) else {
             continue;
         };

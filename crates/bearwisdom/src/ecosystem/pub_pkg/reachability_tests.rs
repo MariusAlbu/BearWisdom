@@ -5,9 +5,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use super::{
-    resolve_dart_package_entry, resolve_dart_package_entry_with_siblings, SiblingRoots,
-};
+use super::{resolve_dart_package_entry, resolve_dart_package_entry_with_siblings, SiblingRoots};
 use crate::ecosystem::externals::ExternalDepRoot;
 
 fn mkdep(root: PathBuf, name: &str) -> ExternalDepRoot {
@@ -93,7 +91,9 @@ fn cross_package_export_reaches_defining_leaf() {
     );
     // The cross-package files are labeled with the OWNING package, not `test`.
     assert!(
-        !paths.iter().any(|p| p.starts_with("ext:dart:test/src/expect")),
+        !paths
+            .iter()
+            .any(|p| p.starts_with("ext:dart:test/src/expect")),
         "leaf must keep its owning-package label, got {paths:?}"
     );
 }
@@ -121,11 +121,7 @@ fn cross_package_chain_bounded_by_depth_cap() {
                 &format!("export 'package:{next}/{next}.dart';\n"),
             );
         } else {
-            write_lib(
-                &lib,
-                &format!("{name}.dart"),
-                "void deepLeafSymbol() {}\n",
-            );
+            write_lib(&lib, &format!("{name}.dart"), "void deepLeafSymbol() {}\n");
         }
         deps.push(mkdep(lib, name));
     }
@@ -166,11 +162,7 @@ fn show_clause_is_file_granular_not_symbol_filtered() {
         "matcher.dart",
         "export 'package:matcher/expect.dart' show expect;\n",
     );
-    write_lib(
-        &dep_lib,
-        "expect.dart",
-        "export 'src/leaf.dart';\n",
-    );
+    write_lib(&dep_lib, "expect.dart", "export 'src/leaf.dart';\n");
     write_lib(
         &dep_lib,
         "src/leaf.dart",

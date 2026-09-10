@@ -97,7 +97,13 @@ fn bytecode_jar_found_in_m2_layout() {
 #[test]
 fn bytecode_jar_picks_largest_version_when_unpinned() {
     let gradle = TempDir::new().unwrap();
-    make_gradle_entry(gradle.path(), "org.example", "lib", "1.0.0", "lib-1.0.0.jar");
+    make_gradle_entry(
+        gradle.path(),
+        "org.example",
+        "lib",
+        "1.0.0",
+        "lib-1.0.0.jar",
+    );
     let expected = make_gradle_entry(
         gradle.path(),
         "org.example",
@@ -125,7 +131,11 @@ fn bytecode_jar_falls_back_to_cached_version_when_pinned_version_absent() {
         "jakarta.annotation-api-2.1.1.jar",
     );
     // Pinned 3.0.0 is not in the cache — only 2.1.1 is.
-    let c = coord("jakarta.annotation", "jakarta.annotation-api", Some("3.0.0"));
+    let c = coord(
+        "jakarta.annotation",
+        "jakarta.annotation-api",
+        Some("3.0.0"),
+    );
     let jar = _test_resolve_jvm_bytecode_jar(None, Some(gradle.path()), None, &c);
     assert_eq!(jar.as_deref(), Some(expected.as_path()));
 }
@@ -206,7 +216,13 @@ fn declared_coord_without_version_picks_largest_cached() {
     write_build_gradle(project.path(), "org.example:lib");
 
     let gradle = TempDir::new().unwrap();
-    make_gradle_entry(gradle.path(), "org.example", "lib", "1.0.0", "lib-1.0.0.jar");
+    make_gradle_entry(
+        gradle.path(),
+        "org.example",
+        "lib",
+        "1.0.0",
+        "lib-1.0.0.jar",
+    );
     let expected = make_gradle_entry(
         gradle.path(),
         "org.example",
@@ -227,7 +243,13 @@ fn declared_coord_with_cached_sources_jar_is_skipped() {
     write_build_gradle(project.path(), "org.example:lib:1.0.0");
 
     let gradle = TempDir::new().unwrap();
-    make_gradle_entry(gradle.path(), "org.example", "lib", "1.0.0", "lib-1.0.0.jar");
+    make_gradle_entry(
+        gradle.path(),
+        "org.example",
+        "lib",
+        "1.0.0",
+        "lib-1.0.0.jar",
+    );
     make_gradle_entry(
         gradle.path(),
         "org.example",

@@ -103,5 +103,4 @@ impl LanguagePlugin for PuppetPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::PUPPET_PROFILE)
     }
-
 }

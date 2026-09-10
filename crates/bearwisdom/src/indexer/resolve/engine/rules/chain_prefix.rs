@@ -9,7 +9,7 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::support::file_path_matches_module;
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 
 pub struct ChainPrefixRule;
 

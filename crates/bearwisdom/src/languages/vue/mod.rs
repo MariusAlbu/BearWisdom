@@ -14,6 +14,7 @@
 //! the indexer processes the embedded text as a separate extraction target.
 
 pub mod auto_import_dts;
+pub(crate) mod component_tags;
 pub mod connectors;
 pub mod extract;
 pub mod global_registry;
@@ -90,6 +91,22 @@ impl LanguagePlugin for VuePlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::VUE_PROFILE)
+    }
+
+    fn component_tag_head<'a>(&self, target: &'a str) -> Option<&'a str> {
+        component_tags::component_tag_head(target)
+    }
+
+    fn is_component_file(&self, path: &str) -> bool {
+        component_tags::is_component_file(path)
+    }
+
+    fn plugin_flow_emissions(
+        &self,
+        source: &str,
+        _file_path: &str,
+    ) -> Vec<(u32, crate::indexer::resolve::flow_emit::FlowEmission)> {
+        connectors::extract_vue_graphql_points(source)
     }
 
     fn populate_project_state(

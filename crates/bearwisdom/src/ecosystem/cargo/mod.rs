@@ -19,6 +19,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+pub(crate) mod declared_deps;
+pub(crate) mod resolver_policy;
+
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
     SymbolLocationIndex,
@@ -54,6 +57,14 @@ impl Ecosystem for CargoEcosystem {
 
     fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
         &[("Cargo.toml", "cargo")]
+    }
+
+    fn workspace_package_name_aliases(&self, declared_name: &str) -> Vec<String> {
+        declared_name
+            .contains('-')
+            .then(|| declared_name.replace('-', "_"))
+            .into_iter()
+            .collect()
     }
 
     fn pruned_dir_names(&self) -> &'static [&'static str] {
@@ -141,8 +152,8 @@ mod manifest;
 mod reachability;
 mod symbol_index;
 
-pub use manifest::{parse_cargo_dependencies, parse_cargo_path_dependencies, CargoManifest};
 pub(crate) use discovery::split_crate_dir_name;
+pub use manifest::{parse_cargo_dependencies, parse_cargo_path_dependencies, CargoManifest};
 pub(crate) use symbol_index::build_cargo_symbol_index;
 
 use discovery::discover_cargo_roots;

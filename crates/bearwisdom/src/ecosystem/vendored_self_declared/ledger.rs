@@ -64,7 +64,15 @@ fn vendor_ledger_prefixes(
 ) -> Vec<String> {
     const MAX_DEPTH: u32 = 8;
     let mut out = Vec::new();
-    walk_for_vendor_ledger(project_root, project_root, 0, MAX_DEPTH, already, ledger, &mut out);
+    walk_for_vendor_ledger(
+        project_root,
+        project_root,
+        0,
+        MAX_DEPTH,
+        already,
+        ledger,
+        &mut out,
+    );
     out
 }
 
@@ -110,6 +118,14 @@ fn walk_for_vendor_ledger(
             }
             continue;
         }
-        walk_for_vendor_ledger(project_root, &path, depth + 1, max_depth, already, ledger, out);
+        walk_for_vendor_ledger(
+            project_root,
+            &path,
+            depth + 1,
+            max_depth,
+            already,
+            ledger,
+            out,
+        );
     }
 }

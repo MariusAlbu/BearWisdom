@@ -45,10 +45,7 @@ pub fn parse_dotnet_externals(project_root: &Path) -> Vec<crate::types::ParsedFi
 /// `"ext:dotnet-type:<dll_abs>!!<assembly_name>!!<QualifiedTypeName>"` (using
 /// `!!` as separator because `!` cannot appear in filesystem paths on either
 /// Windows or Unix).
-pub(crate) fn list_dll_type_names(
-    dll_path: &Path,
-    package_name: &str,
-) -> Vec<(String, String)> {
+pub(crate) fn list_dll_type_names(dll_path: &Path, package_name: &str) -> Vec<(String, String)> {
     use dotscope::metadata::cilassemblyview::CilAssemblyView;
     use dotscope::metadata::validation::ValidationConfig;
     use dotscope::prelude::CilObject;
@@ -94,9 +91,7 @@ pub(crate) fn list_dll_type_names(
                 if method.name.starts_with('<') || method.name.starts_with('.') {
                     continue;
                 }
-                if method.flags_access
-                    != dotscope::metadata::method::MethodAccessFlags::PUBLIC
-                {
+                if method.flags_access != dotscope::metadata::method::MethodAccessFlags::PUBLIC {
                     continue;
                 }
                 let offered = projection
@@ -404,6 +399,3 @@ pub(super) fn parse_dotnet_dll(
         declared_modules: Vec::new(),
     })
 }
-
-
-

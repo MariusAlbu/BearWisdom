@@ -28,10 +28,10 @@ use tracing::{debug, info, warn};
 use crate::db::{Database, DbPool};
 use crate::indexer::changeset;
 use crate::indexer::full::full_index;
-use crate::indexer::watch_filter::WatchFilter;
 use crate::indexer::incremental::{
     git_reindex, incremental_index, reindex_files, IncrementalStats,
 };
+use crate::indexer::watch_filter::WatchFilter;
 use crate::types::IndexStats;
 
 /// `_bearwisdom_meta` key used to record the wall-clock time of the most

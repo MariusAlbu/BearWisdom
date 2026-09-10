@@ -15,25 +15,117 @@ pub enum ModuleMatchAuthority {
     Reject,
 }
 
+/// Language-owned evidence for resolving re-export source modules by path.
+/// The generic re-export walker only joins paths, probes indexed files, and
+/// applies these callbacks; source extensions and module spellings stay with
+/// the language or ecosystem that defines them.
+#[derive(Debug, Clone, Copy)]
+pub struct SourceModulePathPolicy {
+    /// Classifies source module text before the resolver decides whether to
+    /// follow it as a project-relative path or a package/module name.
+    pub classify_specifier: fn(&str) -> ModuleSpecifierClass,
+    /// Candidate file paths for a joined relative source-module base.
+    pub relative_candidate_paths: fn(&str) -> Vec<String>,
+    /// Whether an indexed file path can supply a bare source-module spelling.
+    pub bare_module_matches_file: fn(&str, &str) -> bool,
+    /// Lower-cased file-stem/directory terms for external-import matching.
+    pub external_import_match_terms: fn(&str) -> Vec<String>,
+}
+
+impl SourceModulePathPolicy {
+    /// No source-module spelling is accepted until a language or ecosystem
+    /// adapter explicitly supplies one.
+    pub fn unsupported() -> Self {
+        Self {
+            classify_specifier: unsupported_module_specifier_class,
+            relative_candidate_paths: no_relative_candidate_paths,
+            bare_module_matches_file: never_matches_bare_module,
+            external_import_match_terms: no_external_import_match_terms,
+        }
+    }
+
+    pub fn classify(self, specifier: &str) -> ModuleSpecifierClass {
+        (self.classify_specifier)(specifier)
+    }
+
+    pub fn is_relative(self, specifier: &str) -> bool {
+        self.classify(specifier) == ModuleSpecifierClass::Relative
+    }
+
+    pub fn is_bare(self, specifier: &str) -> bool {
+        self.classify(specifier) == ModuleSpecifierClass::Bare
+    }
+}
+
+/// The normalized module-specifier class supplied to generic resolver rules.
+/// `Unsupported` is deliberately fail-closed: rules that require either a
+/// package name or a relative source do not infer syntax from it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModuleSpecifierClass {
+    Relative,
+    Bare,
+    Unsupported,
+}
+
+fn unsupported_module_specifier_class(_specifier: &str) -> ModuleSpecifierClass {
+    ModuleSpecifierClass::Unsupported
+}
+
+fn no_relative_candidate_paths(_base: &str) -> Vec<String> {
+    Vec::new()
+}
+
+fn never_matches_bare_module(_file_path: &str, _source_module: &str) -> bool {
+    false
+}
+
+fn no_external_import_match_terms(_module: &str) -> Vec<String> {
+    Vec::new()
+}
+
 /// Normalized, language-neutral evidence consumed by the generic file/module
 /// matcher. Language and ecosystem modules build this value; resolver code
 /// only applies its path, extension, prefix, and authority constraints.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct ModulePathMatch {
     pub module_path: String,
+    /// Additional physical-path candidates derived by the active language
+    /// profile. The generic matcher compares these verbatim and never infers
+    /// source separator grammar itself.
+    pub path_variants: Vec<String>,
     pub required_file_prefix: Option<&'static str>,
     pub compound_extensions: &'static [&'static str],
     pub authority: ModuleMatchAuthority,
+    pub source_module_path_policy: SourceModulePathPolicy,
 }
 
 impl ModulePathMatch {
     pub fn heuristic(module_path: &str) -> Self {
         Self {
             module_path: module_path.to_string(),
+            path_variants: Vec::new(),
             required_file_prefix: None,
             compound_extensions: &[],
             authority: ModuleMatchAuthority::Heuristic,
+            source_module_path_policy: SourceModulePathPolicy::unsupported(),
         }
+    }
+
+    /// Add the physical-path spelling of a source-qualified module. The
+    /// caller supplies the active profile's separator, so this stays a
+    /// profile-produced candidate rather than generic matcher policy.
+    pub fn with_source_separator_path_variant(
+        mut self,
+        source_module: &str,
+        separator: &str,
+    ) -> Self {
+        if !separator.is_empty() && separator != "/" {
+            let path = source_module.replace(separator, "/");
+            if path != self.module_path && !self.path_variants.contains(&path) {
+                self.path_variants.push(path);
+            }
+        }
+        self
     }
 }
 
@@ -194,6 +286,17 @@ pub enum RelativeMarker {
     DotSlashPrefix,
 }
 
+impl RelativeMarker {
+    /// Profile-owned source spelling for module-anchor routing.
+    pub fn is_relative(self, module: &str) -> bool {
+        match self {
+            Self::None => true,
+            Self::DotPrefix => module.starts_with('.'),
+            Self::DotSlashPrefix => module.starts_with("./") || module.starts_with("../"),
+        }
+    }
+}
+
 /// Data for the file-namespace-gated decline. A ref declines before the
 /// strategy ladder only when BOTH hold: the resolving file's `file_namespace`
 /// equals `file_namespace`, AND `is_reserved` returns true for the target.
@@ -250,7 +353,21 @@ pub enum WildcardMatch {
     /// namespace, …) to a bare package name at capture time; this variant
     /// does no URI parsing itself.
     PackageRoot,
+    /// `QnameUnder` plus a language adapter that maps a wildcard module and
+    /// target to the real files that can contribute the bare name. The
+    /// resolver only compares those returned file paths and declines ambiguous
+    /// hits; it does not know the language's relative-module keywords,
+    /// source-root layout, or module-file conventions.
+    QnameUnderWithPhysicalFiles {
+        candidate_files: RelativeModuleCandidateFiles,
+    },
 }
+
+/// Language-owned evidence for a wildcard module whose imports resolve by
+/// physical file location. Returning no files leaves the generic wildcard
+/// binder inert for that import. The callback receives the source target so it
+/// can reject a language-qualified target before any file lookup occurs.
+pub type RelativeModuleCandidateFiles = fn(&str, &str, &str) -> Vec<String>;
 
 /// How `resolve_via_external_by_import` matches an external candidate's file
 /// against the resolving file's imports.
@@ -400,12 +517,9 @@ pub enum ModuleScope {
     /// set declines here and falls to argument-driven disambiguation, never a
     /// first-match guess.
     SameDirUnique,
-    /// SwiftPM whole-module compilation: every file under one
-    /// `Sources/<Target>/` (or `Tests/<Target>/`) subtree compiles into module
-    /// `<Target>` and sees every other top-level type in that subtree without
-    /// import. A candidate is in-module iff its path shares the source's
-    /// `Sources/<seg>/` (or `Tests/<seg>/`) prefix; off-layout paths (no such
-    /// prefix) leave the rung inert.
-    SourcesTargetSubtree,
+    /// A language-owned source-root layout where every file under one
+    /// `<root>/<Target>/` subtree compiles into a module and sees every other
+    /// top-level type in that subtree without import. `roots` is profile data;
+    /// off-layout paths leave the rung inert.
+    SourcesTargetSubtree { roots: &'static [&'static str] },
 }
-

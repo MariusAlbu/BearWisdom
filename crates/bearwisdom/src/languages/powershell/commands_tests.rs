@@ -36,9 +36,7 @@ fn import_module_dynamic_path_falls_back_to_calls() {
     // garbage target_name built from the whole argument list.
     let r = extract("Import-Module $PSScriptRoot\\..\\..\\ImportExcel.psd1 -Force");
     assert!(
-        r.refs
-            .iter()
-            .all(|ref_| ref_.kind != EdgeKind::Imports),
+        r.refs.iter().all(|ref_| ref_.kind != EdgeKind::Imports),
         "expected no Imports ref for a dynamic path; got {:?}",
         r.refs
     );
@@ -53,13 +51,9 @@ fn import_module_dynamic_path_falls_back_to_calls() {
 
 #[test]
 fn import_module_computed_path_falls_back_to_calls() {
-    let r = extract(
-        "Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'lib.psm1')",
-    );
+    let r = extract("Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'lib.psm1')");
     assert!(
-        r.refs
-            .iter()
-            .all(|ref_| ref_.kind != EdgeKind::Imports),
+        r.refs.iter().all(|ref_| ref_.kind != EdgeKind::Imports),
         "expected no Imports ref for a computed path; got {:?}",
         r.refs
     );
@@ -85,9 +79,7 @@ fn dot_source_emits_imports_ref() {
 fn dot_source_quoted_path_emits_imports_ref() {
     let r = extract(". \"$PSScriptRoot/lib.ps1\"");
     assert!(
-        r.refs
-            .iter()
-            .any(|ref_| ref_.kind == EdgeKind::Imports),
+        r.refs.iter().any(|ref_| ref_.kind == EdgeKind::Imports),
         "expected an Imports ref; got {:?}",
         r.refs
     );

@@ -532,7 +532,13 @@ pub(crate) fn extract_types_from_conditions(v: &serde_json::Value) -> Option<Str
     // condition string is a type source ONLY when it IS a declaration file —
     // a `.js` runtime entry is not. A nested object recurses.
     for cond in [
-        "node", "module-sync", "module", "import", "require", "default", "browser",
+        "node",
+        "module-sync",
+        "module",
+        "import",
+        "require",
+        "default",
+        "browser",
     ] {
         if let Some(child) = obj.get(cond) {
             if let Some(s) = child.as_str() {

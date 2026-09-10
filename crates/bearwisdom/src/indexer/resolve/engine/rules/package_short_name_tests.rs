@@ -42,7 +42,13 @@ fn resolve_with_profile(
 #[test]
 fn gate_off_returns_pass() {
     // DEFAULT_PROFILE has ChainQualification::None — rule must not bind.
-    let lookup = Lookup::new().with(sym(60, "NewRouter", "gin.NewRouter", "function", "src/a.go"));
+    let lookup = Lookup::new().with(sym(
+        60,
+        "NewRouter",
+        "gin.NewRouter",
+        "function",
+        "src/a.go",
+    ));
     let imports = vec![import("gin", Some("github.com/gin-gonic/gin"))];
     let result = resolve_with_profile(&lookup, "NewRouter", imports, &DEFAULT_PROFILE);
     assert_eq!(result, None);
@@ -51,8 +57,13 @@ fn gate_off_returns_pass() {
 #[test]
 fn gate_on_binds_via_imported_name() {
     // `import gin "github.com/gin-gonic/gin"` → probe `gin.NewRouter`.
-    let lookup =
-        Lookup::new().with(sym(61, "NewRouter", "gin.NewRouter", "function", "src/gin/router.go"));
+    let lookup = Lookup::new().with(sym(
+        61,
+        "NewRouter",
+        "gin.NewRouter",
+        "function",
+        "src/gin/router.go",
+    ));
     let imports = vec![import("gin", Some("github.com/gin-gonic/gin"))];
     let result = resolve_with_profile(&lookup, "NewRouter", imports, &PSN_PROFILE);
     assert_eq!(result, Some(61));
@@ -61,8 +72,13 @@ fn gate_on_binds_via_imported_name() {
 #[test]
 fn gate_on_binds_via_last_path_segment() {
     // No alias (`imported_name` is empty); fall back to `gin` from the module path.
-    let lookup =
-        Lookup::new().with(sym(62, "Default", "gin.Default", "function", "src/gin/router.go"));
+    let lookup = Lookup::new().with(sym(
+        62,
+        "Default",
+        "gin.Default",
+        "function",
+        "src/gin/router.go",
+    ));
     let imports = vec![import("", Some("github.com/gin-gonic/gin"))];
     let result = resolve_with_profile(&lookup, "Default", imports, &PSN_PROFILE);
     assert_eq!(result, Some(62));

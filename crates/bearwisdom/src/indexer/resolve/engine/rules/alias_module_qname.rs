@@ -10,7 +10,7 @@
 // immediately. Only fires for bare (non-dotted) targets.
 // =============================================================================
 
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 
 pub struct AliasModuleQnameRule;
 
@@ -24,11 +24,7 @@ impl LookupRule for AliasModuleQnameRule {
             return LookupResult::Pass;
         }
         let target = ctx.target();
-        if target.is_empty()
-            || target.contains('.')
-            || target.contains("::")
-            || target.contains('/')
-        {
+        if target.is_empty() || ctx.profile.is_qualified_name(target) {
             return LookupResult::Pass;
         }
         let edge_kind = ctx.edge_kind();

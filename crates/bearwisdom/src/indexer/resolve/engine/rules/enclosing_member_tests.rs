@@ -37,7 +37,10 @@ fn binds_member_of_enclosing_class() {
 fn declines_dotted_target() {
     let lookup = Lookup::new()
         .with(sym(1, "Foo", "Foo", "class", "src/foo.ts"))
-        .with_member("Foo", sym(2, "doWork", "Foo.doWork", "function", "src/foo.ts"));
+        .with_member(
+            "Foo",
+            sym(2, "doWork", "Foo.doWork", "function", "src/foo.ts"),
+        );
     // A dotted target is not an inherited-member candidate.
     let got = resolve(&lookup, "Foo.doWork", vec!["Foo".to_string()]);
     assert_eq!(got, None);
@@ -55,8 +58,7 @@ fn declines_when_no_enclosing_type_in_scope() {
 
 #[test]
 fn declines_when_member_not_found() {
-    let lookup = Lookup::new()
-        .with(sym(1, "Foo", "Foo", "class", "src/foo.ts"));
+    let lookup = Lookup::new().with(sym(1, "Foo", "Foo", "class", "src/foo.ts"));
     // No members registered for Foo.
     let got = resolve(&lookup, "missing", vec!["Foo".to_string()]);
     assert_eq!(got, None);

@@ -17,6 +17,10 @@
 use rustc_hash::FxHashMap;
 
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
+use crate::type_checker::profile::language_policy::{
+    alias_intrinsic, callable_return_operand, AliasIntrinsic,
+};
+use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::AliasTargetIds;
 
 use super::alias_gate::{head_names_nominal_type, uncontested_alias_target};
@@ -34,8 +38,13 @@ const MAX_ALIAS_DEPTH: usize = 8;
 /// applied as `Box<User>` → `Container<User>`. Recurses through an alias of an
 /// alias, bounded. A type that is not a registered `Application` alias is
 /// returned unchanged.
-pub(crate) fn expand(ty: TypeId, lookup: &dyn SymbolLookup, arena: &TypeArena) -> TypeId {
-    expand_with_id(ty, None, lookup, arena)
+pub(crate) fn expand(
+    ty: TypeId,
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    profile: Option<&LanguageProfile>,
+) -> TypeId {
+    expand_with_id(ty, None, lookup, arena, profile)
 }
 
 /// `expand` with the receiver's declaration id. The id resolves a bare-name alias
@@ -48,6 +57,7 @@ pub(crate) fn expand_with_id(
     mut recv_id: Option<i64>,
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
+    profile: Option<&LanguageProfile>,
 ) -> TypeId {
     if lookup.nominal_context().is_some() {
         return super::contract::member_applicability::expand(lookup, arena, ty)
@@ -68,40 +78,21 @@ pub(crate) fn expand_with_id(
         let Some(head) = head_qname(arena, ty) else {
             break;
         };
-        // `NoInfer<T>` is a TypeScript intrinsic identity wrapper — it only blocks
-        // inference and carries `T`'s members transparently. Unwrap it so a member
-        // walk on a `NoInfer<T>`-typed receiver sees `T`.
-        if head == "NoInfer" {
+        // A language-owned intrinsic can declare that it preserves the members
+        // of its first argument. The engine only performs the structural peel.
+        if alias_intrinsic(profile, &head) == Some(AliasIntrinsic::TransparentFirstArgument) {
             if let Some(inner) = apply_args(arena, ty).first().copied() {
                 ty = inner;
                 continue;
             }
         }
-        // A member-preserving / key-narrowing utility applied DIRECTLY (`Omit<T,K>`
-        // / `Pick<T,K>` / `Partial<T>` / …, not via a named alias) carries the
-        // wrapped type's members — unwrap to `T` like `NoInfer` so a walk on
-        // `Omit<Base,K>` resolves on `Base`. This catches the form produced
-        // mid-expansion (a decided conditional's branch, a method's return); the
-        // aliased form (`type X = Omit<…>`) is handled in the match below.
-        if is_member_preserving_utility(&head) {
-            if let Some(inner) = apply_args(arena, ty).first().copied() {
-                ty = inner;
-                continue;
-            }
-        }
-        // `ReturnType<F>` applied DIRECTLY resolves by the intrinsic's
-        // semantics — the named callable's return — BEFORE the name-keyed
-        // alias lookup, which a package's own `ReturnType` helper can shadow
-        // (an unimporting use site means the lib intrinsic, and the name map
-        // cannot know that). Same ordering the utility unwraps above get. An
-        // uncaptured return stops rather than dereferencing a dead head.
-        if head == "ReturnType" {
+        // A language-owned callable-return intrinsic resolves before the
+        // name-keyed alias lookup, which might otherwise shadow its semantics.
+        if alias_intrinsic(profile, &head) == Some(AliasIntrinsic::CallableReturn) {
             if let [arg] = apply_args(arena, ty)[..] {
                 let formatted = arena.format_type(arg);
-                let arg_str = formatted
-                    .strip_prefix("typeof ")
-                    .unwrap_or(&formatted)
-                    .trim();
+                let arg_str =
+                    callable_return_operand(profile, &formatted).unwrap_or(formatted.trim());
                 // Only an UNAMBIGUOUS callee name resolves context-free —
                 // several same-named callables need the use site's import
                 // scope, which expansion does not carry. Stopping keeps the
@@ -133,18 +124,20 @@ pub(crate) fn expand_with_id(
         // The name-keyed fallback is gated: a head contested by a nominal type
         // declaration keeps the nominal receiver (see `alias_gate`).
         // Consumed after this hop (later hops resolve by name); survives a prior
-        // NoInfer/utility unwrap so `NoInfer<Logger>` still keys on `Logger`'s id.
+        // transparent-intrinsic unwrap so the inner alias still keys on its id.
         let hop_id = recv_id
             .take()
             .or_else(|| super::head_decl::head_decl_id(arena, ty));
         let by_id = hop_id.and_then(|id| lookup.alias_target_by_id(id));
         let target = match by_id.or_else(|| uncontested_alias_target(lookup, &head)) {
-            // `ReturnType<typeof f>` / `ReturnType<F>` intrinsic — the return type
-            // of the function value/type the single argument names. A captured
-            // return is required; an uncaptured one (`break`) leaves the alias
-            // unresolved rather than dereferencing a dead `ReturnType` class.
+            // A language-owned callable-return intrinsic names the return type
+            // of the function value/type in its single argument.
             Some(AliasTargetIds::Application { root, args })
-                if head_qname(arena, *root).as_deref() == Some("ReturnType") && args.len() == 1 =>
+                if head_qname(arena, *root)
+                    .as_deref()
+                    .and_then(|root| alias_intrinsic(profile, root))
+                    == Some(AliasIntrinsic::CallableReturn)
+                    && args.len() == 1 =>
             {
                 let arg_str = arena.format_type(args[0]);
                 match callable_named_return(lookup, arena, &arg_str) {
@@ -152,17 +145,13 @@ pub(crate) fn expand_with_id(
                     None => break,
                 }
             }
-            // Member-preserving / key-narrowing utility wrappers carry the wrapped
-            // type's members: `Omit<T,K>` / `Pick<T,K>` narrow the key set, the
-            // modifier utilities (`Partial` / `Required` / `Readonly` /
-            // `NonNullable` / `Awaited`) keep every member. The utility itself is a
-            // member-less intrinsic, so a walk on `Omit<Base,K>` finds nothing;
-            // redirect to the wrapped type `T` (the conservative receiver for member
-            // resolution) so the member resolves on it.
+            // A member-preserving intrinsic wrapper carries its first argument's
+            // member set. The language policy owns which wrappers have that meaning.
             Some(AliasTargetIds::Application { root, args })
                 if head_qname(arena, *root)
                     .as_deref()
-                    .is_some_and(is_member_preserving_utility)
+                    .and_then(|root| alias_intrinsic(profile, root))
+                    == Some(AliasIntrinsic::TransparentFirstArgument)
                     && !args.is_empty() =>
             {
                 args[0]
@@ -178,7 +167,7 @@ pub(crate) fn expand_with_id(
             // A conditional `C extends E ? T : F`. Evaluate it only when binding the
             // alias's params to the application's args reduces `C extends E` to a
             // DECIDABLE literal comparison (`TDynamic extends true` with
-            // `TDynamic=false` → the false branch). The `… => infer R` return-type
+            // callable-return extraction is resolved at the root, not
             // shape is resolved at the root (`resolve_return_type_extraction`), not
             // here; an undecidable guard keeps the prior transparent behaviour —
             // never a guessed branch on the TYPE. For MEMBER LOOKUP specifically, an
@@ -193,7 +182,7 @@ pub(crate) fn expand_with_id(
                 true_branch,
                 false_branch,
                 infer_binding,
-            }) if !arena.format_type(*extends).contains("=> infer ") => {
+            }) => {
                 let params = lookup.generic_params(&head).unwrap_or_default();
                 let arg_ids = apply_args(arena, ty);
                 // An `infer` capture decides the conditional structurally: if the
@@ -247,18 +236,6 @@ pub(crate) fn expand_with_id(
         crate::tracef!("  ALIAS '{}' -> {}", head, arena.format_type(ty));
     }
     ty
-}
-
-/// `true` when `root` is a TypeScript intrinsic utility whose result carries (a
-/// subset of) the wrapped type's members, so a member walk sees THROUGH it to the
-/// first type argument. `Omit` / `Pick` narrow the key set; the modifier
-/// utilities keep every member. Same transparent treatment the `NoInfer`
-/// intrinsic already gets, extended to the member-shape-preserving wrappers.
-fn is_member_preserving_utility(root: &str) -> bool {
-    matches!(
-        root,
-        "Omit" | "Pick" | "Partial" | "Required" | "Readonly" | "NonNullable" | "Awaited"
-    )
 }
 
 /// Resolve a conditional whose `extends` clause captures with `infer`:

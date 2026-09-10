@@ -4,9 +4,7 @@ use super::*;
 use crate::indexer::resolve::engine::contract::{
     FileContext, ImportEntry, Symbol, SymbolLookup, SymbolSet,
 };
-use crate::indexer::resolve::engine::testkit::{
-    accept_any, ref_ctx, source_symbol, sym,
-};
+use crate::indexer::resolve::engine::testkit::{accept_any, ref_ctx, source_symbol, sym};
 use crate::indexer::resolve::engine::{BinderContext, LookupResult};
 use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
 use crate::types::{EdgeKind, ExtractedRef};
@@ -114,7 +112,7 @@ impl SymbolLookup for ComponentLookup {
     fn is_external_name(&self, name: &str, lang: &str) -> bool {
         self.inner.is_external_name(name, lang)
     }
-    fn resolve_path_alias(&self, _pkg: Option<i64>, specifier: &str) -> Option<String> {
+    fn resolve_module_alias(&self, _pkg: Option<i64>, specifier: &str) -> Option<String> {
         self.aliases
             .iter()
             .find(|(from, _)| from == specifier)
@@ -145,7 +143,13 @@ fn calls_ref(target: &str) -> ExtractedRef {
 }
 
 fn vue_sym(id: i64, name: &str) -> Symbol {
-    sym(id, name, name, "component", &format!("src/components/{name}.vue"))
+    sym(
+        id,
+        name,
+        name,
+        "component",
+        &format!("src/components/{name}.vue"),
+    )
 }
 
 fn make_fc(imports: Vec<ImportEntry>) -> FileContext {
@@ -264,7 +268,10 @@ fn declines_when_module_symbols_are_ambiguous() {
         is_wildcard: false,
         binding_kind: None,
     }];
-    assert!(matches!(run(&lookup, "Banner", imports), LookupResult::Pass));
+    assert!(matches!(
+        run(&lookup, "Banner", imports),
+        LookupResult::Pass
+    ));
 }
 
 #[test]
@@ -314,7 +321,10 @@ fn passes_when_no_matching_import() {
         is_wildcard: false,
         binding_kind: None,
     }];
-    assert!(matches!(run(&lookup, "MyCard", imports), LookupResult::Pass));
+    assert!(matches!(
+        run(&lookup, "MyCard", imports),
+        LookupResult::Pass
+    ));
 }
 
 #[test]
@@ -353,5 +363,8 @@ fn passes_for_non_calls_edge() {
         kind: &kind,
         profile: &DEFAULT_PROFILE,
     };
-    assert!(matches!(ComponentImportRule.apply(&ctx), LookupResult::Pass));
+    assert!(matches!(
+        ComponentImportRule.apply(&ctx),
+        LookupResult::Pass
+    ));
 }

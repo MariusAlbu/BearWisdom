@@ -27,10 +27,14 @@ use crate::walker::WalkedFile;
 
 pub mod ambient;
 pub mod coursier_cache;
+pub(crate) mod external_policy;
 pub mod externals;
-pub mod jvm_caches;
 pub mod imports;
+pub mod jvm_caches;
 pub mod manifest;
+pub(crate) mod module_specifier;
+pub(crate) mod package_specifier;
+pub(crate) mod signature;
 pub mod symbol_index;
 
 pub use symbol_index::SymbolLocationIndex;
@@ -381,6 +385,13 @@ pub trait Ecosystem: Send + Sync {
         &[]
     }
 
+    /// Normalized manifest kinds this ecosystem owns for `ManifestMatch`
+    /// activation. Ownership metadata lives with ecosystem adapters rather
+    /// than in project-context orchestration.
+    fn manifest_kinds(&self) -> &'static [crate::ecosystem::manifest::ManifestKind] {
+        crate::ecosystem::manifest::ownership::kinds_for(self.id())
+    }
+
     /// `(filename, kind_label)` pairs declaring exact workspace-package
     /// markers for this ecosystem. The detector registers one `PackageInfo`
     /// row per matched file with `packages.kind = kind_label`.
@@ -407,6 +418,12 @@ pub trait Ecosystem: Send + Sync {
     /// at the default.
     fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
         &[]
+    }
+
+    /// Additional source spellings for a package's declared workspace name.
+    /// The default preserves the manifest spelling exactly.
+    fn workspace_package_name_aliases(&self, _declared_name: &str) -> Vec<String> {
+        Vec::new()
     }
 
     /// `(extension, kind_label)` pairs (extensions include the leading dot)

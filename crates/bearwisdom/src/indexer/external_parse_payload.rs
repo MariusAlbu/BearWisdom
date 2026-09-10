@@ -64,7 +64,11 @@ impl CachedSym {
             declared_type: s.declared_type.map(|id| ex.export(id)),
             return_type: s.return_type.map(|id| ex.export(id)),
             param_types: s.param_types.iter().map(|&id| ex.export(id)).collect(),
-            generic_params: s.generic_params.iter().map(|&g| ex.export_param(g)).collect(),
+            generic_params: s
+                .generic_params
+                .iter()
+                .map(|&g| ex.export_param(g))
+                .collect(),
         }
     }
 
@@ -86,7 +90,11 @@ impl CachedSym {
             declared_type: self.declared_type.as_ref().map(|t| im.import(t)),
             return_type: self.return_type.as_ref().map(|t| im.import(t)),
             param_types: self.param_types.iter().map(|t| im.import(t)).collect(),
-            generic_params: self.generic_params.iter().map(|&i| im.import_param(i)).collect(),
+            generic_params: self
+                .generic_params
+                .iter()
+                .map(|&i| im.import_param(i))
+                .collect(),
         }
     }
 }

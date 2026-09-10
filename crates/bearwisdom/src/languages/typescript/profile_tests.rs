@@ -35,11 +35,8 @@ fn promise_is_recognised_async_wrapper() {
 }
 
 #[test]
-fn self_keywords_cover_this() {
-    assert!(TYPESCRIPT_PROFILE
-        .self_keywords
-        .iter()
-        .any(|kw| *kw == "this"));
+fn receiver_spellings_cover_this() {
+    assert!(TYPESCRIPT_PROFILE.has_receiver_spelling("this"));
 }
 
 #[test]

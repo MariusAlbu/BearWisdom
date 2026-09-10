@@ -39,7 +39,10 @@ impl HeadBindMemo {
         // Computed outside the lock: `bind_head_unique` only reads name tables
         // and interns (deterministic), so concurrent duplicates are identical.
         let bound = super::head_decl::bind_head_unique(arena, lookup, ty);
-        self.0.write().expect("head-bind memo poisoned").insert(ty, bound);
+        self.0
+            .write()
+            .expect("head-bind memo poisoned")
+            .insert(ty, bound);
         bound.unwrap_or(ty)
     }
 }

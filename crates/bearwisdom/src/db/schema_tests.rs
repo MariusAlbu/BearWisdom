@@ -479,7 +479,10 @@ fn unique_unresolved_constraint_prevents_duplicates() {
         "INSERT INTO unresolved_refs (source_id, target_name, kind, source_line) VALUES (?1, 'Ctx', 'type_ref', 7)",
         [src],
     );
-    assert!(dup.is_err(), "duplicate unresolved ref should fail the UNIQUE index");
+    assert!(
+        dup.is_err(),
+        "duplicate unresolved ref should fail the UNIQUE index"
+    );
 
     // Same site, different module — a distinct logical ref, must insert.
     conn.execute(
@@ -509,7 +512,8 @@ fn unresolved_dup_purge_migration_keeps_one_row_per_ref() {
     let src: i64 = conn.last_insert_rowid();
 
     // Simulate the pre-constraint state: drop the index, insert dup-laden rows.
-    conn.execute_batch("DROP INDEX idx_unresolved_refs_unique").unwrap();
+    conn.execute_batch("DROP INDEX idx_unresolved_refs_unique")
+        .unwrap();
     for _ in 0..3 {
         conn.execute(
             "INSERT INTO unresolved_refs (source_id, target_name, kind, source_line) VALUES (?1, 'Ctx', 'type_ref', 7)",
@@ -529,5 +533,8 @@ fn unresolved_dup_purge_migration_keeps_one_row_per_ref() {
     let total: i64 = conn
         .query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(total, 2, "three dups collapse to one row; the distinct ref survives");
+    assert_eq!(
+        total, 2,
+        "three dups collapse to one row; the distinct ref survives"
+    );
 }

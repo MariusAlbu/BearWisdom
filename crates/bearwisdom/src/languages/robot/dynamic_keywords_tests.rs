@@ -363,5 +363,7 @@ class Lib:
         map.get(p).map(|s| s.to_string())
     });
     let kws = kw_map.get("Lib.py").expect("flat module present");
-    assert!(kws.iter().any(|k| k.method_name.as_deref() == Some("do_thing")));
+    assert!(kws
+        .iter()
+        .any(|k| k.method_name.as_deref() == Some("do_thing")));
 }

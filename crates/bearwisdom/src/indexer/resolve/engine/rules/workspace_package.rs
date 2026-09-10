@@ -8,23 +8,22 @@
 // trailing segments to find the package root, then the sub-path filters to
 // symbols whose file contains it.
 //
-// A specifier led by `profile.imports.self_package_root` (Rust's `crate`) names the
-// CURRENT file's own package rather than a sibling by declared name —
+// A specifier led by `profile.imports.self_package_root` names the CURRENT
+// file's own package rather than a sibling by declared name —
 // `self_package_sub_path` resolves it against `file_package_id` directly
 // instead of `workspace_package_id`'s declared-name table, so a name
 // re-exported at the package root binds the same way a direct declaration
 // would (both are members of the same package's symbol set).
 //
-// Gated on `profile.imports.workspace_packages`.  `is_bare_module_specifier` rejects
-// relative and drive-rooted specifiers.
+// Gated on `profile.imports.workspace_packages`; the active profile decides
+// which source spellings name package modules.
 // =============================================================================
 
-use crate::indexer::resolve::engine::support::{
-    follow_reexports, is_bare_module_specifier, self_package_sub_path, workspace_pkg_barrels,
-    workspace_sub_path,
-};
 use crate::indexer::resolve::engine::contract::types::SymbolInfo;
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::support::{
+    follow_reexports, self_package_sub_path, workspace_pkg_barrels, workspace_sub_path,
+};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 
 pub struct WorkspacePackageRule;
 
@@ -59,19 +58,35 @@ impl LookupRule for WorkspacePackageRule {
         let Some(specifier) = specifier else {
             return LookupResult::Pass;
         };
-        if !is_bare_module_specifier(specifier) {
+        if !ctx
+            .profile
+            .source_module_path_policy(specifier)
+            .is_bare(specifier)
+        {
             return LookupResult::Pass;
         }
         // A bare head that is not itself a declared package name may be a
-        // consumer-scoped Cargo dependency rename (common = { package =
-        // "tantivy-common" }). Rewrite the head to the target package so the
-        // lookup, sub-path, and barrel discovery all key on the real member.
+        // consumer-scoped package alias. Rewrite the profile-qualified
+        // head to the target package so lookup, sub-path, and barrel discovery
+        // all key on the real member.
         let rewritten;
         let specifier = if ctx.lookup.workspace_package_id(specifier).is_some() {
             specifier
         } else {
-            let head = specifier.split("::").next().unwrap_or(specifier);
-            match ctx.lookup.dep_rename(ctx.ref_ctx.file_package_id, head) {
+            let head = if ctx.profile.imports.self_package_root.is_none()
+                || ctx.profile.qname_separator.is_empty()
+            {
+                specifier
+            } else {
+                specifier
+                    .split(ctx.profile.qname_separator)
+                    .next()
+                    .unwrap_or(specifier)
+            };
+            match ctx
+                .lookup
+                .resolve_package_alias(ctx.ref_ctx.file_package_id, head)
+            {
                 Some(target) => {
                     rewritten = format!("{target}{}", &specifier[head.len()..]);
                     rewritten.as_str()
@@ -83,7 +98,7 @@ impl LookupRule for WorkspacePackageRule {
             Some(sub_path) => (ctx.ref_ctx.file_package_id, sub_path),
             None => (
                 ctx.lookup.workspace_package_id(specifier),
-                workspace_sub_path(specifier, ctx.lookup),
+                workspace_sub_path(ctx.profile, specifier, ctx.lookup),
             ),
         };
         let Some(pkg_id) = pkg_id else {
@@ -118,17 +133,23 @@ impl LookupRule for WorkspacePackageRule {
         // mapping, so the barrel is recovered from the package's own symbol set.)
         let stems = ctx.profile.imports.reexport_barrel_stems;
         for barrel in workspace_pkg_barrels(ctx.lookup, specifier, stems) {
-            if let Some(res) =
-                follow_reexports(&barrel, target, edge_kind, ctx.kind, ctx.lookup, 0, stems)
-            {
+            if let Some(res) = follow_reexports(
+                &barrel,
+                target,
+                edge_kind,
+                ctx.kind,
+                ctx.lookup,
+                0,
+                ctx.profile,
+            ) {
                 return LookupResult::Resolved(res);
             }
         }
 
-        // Sub-path-guided follow: `use pkg::sub::X` re-exports X inside the `sub`
-        // module (Rust `directory/mod.rs`), not the crate barrel. Follow re-exports
-        // from each package file whose path carries the sub-path; bind the unique
-        // target and decline when the follow fans out to more than one.
+        // Sub-path-guided follow: a submodule may re-export the target instead
+        // of the package barrel. Follow re-exports from each package file whose
+        // path carries the sub-path; bind the unique target and decline when the
+        // follow fans out to more than one.
         if let Some(sub) = sub_path.as_deref() {
             let mut hit: Option<SymbolInfo> = None;
             let mut seen: std::collections::BTreeSet<String> = Default::default();
@@ -140,9 +161,15 @@ impl LookupRule for WorkspacePackageRule {
                 if ctx.lookup.reexports_from(path).is_empty() {
                     continue;
                 }
-                if let Some(res) =
-                    follow_reexports(path, target, edge_kind, ctx.kind, ctx.lookup, 0, stems)
-                {
+                if let Some(res) = follow_reexports(
+                    path,
+                    target,
+                    edge_kind,
+                    ctx.kind,
+                    ctx.lookup,
+                    0,
+                    ctx.profile,
+                ) {
                     if let Some(prev) = &hit {
                         if prev.target_symbol_id != res.target_symbol_id {
                             return LookupResult::Pass;

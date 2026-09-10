@@ -110,7 +110,11 @@ fn build_index_follows_same_package_deep_reexport_through_a_directory_index_barr
     )
     .unwrap();
     let declaring_file = root.join("dist/server/task/task.d.ts");
-    std::fs::write(&declaring_file, "export declare function runTask(): void;\n").unwrap();
+    std::fs::write(
+        &declaring_file,
+        "export declare function runTask(): void;\n",
+    )
+    .unwrap();
 
     let dep = mkdep(root, "framework-pkg");
     let idx = build_npm_symbol_index(std::slice::from_ref(&dep));
@@ -175,10 +179,23 @@ fn cross_package_reexport_records_alias_and_keeps_barrel_location() {
     // the sibling's declaring file under its declared name.
     let tmp = tempfile::TempDir::new().unwrap();
     let nm = tmp.path().join("node_modules");
-    let wrapper = write_pkg(&nm, "wrapper-pkg", "wrapper-pkg", "export { Shared } from 'lib-pkg';\n");
-    let lib = write_pkg(&nm, "lib-pkg", "lib-pkg", "export declare class Shared { run(): void; }\n");
+    let wrapper = write_pkg(
+        &nm,
+        "wrapper-pkg",
+        "wrapper-pkg",
+        "export { Shared } from 'lib-pkg';\n",
+    );
+    let lib = write_pkg(
+        &nm,
+        "lib-pkg",
+        "lib-pkg",
+        "export declare class Shared { run(): void; }\n",
+    );
 
-    let deps = vec![mkdep(wrapper.clone(), "wrapper-pkg"), mkdep(lib.clone(), "lib-pkg")];
+    let deps = vec![
+        mkdep(wrapper.clone(), "wrapper-pkg"),
+        mkdep(lib.clone(), "lib-pkg"),
+    ];
     let idx = build_npm_symbol_index(&deps);
 
     assert_eq!(
@@ -305,9 +322,17 @@ fn subpath_export_entry_gets_a_module_entry_key() {
         r#"{"name":"runner-pkg","version":"1.0.0","types":"index.d.ts","exports":{".":{"types":"./index.d.ts"},"./test":{"types":"./test.d.ts"}}}"#,
     )
     .unwrap();
-    std::fs::write(root.join("index.d.ts"), "export declare const version: string;\n").unwrap();
+    std::fs::write(
+        root.join("index.d.ts"),
+        "export declare const version: string;\n",
+    )
+    .unwrap();
     let sub_entry = root.join("test.d.ts");
-    std::fs::write(&sub_entry, "export declare function test(name: string): void;\n").unwrap();
+    std::fs::write(
+        &sub_entry,
+        "export declare function test(name: string): void;\n",
+    )
+    .unwrap();
 
     let dep = mkdep(root.clone(), "runner-pkg");
     let idx = build_npm_symbol_index(std::slice::from_ref(&dep));

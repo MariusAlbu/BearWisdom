@@ -15,6 +15,7 @@
 use crate::types::AliasTargetIds;
 
 use super::contract::{is_type_like_kind, SymbolLookup};
+use super::support::index_qname_parent;
 
 /// `true` when some declaration sharing `head`'s exact qualified name is a
 /// non-alias type-like kind — the head names a nominal type, so a name-keyed
@@ -40,7 +41,7 @@ pub(super) fn uncontested_alias_target<'l>(
     if head_names_nominal_type(lookup, head) {
         return None;
     }
-    if !head.contains('.')
+    if index_qname_parent(head).is_none()
         && lookup
             .types_by_name(head)
             .iter()

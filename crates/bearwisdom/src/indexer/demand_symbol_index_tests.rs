@@ -75,7 +75,10 @@ impl Ecosystem for FakeMultiLangEcosystem {
 #[test]
 fn single_language_ecosystem_index_gets_tagged() {
     let mut by_eco: HashMap<&'static str, Vec<ExternalDepRoot>> = HashMap::new();
-    by_eco.insert("fake-single-lang", vec![dep_root("fake-single-lang", "fpc-rtl-objpas")]);
+    by_eco.insert(
+        "fake-single-lang",
+        vec![dep_root("fake-single-lang", "fpc-rtl-objpas")],
+    );
     let mut ecosystems: HashMap<&'static str, Arc<dyn Ecosystem>> = HashMap::new();
     ecosystems.insert("fake-single-lang", Arc::new(FakeSingleLangEcosystem));
 
@@ -91,7 +94,10 @@ fn single_language_ecosystem_index_gets_tagged() {
 #[test]
 fn multi_language_ecosystem_index_stays_untagged() {
     let mut by_eco: HashMap<&'static str, Vec<ExternalDepRoot>> = HashMap::new();
-    by_eco.insert("fake-multi-lang", vec![dep_root("fake-multi-lang", "deps/decimal")]);
+    by_eco.insert(
+        "fake-multi-lang",
+        vec![dep_root("fake-multi-lang", "deps/decimal")],
+    );
     let mut ecosystems: HashMap<&'static str, Arc<dyn Ecosystem>> = HashMap::new();
     ecosystems.insert("fake-multi-lang", Arc::new(FakeMultiLangEcosystem));
 

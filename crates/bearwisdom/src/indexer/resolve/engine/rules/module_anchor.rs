@@ -18,9 +18,9 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::support::{normalize_name, path_stem_matches};
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 use crate::type_checker::profile::language_profile::{
-    ModuleAnchor, ModuleAnchorBind, ModulePrefixRewrites, RelativeMarker, StemSource,
+    ModuleAnchor, ModuleAnchorBind, ModulePrefixRewrites, StemSource,
 };
 
 pub struct ModuleAnchorRule;
@@ -40,17 +40,10 @@ impl LookupRule for ModuleAnchorRule {
         let target = ctx.target();
         let edge_kind = ctx.edge_kind();
         let norm = ctx.profile.name_normalization;
-        let sep = ctx.profile.qname_separator;
         let rewrites = ctx.profile.imports.module_prefix_rewrites;
         let overload_pick_all = ctx.profile.overload_pick_all;
 
-        let is_relative = match ctx.profile.imports.relative_marker {
-            RelativeMarker::None => true,
-            RelativeMarker::DotPrefix => module.starts_with('.'),
-            RelativeMarker::DotSlashPrefix => {
-                module.starts_with("./") || module.starts_with("../")
-            }
-        };
+        let is_relative = ctx.profile.module_anchor_is_relative(module);
         // Absolute modules route to ByNameUnderModuleDir regardless of the
         // profile's configured bind; relative modules use the configured bind.
         let effective_bind = if is_relative {
@@ -80,25 +73,23 @@ impl LookupRule for ModuleAnchorRule {
                 }
             }
             ModuleAnchorBind::ByNameUnderModuleDir => {
-                // qname probe: {prefix}{sep}{target} for each module-prefix
-                // candidate under every separator the index might use.
+                // Each source prefix is converted through the active profile
+                // before probing the canonical index qname.
                 for prefix in module_prefix_candidates(module, rewrites) {
-                    for s in module_anchor_separators(sep) {
-                        let qname = format!("{prefix}{s}{target}");
-                        if overload_pick_all {
-                            for sym in ctx.lookup.all_by_qualified_name(&qname) {
-                                if (ctx.kind)(edge_kind, &sym.kind) {
-                                    return LookupResult::Resolved(
-                                        ctx.resolved(sym.id, "default_module_anchor"),
-                                    );
-                                }
-                            }
-                        } else if let Some(sym) = ctx.lookup.by_qualified_name(&qname) {
+                    let qname = ctx.profile.index_qname_join(&prefix, target);
+                    if overload_pick_all {
+                        for sym in ctx.lookup.all_by_qualified_name(&qname) {
                             if (ctx.kind)(edge_kind, &sym.kind) {
                                 return LookupResult::Resolved(
                                     ctx.resolved(sym.id, "default_module_anchor"),
                                 );
                             }
+                        }
+                    } else if let Some(sym) = ctx.lookup.by_qualified_name(&qname) {
+                        if (ctx.kind)(edge_kind, &sym.kind) {
+                            return LookupResult::Resolved(
+                                ctx.resolved(sym.id, "default_module_anchor"),
+                            );
                         }
                     }
                 }
@@ -108,8 +99,9 @@ impl LookupRule for ModuleAnchorRule {
                 if declines_bare_directory_match(module, rewrites) {
                     return LookupResult::Pass;
                 }
-                let module_as_path = separators_to_slash(module, sep);
-                let leaf = module_leaf(module, sep).to_lowercase();
+                let module_as_path = ctx.profile.index_qname_path_from_source(module);
+                let leaf = ctx.profile.simple_name(module).to_lowercase();
+                let indexed_target = ctx.profile.index_qname_from_source(target);
                 let candidates = ctx.lookup.by_name(target);
                 // Two passes: top-level declarations (qname == bare target)
                 // first, member declarations second. A module-qualified target
@@ -118,7 +110,7 @@ impl LookupRule for ModuleAnchorRule {
                 // top-level `f`.
                 for top_level_pass in [true, false] {
                     for sym in &candidates {
-                        if (sym.qualified_name == target) != top_level_pass {
+                        if (sym.qualified_name == indexed_target) != top_level_pass {
                             continue;
                         }
                         if !(ctx.kind)(edge_kind, &sym.kind) {
@@ -130,8 +122,7 @@ impl LookupRule for ModuleAnchorRule {
                                 ctx.resolved(sym.id, "default_module_anchor"),
                             );
                         }
-                        if leaf != module_as_path
-                            && path_stem_matches(&path.to_lowercase(), &leaf)
+                        if leaf != module_as_path && path_stem_matches(&path.to_lowercase(), &leaf)
                         {
                             return LookupResult::Resolved(
                                 ctx.resolved(sym.id, "default_module_anchor"),
@@ -142,9 +133,7 @@ impl LookupRule for ModuleAnchorRule {
             }
             ModuleAnchorBind::ByFileStem { against } => {
                 let leaf = match against {
-                    StemSource::ModuleLeaf => {
-                        module.rsplit('.').next().unwrap_or(module).to_lowercase()
-                    }
+                    StemSource::ModuleLeaf => ctx.profile.simple_name(module).to_lowercase(),
                 };
                 for sym in ctx.lookup.by_name(target) {
                     if !(ctx.kind)(edge_kind, &sym.kind) {
@@ -177,35 +166,6 @@ impl LookupRule for ModuleAnchorRule {
 // =============================================================================
 // Private helpers — used only by this rule
 // =============================================================================
-
-/// The qname-probe separators: always `.` (the universal index join), plus the
-/// profile separator when it differs. A `::`-keyed module probes both
-/// `crate::db.new` and `crate::db::new`; a `.`-keyed one probes once.
-fn module_anchor_separators(sep: &str) -> impl Iterator<Item = &str> {
-    [".", sep].into_iter().take(if sep == "." { 1 } else { 2 })
-}
-
-/// Map every module-path separator (`.` and the profile's, e.g. `::`) to `/`
-/// for file-path containment matching. `crate::db` → `crate/db`.
-fn separators_to_slash(module: &str, sep: &str) -> String {
-    let dotted = if sep == "." {
-        module.to_string()
-    } else {
-        module.replace(sep, ".")
-    };
-    dotted.replace('.', "/")
-}
-
-/// The trailing path-segment of a module under either separator — the file-like
-/// leaf used as a containment fallback. `crate::db` → `db`, `a.b.c` → `c`.
-fn module_leaf<'a>(module: &'a str, sep: &str) -> &'a str {
-    let after_profile = if sep != "." {
-        module.rsplit(sep).next().unwrap_or(module)
-    } else {
-        module
-    };
-    after_profile.rsplit('.').next().unwrap_or(after_profile)
-}
 
 /// The ordered module-prefix candidates the `ByNameUnderModuleDir` anchor
 /// probes. Profiles that opt into rewrites delegate candidate construction to

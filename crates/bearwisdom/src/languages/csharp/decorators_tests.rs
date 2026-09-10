@@ -41,7 +41,10 @@ fn multiple_attributes() {
         dr.iter().any(|(n, _)| n == "ApiControllerAttribute"),
         "refs: {dr:?}"
     );
-    assert!(dr.iter().any(|(n, _)| n == "RouteAttribute"), "refs: {dr:?}");
+    assert!(
+        dr.iter().any(|(n, _)| n == "RouteAttribute"),
+        "refs: {dr:?}"
+    );
 }
 
 #[test]

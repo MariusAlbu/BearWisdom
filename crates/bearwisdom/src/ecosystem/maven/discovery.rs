@@ -242,7 +242,9 @@ pub(crate) fn collect_workspace_artifact_ids(
     project_root: &Path,
 ) -> std::collections::HashSet<String> {
     let mut ids: std::collections::HashSet<String> = std::collections::HashSet::new();
-    ids.extend(gradle_manifest::collect_settings_gradle_module_ids(project_root));
+    ids.extend(gradle_manifest::collect_settings_gradle_module_ids(
+        project_root,
+    ));
     ids.extend(collect_pom_module_artifact_ids(project_root));
     ids
 }

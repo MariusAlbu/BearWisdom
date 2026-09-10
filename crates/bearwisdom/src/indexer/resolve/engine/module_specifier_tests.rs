@@ -27,6 +27,10 @@ fn parsed_file(path: &str, language: &str) -> ParsedFile {
     }
 }
 
+fn resolver_inputs() -> crate::ecosystem::module_specifier::ResolverInputs {
+    Default::default()
+}
+
 #[test]
 fn internal_file_paths_excludes_ext_prefixed() {
     let parsed = vec![
@@ -41,6 +45,7 @@ fn internal_file_paths_excludes_ext_prefixed() {
 fn resolve_via_module_resolver_bare_relative_dart() {
     let file_paths = vec!["lib/foo.dart".to_string(), "lib/main.dart".to_string()];
     let names: FxHashMap<String, i64> = FxHashMap::default();
+    let inputs = resolver_inputs();
     assert_eq!(
         resolve_via_module_resolver(
             "dart",
@@ -48,7 +53,7 @@ fn resolve_via_module_resolver_bare_relative_dart() {
             "foo.dart",
             None,
             &names,
-            None,
+            &inputs,
             &[],
             &file_paths,
         ),
@@ -63,6 +68,7 @@ fn resolve_via_module_resolver_package_self_uses_owning_package_name() {
         "lib/main.dart".to_string(),
     ];
     let names: FxHashMap<String, i64> = [("app".to_string(), 1)].into_iter().collect();
+    let inputs = resolver_inputs();
     assert_eq!(
         resolve_via_module_resolver(
             "dart",
@@ -70,7 +76,7 @@ fn resolve_via_module_resolver_package_self_uses_owning_package_name() {
             "package:app/src/models/user.dart",
             Some(1),
             &names,
-            None,
+            &inputs,
             &[],
             &file_paths,
         ),
@@ -82,6 +88,7 @@ fn resolve_via_module_resolver_package_self_uses_owning_package_name() {
 fn resolve_via_module_resolver_declines_when_package_id_unmatched() {
     let file_paths = vec!["lib/src/models/user.dart".to_string()];
     let names: FxHashMap<String, i64> = [("app".to_string(), 1)].into_iter().collect();
+    let inputs = resolver_inputs();
     assert_eq!(
         resolve_via_module_resolver(
             "dart",
@@ -89,7 +96,7 @@ fn resolve_via_module_resolver_declines_when_package_id_unmatched() {
             "package:app/src/models/user.dart",
             Some(2), // wrong package id — not "app"'s owner
             &names,
-            None,
+            &inputs,
             &[],
             &file_paths,
         ),

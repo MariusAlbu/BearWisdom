@@ -69,7 +69,41 @@ fn declines_bare_target() {
 #[test]
 fn declines_when_no_suffix_match() {
     // The only candidate has a qname that does NOT end with `.Other.File`.
-    let lookup =
-        Lookup::new().with(sym(6, "File", "pkg.File", "class", "node_modules/pkg/index.d.ts"));
+    let lookup = Lookup::new().with(sym(
+        6,
+        "File",
+        "pkg.File",
+        "class",
+        "node_modules/pkg/index.d.ts",
+    ));
     assert_eq!(resolve(&lookup, "Other.File"), None);
+}
+
+#[test]
+fn source_separator_is_taken_from_the_active_profile() {
+    let lookup = Lookup::new().with(sym(
+        11,
+        "File",
+        "@types.multer.Express.Multer.File",
+        "interface",
+        "node_modules/@types/multer/index.d.ts",
+    ));
+    let mut profile = DEFAULT_PROFILE;
+    profile.qname_separator = "::";
+    let r = call_ref("Express::Multer::File");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let kind = accept_any;
+    let ctx = BinderContext {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind: &kind,
+        profile: &profile,
+    };
+    assert!(matches!(
+        AmbientNamespacePathRule.apply(&ctx),
+        LookupResult::Resolved(res) if res.target_symbol_id == 11
+    ));
 }

@@ -5,10 +5,18 @@ use std::fs;
 /// handful of other interface/impl files.
 fn make_stdlib_fixture(dir: &Path) {
     fs::create_dir_all(dir).unwrap();
-    fs::write(dir.join("list.mli"), "val map : ('a -> 'b) -> 'a list -> 'b list\n").unwrap();
+    fs::write(
+        dir.join("list.mli"),
+        "val map : ('a -> 'b) -> 'a list -> 'b list\n",
+    )
+    .unwrap();
     fs::write(dir.join("list.ml"), "let map f l = ()\n").unwrap();
     fs::write(dir.join("string.mli"), "val length : string -> int\n").unwrap();
-    fs::write(dir.join("stringLabels.mli"), "val get : string -> int -> char\n").unwrap();
+    fs::write(
+        dir.join("stringLabels.mli"),
+        "val get : string -> int -> char\n",
+    )
+    .unwrap();
     fs::write(dir.join("array.ml"), "let length a = ()\n").unwrap();
     // Noise: C runtime headers under caml/ must be skipped.
     let caml = dir.join("caml");
@@ -32,7 +40,13 @@ fn walk_yields_ml_and_mli_files() {
     let files = walk(&dep);
     let names: Vec<String> = files
         .iter()
-        .map(|f| f.absolute_path.file_name().unwrap().to_string_lossy().into_owned())
+        .map(|f| {
+            f.absolute_path
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        })
         .collect();
     assert!(names.contains(&"list.mli".to_string()), "{names:?}");
     assert!(names.contains(&"string.mli".to_string()), "{names:?}");
@@ -101,7 +115,10 @@ fn discover_uses_env_override_with_list_mli() {
     let roots = discover();
     std::env::remove_var("BEARWISDOM_OCAML_SRC");
 
-    assert!(!roots.is_empty(), "override with list.mli must produce a root");
+    assert!(
+        !roots.is_empty(),
+        "override with list.mli must produce a root"
+    );
     assert_eq!(roots[0].module_path, "stdlib");
     assert_eq!(roots[0].root, tmp.path());
 }

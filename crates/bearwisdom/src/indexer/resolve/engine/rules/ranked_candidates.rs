@@ -11,9 +11,9 @@
 // ref honestly unresolved rather than guessing.
 // =============================================================================
 
-use crate::indexer::resolve::engine::support::pick_ranked_candidate;
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
 use crate::indexer::resolve::engine::contract::Symbol;
+use crate::indexer::resolve::engine::support::pick_ranked_candidate;
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 
 pub struct RankedCandidatesRule;
 
@@ -28,8 +28,8 @@ impl LookupRule for RankedCandidatesRule {
         }
         let target = ctx.target();
         if target.is_empty()
-            || target.contains('.')
-            || target.contains("::")
+            || (!ctx.profile.qname_separator.is_empty()
+                && target.contains(ctx.profile.qname_separator))
             || target.contains('/')
         {
             return LookupResult::Pass;

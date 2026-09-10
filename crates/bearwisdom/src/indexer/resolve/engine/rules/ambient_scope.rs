@@ -29,8 +29,9 @@ impl LookupRule for AmbientScopeRule {
 
     fn apply(&self, ctx: &BinderContext) -> LookupResult {
         let target = ctx.target();
-        // Bare names only — a dotted target is a member chain for an earlier rung.
-        if target.is_empty() || target.contains('.') {
+        // Bare names only — a profile-qualified target is a member chain for
+        // an earlier rung.
+        if target.is_empty() || ctx.profile.is_qualified_name(target) {
             return LookupResult::Pass;
         }
         resolve_ambient_named(ctx, target, "ambient_scope")

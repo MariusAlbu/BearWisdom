@@ -246,26 +246,12 @@ pub(super) fn extract_from_node(
 
             // `global $var;` — scope modifier, extract as variable.
             "global_declaration" => {
-                symbols::extract_global_static_vars(
-                    &child,
-                    src,
-                    symbols,
-                    parent_index,
-                    &qp,
-                    false,
-                );
+                symbols::extract_global_static_vars(&child, src, symbols, parent_index, &qp, false);
             }
 
             // `static $cache = [];` — static local variable.
             "static_variable_declaration" => {
-                symbols::extract_global_static_vars(
-                    &child,
-                    src,
-                    symbols,
-                    parent_index,
-                    &qp,
-                    true,
-                );
+                symbols::extract_global_static_vars(&child, src, symbols, parent_index, &qp, true);
             }
 
             // `[$name] = $user->toArray()` / `list($a, $b) = $tuple`

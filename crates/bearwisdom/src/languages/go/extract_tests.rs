@@ -1565,8 +1565,16 @@ func run() {
             .filter(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == name)
             .count()
     };
-    assert_eq!(type_ref_count("Admin"), 1, "Admin case type should be emitted exactly once");
-    assert_eq!(type_ref_count("User"), 1, "User case type should be emitted exactly once");
+    assert_eq!(
+        type_ref_count("Admin"),
+        1,
+        "Admin case type should be emitted exactly once"
+    );
+    assert_eq!(
+        type_ref_count("User"),
+        1,
+        "User case type should be emitted exactly once"
+    );
 
     let calls_count = |name: &str| {
         r.refs
@@ -1687,7 +1695,9 @@ func Setup(c fiber.Config) {
         r.refs
     );
     assert!(
-        type_refs.iter().any(|rf| rf.module.as_deref() == Some("fiber")),
+        type_refs
+            .iter()
+            .any(|rf| rf.module.as_deref() == Some("fiber")),
         "expected a Config TypeRef with module \"fiber\"; got: {type_refs:?}"
     );
 }
@@ -1714,7 +1724,9 @@ func Collect(xs []*foo.Bar) {
         r.refs
     );
     assert!(
-        type_refs.iter().any(|rf| rf.module.as_deref() == Some("foo")),
+        type_refs
+            .iter()
+            .any(|rf| rf.module.as_deref() == Some("foo")),
         "expected a Bar TypeRef with module \"foo\"; got: {type_refs:?}"
     );
 }
@@ -1758,7 +1770,9 @@ func Use(m Map[string, *pkg.Type]) {
         r.refs
     );
     assert!(
-        type_refs.iter().any(|rf| rf.module.as_deref() == Some("pkg")),
+        type_refs
+            .iter()
+            .any(|rf| rf.module.as_deref() == Some("pkg")),
         "expected a Type TypeRef with module \"pkg\"; got: {type_refs:?}"
     );
 }

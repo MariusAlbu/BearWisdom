@@ -78,5 +78,4 @@ impl LanguagePlugin for PowerShellPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::POWERSHELL_PROFILE)
     }
-
 }

@@ -36,12 +36,16 @@ pub fn classify(rel_path: &str) -> Option<VendorOrGeneratedKind> {
     let segments: Vec<&str> = p.split('/').collect();
 
     for seg in &segments {
-        if matches!(*seg, "node_modules" | "vendor" | "third_party" | "third-party") {
+        if matches!(
+            *seg,
+            "node_modules" | "vendor" | "third_party" | "third-party"
+        ) {
             return Some(VendorOrGeneratedKind::Vendor);
         }
         if matches!(
             *seg,
-            "dist" | "build"
+            "dist"
+                | "build"
                 | "out"
                 | ".next"
                 | ".nuxt"

@@ -15,6 +15,7 @@ use crate::type_checker::core::types::TypeId;
 
 use super::contract::util::is_type_like_kind;
 use super::contract::SymbolLookup;
+use super::support::{index_qname_parent, join_index_qname};
 
 /// Merge ladder-RESOLVED inheritance pairs (child symbol id → parent symbol
 /// id) into the climb map. A resolved pair appends if absent — resolution-
@@ -35,9 +36,7 @@ pub(super) fn apply_resolved(
 /// The file's import bindings as `name → module`: `use`-style imports-kind
 /// refs and TS import-binding refs alike. The module is the evidence a bare
 /// inheritance head resolves through.
-pub(super) fn import_evidence_of(
-    pf: &crate::types::ParsedFile,
-) -> FxHashMap<&str, &str> {
+pub(super) fn import_evidence_of(pf: &crate::types::ParsedFile) -> FxHashMap<&str, &str> {
     pf.refs
         .iter()
         .filter(|r| r.is_import_binding || r.kind == crate::types::EdgeKind::Imports)
@@ -52,6 +51,7 @@ pub(super) fn rebuild_inherits_by_id(
     tree: &dyn SymbolLookup,
     inherits: &FxHashMap<String, Vec<String>>,
     evidence: &FxHashMap<(String, String), String>,
+    qname_separators: &FxHashMap<String, String>,
     arg_ids: &FxHashMap<String, Vec<(String, Vec<TypeId>)>>,
 ) -> (FxHashMap<i64, Vec<i64>>, FxHashMap<(i64, i64), Vec<TypeId>>) {
     let mut out: FxHashMap<i64, Vec<i64>> = FxHashMap::default();
@@ -67,9 +67,17 @@ pub(super) fn rebuild_inherits_by_id(
             let ev = evidence
                 .get(&(child_qname.clone(), parent_head.clone()))
                 .map(String::as_str);
-            if let Some(parent_id) =
-                resolve_parent_id_scoped(tree, parent_head, child_qname, child_pkg, ev)
-            {
+            if let Some(parent_id) = resolve_parent_id_scoped(
+                tree,
+                parent_head,
+                child_qname,
+                child_pkg,
+                ev,
+                qname_separators
+                    .get(child_qname)
+                    .map(String::as_str)
+                    .unwrap_or("."),
+            ) {
                 let parents = out.entry(child_id).or_default();
                 if !parents.contains(&parent_id) {
                     parents.push(parent_id);
@@ -100,15 +108,16 @@ pub(super) fn resolve_parent_id_scoped(
     child_qname: &str,
     child_package: Option<i64>,
     import_module: Option<&str>,
+    qname_separator: &str,
 ) -> Option<i64> {
-    let simple = parent_head.rsplit('.').next().unwrap_or(parent_head);
+    let simple = simple_name(parent_head, qname_separator);
     // The child's file imports this exact name from a module: the parent is
     // that module's declaration, never a same-named type elsewhere.
     if let Some(module) = import_module {
-        let want = normalize_separators(module);
+        let want = normalize_qname(module, qname_separator);
         for cand in tree.by_name(simple).iter() {
             if is_type_like_kind(&cand.kind)
-                && qname_under_module(&cand.qualified_name, &want, simple)
+                && qname_under_module(&cand.qualified_name, &want, simple, qname_separator)
             {
                 return Some(cand.id);
             }
@@ -117,9 +126,10 @@ pub(super) fn resolve_parent_id_scoped(
     // No import names the head: the child's own namespace is the next-best
     // evidence — languages resolve unqualified names against the enclosing
     // namespace before any import machinery runs.
-    if let Some(ns) = namespace_of(child_qname) {
+    if let Some(ns) = namespace_of(child_qname, qname_separator) {
         for cand in tree.by_name(simple).iter() {
-            if is_type_like_kind(&cand.kind) && qname_under_module(&cand.qualified_name, &ns, simple)
+            if is_type_like_kind(&cand.kind)
+                && qname_under_module(&cand.qualified_name, &ns, simple, qname_separator)
             {
                 return Some(cand.id);
             }
@@ -158,27 +168,42 @@ pub(super) fn resolve_parent_id_scoped(
     member_bearing.or(fallback)
 }
 
-/// Qualified-name separators vary by language (`\`, `::`, `/`, `.`);
-/// canonicalize to `.` so module evidence and qnames compare uniformly.
-fn normalize_separators(s: &str) -> String {
-    s.replace("::", ".").replace(['\\', '/'], ".")
+/// Canonicalize this edge's source separator to the indexed qname separator.
+fn normalize_qname(s: &str, qname_separator: &str) -> String {
+    if qname_separator.is_empty() {
+        s.to_string()
+    } else {
+        s.replace(qname_separator, ".")
+    }
 }
 
 /// The child's enclosing namespace, separator-normalized: everything before
 /// the final `.` of the normalized qname. `None` for a top-level name.
-fn namespace_of(qname: &str) -> Option<String> {
-    let normalized = normalize_separators(qname);
-    normalized
-        .rfind('.')
-        .map(|ix| normalized[..ix].to_string())
+fn namespace_of(qname: &str, qname_separator: &str) -> Option<String> {
+    let normalized = normalize_qname(qname, qname_separator);
+    index_qname_parent(&normalized)
+        .map(str::to_string)
         .filter(|ns| !ns.is_empty())
 }
 
 /// True when `qname` declares `simple` directly under `module` (both
 /// separator-normalized): `PHPUnit\Framework.TestCase` is under
 /// `PHPUnit\Framework`.
-fn qname_under_module(qname: &str, normalized_module: &str, simple: &str) -> bool {
-    normalize_separators(qname) == format!("{normalized_module}.{simple}")
+fn qname_under_module(
+    qname: &str,
+    normalized_module: &str,
+    simple: &str,
+    qname_separator: &str,
+) -> bool {
+    normalize_qname(qname, qname_separator) == join_index_qname(normalized_module, simple)
+}
+
+fn simple_name<'a>(name: &'a str, qname_separator: &str) -> &'a str {
+    if qname_separator.is_empty() {
+        name
+    } else {
+        name.rsplit(qname_separator).next().unwrap_or(name)
+    }
 }
 
 #[cfg(test)]
@@ -193,6 +218,7 @@ pub(super) fn attach_edge_args(
     pairs: &[(i64, i64)],
     by_id: &FxHashMap<i64, super::contract::Symbol>,
     arg_ids: &FxHashMap<String, Vec<(String, Vec<TypeId>)>>,
+    qname_separators: &FxHashMap<String, String>,
     out: &mut FxHashMap<(i64, i64), Vec<TypeId>>,
 ) {
     for &(child_id, parent_id) in pairs {
@@ -205,9 +231,14 @@ pub(super) fn attach_edge_args(
         let Some(edges) = arg_ids.get(&child.qualified_name) else {
             continue;
         };
+        let separator = qname_separators
+            .get(&child.qualified_name)
+            .map(String::as_str)
+            .unwrap_or("");
         if let Some((_, ids)) = edges.iter().find(|(head, _)| {
             head == &parent.qualified_name
-                || head.rsplit(['.', ':']).next() == Some(parent.name.as_str())
+                || (!separator.is_empty()
+                    && head.rsplit(separator).next() == Some(parent.name.as_str()))
         }) {
             out.insert((child_id, parent_id), ids.clone());
         }

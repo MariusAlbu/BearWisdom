@@ -9,27 +9,13 @@ fn empty_externals() -> HashSet<String> {
 
 #[test]
 fn extractor_garbage_punctuation() {
-    let cat = _test_classify_row(
-        "foo()",
-        "calls",
-        None,
-        "src/a.ts",
-        "typescript",
-                None,
-    );
+    let cat = _test_classify_row("foo()", "calls", None, "src/a.ts", "typescript", None);
     assert_eq!(cat, UnresolvedCategory::ExtractorBug);
 }
 
 #[test]
 fn extractor_garbage_empty() {
-    let cat = _test_classify_row(
-        "",
-        "calls",
-        None,
-        "src/a.ts",
-        "typescript",
-                None,
-    );
+    let cat = _test_classify_row("", "calls", None, "src/a.ts", "typescript", None);
     assert_eq!(cat, UnresolvedCategory::ExtractorBug);
 }
 
@@ -44,14 +30,7 @@ fn extractor_keyword_and_literal() {
         ("new", "csharp"),
         ("42", "rust"),
     ] {
-        let cat = _test_classify_row(
-            name,
-            "calls",
-            None,
-            "src/a.ts",
-            lang,
-                        None,
-        );
+        let cat = _test_classify_row(name, "calls", None, "src/a.ts", lang, None);
         assert_eq!(
             cat,
             UnresolvedCategory::ExtractorBug,
@@ -68,7 +47,7 @@ fn generated_path_node_modules() {
         None,
         "node_modules/some-pkg/dist/index.d.ts",
         "typescript",
-                None,
+        None,
     );
     assert_eq!(cat, UnresolvedCategory::GeneratedOrVendorNoise);
 }
@@ -81,7 +60,7 @@ fn generated_filename_suffix() {
         None,
         "src/Models.designer.cs",
         "csharp",
-                None,
+        None,
     );
     assert_eq!(cat, UnresolvedCategory::GeneratedOrVendorNoise);
 }
@@ -94,7 +73,7 @@ fn module_resolution_miss_via_module_column() {
         Some("./missing"),
         "src/a.ts",
         "typescript",
-                None,
+        None,
     );
     assert_eq!(cat, UnresolvedCategory::ModuleResolutionMiss);
 }
@@ -109,48 +88,26 @@ fn module_resolution_miss_via_imports_table() {
         None,
         "src/a.ts",
         "typescript",
-                Some(&imports),
+        Some(&imports),
     );
     assert_eq!(cat, UnresolvedCategory::ModuleResolutionMiss);
 }
 
-
 #[test]
 fn local_false_positive_lowercase_short() {
-    let cat = _test_classify_row(
-        "i",
-        "reads",
-        None,
-        "src/a.ts",
-        "typescript",
-                None,
-    );
+    let cat = _test_classify_row("i", "reads", None, "src/a.ts", "typescript", None);
     assert_eq!(cat, UnresolvedCategory::LocalFalsePositive);
 }
 
 #[test]
 fn local_false_positive_lowercase_word() {
-    let cat = _test_classify_row(
-        "result",
-        "calls",
-        None,
-        "src/a.ts",
-        "typescript",
-                None,
-    );
+    let cat = _test_classify_row("result", "calls", None, "src/a.ts", "typescript", None);
     assert_eq!(cat, UnresolvedCategory::LocalFalsePositive);
 }
 
 #[test]
 fn local_false_positive_does_not_fire_on_dotted() {
-    let cat = _test_classify_row(
-        "ctx.runfiles",
-        "calls",
-        None,
-        "src/a.bzl",
-        "starlark",
-                None,
-    );
+    let cat = _test_classify_row("ctx.runfiles", "calls", None, "src/a.bzl", "starlark", None);
     // Dotted lowercase falls through past the locals check; with no other
     // signals the fallback is RealMissingSymbol.
     assert_ne!(cat, UnresolvedCategory::LocalFalsePositive);
@@ -158,14 +115,7 @@ fn local_false_positive_does_not_fire_on_dotted() {
 
 #[test]
 fn local_false_positive_does_not_fire_on_inherits() {
-    let cat = _test_classify_row(
-        "base",
-        "inherits",
-        None,
-        "src/a.ts",
-        "typescript",
-                None,
-    );
+    let cat = _test_classify_row("base", "inherits", None, "src/a.ts", "typescript", None);
     // Inheritance with a lowercase target is not a local — it's a real
     // missing symbol or a module miss, but never a locals.scm leak.
     assert_ne!(cat, UnresolvedCategory::LocalFalsePositive);
@@ -192,7 +142,7 @@ fn scss_kebab_case_is_not_local() {
         None,
         "src/widget.scss",
         "scss",
-                None,
+        None,
     );
     assert_ne!(cat, UnresolvedCategory::LocalFalsePositive);
     assert_eq!(cat, UnresolvedCategory::RealMissingSymbol);
@@ -201,14 +151,7 @@ fn scss_kebab_case_is_not_local() {
 #[test]
 fn css_less_sass_stylus_skip_locals_heuristic() {
     for lang in ["css", "less", "sass", "stylus"] {
-        let cat = _test_classify_row(
-            "some-mixin",
-            "calls",
-            None,
-            "src/widget.css",
-            lang,
-                        None,
-        );
+        let cat = _test_classify_row("some-mixin", "calls", None, "src/widget.css", lang, None);
         assert_ne!(
             cat,
             UnresolvedCategory::LocalFalsePositive,
@@ -236,27 +179,13 @@ fn kebab_case_outside_styles_also_not_local() {
 
 #[test]
 fn unsupported_syntax_generic_residue() {
-    let cat = _test_classify_row(
-        "Foo<T>",
-        "type_ref",
-        None,
-        "src/a.ts",
-        "typescript",
-                None,
-    );
+    let cat = _test_classify_row("Foo<T>", "type_ref", None, "src/a.ts", "typescript", None);
     assert_eq!(cat, UnresolvedCategory::UnsupportedSyntax);
 }
 
 #[test]
 fn embedded_region_capitalized_target_in_vue_host() {
-    let cat = _test_classify_row(
-        "OnMounted",
-        "calls",
-        None,
-        "src/Foo.vue",
-        "vue",
-                None,
-    );
+    let cat = _test_classify_row("OnMounted", "calls", None, "src/Foo.vue", "vue", None);
     assert_eq!(cat, UnresolvedCategory::EmbeddedRegionIssue);
 }
 
@@ -268,7 +197,7 @@ fn real_missing_symbol_fallback() {
         None,
         "src/a.ts",
         "typescript",
-                None,
+        None,
     );
     assert_eq!(cat, UnresolvedCategory::RealMissingSymbol);
 }
@@ -283,7 +212,7 @@ fn priority_extractor_bug_beats_module_miss() {
         Some("./bar"),
         "src/a.ts",
         "typescript",
-                None,
+        None,
     );
     assert_eq!(cat, UnresolvedCategory::ExtractorBug);
 }
@@ -299,7 +228,7 @@ fn bare_external_module_is_external_api() {
         Some("rxjs"),
         "src/a.ts",
         "typescript",
-                None,
+        None,
     );
     assert_eq!(cat, UnresolvedCategory::ExternalApiUnknown);
 }
@@ -332,7 +261,7 @@ fn relative_module_is_module_miss() {
         Some("../shared/util"),
         "src/a.ts",
         "typescript",
-                None,
+        None,
     );
     assert_eq!(cat, UnresolvedCategory::ModuleResolutionMiss);
 }
@@ -382,13 +311,22 @@ fn is_external_module_classification() {
     workspace.insert("@tanstack/query-core".to_string());
     // Bare external deps.
     assert!(_test_is_external_module("vitest", &workspace));
-    assert!(_test_is_external_module("@testing-library/react", &workspace));
+    assert!(_test_is_external_module(
+        "@testing-library/react",
+        &workspace
+    ));
     assert!(_test_is_external_module("preact/hooks", &workspace));
     // Relative + workspace + workspace-subpath are internal.
     assert!(!_test_is_external_module("./util", &workspace));
     assert!(!_test_is_external_module("../util", &workspace));
-    assert!(!_test_is_external_module("@tanstack/query-core", &workspace));
-    assert!(!_test_is_external_module("@tanstack/query-core/build", &workspace));
+    assert!(!_test_is_external_module(
+        "@tanstack/query-core",
+        &workspace
+    ));
+    assert!(!_test_is_external_module(
+        "@tanstack/query-core/build",
+        &workspace
+    ));
 }
 
 // ---------------------------------------------------------------------------

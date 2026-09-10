@@ -153,17 +153,28 @@ fn include_reparents_fragment_symbols_and_rekeys_id_map() {
     assert_eq!(n, 3, "all three fragment symbols re-parent");
 
     let frag = &parsed[1];
-    let qnames: Vec<&str> = frag.symbols.iter().map(|s| s.qualified_name.as_str()).collect();
-    assert_eq!(qnames, ["MyUnit.Helper", "MyUnit.TThing", "MyUnit.TThing.Do"]);
+    let qnames: Vec<&str> = frag
+        .symbols
+        .iter()
+        .map(|s| s.qualified_name.as_str())
+        .collect();
+    assert_eq!(
+        qnames,
+        ["MyUnit.Helper", "MyUnit.TThing", "MyUnit.TThing.Do"]
+    );
     assert_eq!(frag.symbols[0].scope_path.as_deref(), Some("MyUnit"));
     assert_eq!(frag.symbols[2].scope_path.as_deref(), None);
 
     // Id map rekeyed under the new qnames; the old keys are gone.
     assert_eq!(
-        id_map.by_key().get(&("src/helpers.inc".into(), "MyUnit.Helper".into())),
+        id_map
+            .by_key()
+            .get(&("src/helpers.inc".into(), "MyUnit.Helper".into())),
         Some(&2)
     );
-    assert!(!id_map.by_key().contains_key(&("src/helpers.inc".into(), "Helper".into())));
+    assert!(!id_map
+        .by_key()
+        .contains_key(&("src/helpers.inc".into(), "Helper".into())));
 
     // The persisted rows were rewritten in place: qname, scope path, and the
     // qname-bearing prefix of symbol_key.

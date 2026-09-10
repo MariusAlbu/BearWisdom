@@ -79,7 +79,8 @@ fn predefined_primitive_annotation_is_captured_as_typeref() {
         refs_for_annotation("let n: number;"),
         vec![("number".to_string(), None)]
     );
-}#[test]
+}
+#[test]
 fn type_query_import_emits_module_as_target() {
     // `typeof import('vitest')` (whole namespace) → the module name doubles
     // as the target, module-tagged. No raw `import('vitest')` text leaks.

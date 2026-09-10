@@ -14,7 +14,7 @@ use anyhow::Result;
 use crate::indexer::ref_cache::RefCache;
 use crate::query::cache::QueryCache;
 
-use super::{Database, metrics};
+use super::{metrics, Database};
 
 struct DbPoolInner {
     path: PathBuf,

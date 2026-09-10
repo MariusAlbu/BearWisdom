@@ -54,7 +54,10 @@ pub const JAVA_PROFILE: LanguageProfile = LanguageProfile {
     id: "java",
     qname_separator: ".",
     declaration_merging: crate::type_checker::profile::language_profile::MergeScope::None,
-    self_keywords: &["this", "super"],
+    receiver_spellings: &[
+        crate::type_checker::profile::language_profile::ReceiverSpelling::enclosing("this", "."),
+        crate::type_checker::profile::language_profile::ReceiverSpelling::parent("super", "."),
+    ],
     supertype_discovery: SupertypeDiscovery::Explicit,
     ancestor_order: crate::type_checker::profile::language_profile::AncestorOrder::Bfs,
     // The JDK source is the external surface; Maven sources jars too.

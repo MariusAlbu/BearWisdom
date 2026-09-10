@@ -64,6 +64,18 @@ impl LanguagePlugin for PhpPlugin {
         extract::extract(source)
     }
 
+    fn signature_return_type(&self, signature: &str) -> Option<String> {
+        crate::languages::prefix_return_type(signature)
+    }
+
+    fn signature_parameter_types(&self, signature: &str) -> Option<Vec<String>> {
+        helpers::signature_parameter_types(signature)
+    }
+
+    fn signature_declared_type(&self, signature: &str) -> Option<String> {
+        crate::languages::prefix_declared_type(signature)
+    }
+
     /// E2: surface `<script>` and `<style>` blocks that live in the HTML
     /// regions between `<?php … ?>` blocks for sub-extraction by the JS,
     /// TS, CSS, and SCSS plugins. Pure-PHP files (no HTML mode) emit
@@ -119,7 +131,6 @@ impl LanguagePlugin for PhpPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::PHP_PROFILE)
     }
-
 
     // TODO(routes-dispatch): wire `connectors::discover_laravel_routes` into
     // the indexer route-population stage. The function now writes the `routes`

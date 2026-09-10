@@ -19,14 +19,13 @@ use crate::walker::WalkedFile;
 use tracing::debug;
 
 pub use super::coursier_cache::coursier_cache_root;
-pub use super::jvm_caches::{gradle_caches_root, maven_local_repo};
 pub(crate) use super::coursier_cache::{
     resolve_coursier_bytecode_jar, resolve_coursier_sources_jar, resolve_coursier_submodule_jars,
 };
+pub use super::jvm_caches::{gradle_caches_root, maven_local_repo};
 pub(crate) use super::jvm_caches::{
     resolve_gradle_bytecode_jar, resolve_gradle_sources_jar, resolve_maven_artifact_dir,
 };
-
 
 // NOTE: all per-language locators have migrated to `crate::ecosystem::*` in
 // Phase 2+3. This module now only holds the `ExternalSourceLocator` trait,
@@ -211,6 +210,12 @@ pub(crate) fn materialize_virtual_external(path: &str) -> Option<crate::types::P
         return crate::ecosystem::nuget::crack_one_dll_type(path, "csharp");
     }
     None
+}
+
+/// Whether an ecosystem-owned virtual key must never fall through to a
+/// filesystem parse when materialization yields no declaration.
+pub(crate) fn is_virtual_only_path(path: &str) -> bool {
+    path.starts_with("ext:jar:") || path.starts_with("ext:dotnet-type:")
 }
 
 /// Convenience — build the fixed set of 5 locators that ship today. Post-

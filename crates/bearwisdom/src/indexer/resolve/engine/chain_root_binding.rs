@@ -18,7 +18,7 @@ pub(super) fn resolve_root_impl(
         return super::super::base_receiver::root(ref_ctx, lookup, arena).ok_or(None);
     }
     if let Some(local) = lookup.local_reference(ref_ctx.extracted_ref.byte_offset) {
-        return super::lexical_root::resolve(local, lookup, arena, file_ctx, seg);
+        return super::lexical_root::resolve(local, lookup, arena, file_ctx, seg, profile);
     }
     // Prefer the TypeId cache: `local_type_id` returns the TypeId that was
     // stored directly by `record_local_type_id`, preserving the exact type
@@ -31,14 +31,16 @@ pub(super) fn resolve_root_impl(
     // scope so the right overload is chosen. Applies to both the TypeId-cached and
     // String-cached local bindings.
     if let Some(id) = lookup.local_type_id(&seg.name) {
-        if let Some(r) = resolve_return_type_extraction(id, lookup, arena, file_ctx) {
+        if let Some(r) = resolve_return_type_extraction(id, lookup, arena, file_ctx, Some(profile))
+        {
             return Ok(Receiver::untyped(r));
         }
         return Ok(Receiver::untyped(id));
     }
     if let Some(ty) = lookup.local_type(&seg.name) {
         let id = arena.intern_type_str(&ty);
-        if let Some(r) = resolve_return_type_extraction(id, lookup, arena, file_ctx) {
+        if let Some(r) = resolve_return_type_extraction(id, lookup, arena, file_ctx, Some(profile))
+        {
             return Ok(Receiver::untyped(r));
         }
         return Ok(Receiver::untyped(id));
@@ -156,6 +158,7 @@ pub(super) fn resolve_root_impl(
             &ref_ctx.source_symbol.qualified_name,
             file_ctx,
             ref_ctx.file_package_id,
+            profile,
         ) {
             return Ok(Receiver::untyped(ty));
         }
@@ -171,13 +174,16 @@ pub(super) fn resolve_root_impl(
         &ref_ctx.source_symbol.qualified_name,
         file_ctx,
         ref_ctx.file_package_id,
+        profile,
     ) {
         Ok(ty) => {
             // A value whose declared type is `ReturnType<typeof f>` — an inferred
             // `const x = f(...)` binding imported from the file that declares it —
             // roots on f's return type (f resolved globally by name), deriving the
             // cross-file type the per-file flow seed could not carry.
-            if let Some(r) = resolve_return_type_extraction(ty, lookup, arena, file_ctx) {
+            if let Some(r) =
+                resolve_return_type_extraction(ty, lookup, arena, file_ctx, Some(profile))
+            {
                 return Ok(Receiver::untyped(r));
             }
             return Ok(Receiver::untyped(ty));

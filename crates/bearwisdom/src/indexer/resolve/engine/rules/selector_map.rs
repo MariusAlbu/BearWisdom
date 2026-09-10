@@ -14,7 +14,8 @@
 
 use std::borrow::Cow;
 
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::support::index_qname_leaf;
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 use crate::type_checker::profile::language_profile::{NameTransform, SelectorResolution};
 
 pub struct SelectorMapRule;
@@ -57,7 +58,7 @@ fn apply_selector_map(ctx: &BinderContext<'_>, cfg: &SelectorResolution) -> Look
         }
         // Export-wrapper qnames: fall back to a by-name scan that pins the
         // exact qname.
-        let short = class_qname.rsplit('.').next().unwrap_or(&class_qname);
+        let short = index_qname_leaf(&class_qname);
         for sym in ctx.lookup.by_name(short) {
             if sym.qualified_name == class_qname && (ctx.kind)(edge_kind, &sym.kind) {
                 return LookupResult::Resolved(ctx.resolved(sym.id, "default_selector_map"));

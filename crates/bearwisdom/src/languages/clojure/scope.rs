@@ -138,15 +138,7 @@ pub(super) fn sym_lit_ns(node: Node, src: &[u8]) -> Option<String> {
 pub(super) fn is_clojure_non_callable_token(name: &str) -> bool {
     matches!(
         name,
-        "." | "=>"
-            | "else"
-            | "return"
-            | "this"
-            | "&"
-            | "try"
-            | "catch"
-            | "finally"
-            | "with-open"
+        "." | "=>" | "else" | "return" | "this" | "&" | "try" | "catch" | "finally" | "with-open"
     )
 }
 

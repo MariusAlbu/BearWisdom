@@ -31,8 +31,11 @@ pub(super) fn synthesize_def_members(
             continue;
         }
         let mut synthesized = Vec::new();
-        let existing: HashSet<&str> =
-            pf.symbols.iter().map(|s| s.qualified_name.as_str()).collect();
+        let existing: HashSet<&str> = pf
+            .symbols
+            .iter()
+            .map(|s| s.qualified_name.as_str())
+            .collect();
         let mut seen_qnames: HashSet<String> = HashSet::new();
         for module_qname in module_qnames_in_file(pf) {
             for inj in project_state.flattened_injections_for(&module_qname) {
@@ -46,7 +49,12 @@ pub(super) fn synthesize_def_members(
                 if !seen_qnames.insert(qualified_name.clone()) {
                     continue;
                 }
-                synthesized.push(synthetic_symbol(name, &qualified_name, &module_qname, *is_macro));
+                synthesized.push(synthetic_symbol(
+                    name,
+                    &qualified_name,
+                    &module_qname,
+                    *is_macro,
+                ));
             }
         }
         if !synthesized.is_empty() {
@@ -80,7 +88,11 @@ fn synthetic_symbol(
     ExtractedSymbol {
         name: name.to_string(),
         qualified_name: qualified_name.to_string(),
-        kind: if is_macro { SymbolKind::Function } else { SymbolKind::Method },
+        kind: if is_macro {
+            SymbolKind::Function
+        } else {
+            SymbolKind::Method
+        },
         visibility: Some(Visibility::Public),
         start_line: 0,
         end_line: 0,

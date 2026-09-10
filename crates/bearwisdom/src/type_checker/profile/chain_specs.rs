@@ -7,6 +7,23 @@ use crate::types::{EdgeKind, SymbolKind};
 
 use super::import_specs::ModulePathAdapter;
 
+/// The member-resolution effect of a language intrinsic alias.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AliasIntrinsic {
+    /// The intrinsic preserves the members of its first type argument.
+    TransparentFirstArgument,
+    /// The intrinsic yields the return type of the callable in its argument.
+    CallableReturn,
+}
+
+/// Declaration-level constraints on which source callback form is admissible.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallbackArgumentPolicy {
+    Any,
+    TrailingBlockOnly,
+    PositionalOnly,
+}
+
 /// What a scope function yields relative to its receiver, for the chain
 /// walker's `scope_functions` miss-fallback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -307,4 +324,3 @@ impl KindCompatibility {
 // ---------------------------------------------------------------------------
 // Syntax axes
 // ---------------------------------------------------------------------------
-

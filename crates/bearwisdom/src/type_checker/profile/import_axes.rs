@@ -12,7 +12,8 @@ use super::import_specs::*;
 pub struct ImportAxes {
     /// Import-prefix decline, the import-set-keyed sibling of `namespace_decline`.
     /// When set and the target carries the `qname_separator` and its leading
-    /// segment (sigil-stripped per `self_keywords` / a leading `$`) equals any
+    /// segment (with any language-declared receiver prefix normalized, then a
+    /// leading `$` stripped) equals any
     /// of the file's import module paths, the engine declines before the
     /// strategy ladder — a qualified reference into a declared dependency module
     /// is external, not a project symbol, so no same-named local binds and

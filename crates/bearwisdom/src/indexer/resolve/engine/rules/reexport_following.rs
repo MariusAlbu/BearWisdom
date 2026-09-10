@@ -10,10 +10,8 @@
 // never in the map. Cross-package re-exports are `reexport_chain`'s job.
 // =============================================================================
 
-use crate::indexer::resolve::engine::support::{
-    follow_reexports, is_relative_specifier, relative_reexport_candidates,
-};
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::support::{follow_reexports, relative_reexport_candidates};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 
 pub struct ReexportFollowingRule;
 
@@ -31,9 +29,7 @@ impl LookupRule for ReexportFollowingRule {
         let from_file = ctx.file_ctx.file_path.as_str();
 
         for import in &ctx.file_ctx.imports {
-            if !import.is_wildcard
-                && import.imported_name != "*"
-                && import.imported_name != target
+            if !import.is_wildcard && import.imported_name != "*" && import.imported_name != target
             {
                 continue;
             }
@@ -57,20 +53,41 @@ impl LookupRule for ReexportFollowingRule {
                     ctx.kind,
                     ctx.lookup,
                     0,
-                    ctx.profile.imports.reexport_barrel_stems,
+                    ctx.profile,
                 ) {
                     return LookupResult::Resolved(res);
                 }
-            } else if is_relative_specifier(module) {
-                if let Some(res) =
-                    follow_reexports(module, target, edge_kind, ctx.kind, ctx.lookup, 0, ctx.profile.imports.reexport_barrel_stems)
-                {
+            } else if ctx
+                .profile
+                .source_module_path_policy(module)
+                .is_relative(module)
+            {
+                if let Some(res) = follow_reexports(
+                    module,
+                    target,
+                    edge_kind,
+                    ctx.kind,
+                    ctx.lookup,
+                    0,
+                    ctx.profile,
+                ) {
                     return LookupResult::Resolved(res);
                 }
-                for barrel in relative_reexport_candidates(ctx.lookup, from_file, module) {
-                    if let Some(res) =
-                        follow_reexports(&barrel, target, edge_kind, ctx.kind, ctx.lookup, 0, ctx.profile.imports.reexport_barrel_stems)
-                    {
+                for barrel in relative_reexport_candidates(
+                    ctx.lookup,
+                    from_file,
+                    module,
+                    ctx.profile.source_module_path_policy(module),
+                ) {
+                    if let Some(res) = follow_reexports(
+                        &barrel,
+                        target,
+                        edge_kind,
+                        ctx.kind,
+                        ctx.lookup,
+                        0,
+                        ctx.profile,
+                    ) {
                         return LookupResult::Resolved(res);
                     }
                 }
@@ -80,7 +97,7 @@ impl LookupRule for ReexportFollowingRule {
                 module,
             ) {
                 // Neither the `ext:`-convention module map nor
-                // `is_relative_specifier` claimed this specifier — Dart's
+                // The active profile did not classify this source as relative — Dart's
                 // bare-relative (`'foo.dart'`) and same-project
                 // `package:<self>/...` forms are both neither. Last resort:
                 // the language's own `ModuleResolver` (indexer::module_resolution).
@@ -91,7 +108,7 @@ impl LookupRule for ReexportFollowingRule {
                     ctx.kind,
                     ctx.lookup,
                     0,
-                    ctx.profile.imports.reexport_barrel_stems,
+                    ctx.profile,
                 ) {
                     return LookupResult::Resolved(res);
                 }

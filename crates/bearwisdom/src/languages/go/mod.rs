@@ -11,6 +11,7 @@ pub(crate) mod keywords;
 mod param_symbols;
 mod qualified_types;
 mod refs;
+mod signature;
 mod statements;
 mod symbols;
 mod tags;
@@ -67,6 +68,18 @@ impl LanguagePlugin for GoPlugin {
         extract::extract(source)
     }
 
+    fn signature_return_type(&self, signature: &str) -> Option<String> {
+        signature::return_type(signature)
+    }
+
+    fn signature_parameter_types(&self, signature: &str) -> Option<Vec<String>> {
+        signature::parameter_types(signature)
+    }
+
+    fn signature_declared_type(&self, signature: &str) -> Option<String> {
+        signature::declared_type(signature)
+    }
+
     fn embedded_regions(
         &self,
         source: &str,
@@ -107,12 +120,19 @@ impl LanguagePlugin for GoPlugin {
         keywords::KEYWORDS
     }
 
+    fn signature_type_application(&self, text: &str) -> (String, Vec<String>) {
+        crate::languages::bracket_type_application(text)
+    }
+
+    fn signature_type_head<'a>(&self, text: &'a str) -> &'a str {
+        crate::languages::bracket_type_head(text)
+    }
+
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&GO_PROFILE)
     }
-
 
     // TODO(routes-dispatch): wire `connectors::discover_go_routes` into the
     // indexer route-population stage. The function now writes the `routes` table

@@ -37,8 +37,16 @@ fn collect_package_roots_keys_nested_packages_separately() {
         "package httptest\n",
     );
     // Excluded directories: internal tooling and non-source dirs.
-    write_pkg_file(&src.join("net").join("internal"), "foo.go", "package internal\n");
-    write_pkg_file(&src.join("net").join("testdata"), "bar.go", "package testdata\n");
+    write_pkg_file(
+        &src.join("net").join("internal"),
+        "foo.go",
+        "package internal\n",
+    );
+    write_pkg_file(
+        &src.join("net").join("testdata"),
+        "bar.go",
+        "package testdata\n",
+    );
     write_pkg_file(&src.join("cmd").join("go"), "main.go", "package main\n");
 
     let mut roots = Vec::new();
@@ -48,7 +56,10 @@ fn collect_package_roots_keys_nested_packages_separately() {
     let module_paths: Vec<&str> = roots.iter().map(|r| r.module_path.as_str()).collect();
     assert!(module_paths.contains(&"net"), "{module_paths:?}");
     assert!(module_paths.contains(&"net/http"), "{module_paths:?}");
-    assert!(module_paths.contains(&"net/http/httptest"), "{module_paths:?}");
+    assert!(
+        module_paths.contains(&"net/http/httptest"),
+        "{module_paths:?}"
+    );
     assert!(
         !module_paths.iter().any(|m| m.contains("internal")),
         "internal package must not get its own root: {module_paths:?}"
@@ -98,7 +109,11 @@ fn walk_go_tree_does_not_recurse_into_sibling_packages() {
 fn build_symbol_index_locates_exact_package_match() {
     let tmp = std::env::temp_dir().join(format!("bw-go-stdlib-index-test-{}", std::process::id()));
     let src = tmp.join("src");
-    write_pkg_file(&src.join("net"), "net.go", "package net\n\nfunc Dial() {}\n");
+    write_pkg_file(
+        &src.join("net"),
+        "net.go",
+        "package net\n\nfunc Dial() {}\n",
+    );
     write_pkg_file(
         &src.join("net").join("http"),
         "server.go",

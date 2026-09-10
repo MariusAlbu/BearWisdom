@@ -16,11 +16,11 @@ use anyhow::{Context, Result};
 
 use crate::db::Database;
 use crate::ecosystem::symbol_index::SymbolLocationIndex;
-use crate::indexer::write::SymbolIds;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::compilation::Compilation;
 use crate::indexer::resolve::engine::externals_demand::materialize_externals;
 use crate::indexer::resolve::engine::file_context::build_profiles;
+use crate::indexer::write::SymbolIds;
 use crate::type_checker::core::types::TypeArena;
 use crate::types::ParsedFile;
 

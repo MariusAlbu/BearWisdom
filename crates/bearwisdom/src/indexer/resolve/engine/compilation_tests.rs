@@ -1264,6 +1264,30 @@ fn selector_qname_resolves_component_selector_from_parsed_file() {
     assert_eq!(tree.selector_qname("nb-card"), None);
 }
 
+#[test]
+fn non_owner_component_metadata_does_not_admit_angular_selector_grammar() {
+    let symbols = vec![make_symbol(
+        "NotAnAngularDirective",
+        "NotAnAngularDirective",
+        SymbolKind::Class,
+        None,
+        None,
+        None,
+    )];
+    let mut pf = make_parsed_file("src/lib.rs", symbols, vec![]);
+    pf.language = "rust".to_string();
+    pf.component_selectors = vec![(
+        "button[nbButton],a[nbButton]".to_string(),
+        "NotAnAngularDirective".to_string(),
+    )];
+    let ids: HashMap<(String, String), i64> =
+        HashMap::from([((pf.path.clone(), "NotAnAngularDirective".to_string()), 1)]);
+
+    let tree = Compilation::build(&[pf], &ids.into(), Arc::new(TypeArena::new()));
+    assert_eq!(tree.selector_qname("nbButton"), None);
+    assert_eq!(tree.selector_qname("button"), None);
+}
+
 /// External supply by name: a declaration in an `ext:` file makes the name
 /// externally known; a project-internal declaration or an absent name does not.
 #[test]
@@ -1348,7 +1372,7 @@ fn workspace_package_id_resolves_declared_name_and_deep_import() {
 // ---------------------------------------------------------------------------
 
 /// Dart's bare-relative import (`import 'foo.dart'`) is neither an
-/// `ext:`-convention package entry nor `is_relative_specifier`-true (no leading
+/// `ext:`-convention package entry nor claimed as relative by its active adapter (no leading
 /// `.`/`/`) — `resolve_module_from` genuinely misses it, and only the language
 /// resolver fallback resolves it against the indexed file set.
 #[test]
@@ -1612,7 +1636,7 @@ fn typeref_derived_field_type_for_property() {
     );
 }
 
-/// A method with a signature that encodes its return type (e.g. `-> User`).
+/// A method with a TypeScript signature that encodes its return type.
 /// No TypeRef ref emitted; Phase B should parse the signature.
 #[test]
 fn signature_derived_return_type_for_method() {
@@ -1625,7 +1649,7 @@ fn signature_derived_return_type_for_method() {
             "load",
             SymbolKind::Function,
             None,
-            Some("fn load() -> User"),
+            Some("load(): User"),
         ),
     ];
     let pf = make_parsed_file("src/loader.ts", symbols, vec![]);
@@ -2045,29 +2069,35 @@ fn inferred_return_lets_call_root_chain_resolve() {
 /// default returns `None` and every `import … from "@/…"` falls through
 /// `AliasedImportRule` unresolved.
 #[test]
-fn resolve_path_alias_honors_per_package_isolation_and_global() {
+fn resolve_module_alias_honors_per_package_isolation_and_global() {
     let arena = Arc::new(TypeArena::new());
     let mut c = Compilation::empty(Arc::clone(&arena));
-    c.path_aliases_by_pkg
-        .insert(8, vec![("@/".to_string(), "./".to_string())]);
-    c.path_aliases_global = vec![("~/".to_string(), "lib/".to_string())];
+    let mut package_policy =
+        crate::ecosystem::manifest::resolver_policy::ResolverManifestPolicy::default();
+    package_policy.add_module_rewrites(vec![("@/".to_string(), "./".to_string())]);
+    c.resolver_policy_by_pkg.insert(8, package_policy);
+    c.resolver_policy_global
+        .add_module_rewrites(vec![("~/".to_string(), "lib/".to_string())]);
 
     // Per-package alias, longest-prefix rewrite.
     assert_eq!(
-        c.resolve_path_alias(Some(8), "@/utils/types").as_deref(),
+        c.resolve_module_alias(Some(8), "@/utils/types").as_deref(),
         Some("./utils/types")
     );
     // A specifier matching no alias in the package → None (not a global borrow).
-    assert_eq!(c.resolve_path_alias(Some(8), "react"), None);
+    assert_eq!(c.resolve_module_alias(Some(8), "react"), None);
     // A ref with no package id uses the workspace-wide aliases.
     assert_eq!(
-        c.resolve_path_alias(None, "~/db").as_deref(),
+        c.resolve_module_alias(None, "~/db").as_deref(),
         Some("lib/db")
     );
     // An isolated package that declares NO aliases declines — it never borrows the
     // global set (mirrors ProjectContext::manifests_for isolation).
-    c.path_aliases_by_pkg.insert(9, Vec::new());
-    assert_eq!(c.resolve_path_alias(Some(9), "~/db"), None);
+    c.resolver_policy_by_pkg.insert(
+        9,
+        crate::ecosystem::manifest::resolver_policy::ResolverManifestPolicy::default(),
+    );
+    assert_eq!(c.resolve_module_alias(Some(9), "~/db"), None);
 }
 
 /// A TypeRef the extractor tagged with a module — `typeof import('m')['k']`
@@ -2722,11 +2752,11 @@ fn module_augmentation_grafts_onto_the_exported_interface_not_a_same_named_value
         Arc::clone(&arena),
     );
 
-    tree.apply_module_augmentations(&[(
-        "vitest".to_string(),
-        "Assertion".to_string(),
-        "@testing-library/jest-dom.Assertion".to_string(),
-    )]);
+    tree.apply_module_augmentations(&[crate::languages::ModuleAugmentation {
+        module: "vitest".to_string(),
+        interface: "Assertion".to_string(),
+        augmenting_qname: "@testing-library/jest-dom.Assertion".to_string(),
+    }]);
 
     assert_eq!(
         tree.parent_class_qnames("@vitest/expect.Assertion"),

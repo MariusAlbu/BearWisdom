@@ -156,7 +156,7 @@ pub struct TypeInfo {
     /// Source-bound direct base; Some(Unknown) fences missing/unsupported heads.
     #[serde(default)]
     pub base_type_id: Option<TypeId>,
-    /// Trait Self is a separate binder, never an explicit generic argument slot.
+    /// A trait receiver is a separate binder, never an explicit generic argument slot.
     #[serde(default)]
     pub trait_self_param: Option<GenericParamId>,
     /// Anonymous input regions: (source byte, omitted-slot index, parameter ID).

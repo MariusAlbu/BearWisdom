@@ -188,11 +188,13 @@ function visit(callable $callback, string $label): void {}
         Some("function visit((Item, Other) -> Result $callback, string $label): void")
     );
     assert_eq!(
-        crate::indexer::resolve::engine::contract::chain_walker::parse_param_types_from_signature_for_lang(
-            visit.signature.as_deref().expect("signature"),
-            "php",
-        ),
-        Some(vec!["(Item, Other) -> Result".to_string(), "string".to_string()])
+        crate::languages::default_registry()
+            .get("php")
+            .signature_parameter_types(visit.signature.as_deref().expect("signature")),
+        Some(vec![
+            "(Item, Other) -> Result".to_string(),
+            "string".to_string()
+        ])
     );
     assert!(visit
         .doc_comment
@@ -571,7 +573,10 @@ class Service {
 }
 "#;
     let extracted = extract::extract(source);
-    assert!(!extracted.has_errors, "parse errors in qualified static call test");
+    assert!(
+        !extracted.has_errors,
+        "parse errors in qualified static call test"
+    );
 
     let import = extracted
         .refs
@@ -582,12 +587,7 @@ class Service {
         .expect("namespace use import");
     assert_eq!(import.module.as_deref(), Some("Illuminate\\Database"));
     assert_eq!(
-        import
-            .chain
-            .as_ref()
-            .expect("class import shape")
-            .segments[0]
-            .kind,
+        import.chain.as_ref().expect("class import shape").segments[0].kind,
         SegmentKind::TypeAccess
     );
 

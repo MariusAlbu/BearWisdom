@@ -15,7 +15,7 @@ use crate::type_checker::profile::language_profile::{HeadAliasBind, NamespaceSco
 fn hcl_profile_carries_resolution_data() {
     assert_eq!(HCL_PROFILE.id, "hcl");
     // `var.X` / `local.X` heads are stripped by the bare-name probes.
-    assert_eq!(HCL_PROFILE.self_keywords, &["var", "local"]);
+    assert_eq!(HCL_PROFILE.receiver_spellings, &["var", "local"]);
     // Terraform meta-references decline before the ladder.
     let skip = HCL_PROFILE.builtin_skip.expect("builtin_skip set");
     assert!(skip("each.value"));
@@ -39,4 +39,3 @@ fn hcl_namespaceless_global_is_on() {
         NamespaceScope::Global
     );
 }
-

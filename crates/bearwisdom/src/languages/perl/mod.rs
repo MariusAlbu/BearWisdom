@@ -73,5 +73,4 @@ impl LanguagePlugin for PerlPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::PERL_PROFILE)
     }
-
 }

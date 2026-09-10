@@ -90,5 +90,4 @@ impl LanguagePlugin for AstroPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::ASTRO_PROFILE)
     }
-
 }

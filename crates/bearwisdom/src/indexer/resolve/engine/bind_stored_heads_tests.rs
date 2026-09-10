@@ -16,8 +16,16 @@ fn unique_head_binds_and_survives_wrappers() {
     let memo = HeadBindMemo::default();
     let bound = memo.bound(arena, &lookup, stored);
 
-    assert_eq!(head_decl_id(arena, bound), Some(7), "head bound through Optional<Apply<..>>");
-    assert_eq!(memo.bound(arena, &lookup, stored), bound, "memoized read returns the same bind");
+    assert_eq!(
+        head_decl_id(arena, bound),
+        Some(7),
+        "head bound through Optional<Apply<..>>"
+    );
+    assert_eq!(
+        memo.bound(arena, &lookup, stored),
+        bound,
+        "memoized read returns the same bind"
+    );
 }
 
 #[test]
@@ -34,7 +42,11 @@ fn ambiguous_head_stays_name_addressed() {
     let kept = memo.bound(arena, &lookup, stored);
 
     assert_eq!(kept, stored, "ambiguous heads keep the stored id");
-    assert_eq!(head_decl_id(arena, kept), None, "ambiguous heads keep Class form");
+    assert_eq!(
+        head_decl_id(arena, kept),
+        None,
+        "ambiguous heads keep Class form"
+    );
 }
 
 #[test]
@@ -50,5 +62,9 @@ fn bare_head_never_binds_even_when_unique() {
     let kept = memo.bound(arena, &lookup, stored);
 
     assert_eq!(kept, stored, "bare heads keep the stored id");
-    assert_eq!(head_decl_id(arena, kept), None, "bare heads keep Class form");
+    assert_eq!(
+        head_decl_id(arena, kept),
+        None,
+        "bare heads keep Class form"
+    );
 }

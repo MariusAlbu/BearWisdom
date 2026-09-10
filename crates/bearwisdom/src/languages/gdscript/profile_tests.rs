@@ -25,4 +25,3 @@ fn gdscript_namespaceless_global_is_on() {
         NamespaceScope::Global
     );
 }
-

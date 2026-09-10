@@ -165,8 +165,14 @@ fn symbol_index_registers_class_names() {
     _test_index_extension_api_json(&json, "godot-api", &mut idx);
 
     assert!(!idx.is_empty());
-    assert!(idx.locate("godot-api", "Node").is_some(), "class name must be indexed");
-    assert!(idx.locate("godot-api", "Vector2").is_some(), "builtin class must be indexed");
+    assert!(
+        idx.locate("godot-api", "Node").is_some(),
+        "class name must be indexed"
+    );
+    assert!(
+        idx.locate("godot-api", "Vector2").is_some(),
+        "builtin class must be indexed"
+    );
 }
 
 #[test]
@@ -178,13 +184,31 @@ fn symbol_index_registers_qualified_member_names() {
     let mut idx = SymbolLocationIndex::new();
     _test_index_extension_api_json(&json, "godot-api", &mut idx);
 
-    assert!(idx.locate("godot-api", "Node.add_child").is_some(), "method must be registered qualified");
-    assert!(idx.locate("godot-api", "Node.name").is_some(), "property must be registered qualified");
-    assert!(idx.locate("godot-api", "Node.ready").is_some(), "signal must be registered qualified");
-    assert!(idx.locate("godot-api", "Node.NOTIFICATION_READY").is_some(), "constant must be registered qualified");
-    assert!(idx.locate("godot-api", "Node.ProcessMode").is_some(), "enum must be registered qualified");
+    assert!(
+        idx.locate("godot-api", "Node.add_child").is_some(),
+        "method must be registered qualified"
+    );
+    assert!(
+        idx.locate("godot-api", "Node.name").is_some(),
+        "property must be registered qualified"
+    );
+    assert!(
+        idx.locate("godot-api", "Node.ready").is_some(),
+        "signal must be registered qualified"
+    );
+    assert!(
+        idx.locate("godot-api", "Node.NOTIFICATION_READY").is_some(),
+        "constant must be registered qualified"
+    );
+    assert!(
+        idx.locate("godot-api", "Node.ProcessMode").is_some(),
+        "enum must be registered qualified"
+    );
     // Bare member names also registered for chain-walker misses.
-    assert!(idx.locate("godot-api", "add_child").is_some(), "bare method name must be findable");
+    assert!(
+        idx.locate("godot-api", "add_child").is_some(),
+        "bare method name must be findable"
+    );
 }
 
 #[test]
@@ -196,17 +220,36 @@ fn symbol_index_registers_globals() {
     let mut idx = SymbolLocationIndex::new();
     _test_index_extension_api_json(&json, "godot-api", &mut idx);
 
-    assert!(idx.locate("godot-api", "Input").is_some(), "singleton must be indexed");
-    assert!(idx.locate("godot-api", "print").is_some(), "utility function must be indexed");
-    assert!(idx.locate("godot-api", "Side").is_some(), "global enum must be indexed");
-    assert!(idx.locate("godot-api", "SIDE_LEFT").is_some(), "global enum value must be indexed");
-    assert!(idx.locate("godot-api", "SPKEY").is_some(), "global constant must be indexed");
+    assert!(
+        idx.locate("godot-api", "Input").is_some(),
+        "singleton must be indexed"
+    );
+    assert!(
+        idx.locate("godot-api", "print").is_some(),
+        "utility function must be indexed"
+    );
+    assert!(
+        idx.locate("godot-api", "Side").is_some(),
+        "global enum must be indexed"
+    );
+    assert!(
+        idx.locate("godot-api", "SIDE_LEFT").is_some(),
+        "global enum value must be indexed"
+    );
+    assert!(
+        idx.locate("godot-api", "SPKEY").is_some(),
+        "global constant must be indexed"
+    );
 }
 
 #[test]
 fn symbol_index_empty_for_missing_json() {
     let mut idx = SymbolLocationIndex::new();
-    _test_index_extension_api_json(std::path::Path::new("/nonexistent/extension_api.json"), "godot-api", &mut idx);
+    _test_index_extension_api_json(
+        std::path::Path::new("/nonexistent/extension_api.json"),
+        "godot-api",
+        &mut idx,
+    );
     assert!(idx.is_empty());
 }
 

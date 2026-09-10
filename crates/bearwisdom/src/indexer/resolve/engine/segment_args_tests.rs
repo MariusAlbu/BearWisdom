@@ -25,7 +25,13 @@ fn call_seg(name: &str, type_args: &[&str]) -> ChainSegment {
 fn one_argument_binds_one_param() {
     let lookup = Lookup::new().with_generics("Sut.GetDependency", &["T"]);
     let arena = lookup.type_arena().unwrap();
-    let member = sym(11, "GetDependency", "Sut.GetDependency", "method", "src/S.cs");
+    let member = sym(
+        11,
+        "GetDependency",
+        "Sut.GetDependency",
+        "method",
+        "src/S.cs",
+    );
     let yielded = arena.intern_type_str("T");
     let bound = bind_explicit_type_args(
         &lookup,
@@ -45,10 +51,14 @@ fn a_partial_argument_list_binds_a_prefix() {
     let arena = lookup.type_arena().unwrap();
     let member = sym(11, "pair", "M.pair", "method", "src/M.ts");
     let yielded = arena.intern_type_str("Map<A, B>");
-    let bound = bind_explicit_type_args(&lookup, arena, &member, &call_seg("pair", &["K"]), yielded);
+    let bound =
+        bind_explicit_type_args(&lookup, arena, &member, &call_seg("pair", &["K"]), yielded);
     let formatted = arena.format_type(bound);
     assert!(formatted.contains('K'), "first param bound: {formatted}");
-    assert!(formatted.contains('B'), "second param stays open: {formatted}");
+    assert!(
+        formatted.contains('B'),
+        "second param stays open: {formatted}"
+    );
 }
 
 /// No declared params → the yield passes through untouched.

@@ -9,22 +9,6 @@
 // these primitives compare them.
 // =============================================================================
 
-/// A bare module specifier names a package, not a project-relative path.
-/// Rejects specifiers that start with `.`, `/`, or a Windows drive letter
-/// (`C:/`). Callers that scope a specifier to a workspace package's symbol
-/// set must first rule out a relative/absolute path.
-pub(crate) fn is_bare_module_specifier(spec: &str) -> bool {
-    !(spec.starts_with('.')
-        || spec.starts_with('/')
-        || (spec.len() >= 2 && spec.as_bytes()[1] == b':'))
-}
-
-/// A specifier is relative — and therefore project-internal — when it starts
-/// with `.`, `/`, or is a Windows drive path.
-pub(crate) fn is_relative_specifier(s: &str) -> bool {
-    s.starts_with('.') || s.starts_with('/') || (s.len() >= 2 && s.as_bytes()[1] == b':')
-}
-
 /// The full directory portion of a file path (everything before the final
 /// segment). Path separators are normalized to `/`. Returns `None` for a bare
 /// filename. For `schema/users/model.prisma` returns `Some("schema/users")`.
@@ -83,9 +67,8 @@ pub(crate) fn trim_path_extension(path: &str) -> &str {
 /// when the path plausibly names the same file as `module`:
 /// - Stem-suffix: the path's extension-stripped form ends with the module's
 ///   extension-stripped, `./`/`../`-trimmed form (covers relative imports).
-/// - Dot-to-slash: same after replacing `.` with `/` in the module (covers
-///   dotted package imports like `posthog.models` and dotted FQNs like
-///   `java.util.Map`).
+/// - Profile path variants: language/profile-produced physical-path forms of
+///   the source module spelling (for example a dotted qualified import).
 /// - Segment-bounded run: the slash-form of the module appears as a
 ///   `/`-bounded contiguous run inside the path (covers `__init__.py`
 ///   re-exports and deep package paths the stem-suffix check misses).
@@ -104,19 +87,33 @@ pub(crate) fn file_path_matches_module(
     {
         return false;
     }
-    if adapted.required_file_prefix.is_some_and(|prefix| {
-        !normalized.starts_with(&prefix.replace('\\', "/"))
-    }) {
+    if adapted
+        .required_file_prefix
+        .is_some_and(|prefix| !normalized.starts_with(&prefix.replace('\\', "/")))
+    {
         return false;
     }
     file_path_matches_normalized_module(
         &normalized,
         &adapted.module_path,
+        &adapted.path_variants,
         adapted.compound_extensions,
     )
 }
 
 fn file_path_matches_normalized_module(
+    normalized: &str,
+    module: &str,
+    path_variants: &[String],
+    compound_extensions: &[&str],
+) -> bool {
+    file_path_matches_one_normalized_module(normalized, module, compound_extensions)
+        || path_variants.iter().any(|variant| {
+            file_path_matches_one_normalized_module(normalized, variant, compound_extensions)
+        })
+}
+
+fn file_path_matches_one_normalized_module(
     normalized: &str,
     module: &str,
     compound_extensions: &[&str],
@@ -132,14 +129,13 @@ fn file_path_matches_normalized_module(
         module
     };
     let stem = trim_known_or_final_extension(normalized, compound_extensions);
-    if stem.ends_with(cleaned) || stem.ends_with(&cleaned.replace('.', "/")) {
+    if stem.ends_with(cleaned) {
         return true;
     }
-    let dotted = cleaned.replace('.', "/");
-    if dotted.is_empty() {
+    if cleaned.is_empty() {
         return false;
     }
-    path_contains_segment_run(&normalized, &dotted)
+    path_contains_segment_run(normalized, cleaned)
 }
 
 fn trim_known_or_final_extension<'a>(path: &'a str, compound_extensions: &[&str]) -> &'a str {

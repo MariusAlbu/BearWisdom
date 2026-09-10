@@ -61,5 +61,4 @@ impl LanguagePlugin for PrologPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::PROLOG_PROFILE)
     }
-
 }

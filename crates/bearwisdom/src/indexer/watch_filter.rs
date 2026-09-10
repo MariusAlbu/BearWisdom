@@ -74,8 +74,10 @@ impl WatchFilter {
             .ok()?
             .to_string_lossy()
             .replace('\\', "/");
-        if bearwisdom_profile::exclusions::is_under_excluded_dir(Path::new(&rel), &self.exclude_dirs)
-        {
+        if bearwisdom_profile::exclusions::is_under_excluded_dir(
+            Path::new(&rel),
+            &self.exclude_dirs,
+        ) {
             return None;
         }
         Some(rel)

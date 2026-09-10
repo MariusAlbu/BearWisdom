@@ -33,9 +33,9 @@ fn structural_choices_match_python_semantics() {
 }
 
 #[test]
-fn self_and_cls_are_self_keywords() {
-    assert!(PYTHON_PROFILE.self_keywords.contains(&"self"));
-    assert!(PYTHON_PROFILE.self_keywords.contains(&"cls"));
+fn self_and_cls_are_receiver_spellings() {
+    assert!(PYTHON_PROFILE.has_receiver_spelling("self"));
+    assert!(PYTHON_PROFILE.has_receiver_spelling("cls"));
 }
 
 #[test]
@@ -62,7 +62,9 @@ fn primitives_include_python_built_in_types() {
 
 #[test]
 fn builtin_skip_drains_interpreter_builtins_declines_project_and_stdlib_names() {
-    let skip = PYTHON_PROFILE.builtin_skip.expect("python builtin_skip set");
+    let skip = PYTHON_PROFILE
+        .builtin_skip
+        .expect("python builtin_skip set");
     // C-implemented builtins, no `.py` source anywhere — drain both edge
     // shapes (builtin_skip is keyed on target_name only, kind-agnostic).
     assert!(skip("len"));

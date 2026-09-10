@@ -82,4 +82,15 @@ impl LanguagePlugin for AngularPlugin {
         Some(&profile::ANGULAR_PROFILE)
     }
 
+    fn selector_binding_keys(&self, selector: &str) -> Vec<String> {
+        crate::languages::typescript::selectors::selector_binding_keys(selector)
+    }
+
+    fn component_selectors(
+        &self,
+        source: &str,
+        symbols: &[crate::types::ExtractedSymbol],
+    ) -> Vec<(String, String)> {
+        crate::languages::typescript::selectors::extract_component_selectors(source, symbols)
+    }
 }

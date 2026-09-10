@@ -132,20 +132,19 @@ pub fn index_stats(db: &Database) -> QueryResult<IndexStats> {
         db_mapping_count,
         flow_edge_count,
         package_count,
-    ): (u32, u32, u32, u32, u32, u32, u32, u32, u32) =
-        conn.query_row(&combined_sql, [], |r| {
-            Ok((
-                r.get(0)?,
-                r.get(1)?,
-                r.get(2)?,
-                r.get(3)?,
-                r.get(4)?,
-                r.get(5)?,
-                r.get(6)?,
-                r.get(7)?,
-                r.get(8)?,
-            ))
-        })?;
+    ): (u32, u32, u32, u32, u32, u32, u32, u32, u32) = conn.query_row(&combined_sql, [], |r| {
+        Ok((
+            r.get(0)?,
+            r.get(1)?,
+            r.get(2)?,
+            r.get(3)?,
+            r.get(4)?,
+            r.get(5)?,
+            r.get(6)?,
+            r.get(7)?,
+            r.get(8)?,
+        ))
+    })?;
 
     Ok(IndexStats {
         file_count,
@@ -364,7 +363,6 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
         .query_row(&internal_unresolved_sql, [], |r| r.get(0))
         .unwrap_or(0);
 
-
     // Refs (resolved edges + counted unresolved refs) excluded from the rate
     // by `GENERATED_FILE_FILTER`. Counted positively from both sides so the
     // exclusion is observable; mirrors the symmetric drop in the rate queries.
@@ -381,8 +379,12 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
              JOIN files   f ON f.id = s.file_id
              WHERE f.origin = 'internal' AND {CODE_REF_FILTER} AND {GENERATED_FILE_MATCH}"
         );
-        let edges_excluded: u32 = conn.query_row(&edges_excluded_sql, [], |r| r.get(0)).unwrap_or(0);
-        let refs_excluded: u32 = conn.query_row(&refs_excluded_sql, [], |r| r.get(0)).unwrap_or(0);
+        let edges_excluded: u32 = conn
+            .query_row(&edges_excluded_sql, [], |r| r.get(0))
+            .unwrap_or(0);
+        let refs_excluded: u32 = conn
+            .query_row(&refs_excluded_sql, [], |r| r.get(0))
+            .unwrap_or(0);
         edges_excluded + refs_excluded
     };
 

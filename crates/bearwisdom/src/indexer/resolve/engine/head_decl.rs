@@ -248,7 +248,9 @@ pub(super) fn reroot_bare_head(
     let Some(head) = head_qname(arena, ty) else {
         return Receiver { ty, id };
     };
-    if head.contains('.') || lookup.by_qualified_name(&head).is_some() {
+    if super::support::index_qname_parent(&head).is_some()
+        || lookup.by_qualified_name(&head).is_some()
+    {
         return Receiver { ty, id };
     }
     let types = lookup.types_by_name(&head);
@@ -325,15 +327,14 @@ pub(super) fn bind_head_unique(
         return None;
     }
     let head = head_qname(arena, ty)?;
-    // Only QUALIFIED heads bind. A bare stored head is context-sensitive: it
-    // may be the owning declaration's generic parameter (`find(): T`), which
-    // must stay a `Class` for `rebind_class_params` to substitute — binding
-    // it to a same-named declaration kills substitution for every generic
-    // yield sharing the name. A dotted head is never a parameter.
-    if !head.contains('.') && !head.contains("::") {
+    let set = lookup.all_by_qualified_name(&head);
+    // Only QUALIFIED heads bind. Use indexed declaration identity rather than
+    // spelling a language's separator here: a qualified declaration's simple
+    // name differs from its full lookup key. A bare stored head may be the
+    // owning declaration's generic parameter and must stay context-sensitive.
+    if set.is_empty() || set.iter().all(|symbol| symbol.name == head) {
         return None;
     }
-    let set = lookup.all_by_qualified_name(&head);
     let mut only: Option<&Symbol> = None;
     for s in set.iter() {
         if !is_type_like_kind(&s.kind) {

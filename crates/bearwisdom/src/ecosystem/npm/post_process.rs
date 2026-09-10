@@ -281,7 +281,10 @@ fn requalify_named_type(
                     Some(id)
                 } else {
                     let new_base = arena.class(&format!("{prefix}{name}"));
-                    Some(arena.intern(Type::Apply { base: new_base, args }))
+                    Some(arena.intern(Type::Apply {
+                        base: new_base,
+                        args,
+                    }))
                 }
             }
             _ => None,
@@ -289,8 +292,9 @@ fn requalify_named_type(
         // A composite annotation (`const v: A & B`) requalifies arm by arm.
         // Every arm must requalify: a partial rewrite would silently drop the
         // arm that carries the members the walk is looking for.
-        Type::Intersection(arms) => requalify_arms(arena, &arms, prefix)
-            .map(|arms| arena.intern(Type::Intersection(arms))),
+        Type::Intersection(arms) => {
+            requalify_arms(arena, &arms, prefix).map(|arms| arena.intern(Type::Intersection(arms)))
+        }
         Type::Union(arms) => {
             requalify_arms(arena, &arms, prefix).map(|arms| arena.intern(Type::Union(arms)))
         }
@@ -306,7 +310,10 @@ fn requalify_named_type(
             if new_return == return_ {
                 Some(id)
             } else {
-                Some(arena.intern(Type::Function { params, return_: new_return }))
+                Some(arena.intern(Type::Function {
+                    params,
+                    return_: new_return,
+                }))
             }
         }
         _ => None,

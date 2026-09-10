@@ -5,7 +5,7 @@ use crate::types::{EdgeKind, SymbolKind};
 #[test]
 fn ocaml_profile_identity() {
     assert_eq!(OCAML_PROFILE.id, "ocaml");
-    assert!(OCAML_PROFILE.self_keywords.is_empty());
+    assert!(OCAML_PROFILE.receiver_spellings.is_empty());
 }
 
 #[test]

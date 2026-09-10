@@ -7,11 +7,12 @@
 // walk itself: turning a relative source module into the file paths it could
 // name (extension guesses, `/index` entries), and matching a bare source
 // against a symbol's file path when the source isn't a resolvable specifier
-// (Nim's `std/`/`pkg/` prefixes, a workspace-package barrel).
+// (an adapter-defined bare module spelling, a workspace-package barrel).
 // =============================================================================
 
 use crate::indexer::resolve::engine::contract::{SymbolInfo, SymbolLookup};
 use crate::indexer::resolve::engine::reexports::reexport_resolution;
+use crate::type_checker::profile::language_profile::SourceModulePathPolicy;
 use crate::types::EdgeKind;
 
 /// Resolve a relative re-export source to its declaring symbol by file path. The
@@ -29,13 +30,14 @@ pub(crate) fn resolve_relative_reexport(
     edge_kind: EdgeKind,
     kind_compatible: &dyn Fn(EdgeKind, &str) -> bool,
     strategy: &'static str,
+    path_policy: SourceModulePathPolicy,
 ) -> Option<SymbolInfo> {
     let base = relative_base(barrel_path, source_module)?;
     for sym in lookup.by_name(target_name) {
         if sym.name != target_name || !kind_compatible(edge_kind, &sym.kind) {
             continue;
         }
-        if relative_file_matches_base(&sym.file_path, &base) {
+        if relative_file_matches_base(&sym.file_path, &base, path_policy) {
             return Some(reexport_resolution(sym.id, strategy));
         }
     }
@@ -51,12 +53,13 @@ pub(crate) fn relative_reexport_candidates(
     lookup: &dyn SymbolLookup,
     barrel_path: &str,
     source_module: &str,
+    path_policy: SourceModulePathPolicy,
 ) -> Vec<String> {
     let Some(base) = relative_base(barrel_path, source_module) else {
         return Vec::new();
     };
     let mut out: Vec<String> = Vec::new();
-    for cand in extension_candidates(&base) {
+    for cand in (path_policy.relative_candidate_paths)(&base) {
         if !lookup.reexports_from(&cand).is_empty() {
             out.push(cand);
         }
@@ -85,39 +88,24 @@ pub(crate) fn relative_base(barrel_path: &str, source_module: &str) -> Option<St
     Some(out.join("/"))
 }
 
-/// The source-file path candidates for an extension-less `base`: the base
-/// verbatim (the specifier may already carry its own extension — Dart's
-/// `foo.dart` and any non-TS/JS source language), the base with each TS/JS
-/// extension appended, plus the `base/index.<ext>` directory entry.
-pub(crate) fn extension_candidates(base: &str) -> Vec<String> {
-    const EXTS: &[&str] = &[
-        "ts", "tsx", "js", "jsx", "mjs", "mts", "cts", "cjs", "svelte", "astro", "vue",
-    ];
-    let mut out: Vec<String> = Vec::with_capacity(EXTS.len() * 2 + 1);
-    out.push(base.to_string());
-    for ext in EXTS {
-        out.push(format!("{base}.{ext}"));
-    }
-    for ext in EXTS {
-        out.push(format!("{base}/index.{ext}"));
-    }
-    out
-}
-
-/// `true` when `file_path` is one of the source-extension / `/index` forms of
+/// `true` when `file_path` is one of the profile-supplied source-file forms of
 /// `base`. Both inputs are forward-slash normalized; the file matches when it
 /// equals a candidate or ends with `/<candidate>` (a suffix match, so a
 /// project-relative base resolves against a deeper indexed path).
-pub(crate) fn relative_file_matches_base(file_path: &str, base: &str) -> bool {
+pub(crate) fn relative_file_matches_base(
+    file_path: &str,
+    base: &str,
+    path_policy: SourceModulePathPolicy,
+) -> bool {
     let normalized = file_path.replace('\\', "/");
-    extension_candidates(base)
+    (path_policy.relative_candidate_paths)(base)
         .iter()
         .any(|cand| normalized == *cand || normalized.ends_with(&format!("/{cand}")))
 }
 
 /// The re-export barrels of the workspace package a bare `specifier` names —
-/// the files in that package whose basename stem is one of `stems` (the
-/// language's `reexport_barrel_stems`: `index` for JS/TS, `lib`/`main` for Rust)
+/// the files in that package whose basename stem is one of the profile's
+/// `reexport_barrel_stems`
 /// and whose `reexports_from` is non-empty. Empty when `specifier` is not a
 /// workspace package, `stems` is empty, or the package has no re-export barrel.
 pub(crate) fn workspace_pkg_barrels(
@@ -184,7 +172,7 @@ fn path_basename_stem_in(file_path: &str, stems: &[&str]) -> bool {
 /// Match a re-export's bare source module to its declaring symbol by file path
 /// when the source module isn't a resolvable file. Accepts only when exactly one
 /// by-name candidate's file path matches the module — an ambiguous match is no
-/// match. Handles Nim-style `std/`/`pkg/` prefixes and `.nim` extensions.
+/// match. Source-module spelling is supplied by the profile adapter.
 pub(crate) fn resolve_reexport_by_matching_file(
     lookup: &dyn SymbolLookup,
     source_module: &str,
@@ -192,11 +180,12 @@ pub(crate) fn resolve_reexport_by_matching_file(
     edge_kind: EdgeKind,
     kind_compatible: &dyn Fn(EdgeKind, &str) -> bool,
     strategy: &'static str,
+    path_policy: SourceModulePathPolicy,
 ) -> Option<SymbolInfo> {
     let mut matches = lookup.by_name(target_name).into_iter().filter(|sym| {
         sym.name == target_name
             && kind_compatible(edge_kind, &sym.kind)
-            && reexport_file_path_matches_module(&sym.file_path, source_module)
+            && (path_policy.bare_module_matches_file)(&sym.file_path, source_module)
     });
     let first = matches.next()?;
     let first_file = first.file_path.as_ref();
@@ -204,30 +193,6 @@ pub(crate) fn resolve_reexport_by_matching_file(
         return None;
     }
     Some(reexport_resolution(first.id, strategy))
-}
-
-/// File-path matcher for re-export module resolution. Handles Nim-style
-/// `std/`/`pkg/` prefixes and `.nim` extension matching.
-fn reexport_file_path_matches_module(file_path: &str, source_module: &str) -> bool {
-    let trimmed = source_module.trim_matches('"').trim_matches('\'').trim();
-    let stripped = trimmed
-        .strip_prefix("std/")
-        .or_else(|| trimmed.strip_prefix("pkg/"))
-        .unwrap_or(trimmed)
-        .replace('\\', "/");
-    let module = stripped.trim_matches('/');
-    if module.is_empty() {
-        return false;
-    }
-    let normalized = file_path.replace('\\', "/");
-    let candidates = if module.ends_with(".nim") {
-        vec![module.to_string()]
-    } else {
-        vec![format!("{module}.nim"), format!("{module}/mod.nim")]
-    };
-    candidates
-        .iter()
-        .any(|candidate| normalized == *candidate || normalized.ends_with(&format!("/{candidate}")))
 }
 
 #[cfg(test)]

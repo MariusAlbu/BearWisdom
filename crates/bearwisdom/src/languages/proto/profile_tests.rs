@@ -39,4 +39,3 @@ fn proto_type_ref_accepts_message_enum_kinds() {
         SymbolKind::Function
     ));
 }
-

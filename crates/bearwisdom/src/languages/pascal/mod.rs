@@ -9,10 +9,10 @@ mod include_directives;
 pub mod keywords;
 pub(crate) mod main_unit;
 mod normalise;
-mod qualify;
-mod refs;
 mod predicates;
 pub(crate) mod profile;
+mod qualify;
+mod refs;
 pub use profile::PASCAL_PROFILE;
 
 #[cfg(test)]
@@ -73,6 +73,14 @@ impl LanguagePlugin for PascalPlugin {
         keywords::KEYWORDS
     }
 
+    fn signature_type_application(&self, text: &str) -> (String, Vec<String>) {
+        crate::languages::angle_type_application(text)
+    }
+
+    fn signature_type_head<'a>(&self, text: &'a str) -> &'a str {
+        crate::languages::angle_type_head(text)
+    }
+
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
@@ -95,7 +103,11 @@ impl LanguagePlugin for PascalPlugin {
     /// unit's own name, for siblings spliced into the same unit — into the
     /// fragment's wildcard scope. See `main_unit` for the cross-file state
     /// this reads.
-    fn extra_wildcard_imports(&self, state: &PluginStateBag, file: &ParsedFile) -> Vec<ImportEntry> {
+    fn extra_wildcard_imports(
+        &self,
+        state: &PluginStateBag,
+        file: &ParsedFile,
+    ) -> Vec<ImportEntry> {
         let Some(project_state) = state.get::<main_unit::PascalProjectState>() else {
             return Vec::new();
         };

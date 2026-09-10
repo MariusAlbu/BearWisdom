@@ -2,17 +2,25 @@ use super::*;
 use std::sync::Arc;
 
 use crate::indexer::resolve::engine::contract::{
-    ImportEntry, FileContext, Symbol, SymbolLookup, SymbolSet,
+    FileContext, ImportEntry, Symbol, SymbolLookup, SymbolSet,
 };
 use crate::indexer::resolve::engine::testkit::{accept_any, call_ref, ref_ctx, source_symbol};
 use crate::indexer::resolve::engine::{BinderContext, LookupResult};
-use crate::type_checker::profile::language_profile::{DEFAULT_PROFILE, LanguageProfile};
+use crate::type_checker::profile::language_profile::{LanguageProfile, DEFAULT_PROFILE};
 
 static WS_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
     imports: crate::type_checker::profile::language_profile::ImportAxes {
         workspace_packages: true,
         reexport_barrel_stems: &["index"],
+        module_prefix_rewrites:
+            crate::type_checker::profile::language_profile::ModulePrefixRewrites::On {
+                module_path_adapter: Some(crate::ecosystem::npm::node_builtin::module_path_match),
+                candidate_prefixes:
+                    crate::ecosystem::npm::module_specifier::module_prefix_candidates,
+                declines_directory_match:
+                    crate::ecosystem::npm::module_specifier::declines_directory_match,
+            },
         ..DEFAULT_PROFILE.imports
     },
     ..DEFAULT_PROFILE
@@ -42,11 +50,7 @@ impl WsLookup {
         }
     }
 
-    fn with_reexports(
-        mut self,
-        barrel: &'static str,
-        entries: Vec<(&str, &str)>,
-    ) -> Self {
+    fn with_reexports(mut self, barrel: &'static str, entries: Vec<(&str, &str)>) -> Self {
         self.reexports.push((
             barrel,
             entries
@@ -203,18 +207,26 @@ fn import(name: &str, module: &str) -> ImportEntry {
 
 #[test]
 fn binds_named_import_from_workspace_package() {
-    let lookup = WsLookup::new()
-        .with_pkg("@org/utils", 1)
-        .with_sym(1, 42, "createSlug", "function", "packages/utils/src/index.ts");
+    let lookup = WsLookup::new().with_pkg("@org/utils", 1).with_sym(
+        1,
+        42,
+        "createSlug",
+        "function",
+        "packages/utils/src/index.ts",
+    );
     let imports = vec![import("createSlug", "@org/utils")];
     assert_eq!(resolve(&lookup, "createSlug", imports), Some(42));
 }
 
 #[test]
 fn declines_when_gate_is_off() {
-    let lookup = WsLookup::new()
-        .with_pkg("@org/utils", 1)
-        .with_sym(1, 42, "createSlug", "function", "packages/utils/src/index.ts");
+    let lookup = WsLookup::new().with_pkg("@org/utils", 1).with_sym(
+        1,
+        42,
+        "createSlug",
+        "function",
+        "packages/utils/src/index.ts",
+    );
     let imports = vec![import("createSlug", "@org/utils")];
     let r = call_ref("createSlug");
     let s = source_symbol("caller");
@@ -234,14 +246,18 @@ fn declines_when_gate_is_off() {
         kind: &kind,
         profile: &DEFAULT_PROFILE,
     };
-    assert!(matches!(WorkspacePackageRule.apply(&ctx), LookupResult::Pass));
+    assert!(matches!(
+        WorkspacePackageRule.apply(&ctx),
+        LookupResult::Pass
+    ));
 }
 
 #[test]
 fn declines_relative_specifier() {
-    let lookup = WsLookup::new()
-        .with_pkg("./utils", 1)
-        .with_sym(1, 5, "fn1", "function", "src/utils.ts");
+    let lookup =
+        WsLookup::new()
+            .with_pkg("./utils", 1)
+            .with_sym(1, 5, "fn1", "function", "src/utils.ts");
     // `./utils` is relative — must not bind via workspace_package path.
     let imports = vec![import("fn1", "./utils")];
     assert_eq!(resolve(&lookup, "fn1", imports), None);
@@ -249,9 +265,13 @@ fn declines_relative_specifier() {
 
 #[test]
 fn declines_when_no_import_matches_target() {
-    let lookup = WsLookup::new()
-        .with_pkg("@org/utils", 1)
-        .with_sym(1, 99, "other", "function", "packages/utils/src/index.ts");
+    let lookup = WsLookup::new().with_pkg("@org/utils", 1).with_sym(
+        1,
+        99,
+        "other",
+        "function",
+        "packages/utils/src/index.ts",
+    );
     let imports = vec![import("createSlug", "@org/utils")];
     // Target is `other` but import only brings `createSlug` — no specifier found.
     assert_eq!(resolve(&lookup, "other", imports), None);

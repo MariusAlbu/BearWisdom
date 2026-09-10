@@ -144,12 +144,9 @@ pub(crate) fn member_from_mapped_literal_key(
         AliasTargetIds::Union(branches) => branches.clone(),
         _ => return None,
     };
-    let admits = branches.iter().any(|&b| {
-        arena
-            .format_type(b)
-            .trim_matches(|c| c == '\'' || c == '"')
-            == member
-    });
+    let admits = branches
+        .iter()
+        .any(|&b| arena.format_type(b).trim_matches(|c| c == '\'' || c == '"') == member);
     if !admits {
         return None;
     }

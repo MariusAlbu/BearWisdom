@@ -54,13 +54,20 @@ fn setup_db() -> Database {
 fn flags_drained_name_with_compatible_declaration() {
     let db = setup_db();
     let findings = drain_audit(&db).unwrap();
-    assert_eq!(findings.len(), 1, "only FreeAndNil should flag: {findings:?}");
+    assert_eq!(
+        findings.len(),
+        1,
+        "only FreeAndNil should flag: {findings:?}"
+    );
     let f = &findings[0];
     assert_eq!(f.target_name, "FreeAndNil");
     assert_eq!(f.drained_count, 1);
     assert_eq!(f.total_matches, 1);
     assert_eq!(f.matches[0].origin, "internal");
-    assert!(!f.matches[0].case_exact, "declared lowercase, drained mixed-case");
+    assert!(
+        !f.matches[0].case_exact,
+        "declared lowercase, drained mixed-case"
+    );
 }
 
 #[test]

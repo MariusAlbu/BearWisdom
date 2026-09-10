@@ -12,6 +12,9 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::indexer::resolve::engine::contract::{Symbol, SymbolLookup};
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
+use crate::type_checker::profile::language_policy::{
+    callback_argument_is_compatible, callback_argument_policy, CallbackArgumentPolicy,
+};
 use crate::type_checker::profile::language_profile::DelegateShape;
 use crate::types::CallArg;
 
@@ -71,81 +74,15 @@ pub(crate) fn seed_lambda_params(
     );
 }
 
-/// Callback syntax the selected formal admits. Ruby declaration contracts must
-/// retain this distinction: an attached `&block` is not an ordinary proc
-/// argument, and an ordinary proc is not supplied by a trailing block.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum CallbackArgPolicy {
-    Any,
-    TrailingBlockOnly,
-    PositionalOnly,
-}
-
-/// The canonical RBS subset has one attached block. RBI marks attached blocks
-/// as `&name:` and ordinary proc formals as `^name:`. This is deliberately
-/// declaration and position based, never inferred from the parameter's spelling.
-pub(super) fn callback_arg_policy(callee: &Symbol, index: usize) -> CallbackArgPolicy {
-    let extension = callee.file_path.rsplit('.').next();
-    if extension.is_some_and(|extension| extension.eq_ignore_ascii_case("rbs")) {
-        return CallbackArgPolicy::TrailingBlockOnly;
-    }
-    if !extension.is_some_and(|extension| extension.eq_ignore_ascii_case("rbi")) {
-        return CallbackArgPolicy::Any;
-    }
-    match rbi_parameter(callee.signature.as_deref(), index)
-        .and_then(|parameter| parameter.trim_start().as_bytes().first().copied())
-    {
-        Some(b'^') => CallbackArgPolicy::PositionalOnly,
-        Some(b'&') => CallbackArgPolicy::TrailingBlockOnly,
-        // An unmarked, stale, or malformed RBI signature predates positional
-        // Proc support and cannot authorize ordinary-lambda seeding.
-        _ => CallbackArgPolicy::TrailingBlockOnly,
-    }
-}
-
-/// Return one top-level parameter from the internal canonical signature. The
-/// function callback's own `(A, B) -> R` parentheses must not split its slot.
-fn rbi_parameter(signature: Option<&str>, wanted: usize) -> Option<&str> {
-    let signature = signature?;
-    let open = signature.find('(')?;
-    let mut depth = 0usize;
-    let mut start = open + 1;
-    let bytes = signature.as_bytes();
-    let mut index = 0usize;
-    for offset in open..bytes.len() {
-        match bytes[offset] {
-            b'(' => depth += 1,
-            b')' => {
-                depth = depth.checked_sub(1)?;
-                if depth == 0 {
-                    return (index == wanted).then(|| signature[start..offset].trim());
-                }
-            }
-            b',' if depth == 1 => {
-                if index == wanted {
-                    return Some(signature[start..offset].trim());
-                }
-                index += 1;
-                start = offset + 1;
-            }
-            _ => {}
-        }
-    }
-    None
+/// Callback syntax the selected formal admits. The language policy owns source
+/// spellings and declaration-file conventions; the engine keeps provenance and
+/// source-location rules generic.
+pub(super) fn callback_arg_policy(callee: &Symbol, index: usize) -> CallbackArgumentPolicy {
+    callback_argument_policy(&callee.file_path, callee.signature.as_deref(), index)
 }
 
 pub(super) fn callback_arg_is_compatible(callee: &Symbol, index: usize, arg: &CallArg) -> bool {
-    match callback_arg_policy(callee, index) {
-        CallbackArgPolicy::Any => matches!(
-            arg,
-            CallArg::Lambda { .. } | CallArg::LambdaAt { .. } | CallArg::TrailingBlockAt { .. }
-        ),
-        CallbackArgPolicy::TrailingBlockOnly => matches!(arg, CallArg::TrailingBlockAt { .. }),
-        // RBI positional procs need the declaration-addressed identity carried
-        // by `LambdaAt`; neither a legacy name cache nor an attached block can
-        // establish that identity.
-        CallbackArgPolicy::PositionalOnly => matches!(arg, CallArg::LambdaAt { .. }),
-    }
+    callback_argument_is_compatible(callback_arg_policy(callee, index), arg)
 }
 
 /// Keep a concrete generic binding learned from the receiver unless argument
@@ -186,13 +123,13 @@ pub(super) fn seed_patterns(
         patterns,
         open,
         delegate_wrappers,
-        &|_| CallbackArgPolicy::Any,
+        &|_| CallbackArgumentPolicy::Any,
         true,
     );
 }
 
 /// Seed selected-callee callback patterns while preserving contract-specific
-/// provenance requirements. A strict Ruby callback contract may only be
+/// provenance requirements. A strict declaration callback policy may only be
 /// seeded once its callee is selected directly or uniquely; a display-only
 /// first winner is not enough evidence to write a contextual binding.
 pub(super) fn seed_patterns_for_callee(
@@ -224,7 +161,7 @@ fn seed_patterns_with_policy(
     patterns: &[TypeId],
     open: &FxHashSet<String>,
     delegate_wrappers: &[(&str, DelegateShape)],
-    policy: &dyn Fn(usize) -> CallbackArgPolicy,
+    policy: &dyn Fn(usize) -> CallbackArgumentPolicy,
     selected_callee_proven: bool,
 ) {
     for (i, arg) in args.iter().enumerate() {
@@ -235,7 +172,7 @@ fn seed_patterns_with_policy(
         let policy = policy(i);
         if !is_callback
             || !callback_arg_is_compatible_for_policy(policy, arg)
-            || (policy != CallbackArgPolicy::Any && !selected_callee_proven)
+            || (policy != CallbackArgumentPolicy::Any && !selected_callee_proven)
         {
             continue;
         }
@@ -272,12 +209,8 @@ fn seed_patterns_with_policy(
     }
 }
 
-fn callback_arg_is_compatible_for_policy(policy: CallbackArgPolicy, arg: &CallArg) -> bool {
-    match policy {
-        CallbackArgPolicy::Any => true,
-        CallbackArgPolicy::TrailingBlockOnly => matches!(arg, CallArg::TrailingBlockAt { .. }),
-        CallbackArgPolicy::PositionalOnly => matches!(arg, CallArg::LambdaAt { .. }),
-    }
+fn callback_arg_is_compatible_for_policy(policy: CallbackArgumentPolicy, arg: &CallArg) -> bool {
+    callback_argument_is_compatible(policy, arg)
 }
 
 /// The PARAMETER types of a callback-shaped callee parameter: an inline
@@ -328,11 +261,14 @@ pub(super) fn delegate_wrapper_shape(
 ) -> Option<DelegateShape> {
     delegate_wrappers
         .iter()
-        .find_map(|(name, shape)| (name.contains('.') && *name == head).then_some(*shape))
+        .find_map(|(name, shape)| {
+            (super::support::index_qname_parent(name).is_some() && *name == head).then_some(*shape)
+        })
         .or_else(|| {
-            let simple = head.rsplit('.').next().unwrap_or(head);
+            let simple = super::support::index_qname_leaf(head);
             delegate_wrappers.iter().find_map(|(name, shape)| {
-                (!name.contains('.') && *name == simple).then_some(*shape)
+                (super::support::index_qname_parent(name).is_none() && *name == simple)
+                    .then_some(*shape)
             })
         })
 }

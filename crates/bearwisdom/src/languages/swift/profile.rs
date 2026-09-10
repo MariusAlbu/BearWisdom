@@ -69,7 +69,11 @@ pub const SWIFT_PROFILE: LanguageProfile = LanguageProfile {
     id: "swift",
     qname_separator: ".",
     declaration_merging: crate::type_checker::profile::language_profile::MergeScope::None,
-    self_keywords: &["self", "Self", "super"],
+    receiver_spellings: &[
+        crate::type_checker::profile::language_profile::ReceiverSpelling::enclosing("self", "."),
+        crate::type_checker::profile::language_profile::ReceiverSpelling::enclosing("Self", "."),
+        crate::type_checker::profile::language_profile::ReceiverSpelling::parent("super", "."),
+    ],
     supertype_discovery: SupertypeDiscovery::Explicit,
     ancestor_order: crate::type_checker::profile::language_profile::AncestorOrder::Bfs,
     members_can_be_external: true,
@@ -100,7 +104,9 @@ pub const SWIFT_PROFILE: LanguageProfile = LanguageProfile {
         relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
         external_by_import: None,
         module_scope:
-            crate::type_checker::profile::language_profile::ModuleScope::SourcesTargetSubtree,
+            crate::type_checker::profile::language_profile::ModuleScope::SourcesTargetSubtree {
+                roots: &["Sources", "Tests"],
+            },
         // Swift has no `namespace` node — a declaration's qname never carries its
         // module as a prefix, so `QnameUnder` can never match a whole-module
         // import. `Foundation`/`UIKit` externals are indexed one file per module

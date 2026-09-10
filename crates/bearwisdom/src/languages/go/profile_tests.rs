@@ -29,8 +29,8 @@ fn structural_discovery_is_set() {
 }
 
 #[test]
-fn no_self_keywords_or_decorator_syntax() {
-    assert!(GO_PROFILE.self_keywords.is_empty());
+fn no_receiver_spellings_or_decorator_syntax() {
+    assert!(GO_PROFILE.receiver_spellings.is_empty());
     assert!(GO_PROFILE.decorator_syntax.is_none());
 }
 

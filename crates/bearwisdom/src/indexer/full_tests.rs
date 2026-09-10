@@ -270,8 +270,8 @@ fn vendor_scan_survives_multibyte_char_at_boundary() {
     assert!(!src.is_char_boundary(4096));
 
     // Both content-scan helpers must accept this without panicking.
-    let _ = super::is_c_vendored_file("c", "src/x.c", &src);
-    let _ = super::is_generated_platform_header("c", &src);
+    let _ = super::is_vendored_source_file("c", "src/x.c", &src);
+    let _ = super::is_generated_source_file("c", &src);
 }
 
 #[test]
@@ -279,8 +279,19 @@ fn vendor_scan_on_short_content_does_not_panic() {
     // Content shorter than the 4 KiB cutoff: `.min(len)` returns len, so
     // no clamping needed — but the char-boundary walk must still handle
     // the no-op case.
-    let _ = super::is_c_vendored_file("c", "src/x.c", "int main() { return 0; }");
-    let _ = super::is_generated_platform_header("c", "int main() { return 0; }");
+    let _ = super::is_vendored_source_file("c", "src/x.c", "int main() { return 0; }");
+    let _ = super::is_generated_source_file("c", "int main() { return 0; }");
+}
+
+#[test]
+fn non_c_language_cannot_admit_c_source_markers() {
+    let generated = "File created by MIDL compiler";
+    assert!(!super::is_generated_source_file("rust", generated));
+    assert!(!super::is_vendored_source_file(
+        "rust",
+        "vendor/native.h",
+        "Sean Barrett"
+    ));
 }
 
 fn mk_pypi_root(module_path: &str) -> crate::ecosystem::externals::ExternalDepRoot {

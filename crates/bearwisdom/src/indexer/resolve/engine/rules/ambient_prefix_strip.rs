@@ -11,7 +11,7 @@
 // returns Pass immediately so the rung is free for every non-opted language.
 // =============================================================================
 
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 
 pub struct AmbientPrefixStripRule;
 
@@ -25,7 +25,11 @@ impl LookupRule for AmbientPrefixStripRule {
             return LookupResult::Pass;
         }
         let target = ctx.target();
-        let Some(leaf) = strip_ambient_prefix(target, ctx.profile.ambient_namespace_prefixes) else {
+        let Some(leaf) = strip_ambient_prefix(
+            target,
+            ctx.profile.ambient_namespace_prefixes,
+            ctx.profile.qname_separator,
+        ) else {
             return LookupResult::Pass;
         };
         super::ambient_scope::resolve_ambient_named(ctx, leaf, "ambient_prefix_strip")
@@ -35,10 +39,17 @@ impl LookupRule for AmbientPrefixStripRule {
 /// Strip a leading `{prefix}.` when `prefix` is one of `ambient_prefixes`.
 /// Returns the stripped leaf, or `None` when no prefix matches. Only strips
 /// when the remainder after the dot is non-empty.
-fn strip_ambient_prefix<'t>(target: &'t str, ambient_prefixes: &[&str]) -> Option<&'t str> {
+fn strip_ambient_prefix<'t>(
+    target: &'t str,
+    ambient_prefixes: &[&str],
+    qname_separator: &str,
+) -> Option<&'t str> {
+    if qname_separator.is_empty() {
+        return None;
+    }
     for prefix in ambient_prefixes {
         if let Some(rest) = target.strip_prefix(prefix) {
-            if let Some(after) = rest.strip_prefix('.') {
+            if let Some(after) = rest.strip_prefix(qname_separator) {
                 if !after.is_empty() {
                     return Some(after);
                 }

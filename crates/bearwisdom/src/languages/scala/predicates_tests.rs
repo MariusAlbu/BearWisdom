@@ -24,8 +24,14 @@ fn manifest_declared_group_id_classifies_external() {
         ManifestKind::Maven,
         &["com.typesafe.akka", "org.typelevel", "dev.zio"],
     );
-    assert!(is_manifest_jvm_external(&ctx, "com.typesafe.akka.actor.Actor"));
-    assert!(is_manifest_jvm_external(&ctx, "org.typelevel.cats.effect.IO"));
+    assert!(is_manifest_jvm_external(
+        &ctx,
+        "com.typesafe.akka.actor.Actor"
+    ));
+    assert!(is_manifest_jvm_external(
+        &ctx,
+        "org.typelevel.cats.effect.IO"
+    ));
     assert!(is_manifest_jvm_external(&ctx, "dev.zio.ZIO"));
 
     // Gradle path is equivalent.
@@ -49,10 +55,16 @@ fn group_id_without_manifest_is_not_external() {
 #[test]
 fn platform_roots_still_classify() {
     // Scala + JVM platform substrate — no manifest needed.
-    assert!(is_external_scala_namespace("scala.collection.immutable.List", None));
+    assert!(is_external_scala_namespace(
+        "scala.collection.immutable.List",
+        None
+    ));
     assert!(is_external_scala_namespace("java.util.List", None));
     assert!(is_external_scala_namespace("javax.inject.Inject", None));
-    assert!(is_external_scala_namespace("jakarta.persistence.Entity", None));
+    assert!(is_external_scala_namespace(
+        "jakarta.persistence.Entity",
+        None
+    ));
 }
 
 #[test]

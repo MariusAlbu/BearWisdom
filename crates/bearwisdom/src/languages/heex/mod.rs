@@ -53,5 +53,4 @@ impl LanguagePlugin for HeexPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::HEEX_PROFILE)
     }
-
 }

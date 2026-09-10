@@ -15,6 +15,7 @@ use crate::indexer::resolve::engine::contract::{Symbol, SymbolLookup};
 use crate::type_checker::core::types::{TypeArena, TypeId};
 
 use super::chain::{apply_args, head_qname};
+use super::support::index_qname_parent;
 
 /// Upper bound on supertype-chain climbing when composing generic arguments.
 const MAX_SUPERTYPE_DEPTH: usize = 8;
@@ -104,7 +105,7 @@ pub(crate) fn substitute_supertype_args(
         return yielded;
     };
     // The member's declaring type qname is its own qname minus the final segment.
-    let Some((decl_head, _)) = member.qualified_name.rsplit_once('.') else {
+    let Some(decl_head) = index_qname_parent(&member.qualified_name) else {
         return yielded;
     };
     if decl_head == recv_head {

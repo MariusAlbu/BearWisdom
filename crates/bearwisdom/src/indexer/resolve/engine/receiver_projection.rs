@@ -54,7 +54,7 @@ pub(super) fn project_with_borrow(
             }
             return (Receiver::untyped(recv.ty), None);
         }
-        let expanded = expand_receiver(recv, lookup, arena, file);
+        let expanded = expand_receiver(recv, lookup, arena, file, Some(profile));
         if expanded.ty != recv.ty {
             recv = expanded;
             continue;

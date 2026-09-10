@@ -38,14 +38,18 @@ fn canonical_key(root: &Path) -> PathBuf {
 /// Record the enabled feature set for one discovered crate root. Replaces any
 /// prior entry for the same root so a re-index reflects the current manifests.
 pub(super) fn register_root_features(root: &Path, features: Vec<String>) {
-    let mut guard = root_features_map().lock().expect("cargo feature map poisoned");
+    let mut guard = root_features_map()
+        .lock()
+        .expect("cargo feature map poisoned");
     guard.insert(canonical_key(root), features);
 }
 
 /// Enabled feature set for a crate root, or an empty vec when none was
 /// registered (FAIL OPEN — the walk descends every module).
 pub(super) fn enabled_features_for_root(root: &Path) -> Vec<String> {
-    let guard = root_features_map().lock().expect("cargo feature map poisoned");
+    let guard = root_features_map()
+        .lock()
+        .expect("cargo feature map poisoned");
     guard.get(&canonical_key(root)).cloned().unwrap_or_default()
 }
 
@@ -123,15 +127,16 @@ pub(super) fn parse_dependency_features(content: &str) -> Vec<(String, Vec<Strin
 
     let mut in_dep_section = false;
 
-    let flush_subtable =
-        |name: &mut Option<String>, feats: &mut Vec<String>, out: &mut Vec<(String, Vec<String>)>| {
-            if let Some(n) = name.take() {
-                if !feats.is_empty() {
-                    out.push((n, std::mem::take(feats)));
-                }
+    let flush_subtable = |name: &mut Option<String>,
+                          feats: &mut Vec<String>,
+                          out: &mut Vec<(String, Vec<String>)>| {
+        if let Some(n) = name.take() {
+            if !feats.is_empty() {
+                out.push((n, std::mem::take(feats)));
             }
-            feats.clear();
-        };
+        }
+        feats.clear();
+    };
 
     for raw in content.lines() {
         let trimmed = raw.trim();

@@ -423,8 +423,8 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.is_external_name(name, language)
     }
 
-    fn is_declared_dependency(&self, package_id: Option<i64>, spec: &str) -> bool {
-        self.tree.is_declared_dependency(package_id, spec)
+    fn is_declared_dependency(&self, package_id: Option<i64>, language: &str, spec: &str) -> bool {
+        self.tree.is_declared_dependency(package_id, language, spec)
     }
 
     fn include_reaches(&self, source_file: &str, candidate_file: &str) -> bool {
@@ -487,16 +487,16 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.is_workspace_declared_name(name)
     }
 
-    fn resolve_path_alias(&self, package_id: Option<i64>, specifier: &str) -> Option<String> {
-        self.tree.resolve_path_alias(package_id, specifier)
+    fn resolve_module_alias(&self, package_id: Option<i64>, specifier: &str) -> Option<String> {
+        self.tree.resolve_module_alias(package_id, specifier)
     }
 
     fn implicit_wildcard_namespaces(&self, package_id: Option<i64>) -> &[String] {
         self.tree.implicit_wildcard_namespaces(package_id)
     }
 
-    fn dep_rename(&self, consumer_pkg: Option<i64>, alias: &str) -> Option<&str> {
-        self.tree.dep_rename(consumer_pkg, alias)
+    fn resolve_package_alias(&self, consumer_pkg: Option<i64>, alias: &str) -> Option<&str> {
+        self.tree.resolve_package_alias(consumer_pkg, alias)
     }
 
     fn package_id_for_file(&self, file_path: &str) -> Option<i64> {

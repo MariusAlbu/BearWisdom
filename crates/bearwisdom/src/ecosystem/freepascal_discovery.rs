@@ -180,8 +180,11 @@ pub(crate) fn discover_freepascal_roots() -> Vec<ExternalDepRoot> {
 /// Listed in fallback order — first match wins.
 pub(crate) fn rtl_host_targets() -> &'static [&'static str] {
     if cfg!(target_os = "windows") {
-        if cfg!(target_pointer_width = "64") { &["win64", "win32", "win"] }
-        else { &["win32", "win"] }
+        if cfg!(target_pointer_width = "64") {
+            &["win64", "win32", "win"]
+        } else {
+            &["win32", "win"]
+        }
     } else if cfg!(target_os = "linux") {
         &["linux", "unix"]
     } else if cfg!(target_os = "macos") {
@@ -213,8 +216,12 @@ pub(crate) fn shared_rtl_dirs(target_dir: &Path) -> Vec<String> {
     };
     let mut dirs = Vec::new();
     for line in content.lines() {
-        let Some((_key, value)) = line.trim().split_once('=') else { continue };
-        let rel = value.strip_prefix("../").or_else(|| value.strip_prefix("$(RTL)/"));
+        let Some((_key, value)) = line.trim().split_once('=') else {
+            continue;
+        };
+        let rel = value
+            .strip_prefix("../")
+            .or_else(|| value.strip_prefix("$(RTL)/"));
         let Some(rel) = rel else { continue };
         if rel.is_empty() || rel.contains(['/', '\\']) {
             continue;
@@ -227,7 +234,9 @@ pub(crate) fn shared_rtl_dirs(target_dir: &Path) -> Vec<String> {
 }
 
 pub(crate) fn first_subdir(dir: &Path) -> Option<PathBuf> {
-    if !dir.is_dir() { return None }
+    if !dir.is_dir() {
+        return None;
+    }
     let mut entries: Vec<PathBuf> = std::fs::read_dir(dir)
         .ok()?
         .flatten()
@@ -242,18 +251,28 @@ pub(crate) fn lazarus_install_root() -> Option<PathBuf> {
     // Explicit override.
     if let Ok(val) = std::env::var("BEARWISDOM_LAZARUS_DIR") {
         let p = PathBuf::from(val);
-        if p.is_dir() { return Some(p) }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
     // Standard Lazarus env (set by the IDE installer).
     if let Ok(val) = std::env::var("LAZARUS_DIR") {
         let p = PathBuf::from(val);
-        if p.is_dir() { return Some(p) }
+        if p.is_dir() {
+            return Some(p);
+        }
     }
 
     // Scoop install on Windows (most common dev path on this user's machine).
     if let Some(home) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")) {
-        let scoop = PathBuf::from(home).join("scoop").join("apps").join("lazarus").join("current");
-        if scoop.is_dir() { return Some(scoop) }
+        let scoop = PathBuf::from(home)
+            .join("scoop")
+            .join("apps")
+            .join("lazarus")
+            .join("current");
+        if scoop.is_dir() {
+            return Some(scoop);
+        }
     }
 
     // Standard install paths.
@@ -322,7 +341,10 @@ pub(crate) fn is_platform_excluded(pkg_name: &str) -> bool {
         return !cfg!(target_os = "macos");
     }
     // X11 / GTK bindings: only useful on Linux/BSD.
-    if matches!(pkg_name, "x11" | "gtk1" | "gtk2" | "fpgtk" | "gnome1" | "ggi" | "svgalib" | "ptc") {
+    if matches!(
+        pkg_name,
+        "x11" | "gtk1" | "gtk2" | "fpgtk" | "gnome1" | "ggi" | "svgalib" | "ptc"
+    ) {
         return !cfg!(target_os = "linux") && !cfg!(target_os = "freebsd");
     }
     // Win32 / Win CE bindings: only useful on Windows.
@@ -330,8 +352,20 @@ pub(crate) fn is_platform_excluded(pkg_name: &str) -> bool {
         return !cfg!(target_os = "windows");
     }
     // AROS / AmigaOS / MorphOS / Palm / DOS units: never relevant on a modern host.
-    if matches!(pkg_name, "arosunits" | "ami-extra" | "amunits" | "os2units" | "os4units"
-        | "morphunits" | "tosunits" | "palmunits" | "libgbafpc" | "libndsfpc" | "libogcfpc") {
+    if matches!(
+        pkg_name,
+        "arosunits"
+            | "ami-extra"
+            | "amunits"
+            | "os2units"
+            | "os4units"
+            | "morphunits"
+            | "tosunits"
+            | "palmunits"
+            | "libgbafpc"
+            | "libndsfpc"
+            | "libogcfpc"
+    ) {
         return true;
     }
     false

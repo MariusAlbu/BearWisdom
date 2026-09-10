@@ -68,7 +68,11 @@ fn a_top_level_declaration_keeps_its_bare_qname() {
 fn a_flattened_member_keeps_scope_path_at_its_immediate_parent() {
     // SYM-002: scope_path == symbols[parent_index].qualified_name, even when
     // the qname is flattened past an inline-object property.
-    let syms = extract("interface Binding {\n  turbo: { createProject(): void };\n}\n", false).symbols;
+    let syms = extract(
+        "interface Binding {\n  turbo: { createProject(): void };\n}\n",
+        false,
+    )
+    .symbols;
     for s in &syms {
         if let Some(p) = s.parent_index {
             assert_eq!(

@@ -4,7 +4,7 @@ use crate::type_checker::profile::language_profile::{KindCompatibility, Supertyp
 #[test]
 fn lua_profile_identity() {
     assert_eq!(LUA_PROFILE.id, "lua");
-    assert_eq!(LUA_PROFILE.self_keywords, &["self"]);
+    assert_eq!(LUA_PROFILE.receiver_spellings, &["self"]);
 }
 
 #[test]

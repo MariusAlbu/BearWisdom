@@ -25,10 +25,25 @@ fn value_kinds_are_typed_bindings() {
 /// typed binding.
 #[test]
 fn type_and_value_kinds_are_disjoint() {
-    for kind in ["class", "struct", "interface", "enum", "trait", "object", "record"] {
+    for kind in [
+        "class",
+        "struct",
+        "interface",
+        "enum",
+        "trait",
+        "object",
+        "record",
+    ] {
         assert!(!is_value_kind(kind), "{kind} is a type kind");
     }
-    for kind in ["variable", "constant", "const", "field", "property", "parameter"] {
+    for kind in [
+        "variable",
+        "constant",
+        "const",
+        "field",
+        "property",
+        "parameter",
+    ] {
         assert!(!is_type_kind(kind), "{kind} is a value kind");
     }
 }

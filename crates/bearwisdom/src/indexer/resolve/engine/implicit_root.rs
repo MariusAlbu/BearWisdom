@@ -10,7 +10,7 @@ use crate::indexer::resolve::engine::contract::{Symbol, SymbolLookup};
 use crate::type_checker::core::types::TypeArena;
 use crate::type_checker::profile::language_profile::LanguageProfile;
 
-use super::chain::{lookup_member, lookup_member_by_id, lookup_member_on, Receiver};
+use super::chain::{lookup_member, lookup_member_by_id, lookup_member_on_with_profile, Receiver};
 
 /// Resolve `member` on `recv` — the declared member walk, closed at the
 /// language's implicit root types (`profile.implicit_root_types`).
@@ -50,12 +50,13 @@ pub(super) fn walk_member(
         }
     }
     Ok(
-        lookup_member_on(lookup, arena, recv, member, &|_kind| true).or_else(|| {
-            if recv.id.is_none() {
-                return None;
-            }
-            member_on_implicit_root(lookup, member, profile.implicit_root_types)
-        }),
+        lookup_member_on_with_profile(lookup, arena, recv, member, &|_kind| true, Some(profile))
+            .or_else(|| {
+                if recv.id.is_none() {
+                    return None;
+                }
+                member_on_implicit_root(lookup, member, profile.implicit_root_types)
+            }),
     )
 }
 
@@ -101,7 +102,7 @@ fn root_declarations<'a>(lookup: &'a dyn SymbolLookup, root: &str) -> Vec<&'a Sy
     cands.sort_by_key(|s| {
         (
             !lookup.is_external_file(&s.file_path),
-            !s.qualified_name.contains('.'),
+            super::support::index_qname_parent(&s.qualified_name).is_none(),
         )
     });
     cands

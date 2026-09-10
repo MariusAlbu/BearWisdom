@@ -12,7 +12,10 @@ fn erlang_profile_identity() {
 /// with `prefix` and ends with `suffix`.
 fn strip_quote_pair(spec: &NormSpec, s: &str) -> String {
     for (prefix, suffix) in spec.strip_sigils {
-        if let Some(inner) = s.strip_prefix(*prefix).and_then(|i| i.strip_suffix(*suffix)) {
+        if let Some(inner) = s
+            .strip_prefix(*prefix)
+            .and_then(|i| i.strip_suffix(*suffix))
+        {
             return inner.to_string();
         }
     }

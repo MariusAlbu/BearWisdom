@@ -94,7 +94,8 @@ fn cov_keyword_invocation_in_test_case_produces_calls() {
 fn group_control_keyword_not_emitted_as_call() {
     // `GROUP` opens a Robot Framework 7 named block — its label cell is data,
     // not a keyword call. The block body's real keyword still emits.
-    let src = "*** Test Cases ***\nSample\n    GROUP    Login flow\n        Log    Hello\n    END\n";
+    let src =
+        "*** Test Cases ***\nSample\n    GROUP    Login flow\n        Log    Hello\n    END\n";
     let r = extract::extract(src);
     let calls: Vec<&str> = r
         .refs

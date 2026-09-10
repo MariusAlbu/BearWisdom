@@ -26,7 +26,10 @@ fn passes_when_no_wildcard_builtins_configured() {
         kind: &kind,
         profile: &DEFAULT_PROFILE,
     };
-    assert!(matches!(WildcardBuiltinFoldRule.apply(&ctx), LookupResult::Pass));
+    assert!(matches!(
+        WildcardBuiltinFoldRule.apply(&ctx),
+        LookupResult::Pass
+    ));
 }
 
 #[test]
@@ -87,7 +90,10 @@ fn passes_when_target_does_not_match_any_builtin() {
         kind: &kind,
         profile: &p,
     };
-    assert!(matches!(WildcardBuiltinFoldRule.apply(&ctx), LookupResult::Pass));
+    assert!(matches!(
+        WildcardBuiltinFoldRule.apply(&ctx),
+        LookupResult::Pass
+    ));
 }
 
 #[test]
@@ -108,5 +114,8 @@ fn passes_when_fold_target_not_ambient() {
         kind: &kind,
         profile: &p,
     };
-    assert!(matches!(WildcardBuiltinFoldRule.apply(&ctx), LookupResult::Pass));
+    assert!(matches!(
+        WildcardBuiltinFoldRule.apply(&ctx),
+        LookupResult::Pass
+    ));
 }

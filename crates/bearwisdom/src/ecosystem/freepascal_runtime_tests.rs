@@ -11,21 +11,38 @@ fn make_lazarus_fixture(root: &std::path::Path) {
 
     fs::create_dir_all(root.join("components").join("codetools")).unwrap();
     fs::write(
-        root.join("components").join("codetools").join("codecache.pas"),
+        root.join("components")
+            .join("codetools")
+            .join("codecache.pas"),
         "unit CodeCache;\n",
     )
     .unwrap();
 
-    let win64 = root.join("fpc").join("3.2.2").join("source").join("rtl").join("win64");
+    let win64 = root
+        .join("fpc")
+        .join("3.2.2")
+        .join("source")
+        .join("rtl")
+        .join("win64");
     fs::create_dir_all(&win64).unwrap();
     fs::write(win64.join("system.pp"), "unit System;\n").unwrap();
     fs::write(win64.join("classes.pp"), "unit Classes;\n").unwrap();
 
-    let win32 = root.join("fpc").join("3.2.2").join("source").join("rtl").join("win32");
+    let win32 = root
+        .join("fpc")
+        .join("3.2.2")
+        .join("source")
+        .join("rtl")
+        .join("win32");
     fs::create_dir_all(&win32).unwrap();
     fs::write(win32.join("system.pp"), "unit System;\n").unwrap();
 
-    let objpas = root.join("fpc").join("3.2.2").join("source").join("rtl").join("objpas");
+    let objpas = root
+        .join("fpc")
+        .join("3.2.2")
+        .join("source")
+        .join("rtl")
+        .join("objpas");
     fs::create_dir_all(&objpas).unwrap();
     fs::write(objpas.join("classes.pp"), "unit Classes;\n").unwrap();
     fs::write(objpas.join("sysutils.pp"), "unit SysUtils;\n").unwrap();
@@ -66,10 +83,16 @@ fn discover_uses_explicit_dir_override() {
     let module_paths: std::collections::HashSet<String> =
         roots.iter().map(|r| r.module_path.clone()).collect();
     assert!(module_paths.contains("lcl"), "{module_paths:?}");
-    assert!(module_paths.contains("lazarus-components"), "{module_paths:?}");
+    assert!(
+        module_paths.contains("lazarus-components"),
+        "{module_paths:?}"
+    );
     assert!(module_paths.contains("fpc-rtl-objpas"), "{module_paths:?}");
     // Single package under packages/fcl-base/src/ emits one per-package root.
-    assert!(module_paths.contains("fpc-pkg-fcl-base"), "{module_paths:?}");
+    assert!(
+        module_paths.contains("fpc-pkg-fcl-base"),
+        "{module_paths:?}"
+    );
     // The old aggregate fpc-packages root no longer exists — packages are emitted
     // individually so module_path values are distinct per package.
     assert!(!module_paths.contains("fpc-packages"), "{module_paths:?}");
@@ -80,7 +103,11 @@ fn discover_uses_explicit_dir_override() {
         .iter()
         .find(|r| r.module_path.starts_with("fpc-rtl-win"))
         .map(|r| r.module_path.clone());
-    assert_eq!(first_rtl.as_deref(), Some("fpc-rtl-win64"), "{module_paths:?}");
+    assert_eq!(
+        first_rtl.as_deref(),
+        Some("fpc-rtl-win64"),
+        "{module_paths:?}"
+    );
     assert!(module_paths.contains("fpc-rtl-win32"), "{module_paths:?}");
 }
 
@@ -135,7 +162,13 @@ fn emit_package_roots_requires_src_subdir() {
 #[test]
 fn platform_excluded_exotic_targets() {
     // These exotic targets must always be excluded regardless of host.
-    for pkg in &["arosunits", "ami-extra", "palmunits", "libgbafpc", "libndsfpc"] {
+    for pkg in &[
+        "arosunits",
+        "ami-extra",
+        "palmunits",
+        "libgbafpc",
+        "libndsfpc",
+    ] {
         assert!(is_platform_excluded(pkg), "{pkg} should be excluded");
     }
 }
@@ -143,7 +176,14 @@ fn platform_excluded_exotic_targets() {
 #[test]
 fn cross_platform_packages_never_excluded() {
     // These packages are cross-platform and must always be walked.
-    for pkg in &["fcl-base", "fcl-xml", "fcl-net", "rtl-generics", "paszlib", "hash"] {
+    for pkg in &[
+        "fcl-base",
+        "fcl-xml",
+        "fcl-net",
+        "rtl-generics",
+        "paszlib",
+        "hash",
+    ] {
         assert!(!is_platform_excluded(pkg), "{pkg} should not be excluded");
     }
 }
@@ -187,7 +227,10 @@ fn symbol_index_non_empty_for_fixture_roots() {
     std::env::remove_var("BEARWISDOM_LAZARUS_DIR");
 
     let idx = fpc_fragment_index::build_pascal_symbol_index(&roots);
-    assert!(!idx.is_empty(), "symbol index must be non-empty for a Lazarus fixture");
+    assert!(
+        !idx.is_empty(),
+        "symbol index must be non-empty for a Lazarus fixture"
+    );
     // The fixture writes `unit Forms;` in lcl/forms.pas.
     let hit = roots.iter().any(|r| r.module_path == "lcl")
         && idx.find_by_name("forms").iter().any(|(m, _)| *m == "lcl");
@@ -251,7 +294,12 @@ fn discover_registers_shared_platform_dir_alongside_primary_target() {
     // sysutils.pp lives only in the shared `win` dir on real FPC 3.2.2
     // installs (win64 has no copy of its own) — the win64 target's own
     // Makefile.fpc is what tells the walker `win` is reachable.
-    let rtl = tmp.path().join("fpc").join("3.2.2").join("source").join("rtl");
+    let rtl = tmp
+        .path()
+        .join("fpc")
+        .join("3.2.2")
+        .join("source")
+        .join("rtl");
     let win64 = rtl.join("win64");
     fs::write(win64.join("Makefile.fpc"), "RTL=..\nWINDIR=../win\n").unwrap();
     let win = rtl.join("win");

@@ -1,28 +1,83 @@
 use super::*;
+use crate::type_checker::profile::language_profile::{
+    LanguageProfile, ReceiverSpelling, DEFAULT_PROFILE,
+};
+
+static COLON_COLON_PROFILE: LanguageProfile = LanguageProfile {
+    qname_separator: "::",
+    ..DEFAULT_PROFILE
+};
 
 #[test]
 fn qname_under_module_matches_prefix_and_exact() {
-    assert!(qname_under_module("Catalog.Service.List", "Catalog.Service"));
-    assert!(qname_under_module("Catalog.Service", "Catalog.Service"));
-    assert!(qname_under_module("a.b.c", "a::b"));
-    assert!(!qname_under_module("CatalogX.Service", "Catalog"));
-    assert!(!qname_under_module("x", ""));
+    assert!(qname_under_module(
+        &DEFAULT_PROFILE,
+        "Catalog.Service.List",
+        "Catalog.Service"
+    ));
+    assert!(qname_under_module(
+        &DEFAULT_PROFILE,
+        "Catalog.Service",
+        "Catalog.Service"
+    ));
+    assert!(qname_under_module(&COLON_COLON_PROFILE, "a.b.c", "a::b"));
+    assert!(!qname_under_module(&DEFAULT_PROFILE, "a.b.c", "a::b"));
+    assert!(!qname_under_module(
+        &DEFAULT_PROFILE,
+        "CatalogX.Service",
+        "Catalog"
+    ));
+    assert!(!qname_under_module(&DEFAULT_PROFILE, "x", ""));
 }
 
 #[test]
 fn qname_directly_under_requires_one_segment() {
-    assert!(qname_directly_under("Assertions.assertTrue", "Assertions"));
-    assert!(!qname_directly_under("Assertions.Nested.foo", "Assertions"));
-    assert!(!qname_directly_under("Assertions", "Assertions"));
+    assert!(qname_directly_under(
+        &DEFAULT_PROFILE,
+        "Assertions.assertTrue",
+        "Assertions"
+    ));
+    assert!(!qname_directly_under(
+        &DEFAULT_PROFILE,
+        "Assertions.Nested.foo",
+        "Assertions"
+    ));
+    assert!(!qname_directly_under(
+        &DEFAULT_PROFILE,
+        "Assertions",
+        "Assertions"
+    ));
 }
 
 #[test]
-fn strip_self_keyword_strips_first_matching_prefix() {
-    assert_eq!(strip_self_keyword("self.method", &["self"]), "method");
-    assert_eq!(strip_self_keyword("this.x", &["self", "this"]), "x");
-    assert_eq!(strip_self_keyword("plain", &["self"]), "plain");
-    assert_eq!(strip_self_keyword("selfish", &["self"]), "selfish");
-    assert_eq!(strip_self_keyword("name", &[]), "name");
+fn receiver_member_normalization_uses_profile_declared_separator() {
+    static PROFILE: LanguageProfile = LanguageProfile {
+        receiver_spellings: &[
+            ReceiverSpelling::enclosing("self", "."),
+            ReceiverSpelling::enclosing("Self", "::"),
+        ],
+        ..DEFAULT_PROFILE
+    };
+    assert_eq!(
+        PROFILE.normalize_receiver_member_target("self.method"),
+        "method"
+    );
+    assert_eq!(
+        PROFILE.normalize_receiver_member_target("Self::method"),
+        "method"
+    );
+    assert_eq!(
+        PROFILE.normalize_receiver_member_target("Self.method"),
+        "Self.method"
+    );
+    assert_eq!(
+        PROFILE.normalize_receiver_member_target("selfish"),
+        "selfish"
+    );
+    assert_eq!(
+        DEFAULT_PROFILE.normalize_receiver_member_target("name"),
+        "name"
+    );
 }
 
 #[test]
@@ -34,7 +89,10 @@ fn normalize_name_is_identity_for_none() {
 
 #[test]
 fn path_proximity_score_shared_dir() {
-    assert_eq!(path_proximity_score("src/views/Page.ts", "src/views/Helper.ts"), 20);
+    assert_eq!(
+        path_proximity_score("src/views/Page.ts", "src/views/Helper.ts"),
+        20
+    );
 }
 
 #[test]

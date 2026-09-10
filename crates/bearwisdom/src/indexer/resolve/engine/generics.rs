@@ -17,6 +17,7 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::indexer::resolve::engine::contract::{Symbol, SymbolLookup};
+use crate::languages::LanguagePlugin;
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 
 use super::chain::head_qname;
@@ -222,7 +223,7 @@ pub(crate) fn bindable_params(lookup: &dyn SymbolLookup, callee: &Symbol) -> FxH
         .unwrap_or_default()
         .into_iter()
         .collect();
-    if let Some((owner, _)) = callee.qualified_name.rsplit_once('.') {
+    if let Some(owner) = super::support::index_qname_parent(&callee.qualified_name) {
         out.extend(lookup.generic_params(owner).unwrap_or_default());
     }
     out
@@ -247,7 +248,9 @@ pub(crate) fn param_patterns(
         .signature
         .as_deref()
         .and_then(|s| {
-            crate::indexer::resolve::engine::contract::chain_walker::parse_param_types_from_signature_for_lang(s, lang)
+            crate::languages::default_registry()
+                .get(lang)
+                .signature_parameter_types(s)
         })
         .map(|ps| ps.iter().map(|p| arena.intern_type_str(p)).collect())
         .unwrap_or_default()
@@ -257,7 +260,7 @@ pub(crate) fn param_patterns(
 /// from the declaring file: registry extension table for real files, the
 /// virtual-scheme owner for demand-index entries. `""` (the colon-shaped
 /// default) when neither identifies it.
-fn lang_for_symbol_path(path: &str) -> &'static str {
+pub(crate) fn lang_for_symbol_path(path: &str) -> &'static str {
     if let Some(lang) = crate::ecosystem::externals::language_for_virtual_path(path) {
         return lang;
     }

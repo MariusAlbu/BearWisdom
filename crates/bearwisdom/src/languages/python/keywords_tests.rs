@@ -16,8 +16,19 @@ fn builtin_names_excludes_stdlib_with_source() {
     // typing / unittest.mock / dataclasses / functools all have real `.py`
     // source the cpython-stdlib walker indexes — they must never be folded
     // into the C-implemented builtin set.
-    for name in ["Optional", "Union", "MagicMock", "Mock", "dataclass", "field", "wraps"] {
-        assert!(!BUILTIN_NAMES.contains(&name), "{name} has real stdlib source");
+    for name in [
+        "Optional",
+        "Union",
+        "MagicMock",
+        "Mock",
+        "dataclass",
+        "field",
+        "wraps",
+    ] {
+        assert!(
+            !BUILTIN_NAMES.contains(&name),
+            "{name} has real stdlib source"
+        );
     }
 }
 
@@ -26,12 +37,37 @@ fn builtin_names_covers_the_evidenced_leak_surface() {
     // Names the python-superset corpus census showed leaking as unresolved
     // Calls and TypeRef targets before builtin_skip was wired.
     for name in [
-        "len", "str", "isinstance", "dict", "list", "tuple", "set", "object", "type", "super",
-        "getattr", "range", "print", "sorted", "zip", "classmethod", "staticmethod", "frozenset",
-        "Exception", "ValueError", "TypeError", "KeyError", "IndexError", "AttributeError",
-        "RuntimeError", "OSError",
+        "len",
+        "str",
+        "isinstance",
+        "dict",
+        "list",
+        "tuple",
+        "set",
+        "object",
+        "type",
+        "super",
+        "getattr",
+        "range",
+        "print",
+        "sorted",
+        "zip",
+        "classmethod",
+        "staticmethod",
+        "frozenset",
+        "Exception",
+        "ValueError",
+        "TypeError",
+        "KeyError",
+        "IndexError",
+        "AttributeError",
+        "RuntimeError",
+        "OSError",
     ] {
-        assert!(BUILTIN_NAMES.contains(&name), "missing evidenced builtin: {name}");
+        assert!(
+            BUILTIN_NAMES.contains(&name),
+            "missing evidenced builtin: {name}"
+        );
     }
 }
 
@@ -45,6 +81,9 @@ fn builtin_names_is_a_superset_of_keywords_minus_generics() {
         if generic_params.contains(name) {
             continue;
         }
-        assert!(BUILTIN_NAMES.contains(name), "BUILTIN_NAMES missing {name} from KEYWORDS");
+        assert!(
+            BUILTIN_NAMES.contains(name),
+            "BUILTIN_NAMES missing {name} from KEYWORDS"
+        );
     }
 }

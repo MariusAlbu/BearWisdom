@@ -2,11 +2,11 @@ use super::*;
 use std::sync::Arc;
 
 use crate::indexer::resolve::engine::contract::{
-    ImportEntry, FileContext, RefContext, Symbol, SymbolLookup, SymbolSet,
+    FileContext, ImportEntry, RefContext, Symbol, SymbolLookup, SymbolSet,
 };
 use crate::indexer::resolve::engine::testkit::{accept_any, call_ref, source_symbol};
 use crate::indexer::resolve::engine::{BinderContext, LookupResult};
-use crate::type_checker::profile::language_profile::{DEFAULT_PROFILE, LanguageProfile};
+use crate::type_checker::profile::language_profile::{LanguageProfile, DEFAULT_PROFILE};
 
 static WWS_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
@@ -14,6 +14,16 @@ static WWS_PROFILE: LanguageProfile = LanguageProfile {
         workspace_packages: true,
         reexport_barrel_stems: &["index"],
         wildcard_workspace_scope: true,
+        module_prefix_rewrites:
+            crate::type_checker::profile::language_profile::ModulePrefixRewrites::On {
+                module_path_adapter: Some(
+                    crate::languages::rust_lang::module_paths::module_path_match,
+                ),
+                candidate_prefixes:
+                    crate::languages::rust_lang::module_paths::module_prefix_candidates,
+                declines_directory_match:
+                    crate::languages::rust_lang::module_paths::does_not_decline_directory_match,
+            },
         ..DEFAULT_PROFILE.imports
     },
     ..DEFAULT_PROFILE
@@ -25,6 +35,16 @@ static WWS_SELF_PROFILE: LanguageProfile = LanguageProfile {
         workspace_packages: true,
         reexport_barrel_stems: &["index"],
         wildcard_workspace_scope: true,
+        module_prefix_rewrites:
+            crate::type_checker::profile::language_profile::ModulePrefixRewrites::On {
+                module_path_adapter: Some(
+                    crate::languages::rust_lang::module_paths::module_path_match,
+                ),
+                candidate_prefixes:
+                    crate::languages::rust_lang::module_paths::module_prefix_candidates,
+                declines_directory_match:
+                    crate::languages::rust_lang::module_paths::does_not_decline_directory_match,
+            },
         self_package_root: Some("crate"),
         ..DEFAULT_PROFILE.imports
     },
@@ -222,35 +242,56 @@ fn binds_bare_name_under_deep_glob_via_sub_path() {
         .with_sym(1, 42, "TopDocs", "struct", "src/collector/top_collector.rs")
         .with_sym(1, 99, "Schema", "struct", "src/schema/mod.rs");
     let imports = vec![wildcard_import("tantivy::collector")];
-    assert_eq!(resolve(&WWS_PROFILE, &lookup, "TopDocs", imports, None), Some(42));
+    assert_eq!(
+        resolve(&WWS_PROFILE, &lookup, "TopDocs", imports, None),
+        Some(42)
+    );
 }
 
 #[test]
 fn binds_bare_name_under_crate_root_glob_with_no_sub_path() {
     // `use tantivy::*;` — bare crate-root glob, no sub-path to filter on; any
     // same-name kind-compatible member of the package is in scope.
-    let lookup = WsLookup::new()
-        .with_pkg("tantivy", 1)
-        .with_sym(1, 7, "Index", "struct", "src/core/index.rs");
+    let lookup = WsLookup::new().with_pkg("tantivy", 1).with_sym(
+        1,
+        7,
+        "Index",
+        "struct",
+        "src/core/index.rs",
+    );
     let imports = vec![wildcard_import("tantivy")];
-    assert_eq!(resolve(&WWS_PROFILE, &lookup, "Index", imports, None), Some(7));
+    assert_eq!(
+        resolve(&WWS_PROFILE, &lookup, "Index", imports, None),
+        Some(7)
+    );
 }
 
 #[test]
 fn declines_when_gate_is_off() {
-    let lookup = WsLookup::new()
-        .with_pkg("tantivy", 1)
-        .with_sym(1, 42, "TopDocs", "struct", "src/collector/top_collector.rs");
+    let lookup = WsLookup::new().with_pkg("tantivy", 1).with_sym(
+        1,
+        42,
+        "TopDocs",
+        "struct",
+        "src/collector/top_collector.rs",
+    );
     let imports = vec![wildcard_import("tantivy::collector")];
     // DEFAULT_PROFILE has wildcard_workspace_scope = false.
-    assert_eq!(resolve(&DEFAULT_PROFILE, &lookup, "TopDocs", imports, None), None);
+    assert_eq!(
+        resolve(&DEFAULT_PROFILE, &lookup, "TopDocs", imports, None),
+        None
+    );
 }
 
 #[test]
 fn declines_when_no_wildcard_import() {
-    let lookup = WsLookup::new()
-        .with_pkg("tantivy", 1)
-        .with_sym(1, 42, "TopDocs", "struct", "src/collector/top_collector.rs");
+    let lookup = WsLookup::new().with_pkg("tantivy", 1).with_sym(
+        1,
+        42,
+        "TopDocs",
+        "struct",
+        "src/collector/top_collector.rs",
+    );
     let imports = vec![ImportEntry {
         imported_name: "TopDocs".to_string(),
         module_path: Some("tantivy::collector".to_string()),
@@ -258,7 +299,10 @@ fn declines_when_no_wildcard_import() {
         is_wildcard: false,
         binding_kind: None,
     }];
-    assert_eq!(resolve(&WWS_PROFILE, &lookup, "TopDocs", imports, None), None);
+    assert_eq!(
+        resolve(&WWS_PROFILE, &lookup, "TopDocs", imports, None),
+        None
+    );
 }
 
 #[test]
@@ -282,14 +326,18 @@ fn declines_ambiguous_candidates_within_one_glob_sub_path() {
         .with_sym(1, 10, "TopDocs", "struct", "src/collector/top_collector.rs")
         .with_sym(1, 11, "TopDocs", "struct", "src/collector/other.rs");
     let imports = vec![wildcard_import("tantivy::collector")];
-    assert_eq!(resolve(&WWS_PROFILE, &lookup, "TopDocs", imports, None), None);
+    assert_eq!(
+        resolve(&WWS_PROFILE, &lookup, "TopDocs", imports, None),
+        None
+    );
 }
 
 #[test]
 fn declines_relative_specifier() {
-    let lookup = WsLookup::new()
-        .with_pkg("./utils", 1)
-        .with_sym(1, 5, "fn1", "function", "src/utils.rs");
+    let lookup =
+        WsLookup::new()
+            .with_pkg("./utils", 1)
+            .with_sym(1, 5, "fn1", "function", "src/utils.rs");
     let imports = vec![wildcard_import("./utils")];
     assert_eq!(resolve(&WWS_PROFILE, &lookup, "fn1", imports, None), None);
 }

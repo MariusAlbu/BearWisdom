@@ -295,7 +295,9 @@ pub(crate) fn parse_external_sources(
     let mut demand_driven_by_eco: HashMap<&'static str, Vec<ExternalDepRoot>> = HashMap::new();
     let mut demand_driven_ecosystems: HashMap<&'static str, Arc<dyn Ecosystem>> = HashMap::new();
 
-    let _t_walk = Some(crate::indexer::phase_timer::scope("externals.eager_walk_roots"));
+    let _t_walk = Some(crate::indexer::phase_timer::scope(
+        "externals.eager_walk_roots",
+    ));
     for (root, _declaring_pkgs) in &deduped {
         let Some(locator) = locator_by_ecosystem.get(root.ecosystem) else {
             continue;

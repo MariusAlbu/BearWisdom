@@ -75,9 +75,7 @@ pub fn drain_audit(db: &Database) -> QueryResult<Vec<DrainAuditFinding>> {
              WHERE u.drained = 1 AND f.origin = 'internal'
              GROUP BY f.language, u.kind, u.target_name",
         )?;
-        let rows = stmt.query_map([], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
-        })?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
         for row in rows {
             groups.push(row?);
         }

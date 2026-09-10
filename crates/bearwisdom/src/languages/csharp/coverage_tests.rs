@@ -693,7 +693,9 @@ fn generic_method_call_head_is_not_a_type_ref() {
         !r.iter()
             .any(|x| x.target_name == "Column" && x.kind == EdgeKind::TypeRef),
         "call head must not be a TypeRef; refs: {:?}",
-        r.iter().map(|x| (&x.target_name, x.kind)).collect::<Vec<_>>()
+        r.iter()
+            .map(|x| (&x.target_name, x.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
         r.iter()
@@ -713,6 +715,8 @@ fn called_chain_middle_segment_is_not_a_type_ref() {
         !r.iter()
             .any(|x| x.target_name == "CallTo" && x.kind == EdgeKind::TypeRef),
         "called middle segment must not be a TypeRef; refs: {:?}",
-        r.iter().map(|x| (&x.target_name, x.kind)).collect::<Vec<_>>()
+        r.iter()
+            .map(|x| (&x.target_name, x.kind))
+            .collect::<Vec<_>>()
     );
 }

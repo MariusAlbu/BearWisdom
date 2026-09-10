@@ -4,7 +4,7 @@ use crate::type_checker::profile::language_profile::NamespaceScope;
 #[test]
 fn vba_profile_identity_and_shadow_mode() {
     assert_eq!(VBA_PROFILE.id, "vba");
-    assert_eq!(VBA_PROFILE.self_keywords, &["Me"]);
+    assert_eq!(VBA_PROFILE.receiver_spellings, &["Me"]);
 }
 
 #[test]

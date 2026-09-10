@@ -78,5 +78,4 @@ impl LanguagePlugin for OdinPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::ODIN_PROFILE)
     }
-
 }

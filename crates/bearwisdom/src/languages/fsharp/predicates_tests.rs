@@ -40,7 +40,9 @@ fn platform_roots_still_classify() {
     // BCL + Microsoft + FSharp.Core root stay closed-set, no manifest needed.
     assert!(is_external_namespace_fallback("System"));
     assert!(is_external_namespace_fallback("System.Collections.Generic"));
-    assert!(is_external_namespace_fallback("Microsoft.Extensions.Logging"));
+    assert!(is_external_namespace_fallback(
+        "Microsoft.Extensions.Logging"
+    ));
     assert!(is_external_namespace_fallback("FSharp.Core"));
 }
 
@@ -102,7 +104,14 @@ fn collision_prone_names_never_drain() {
     // the ladder before the project's own declaration ever gets a chance to
     // bind, so none of them belong in the predicate.
     for name in [
-        "Some", "None", "Ok", "Error", "box", "defaultArg", "ignore", "nullArg",
+        "Some",
+        "None",
+        "Ok",
+        "Error",
+        "box",
+        "defaultArg",
+        "ignore",
+        "nullArg",
     ] {
         assert!(
             !is_fsharp_prelude_operator(name),

@@ -76,5 +76,4 @@ impl LanguagePlugin for SqlPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::SQL_PROFILE)
     }
-
 }

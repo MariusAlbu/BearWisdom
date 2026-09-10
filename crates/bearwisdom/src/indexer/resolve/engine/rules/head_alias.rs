@@ -11,7 +11,7 @@
 // symbol.
 // =============================================================================
 
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 use crate::type_checker::profile::language_profile::HeadAliasBind;
 
 pub struct HeadAliasRule;
@@ -26,10 +26,13 @@ impl LookupRule for HeadAliasRule {
             return LookupResult::Pass;
         };
         let target = ctx.target();
-        let Some(dot) = target.find('.') else {
+        let separator = ctx.profile.qname_separator;
+        if separator.is_empty() {
+            return LookupResult::Pass;
+        }
+        let Some((head, _)) = target.split_once(separator) else {
             return LookupResult::Pass;
         };
-        let head = &target[..dot];
         if head.is_empty() || head.contains('_') {
             return LookupResult::Pass;
         }

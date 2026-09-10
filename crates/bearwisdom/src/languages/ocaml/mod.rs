@@ -187,5 +187,4 @@ impl LanguagePlugin for OcamlPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::OCAML_PROFILE)
     }
-
 }

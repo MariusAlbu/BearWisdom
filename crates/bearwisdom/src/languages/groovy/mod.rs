@@ -89,12 +89,19 @@ impl LanguagePlugin for GroovyPlugin {
         keywords::KEYWORDS
     }
 
+    fn signature_type_application(&self, text: &str) -> (String, Vec<String>) {
+        crate::languages::angle_type_application(text)
+    }
+
+    fn signature_type_head<'a>(&self, text: &'a str) -> &'a str {
+        crate::languages::angle_type_head(text)
+    }
+
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::GROOVY_PROFILE)
     }
-
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::GROOVY_FLOW_CONFIG)

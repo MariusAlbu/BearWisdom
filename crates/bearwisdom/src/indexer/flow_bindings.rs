@@ -169,7 +169,11 @@ pub(super) fn correlate_rhs_ref(
         })
         .min_by_key(|(_, r)| {
             let segments = r.chain.as_ref().map(|c| c.segments.len()).unwrap_or(0);
-            (r.byte_offset, std::cmp::Reverse(segments), value_rank(r.kind))
+            (
+                r.byte_offset,
+                std::cmp::Reverse(segments),
+                value_rank(r.kind),
+            )
         })
         .map(|(i, _)| i)
 }

@@ -66,9 +66,7 @@ pub fn assemble_includes(
     let (reparented, updates) = apply_splices(parsed, &splices, symbol_id_map);
     persist_updates(db, &updates)?;
     if reparented > 0 {
-        tracing::info!(
-            "Include assembly re-parented {reparented} symbols into including units"
-        );
+        tracing::info!("Include assembly re-parented {reparented} symbols into including units");
     }
     Ok(reparented)
 }
@@ -96,10 +94,9 @@ fn plan_splices(parsed: &[ParsedFile]) -> Vec<Splice> {
         .iter()
         .enumerate()
         .filter(|(_, pf)| {
-            // C/C++ headers use the same durable include discriminator for
-            // visibility, but they are not namespace fragments to re-parent.
-            // Their non-mutating graph lives in engine::include_closure.
-            !matches!(pf.language.as_str(), "c" | "cpp")
+            crate::languages::default_registry()
+                .get(&pf.language)
+                .supports_namespace_include_splicing()
                 && pf.refs.iter().any(|r| r.is_include)
                 && namespace_qname(pf).is_some()
         })

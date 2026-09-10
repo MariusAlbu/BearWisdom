@@ -1,5 +1,7 @@
 use super::*;
-use crate::indexer::resolve::engine::testkit::{accept_any, call_ref, file_ctx, ref_ctx, source_symbol, Lookup};
+use crate::indexer::resolve::engine::testkit::{
+    accept_any, call_ref, file_ctx, ref_ctx, source_symbol, Lookup,
+};
 use crate::indexer::resolve::engine::{BinderContext, LookupResult};
 use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
 
@@ -10,7 +12,10 @@ static SKIP_ECHO_PROFILE: crate::type_checker::profile::language_profile::Langua
         ..DEFAULT_PROFILE
     };
 
-fn run_with_target(target: &str, profile: &crate::type_checker::profile::language_profile::LanguageProfile) -> LookupResult {
+fn run_with_target(
+    target: &str,
+    profile: &crate::type_checker::profile::language_profile::LanguageProfile,
+) -> LookupResult {
     let r = call_ref(target);
     let s = source_symbol("caller");
     let fc = file_ctx(vec![], None);

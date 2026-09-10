@@ -7,9 +7,10 @@ pub(crate) mod flow;
 mod helpers;
 mod imports;
 pub(crate) mod keywords;
-mod symbols;
+pub(crate) mod package_specifier;
 mod predicates;
 pub(crate) mod profile;
+mod symbols;
 pub use profile::DART_PROFILE;
 
 #[cfg(test)]
@@ -53,6 +54,18 @@ impl LanguagePlugin for DartPlugin {
         extract::extract(source)
     }
 
+    fn signature_return_type(&self, signature: &str) -> Option<String> {
+        crate::languages::prefix_return_type(signature)
+    }
+
+    fn signature_parameter_types(&self, signature: &str) -> Option<Vec<String>> {
+        crate::languages::prefix_parameter_types(signature)
+    }
+
+    fn signature_declared_type(&self, signature: &str) -> Option<String> {
+        crate::languages::prefix_declared_type(signature)
+    }
+
     fn symbol_node_kinds(&self) -> &[&str] {
         &[
             "class_definition",
@@ -86,12 +99,26 @@ impl LanguagePlugin for DartPlugin {
         keywords::KEYWORDS
     }
 
+    fn signature_type_application(&self, text: &str) -> (String, Vec<String>) {
+        crate::languages::angle_type_application(text)
+    }
+
+    fn signature_type_head<'a>(&self, text: &'a str) -> &'a str {
+        crate::languages::angle_type_head(text)
+    }
+
+    fn source_module_path_policy(
+        &self,
+        _specifier: &str,
+    ) -> crate::type_checker::profile::language_profile::SourceModulePathPolicy {
+        predicates::SOURCE_MODULE_PATH_POLICY
+    }
+
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::DART_PROFILE)
     }
-
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::DART_FLOW_CONFIG)

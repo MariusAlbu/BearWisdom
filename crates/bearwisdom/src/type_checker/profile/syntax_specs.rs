@@ -103,4 +103,3 @@ pub struct ClassBuilderSpec {
     /// when present.
     pub inherits_arg: Option<ArgKey>,
 }
-

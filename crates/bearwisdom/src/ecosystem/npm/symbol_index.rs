@@ -157,46 +157,48 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
         // definition instead of the barrel.
         for (exposed, source) in &exports.named {
             let mut visited = HashSet::new();
-            let def_file =
-                resolve_definition(&by_path, &known_paths, file, source, bare_name, pkg_root, &mut visited)
-                    .unwrap_or_else(|| {
-                        // A named re-export from a SIBLING dep root keeps the
-                        // barrel as its located file, but records the resolved
-                        // declaration as a qname-alias bridge so
-                        // `{module}.{name}` lookups reach the declaration's
-                        // single identity under its own package prefix.
-                        if let ExportSource::Reexport { module: spec, original } = source {
-                            if !spec.starts_with('.')
-                                && npm_package_name_from_spec(spec) != bare_name
-                            {
-                                let ctx = BridgeCtx {
-                                    by_path: &by_path,
-                                    known_paths: &known_paths,
-                                    pkg_entry: &pkg_entry,
-                                    subpath_entry: &subpath_entry,
-                                    bare_pkg_root: &bare_pkg_root,
-                                };
-                                let mut bridge_visited = HashSet::new();
-                                if let Some((target_file, target_name)) =
-                                    resolve_cross_package_reexport(
-                                        &ctx,
-                                        spec,
-                                        original,
-                                        &mut bridge_visited,
-                                        0,
-                                    )
-                                {
-                                    index.push_reexport_alias(
-                                        module,
-                                        exposed,
-                                        target_file,
-                                        target_name,
-                                    );
-                                }
-                            }
+            let def_file = resolve_definition(
+                &by_path,
+                &known_paths,
+                file,
+                source,
+                bare_name,
+                pkg_root,
+                &mut visited,
+            )
+            .unwrap_or_else(|| {
+                // A named re-export from a SIBLING dep root keeps the
+                // barrel as its located file, but records the resolved
+                // declaration as a qname-alias bridge so
+                // `{module}.{name}` lookups reach the declaration's
+                // single identity under its own package prefix.
+                if let ExportSource::Reexport {
+                    module: spec,
+                    original,
+                } = source
+                {
+                    if !spec.starts_with('.') && npm_package_name_from_spec(spec) != bare_name {
+                        let ctx = BridgeCtx {
+                            by_path: &by_path,
+                            known_paths: &known_paths,
+                            pkg_entry: &pkg_entry,
+                            subpath_entry: &subpath_entry,
+                            bare_pkg_root: &bare_pkg_root,
+                        };
+                        let mut bridge_visited = HashSet::new();
+                        if let Some((target_file, target_name)) = resolve_cross_package_reexport(
+                            &ctx,
+                            spec,
+                            original,
+                            &mut bridge_visited,
+                            0,
+                        ) {
+                            index.push_reexport_alias(module, exposed, target_file, target_name);
                         }
-                        file.clone()
-                    });
+                    }
+                }
+                file.clone()
+            });
             index.insert(module, exposed.clone(), def_file);
         }
 
@@ -334,7 +336,10 @@ fn resolve_on_disk(file: &Path, original: &str, depth: u32) -> Option<PathBuf> {
     if let Some(source) = exports.named.get(original) {
         return match source {
             ExportSource::Local => Some(file.to_path_buf()),
-            ExportSource::Reexport { module, original: inner } if module.starts_with('.') => {
+            ExportSource::Reexport {
+                module,
+                original: inner,
+            } if module.starts_with('.') => {
                 let target = resolve_relative_ts_path(file, module)?;
                 resolve_on_disk(&target, inner, depth + 1)
             }
@@ -418,7 +423,13 @@ pub(crate) fn resolve_definition(
             let target_exports = by_path.get(target.as_path())?;
             if let Some(inner) = target_exports.named.get(original) {
                 return resolve_definition(
-                    by_path, known_paths, &target, inner, pkg_name, pkg_root, visited,
+                    by_path,
+                    known_paths,
+                    &target,
+                    inner,
+                    pkg_name,
+                    pkg_root,
+                    visited,
                 );
             }
             // Name not directly in target.named — try wildcard re-exports
@@ -439,7 +450,13 @@ pub(crate) fn resolve_definition(
                 };
                 if let Some(inner) = wc_exports.named.get(original) {
                     if let Some(def) = resolve_definition(
-                        by_path, known_paths, &wc_path, inner, pkg_name, pkg_root, visited,
+                        by_path,
+                        known_paths,
+                        &wc_path,
+                        inner,
+                        pkg_name,
+                        pkg_root,
+                        visited,
                     ) {
                         return Some(def);
                     }
@@ -475,7 +492,13 @@ pub(crate) fn collect_wildcard_names(
         }
         let mut visited = HashSet::new();
         let def_file = resolve_definition(
-            by_path, known_paths, file, source, pkg_name, pkg_root, &mut visited,
+            by_path,
+            known_paths,
+            file,
+            source,
+            pkg_name,
+            pkg_root,
+            &mut visited,
         )
         .unwrap_or_else(|| file.to_path_buf());
         out.insert(name.clone(), def_file);
@@ -490,7 +513,15 @@ pub(crate) fn collect_wildcard_names(
         let Some(wc_path) = resolve_relative_in_set(parent, wc, known_paths) else {
             continue;
         };
-        collect_wildcard_names(by_path, known_paths, &wc_path, pkg_name, pkg_root, seen, out);
+        collect_wildcard_names(
+            by_path,
+            known_paths,
+            &wc_path,
+            pkg_name,
+            pkg_root,
+            seen,
+            out,
+        );
     }
 }
 

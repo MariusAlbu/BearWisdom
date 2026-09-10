@@ -17,18 +17,19 @@
 //                 FileStem for a language whose wildcards mix package-scheme
 //                 imports (barrel-defeating) with plain relative ones.
 //
-// Fires only when at least one wildcard import is present.  A dotted or
-// `::` target is declined — qualified refs are handled earlier in the ladder.
+// Fires only when at least one wildcard import is present. A target qualified
+// with the profile's source separator is declined —
+// qualified refs are handled earlier in the ladder.
 // Accepts only when EXACTLY ONE candidate matches — ambiguity stays unresolved.
 //
-// `wildcard_file_stem_matches` / `wildcard_package_segment` are inlined here;
-// both are specific to this rule.
+// File-stem comparison stays local; external package identity comes from the
+// ecosystem package-specifier adapter.
 // =============================================================================
 
 use crate::indexer::resolve::engine::support::{
     basename_stem_matches, normalize_name, qname_directly_under,
 };
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 use crate::type_checker::profile::language_profile::WildcardMatch;
 
 pub struct WildcardImportRule;
@@ -40,7 +41,10 @@ impl LookupRule for WildcardImportRule {
 
     fn apply(&self, ctx: &BinderContext) -> LookupResult {
         let target = ctx.target();
-        if target.is_empty() || target.contains('.') || target.contains("::") {
+        if target.is_empty()
+            || (!ctx.profile.qname_separator.is_empty()
+                && target.contains(ctx.profile.qname_separator))
+        {
             return LookupResult::Pass;
         }
         let edge_kind = ctx.edge_kind();
@@ -84,9 +88,11 @@ impl LookupRule for WildcardImportRule {
                 continue;
             }
             let under_a_wildcard = match mode {
-                WildcardMatch::QnameUnder => wildcards
-                    .iter()
-                    .any(|ns| qname_directly_under(&sym.qualified_name, ns)),
+                WildcardMatch::QnameUnder | WildcardMatch::QnameUnderWithPhysicalFiles { .. } => {
+                    wildcards
+                        .iter()
+                        .any(|ns| qname_directly_under(ctx.profile, &sym.qualified_name, ns))
+                }
                 WildcardMatch::FileStem { underscore_prefix } => {
                     if normalize_name(norm, &sym.name) != target_norm {
                         false
@@ -104,11 +110,16 @@ impl LookupRule for WildcardImportRule {
                     } else {
                         let is_external = ctx.lookup.is_external_file(&sym.file_path);
                         let pkg_seg = is_external
-                            .then(|| wildcard_package_segment(&sym.file_path))
-                            .filter(|p| !p.is_empty());
+                            .then(|| {
+                                crate::ecosystem::package_specifier::external_package_key(
+                                    &ctx.file_ctx.language,
+                                    &sym.file_path,
+                                )
+                            })
+                            .flatten();
                         let file_lower = sym.file_path.to_lowercase();
                         wildcards.iter().any(|ns| {
-                            if let Some(pkg) = pkg_seg {
+                            if let Some(pkg) = pkg_seg.as_deref() {
                                 if normalize_name(norm, pkg) == normalize_name(norm, ns) {
                                     return true;
                                 }
@@ -160,20 +171,6 @@ fn wildcard_file_stem_matches(
         .map(|(s, _)| s)
         .unwrap_or(basename);
     stem.starts_with(&format!("{module_lower}_"))
-}
-
-/// The package segment of a candidate's `ext:<lang>:<pkg>/…` virtual path —
-/// the same three-colon convention `ExternalByImportRule` reads for
-/// `ExtMatch::PkgSegment`. Empty for a path that doesn't match the shape,
-/// including every internal (non-`ext:`) path.
-fn wildcard_package_segment(path: &str) -> &str {
-    let Some(rest) = path.strip_prefix("ext:") else {
-        return "";
-    };
-    let Some((_lang, after_lang)) = rest.split_once(':') else {
-        return "";
-    };
-    after_lang.split('/').next().unwrap_or("")
 }
 
 #[cfg(test)]

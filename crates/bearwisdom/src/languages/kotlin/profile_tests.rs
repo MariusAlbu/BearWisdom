@@ -6,7 +6,7 @@ use crate::types::{EdgeKind, SymbolKind};
 fn kotlin_profile_identity() {
     assert_eq!(KOTLIN_PROFILE.id, "kotlin");
     assert_eq!(KOTLIN_PROFILE.qname_separator, ".");
-    assert_eq!(KOTLIN_PROFILE.self_keywords, &["this", "super"]);
+    assert_eq!(KOTLIN_PROFILE.receiver_spellings, &["this", "super"]);
 }
 
 #[test]

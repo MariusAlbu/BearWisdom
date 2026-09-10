@@ -361,7 +361,7 @@ pub(super) fn resolve_one_file<'a>(
         let ref_ctx = RefContext {
             extracted_ref: r,
             source_symbol: source_sym,
-            scope_chain: build_scope_chain(source_sym.scope_path.as_deref()),
+            scope_chain: build_scope_chain(source_sym.scope_path.as_deref(), profile),
             file_package_id: pf.package_id,
             source_symbol_id: Some(source_id),
         };
@@ -555,9 +555,13 @@ pub(super) fn resolve_one_file<'a>(
                                 // layer from the string type before recording.
                                 let final_ty = yield_ty.as_deref().and_then(|ty| {
                                     if is_awaited {
-                                        unwrap_async_yield_str(ty, profile.async_wrappers)
-                                            .map(|s| s.to_string())
-                                            .or_else(|| Some(ty.to_string()))
+                                        unwrap_async_yield_str(
+                                            ty,
+                                            profile.id,
+                                            profile.async_wrappers,
+                                        )
+                                        .map(|s| s.to_string())
+                                        .or_else(|| Some(ty.to_string()))
                                     } else {
                                         Some(ty.to_string())
                                     }
@@ -671,12 +675,13 @@ pub(super) fn resolve_one_file<'a>(
                                         _ => None,
                                     }
                                 } else {
-                                    crate::indexer::resolve::engine::chain::field_type_on(
+                                    crate::indexer::resolve::engine::chain::field_type_on_with_profile(
                                         &file_lookup,
                                         arena,
                                         recv_ty,
                                         None,
                                         field_key,
+                                        Some(profile),
                                     )
                                 };
                                 if let Some(field_ty) = field_ty {

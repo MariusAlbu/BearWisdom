@@ -9,9 +9,17 @@ fn make_lib_fixture(dir: &Path) {
 
     let pure = dir.join("pure");
     fs::create_dir_all(&pure).unwrap();
-    fs::write(pure.join("strutils.nim"), "proc split*(s: string): seq[string] = @[]\n").unwrap();
+    fs::write(
+        pure.join("strutils.nim"),
+        "proc split*(s: string): seq[string] = @[]\n",
+    )
+    .unwrap();
     fs::write(pure.join("sequtils.nim"), "proc toSeq*(): seq[int] = @[]\n").unwrap();
-    fs::write(pure.join("os.nim"), "proc getEnv*(k: string): string = \"\"\n").unwrap();
+    fs::write(
+        pure.join("os.nim"),
+        "proc getEnv*(k: string): string = \"\"\n",
+    )
+    .unwrap();
 
     let core = dir.join("core");
     fs::create_dir_all(&core).unwrap();
@@ -39,7 +47,13 @@ fn walk_yields_nim_files_pruning_deprecated() {
     let files = walk(&dep);
     let names: Vec<String> = files
         .iter()
-        .map(|f| f.absolute_path.file_name().unwrap().to_string_lossy().into_owned())
+        .map(|f| {
+            f.absolute_path
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        })
         .collect();
     assert!(names.contains(&"system.nim".to_string()), "{names:?}");
     assert!(names.contains(&"strutils.nim".to_string()), "{names:?}");
@@ -108,7 +122,10 @@ fn discover_uses_env_override_with_system_nim() {
     let roots = discover();
     std::env::remove_var("BEARWISDOM_NIM_SRC");
 
-    assert!(!roots.is_empty(), "override with system.nim must produce a root");
+    assert!(
+        !roots.is_empty(),
+        "override with system.nim must produce a root"
+    );
     assert_eq!(roots[0].module_path, "stdlib");
     assert_eq!(roots[0].root, tmp.path());
 }

@@ -10,8 +10,8 @@ use super::decorators::{
 use super::helpers::find_child_by_kind;
 use super::symbols::{
     extract_type_inheritance, handle_class_declaration, push_associatedtype, push_deinit,
-    push_extension, push_function_decl, push_init, push_parameters, push_property,
-    push_subscript, push_type_decl, push_typealias, recurse_into_body,
+    push_extension, push_function_decl, push_init, push_parameters, push_property, push_subscript,
+    push_type_decl, push_typealias, recurse_into_body,
 };
 use super::{calls, decorators, helpers, imports, symbols};
 

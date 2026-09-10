@@ -7,12 +7,12 @@ pub mod extract;
 mod helpers;
 pub(crate) mod keywords;
 pub(crate) mod phoenix_routes;
+pub(crate) mod predicates;
+pub(crate) mod profile;
 mod type_refs;
 mod using_harvest;
 pub(crate) mod using_injection;
 mod using_synthesis;
-pub(crate) mod predicates;
-pub(crate) mod profile;
 pub use profile::ELIXIR_PROFILE;
 
 #[cfg(test)]
@@ -100,7 +100,6 @@ impl LanguagePlugin for ElixirPlugin {
         Some(&profile::ELIXIR_PROFILE)
     }
 
-
     fn populate_project_state(
         &self,
         state: &mut crate::indexer::plugin_state::PluginStateBag,
@@ -108,7 +107,10 @@ impl LanguagePlugin for ElixirPlugin {
         project_root: &std::path::Path,
         _project_ctx: &crate::indexer::project_context::ProjectContext,
     ) {
-        state.set(using_injection::build_using_injection_map(parsed, project_root));
+        state.set(using_injection::build_using_injection_map(
+            parsed,
+            project_root,
+        ));
     }
 
     fn populate_project_state_post_externals(
@@ -122,7 +124,10 @@ impl LanguagePlugin for ElixirPlugin {
         // quote blocks live in ExUnit's own external source, invisible to the
         // pre-externals pass. Rebuilding here against the now-externals-merged
         // `parsed` slice lets the injection map see them.
-        state.set(using_injection::build_using_injection_map(parsed, project_root));
+        state.set(using_injection::build_using_injection_map(
+            parsed,
+            project_root,
+        ));
     }
 
     /// Transitive `use M` redirect: for each wildcard-eligible `Imports` ref
@@ -139,7 +144,11 @@ impl LanguagePlugin for ElixirPlugin {
     /// real code only ever `use`s such a module rather than `import`ing it,
     /// so that lookup doubles as the `use`-site filter without a separate
     /// directive-kind field on `ExtractedRef`.
-    fn extra_wildcard_imports(&self, state: &PluginStateBag, file: &ParsedFile) -> Vec<ImportEntry> {
+    fn extra_wildcard_imports(
+        &self,
+        state: &PluginStateBag,
+        file: &ParsedFile,
+    ) -> Vec<ImportEntry> {
         let Some(project_state) = state.get::<using_injection::ElixirProjectState>() else {
             return Vec::new();
         };

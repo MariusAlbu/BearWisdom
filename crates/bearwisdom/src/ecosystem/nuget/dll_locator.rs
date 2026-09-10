@@ -8,17 +8,15 @@
 // no parsing, no symbols.
 // =============================================================================
 
-use std::path::{Path, PathBuf};
 use super::version_select::select_version_subdir;
+use std::path::{Path, PathBuf};
 
 use super::manifest::{parse_package_references_full, NuGetCoord};
 
 /// Locate every DLL the project declares, without emitting any parsed symbols.
 /// Returns `(package_name, dll_abs_path, lang_id)` for each discovered DLL.
 /// Used by the demand-driven path to build a `SymbolLocationIndex` cheaply.
-pub(crate) fn locate_dlls_for_project(
-    project_root: &Path,
-) -> Vec<(String, PathBuf, &'static str)> {
+pub(crate) fn locate_dlls_for_project(project_root: &Path) -> Vec<(String, PathBuf, &'static str)> {
     let mut project_files: Vec<PathBuf> = Vec::new();
     collect_dotnet_project_files(project_root, &mut project_files, 0);
     if project_files.is_empty() {
@@ -261,7 +259,6 @@ pub(super) fn find_dlls_in_version_dir(version_dir: &Path, pkg_name: &str) -> Ve
     });
     out
 }
-
 
 pub(crate) fn largest_subdir(dir: &Path) -> Option<PathBuf> {
     let entries = std::fs::read_dir(dir).ok()?;

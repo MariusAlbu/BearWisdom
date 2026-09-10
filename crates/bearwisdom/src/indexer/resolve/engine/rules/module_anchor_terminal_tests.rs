@@ -4,7 +4,7 @@ use crate::indexer::resolve::engine::testkit::{
 };
 use crate::indexer::resolve::engine::{BinderContext, LookupResult};
 use crate::type_checker::profile::language_profile::{
-    DEFAULT_PROFILE, LanguageProfile, ModuleAnchor, ModuleAnchorBind,
+    LanguageProfile, ModuleAnchor, ModuleAnchorBind, DEFAULT_PROFILE,
 };
 use crate::types::EdgeKind;
 
@@ -18,11 +18,7 @@ static TERMINAL_ON_PROFILE: LanguageProfile = LanguageProfile {
     ..DEFAULT_PROFILE
 };
 
-fn run(
-    profile: &LanguageProfile,
-    module: Option<&str>,
-    edge_kind: EdgeKind,
-) -> LookupResult {
+fn run(profile: &LanguageProfile, module: Option<&str>, edge_kind: EdgeKind) -> LookupResult {
     let mut r = call_ref("foo");
     r.module = module.map(|s| s.to_string());
     r.kind = edge_kind;

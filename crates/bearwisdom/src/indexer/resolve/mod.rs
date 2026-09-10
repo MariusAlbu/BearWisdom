@@ -20,18 +20,18 @@
 // =============================================================================
 
 mod adapters;
+pub mod engine;
 pub mod flow_emit;
 mod flow_pair;
 pub mod reachability;
-pub mod engine;
 pub mod synthesize_dispatch;
 
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 
 use crate::db::Database;
-use crate::indexer::write::SymbolIds;
 use crate::indexer::project_context::ProjectContext;
+use crate::indexer::write::SymbolIds;
 use crate::types::ParsedFile;
 
 pub use adapters::append_db_route_consumer_emissions;

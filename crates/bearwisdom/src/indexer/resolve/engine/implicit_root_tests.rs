@@ -37,7 +37,13 @@ fn baseless_receiver() -> Lookup {
     Lookup::new()
         .with(sym(1, "result", "M.result", "parameter", "src/M.cs"))
         .with_field_type("M.result", "JobResult")
-        .with(sym(10, "JobResult", "JobResult", "class", "src/JobResult.cs"))
+        .with(sym(
+            10,
+            "JobResult",
+            "JobResult",
+            "class",
+            "src/JobResult.cs",
+        ))
 }
 
 /// The indexed root declaration, carrying `ToString`.
@@ -46,7 +52,13 @@ fn with_root_tostring(lookup: Lookup) -> Lookup {
         .with(sym(90, "Object", "System.Object", "class", ROOT_FILE))
         .with_member(
             "System.Object",
-            sym(91, "ToString", "System.Object.ToString", "method", ROOT_FILE),
+            sym(
+                91,
+                "ToString",
+                "System.Object.ToString",
+                "method",
+                ROOT_FILE,
+            ),
         )
 }
 
@@ -79,10 +91,22 @@ fn declared_base_member_wins_over_the_root() {
     let lookup = with_root_tostring(
         baseless_receiver()
             .with_parent("JobResult", "BaseResult")
-            .with(sym(20, "BaseResult", "BaseResult", "class", "src/BaseResult.cs"))
+            .with(sym(
+                20,
+                "BaseResult",
+                "BaseResult",
+                "class",
+                "src/BaseResult.cs",
+            ))
             .with_member(
                 "BaseResult",
-                sym(21, "ToString", "BaseResult.ToString", "method", "src/BaseResult.cs"),
+                sym(
+                    21,
+                    "ToString",
+                    "BaseResult.ToString",
+                    "method",
+                    "src/BaseResult.cs",
+                ),
             ),
     );
     assert_eq!(resolve(&lookup, &ROOTED).ok(), Some(21));
@@ -137,10 +161,20 @@ fn a_root_without_the_member_stays_a_miss() {
         .with(sym(90, "Object", "System.Object", "class", ROOT_FILE))
         .with_member(
             "System.Object",
-            sym(92, "GetHashCode", "System.Object.GetHashCode", "method", ROOT_FILE),
+            sym(
+                92,
+                "GetHashCode",
+                "System.Object.GetHashCode",
+                "method",
+                ROOT_FILE,
+            ),
         );
     let cause = resolve(&lookup, &ROOTED).expect_err("the root lacks the member — a miss");
     let cause = cause.expect("a caused miss");
     assert_eq!(cause.kind, CauseKind::MemberMissing);
-    assert_eq!(cause.symbol_id, Some(10), "the receiver's own declaration is blamed");
+    assert_eq!(
+        cause.symbol_id,
+        Some(10),
+        "the receiver's own declaration is blamed"
+    );
 }

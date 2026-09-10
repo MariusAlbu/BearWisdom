@@ -12,11 +12,12 @@ pub mod extract;
 pub(crate) mod flow;
 mod helpers;
 pub(crate) mod keywords;
-mod symbols;
-mod types;
 mod predicates;
 pub mod profile;
+mod signature;
 mod source_gen;
+mod symbols;
+mod types;
 pub use profile::CSHARP_PROFILE;
 
 #[cfg(test)]
@@ -68,6 +69,40 @@ impl LanguagePlugin for CSharpPlugin {
         let mut result = extract::extract(source);
         crate::languages::common::append_handlebars_register_helper_globals(source, &mut result);
         result
+    }
+
+    fn signature_return_type(&self, signature: &str) -> Option<String> {
+        crate::languages::prefix_return_type(signature)
+    }
+
+    fn signature_parameter_types(&self, signature: &str) -> Option<Vec<String>> {
+        crate::languages::prefix_parameter_types(signature).map(|types| {
+            if signature.contains("(this ") {
+                types.into_iter().skip(1).collect()
+            } else {
+                types
+            }
+        })
+    }
+
+    fn signature_declared_type(&self, signature: &str) -> Option<String> {
+        crate::languages::prefix_declared_type(signature)
+    }
+
+    fn signature_delegate_argument_types(&self, signature: &str) -> Vec<String> {
+        signature::delegate_argument_types(signature)
+    }
+
+    fn signature_extension_receiver(&self, signature: &str) -> Option<String> {
+        signature::extension_receiver(signature)
+    }
+
+    fn signature_generic_params(
+        &self,
+        signature: &str,
+        name: &str,
+    ) -> Vec<(String, Option<String>, Option<String>)> {
+        signature::generic_params(signature, name)
     }
 
     fn embedded_regions(
@@ -135,12 +170,19 @@ impl LanguagePlugin for CSharpPlugin {
         keywords::KEYWORDS
     }
 
+    fn signature_type_application(&self, text: &str) -> (String, Vec<String>) {
+        crate::languages::angle_type_application(text)
+    }
+
+    fn signature_type_head<'a>(&self, text: &'a str) -> &'a str {
+        crate::languages::angle_type_head(text)
+    }
+
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&CSHARP_PROFILE)
     }
-
 
     fn post_index(
         &self,
@@ -157,5 +199,3 @@ impl LanguagePlugin for CSharpPlugin {
         Some(&flow::CSHARP_FLOW_CONFIG)
     }
 }
-
-

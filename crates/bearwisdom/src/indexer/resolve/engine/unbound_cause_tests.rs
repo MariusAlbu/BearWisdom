@@ -71,7 +71,7 @@ impl SymbolLookup for FakeLookup {
     fn is_external_name(&self, name: &str, _: &str) -> bool {
         self.external_names.iter().any(|n| n == name)
     }
-    fn is_declared_dependency(&self, package_id: Option<i64>, spec: &str) -> bool {
+    fn is_declared_dependency(&self, package_id: Option<i64>, _: &str, spec: &str) -> bool {
         self.declared_deps
             .iter()
             .any(|(p, s)| *p == package_id && s == spec)
@@ -103,9 +103,17 @@ fn named_import(name: &str) -> ImportEntry {
 #[test]
 fn matching_named_import_wins_over_everything() {
     let mut lookup = FakeLookup::default();
-    lookup.by_name.insert("Foo".into(), vec![sym(7, "Foo", "m.Foo")]);
+    lookup
+        .by_name
+        .insert("Foo".into(), vec![sym(7, "Foo", "m.Foo")]);
     lookup.external_names.push("Foo".into());
-    let cause = classify_unbound_root("Foo", &[], &file_ctx(vec![named_import("Foo")]), &lookup, None);
+    let cause = classify_unbound_root(
+        "Foo",
+        &[],
+        &file_ctx(vec![named_import("Foo")]),
+        &lookup,
+        None,
+    );
     assert_eq!(cause.kind, CauseKind::ImportUnlinked);
     assert_eq!(cause.symbol_id, None);
 }
@@ -250,9 +258,10 @@ fn value_sym(id: i64, name: &str, qname: &str, kind: &str, file: &str) -> Contra
 #[test]
 fn untyped_root_blames_the_unique_same_file_value_binding() {
     let mut lookup = FakeLookup::default();
-    lookup
-        .by_name
-        .insert("cfg".into(), vec![value_sym(9, "cfg", "a.run.cfg", "parameter", "src/a.pas")]);
+    lookup.by_name.insert(
+        "cfg".into(),
+        vec![value_sym(9, "cfg", "a.run.cfg", "parameter", "src/a.pas")],
+    );
     let cause = classify_untyped_root("cfg", &[], &file_ctx(vec![]), &lookup, None);
     assert_eq!(cause.kind, CauseKind::UntypedBinding);
     assert_eq!(cause.symbol_id, Some(9));
@@ -261,9 +270,10 @@ fn untyped_root_blames_the_unique_same_file_value_binding() {
 #[test]
 fn untyped_root_field_binding_is_an_uncaptured_field() {
     let mut lookup = FakeLookup::default();
-    lookup
-        .by_name
-        .insert("db".into(), vec![value_sym(4, "db", "a.Repo.db", "field", "src/a.pas")]);
+    lookup.by_name.insert(
+        "db".into(),
+        vec![value_sym(4, "db", "a.Repo.db", "field", "src/a.pas")],
+    );
     let cause = classify_untyped_root("db", &[], &file_ctx(vec![]), &lookup, None);
     assert_eq!(cause.kind, CauseKind::UncapturedField);
     assert_eq!(cause.symbol_id, Some(4));
@@ -299,7 +309,12 @@ fn untyped_root_ignores_non_binding_and_foreign_candidates() {
 #[test]
 fn untyped_root_bound_by_an_import_is_import_unlinked() {
     let lookup = FakeLookup::default();
-    let cause =
-        classify_untyped_root("client", &[], &file_ctx(vec![named_import("client")]), &lookup, None);
+    let cause = classify_untyped_root(
+        "client",
+        &[],
+        &file_ctx(vec![named_import("client")]),
+        &lookup,
+        None,
+    );
     assert_eq!(cause.kind, CauseKind::ImportUnlinked);
 }

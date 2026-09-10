@@ -134,7 +134,8 @@ impl CoursierIndex {
                 let Some(group_dir) = dir.parent() else {
                     continue;
                 };
-                if path_ends_with_components(group_dir, &suffix) && !out.iter().any(|p| p == group_dir)
+                if path_ends_with_components(group_dir, &suffix)
+                    && !out.iter().any(|p| p == group_dir)
                 {
                     out.push(group_dir.to_path_buf());
                 }
@@ -171,7 +172,8 @@ fn path_ends_with_components(path: &Path, components: &[String]) -> bool {
 /// Get (building once) the artifact-directory index for `cache_root`.
 fn coursier_index(cache_root: &Path) -> Arc<CoursierIndex> {
     let key = std::fs::canonicalize(cache_root).unwrap_or_else(|_| cache_root.to_path_buf());
-    let map = COURSIER_INDEX.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    let map =
+        COURSIER_INDEX.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
     let mut guard = map.lock().expect("coursier index map poisoned");
     if let Some(idx) = guard.get(&key) {
         return Arc::clone(idx);

@@ -69,10 +69,7 @@ pub fn resolve_diff(project_root: &Path) -> Result<ResolveDiff> {
 }
 
 /// `(legacy − engine, engine − legacy)`, each sorted for stable output.
-fn diff_sets(
-    legacy: &HashSet<EdgeKey>,
-    engine: &HashSet<EdgeKey>,
-) -> (Vec<EdgeKey>, Vec<EdgeKey>) {
+fn diff_sets(legacy: &HashSet<EdgeKey>, engine: &HashSet<EdgeKey>) -> (Vec<EdgeKey>, Vec<EdgeKey>) {
     let mut regressions: Vec<EdgeKey> = legacy.difference(engine).cloned().collect();
     let mut gains: Vec<EdgeKey> = engine.difference(legacy).cloned().collect();
     regressions.sort_unstable_by(|a, b| edge_order(a).cmp(&edge_order(b)));

@@ -45,7 +45,6 @@ pub const ID: EcosystemId = EcosystemId::new("erlang-otp");
 const LEGACY_ECOSYSTEM_TAG: &str = "erlang-otp";
 const LANGUAGES: &[&str] = &["erlang"];
 
-
 pub struct ErlangOtpEcosystem;
 
 // ---------------------------------------------------------------------------

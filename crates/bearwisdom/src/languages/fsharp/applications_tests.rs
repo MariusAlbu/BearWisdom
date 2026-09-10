@@ -17,7 +17,10 @@ fn dotted_application_callee_splits_into_leaf_and_chain() {
         .into_iter()
         .find(|rf| rf.target_name == "map")
         .expect("List.map application must emit a `map` Calls ref");
-    let chain = map_ref.chain.as_ref().expect("dotted ref must carry a chain");
+    let chain = map_ref
+        .chain
+        .as_ref()
+        .expect("dotted ref must carry a chain");
     assert_eq!(chain.segments.len(), 2, "chain carries root + leaf");
     assert_eq!(chain.segments[0].name, "List");
     assert_eq!(
@@ -40,7 +43,10 @@ fn dot_member_application_carries_receiver_root() {
         .into_iter()
         .find(|rf| rf.target_name == "Method")
         .expect("obj.Method application must emit a `Method` Calls ref");
-    let chain = m.chain.as_ref().expect("receiver spine must survive as chain");
+    let chain = m
+        .chain
+        .as_ref()
+        .expect("receiver spine must survive as chain");
     assert_eq!(chain.segments[0].name, "obj", "chain roots on the receiver");
     assert_eq!(
         chain.segments[0].kind,
@@ -57,7 +63,10 @@ fn capitalized_dotted_value_ref_is_chained() {
         .into_iter()
         .find(|rf| rf.target_name == "InvariantCulture")
         .expect("CultureInfo.InvariantCulture must emit an `InvariantCulture` ref");
-    let chain = v.chain.as_ref().expect("dotted value ref must carry a chain");
+    let chain = v
+        .chain
+        .as_ref()
+        .expect("dotted value ref must carry a chain");
     assert_eq!(chain.segments[0].name, "CultureInfo");
     assert_eq!(chain.segments[0].kind, SegmentKind::NamespaceAccess);
 }

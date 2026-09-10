@@ -149,7 +149,9 @@ fn scan_lua_header_extracts_function_declaration() {
     let src = "function M.setup(opts)\n  vim.g.option = opts\nend\n";
     let names = scan_lua_header(src);
     assert!(
-        names.iter().any(|n| n.contains("setup") || n.contains("M.setup")),
+        names
+            .iter()
+            .any(|n| n.contains("setup") || n.contains("M.setup")),
         "expected function name in {:?}",
         names
     );

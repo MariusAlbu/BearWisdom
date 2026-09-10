@@ -22,27 +22,46 @@ fn ctx_with(kind: ManifestKind, group_ids: &[&str]) -> ProjectContext {
 fn manifest_declared_group_id_classifies_external() {
     let ctx = ctx_with(
         ManifestKind::Maven,
-        &["org.junit.jupiter", "org.springframework", "com.fasterxml.jackson.core"],
+        &[
+            "org.junit.jupiter",
+            "org.springframework",
+            "com.fasterxml.jackson.core",
+        ],
     );
     assert!(is_manifest_jvm_external(&ctx, "org.junit.jupiter.api.Test"));
-    assert!(is_manifest_jvm_external(&ctx, "org.springframework.boot.Application"));
-    assert!(is_manifest_jvm_external(&ctx, "com.fasterxml.jackson.core.JsonParser"));
+    assert!(is_manifest_jvm_external(
+        &ctx,
+        "org.springframework.boot.Application"
+    ));
+    assert!(is_manifest_jvm_external(
+        &ctx,
+        "com.fasterxml.jackson.core.JsonParser"
+    ));
 
     // Gradle path is equivalent.
     let g = ctx_with(ManifestKind::Gradle, &["org.assertj"]);
-    assert!(is_manifest_jvm_external(&g, "org.assertj.core.api.Assertions"));
+    assert!(is_manifest_jvm_external(
+        &g,
+        "org.assertj.core.api.Assertions"
+    ));
 }
 
 #[test]
 fn junit_without_manifest_is_not_external() {
     // `org.junit` was a third-party entry in the purged list. With no manifest
     // declaring it, a JUnit namespace no longer short-circuits to external.
-    assert!(!is_external_java_namespace("org.junit.jupiter.api.Test", None));
+    assert!(!is_external_java_namespace(
+        "org.junit.jupiter.api.Test",
+        None
+    ));
     assert!(!is_external_java_namespace("org.junit.Assert", None));
 
     // Empty manifest present but the group-id isn't declared → not external.
     let ctx = ctx_with(ManifestKind::Gradle, &[]);
-    assert!(!is_external_java_namespace("org.junit.jupiter.api.Test", Some(&ctx)));
+    assert!(!is_external_java_namespace(
+        "org.junit.jupiter.api.Test",
+        Some(&ctx)
+    ));
 }
 
 #[test]
@@ -50,9 +69,15 @@ fn platform_roots_still_classify() {
     // JDK platform substrate — no manifest needed.
     assert!(is_external_java_namespace("java.util.List", None));
     assert!(is_external_java_namespace("javax.inject.Inject", None));
-    assert!(is_external_java_namespace("jakarta.persistence.Entity", None));
+    assert!(is_external_java_namespace(
+        "jakarta.persistence.Entity",
+        None
+    ));
     assert!(is_external_java_namespace("sun.misc.Unsafe", None));
-    assert!(is_external_java_namespace("com.sun.net.httpserver.HttpServer", None));
+    assert!(is_external_java_namespace(
+        "com.sun.net.httpserver.HttpServer",
+        None
+    ));
 }
 
 #[test]

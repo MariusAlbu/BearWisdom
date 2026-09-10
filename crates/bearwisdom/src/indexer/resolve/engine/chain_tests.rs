@@ -1,6 +1,6 @@
 use super::*;
 use crate::indexer::resolve::engine::testkit::{
-    call_ref, file_ctx, import, ref_ctx, source_symbol, sym, Lookup,
+    call_ref, file_ctx, import, ref_ctx, source_symbol, sym, sym_with_sig, Lookup,
 };
 use crate::types::{AliasTarget, ChainSegment, EdgeKind, ExtractedRef, MemberChain};
 
@@ -127,13 +127,29 @@ fn resolve_with_fc(
     src_qname: &str,
     fc: &FileContext,
 ) -> Option<i64> {
+    resolve_with_profile(
+        lookup,
+        segs,
+        src_qname,
+        fc,
+        &crate::languages::typescript::TYPESCRIPT_PROFILE,
+    )
+}
+
+fn resolve_with_profile(
+    lookup: &Lookup,
+    segs: Vec<ChainSegment>,
+    src_qname: &str,
+    fc: &FileContext,
+    profile: &LanguageProfile,
+) -> Option<i64> {
     let leaf = segs.last().unwrap().name.clone();
     let mut r = call_ref(&leaf);
     r.chain = Some(MemberChain { segments: segs });
     let mut s = source_symbol("caller");
     s.qualified_name = src_qname.to_string();
     let rc = ref_ctx(&r, &s, vec![]);
-    bind_member_access(&rc, fc, lookup, &DEFAULT_PROFILE)
+    bind_member_access(&rc, fc, lookup, profile)
         .ok()
         .map(|res| res.target_symbol_id)
 }
@@ -264,6 +280,29 @@ fn binds_static_member_on_constructor_interface() {
         seg("resolve", true, SegmentKind::Property),
     ];
     assert_eq!(resolve(&lookup, segs, "caller"), Some(3));
+}
+
+#[test]
+fn type_name_does_not_guess_a_constructor_member_surface() {
+    let lookup = Lookup::new()
+        .with(sym(1, "Widget", "Widget", "class", "a.ts"))
+        .with(sym(
+            2,
+            "WidgetConstructor",
+            "WidgetConstructor",
+            "interface",
+            "a.ts",
+        ))
+        .with_member(
+            "WidgetConstructor",
+            sym(3, "create", "WidgetConstructor.create", "method", "a.ts"),
+        );
+    let segs = vec![
+        seg("Widget", false, SegmentKind::TypeAccess),
+        seg("create", true, SegmentKind::Property),
+    ];
+
+    assert_eq!(resolve(&lookup, segs, "caller"), None);
 }
 
 #[test]
@@ -405,8 +444,15 @@ fn field_type_on_threads_arg_through_alias_union_chain() {
         .with(sym(5, "Movie", "Movie", "interface", "a.ts"));
     let arena = lookup.type_arena().unwrap();
     let recv = arena.intern_type_str("UseQueryResult<NoInfer<Movie>>");
-    let ty = field_type_on(&lookup, arena, recv, Some(1), "data")
-        .expect("data resolves through the alias+union chain");
+    let ty = field_type_on_with_profile(
+        &lookup,
+        arena,
+        recv,
+        Some(1),
+        "data",
+        Some(&crate::languages::typescript::TYPESCRIPT_PROFILE),
+    )
+    .expect("data resolves through the alias+union chain");
     assert_eq!(
         head_qname(arena, ty).as_deref(),
         Some("Movie"),
@@ -499,7 +545,13 @@ fn renamed_external_import_roots_on_original_declared_name() {
         seg("String", true, SegmentKind::Property),
     ];
     assert_eq!(
-        resolve_with_fc(&lookup, segs, "caller", &file_ctx(vec![imp], None)),
+        resolve_with_profile(
+            &lookup,
+            segs,
+            "caller",
+            &file_ctx(vec![imp], None),
+            &crate::languages::rust_lang::RUST_PROFILE,
+        ),
         Some(2),
         "the aliased root must bind through the import's original name"
     );
@@ -2985,7 +3037,16 @@ fn self_return_rebinds_to_receiver_for_fluent_chain() {
         seg("where_", true, SegmentKind::Property),
         seg("execute", true, SegmentKind::Property),
     ];
-    assert_eq!(resolve(&lookup, segs, "caller"), Some(20));
+    assert_eq!(
+        resolve_with_profile(
+            &lookup,
+            segs,
+            "caller",
+            &file_ctx(vec![], None),
+            &crate::languages::rust_lang::RUST_PROFILE,
+        ),
+        Some(20)
+    );
 }
 
 // --- Sub-fix 2: callable-property root (vi.fn case) -------------------------
@@ -3260,7 +3321,16 @@ fn subscript_on_vec_return_projects_element_then_resolves_member() {
         seg_index_expression("0"),
         seg("touch", true, SegmentKind::Property),
     ];
-    assert_eq!(resolve(&lookup, segs, "caller"), Some(2));
+    assert_eq!(
+        resolve_with_profile(
+            &lookup,
+            segs,
+            "caller",
+            &file_ctx(vec![], None),
+            &crate::languages::rust_lang::RUST_PROFILE,
+        ),
+        Some(2)
+    );
 }
 
 /// A call segment carrying the arguments the call passes, as the extractor
@@ -3602,7 +3672,17 @@ fn member_miss_falls_through_to_an_index_signature() {
         .with(sym(1, "ProcessEnv", "ProcessEnv", "interface", "l.d.ts"))
         .with_parent("ProcessEnv", "Dict")
         .with(sym(2, "Dict", "Dict", "interface", "l.d.ts"))
-        .with_member("Dict", sym(50, "[key]", "Dict.[key]", "property", "l.d.ts"));
+        .with_member(
+            "Dict",
+            sym_with_sig(
+                50,
+                "[key]",
+                "Dict.[key]",
+                "property",
+                "l.d.ts",
+                crate::types::INDEX_SIGNATURE_MARKER,
+            ),
+        );
     let segs = vec![
         seg("env", false, SegmentKind::Identifier),
         seg("VERCEL_URL", false, SegmentKind::Property),
@@ -3653,7 +3733,14 @@ fn index_signature_climb_requalifies_a_bare_parent_in_a_namespace() {
         .with(sym(2, "Dict", "NodeJS.Dict", "interface", "l.d.ts"))
         .with_member(
             "NodeJS.Dict",
-            sym(50, "[key]", "NodeJS.Dict.[key]", "property", "l.d.ts"),
+            sym_with_sig(
+                50,
+                "[key]",
+                "NodeJS.Dict.[key]",
+                "property",
+                "l.d.ts",
+                crate::types::INDEX_SIGNATURE_MARKER,
+            ),
         );
     let segs = vec![
         seg("env", false, SegmentKind::Identifier),
@@ -3728,7 +3815,16 @@ fn extension_method_resolves_on_instance_member_miss() {
         seg("builder", false, SegmentKind::Identifier),
         seg("UseSnapshot", true, SegmentKind::Property),
     ];
-    assert_eq!(resolve(&lookup, segs, "Cfg.Use"), Some(20));
+    assert_eq!(
+        resolve_with_profile(
+            &lookup,
+            segs,
+            "Cfg.Use",
+            &file_ctx(vec![], None),
+            &crate::languages::csharp::CSHARP_PROFILE,
+        ),
+        Some(20)
+    );
 }
 
 #[test]
@@ -3752,7 +3848,16 @@ fn extension_on_a_supertype_applies_to_the_derived_receiver() {
         seg("list", false, SegmentKind::Identifier),
         seg("Shuffle", true, SegmentKind::Property),
     ];
-    assert_eq!(resolve(&lookup, segs, "M.Run"), Some(20));
+    assert_eq!(
+        resolve_with_profile(
+            &lookup,
+            segs,
+            "M.Run",
+            &file_ctx(vec![], None),
+            &crate::languages::csharp::CSHARP_PROFILE,
+        ),
+        Some(20)
+    );
 }
 
 #[test]
@@ -3782,7 +3887,16 @@ fn two_distinct_extension_declarations_stay_ambiguous() {
         seg("b", false, SegmentKind::Identifier),
         seg("Fit", true, SegmentKind::Property),
     ];
-    assert_eq!(resolve(&lookup, segs, "C.Run"), None);
+    assert_eq!(
+        resolve_with_profile(
+            &lookup,
+            segs,
+            "C.Run",
+            &file_ctx(vec![], None),
+            &crate::languages::csharp::CSHARP_PROFILE,
+        ),
+        None
+    );
 }
 
 #[test]
@@ -4004,7 +4118,16 @@ fn closest_receiver_extension_overload_wins() {
         seg("items", false, SegmentKind::Identifier),
         seg("Should", true, SegmentKind::Property),
     ];
-    assert_eq!(resolve(&lookup, segs, "M.Run"), Some(20));
+    assert_eq!(
+        resolve_with_profile(
+            &lookup,
+            segs,
+            "M.Run",
+            &file_ctx(vec![], None),
+            &crate::languages::csharp::CSHARP_PROFILE,
+        ),
+        Some(20)
+    );
 }
 
 #[test]
@@ -4012,10 +4135,6 @@ fn implicit_root_extension_applies_to_a_baseless_receiver() {
     // `result.Should()` where `JobResult` declares no base list: the language's
     // implicit root closes the climb, so `Should(this object …)` matches.
     use crate::indexer::resolve::engine::testkit::sym_with_sig;
-    static ROOTY: LanguageProfile = LanguageProfile {
-        implicit_root_types: &["object"],
-        ..DEFAULT_PROFILE
-    };
     let lookup = Lookup::new()
         .with(sym(1, "result", "M.result", "parameter", "src/M.cs"))
         .with_field_type("M.result", "JobResult")
@@ -4044,9 +4163,14 @@ fn implicit_root_extension_applies_to_a_baseless_receiver() {
     let mut s = source_symbol("caller");
     s.qualified_name = "M.Run".to_string();
     let rc = ref_ctx(&r, &s, vec![]);
-    let got = bind_member_access(&rc, &file_ctx(vec![], None), &lookup, &ROOTY)
-        .ok()
-        .map(|res| res.target_symbol_id);
+    let got = bind_member_access(
+        &rc,
+        &file_ctx(vec![], None),
+        &lookup,
+        &crate::languages::csharp::CSHARP_PROFILE,
+    )
+    .ok()
+    .map(|res| res.target_symbol_id);
     assert_eq!(got, Some(20));
 }
 
@@ -4096,7 +4220,16 @@ fn next_hop_miss_retries_sibling_overload_yields() {
         seg("CallTo", true, SegmentKind::Property),
         seg("Returns", true, SegmentKind::Property),
     ];
-    assert_eq!(resolve(&lookup, segs, "M.Run"), Some(32));
+    assert_eq!(
+        resolve_with_profile(
+            &lookup,
+            segs,
+            "M.Run",
+            &file_ctx(vec![], None),
+            &crate::languages::csharp::CSHARP_PROFILE,
+        ),
+        Some(32)
+    );
 }
 
 #[test]
@@ -4153,7 +4286,16 @@ fn alt_yield_retry_probes_extension_methods_too() {
         seg("CallTo", true, SegmentKind::Property),
         seg("Returns", true, SegmentKind::Property),
     ];
-    assert_eq!(resolve(&lookup, segs, "M.Run"), Some(32));
+    assert_eq!(
+        resolve_with_profile(
+            &lookup,
+            segs,
+            "M.Run",
+            &file_ctx(vec![], None),
+            &crate::languages::csharp::CSHARP_PROFILE,
+        ),
+        Some(32)
+    );
 }
 
 // ---------------------------------------------------------------------------

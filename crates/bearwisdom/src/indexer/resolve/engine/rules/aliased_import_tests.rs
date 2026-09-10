@@ -72,7 +72,7 @@ impl SymbolLookup for AliasLookup {
     fn is_external_name(&self, name: &str, lang: &str) -> bool {
         self.inner.is_external_name(name, lang)
     }
-    fn resolve_path_alias(&self, _pkg: Option<i64>, specifier: &str) -> Option<String> {
+    fn resolve_module_alias(&self, _pkg: Option<i64>, specifier: &str) -> Option<String> {
         if specifier.starts_with(self.alias_from) {
             Some(self.alias_to.clone())
         } else {
@@ -111,8 +111,13 @@ fn resolve_with_alias(
 
 #[test]
 fn binds_when_alias_rewrites_specifier() {
-    let inner = crate::indexer::resolve::engine::testkit::Lookup::new()
-        .with(sym(20, "utils", "utils", "function", "src/utils/index.ts"));
+    let inner = crate::indexer::resolve::engine::testkit::Lookup::new().with(sym(
+        20,
+        "utils",
+        "utils",
+        "function",
+        "src/utils/index.ts",
+    ));
     let lookup = AliasLookup::new(inner, "@/", "src/utils/index.ts".to_string());
     let imports = vec![ImportEntry {
         imported_name: "utils".to_string(),
@@ -127,8 +132,13 @@ fn binds_when_alias_rewrites_specifier() {
 #[test]
 fn declines_when_alias_does_not_change_specifier() {
     // resolve_path_alias returns the same value → must decline.
-    let inner = crate::indexer::resolve::engine::testkit::Lookup::new()
-        .with(sym(21, "Foo", "Foo", "class", "src/foo.ts"));
+    let inner = crate::indexer::resolve::engine::testkit::Lookup::new().with(sym(
+        21,
+        "Foo",
+        "Foo",
+        "class",
+        "src/foo.ts",
+    ));
     // alias_from won't match "./foo", so resolve_path_alias returns None → Pass.
     let lookup = AliasLookup::new(inner, "@/", "src/foo.ts".to_string());
     let imports = vec![ImportEntry {
@@ -143,8 +153,13 @@ fn declines_when_alias_does_not_change_specifier() {
 
 #[test]
 fn declines_when_no_import_matches_target() {
-    let inner = crate::indexer::resolve::engine::testkit::Lookup::new()
-        .with(sym(22, "Foo", "Foo", "class", "src/foo.ts"));
+    let inner = crate::indexer::resolve::engine::testkit::Lookup::new().with(sym(
+        22,
+        "Foo",
+        "Foo",
+        "class",
+        "src/foo.ts",
+    ));
     let lookup = AliasLookup::new(inner, "@/", "src/foo.ts".to_string());
     let imports = vec![ImportEntry {
         imported_name: "Bar".to_string(),
@@ -159,8 +174,13 @@ fn declines_when_no_import_matches_target() {
 #[test]
 fn binds_via_alias_import_with_path_rewrite() {
     // `import { Foo as F } from '@/foo'` — ref is `F`, alias rewrites to real path.
-    let inner = crate::indexer::resolve::engine::testkit::Lookup::new()
-        .with(sym(23, "Foo", "Foo", "class", "src/foo.ts"));
+    let inner = crate::indexer::resolve::engine::testkit::Lookup::new().with(sym(
+        23,
+        "Foo",
+        "Foo",
+        "class",
+        "src/foo.ts",
+    ));
     let lookup = AliasLookup::new(inner, "@/", "src/foo.ts".to_string());
     let imports = vec![ImportEntry {
         imported_name: "Foo".to_string(),

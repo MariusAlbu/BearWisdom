@@ -157,9 +157,16 @@ impl SymbolLocationIndex {
     /// Every recorded cross-package bridge as
     /// `(module, name, target_file, target_name)`.
     pub fn reexport_aliases(&self) -> impl Iterator<Item = (&str, &str, &Path, &str)> {
-        self.reexport_aliases.iter().map(|((module, name), (file, target_name))| {
-            (module.as_str(), name.as_str(), file.as_path(), target_name.as_str())
-        })
+        self.reexport_aliases
+            .iter()
+            .map(|((module, name), (file, target_name))| {
+                (
+                    module.as_str(),
+                    name.as_str(),
+                    file.as_path(),
+                    target_name.as_str(),
+                )
+            })
     }
 
     /// Return every `(module_path, file)` pair where the symbol's short

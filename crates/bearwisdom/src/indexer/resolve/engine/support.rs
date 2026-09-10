@@ -13,8 +13,8 @@ use std::collections::BTreeMap;
 use rustc_hash::FxHashMap;
 
 pub(crate) use super::path_match::{
-    basename_stem_matches, file_path_matches_module, is_bare_module_specifier,
-    is_relative_specifier, parent_dir, path_contains_segment_run, path_stem_matches,
+    basename_stem_matches, file_path_matches_module, parent_dir, path_contains_segment_run,
+    path_stem_matches,
 };
 
 pub(crate) use super::reexports::{
@@ -25,7 +25,9 @@ use crate::indexer::resolve::engine::contract::{
     FileContext, Symbol, SymbolInfo, SymbolLookup, TypeInfo, RESOLVED_CONFIDENCE,
 };
 use crate::type_checker::core::types::{TypeArena, TypeId};
-use crate::type_checker::profile::language_profile::{LanguageProfile, NameNormalization, NormSpec};
+use crate::type_checker::profile::language_profile::{
+    LanguageProfile, NameNormalization, NormSpec,
+};
 use crate::types::EdgeKind;
 
 /// Resolve a module-tagged value `TypeRef` to the type of the value module
@@ -92,8 +94,7 @@ pub(crate) fn import_scoped_package_id(
     name: &str,
 ) -> Option<i64> {
     for import in &file_ctx.imports {
-        let names_target =
-            import.imported_name == name || import.alias.as_deref() == Some(name);
+        let names_target = import.bound_name() == name;
         if !names_target {
             continue;
         }
@@ -111,14 +112,21 @@ pub(crate) fn import_scoped_package_id(
 /// that `specifier` starts with. `None` when `specifier` IS a declared name
 /// (no sub-path) or when no workspace package matches.
 ///
-/// Peels on `/`, treating a `::`-qualified specifier (Rust's
-/// `tantivy::schema`) the same way — `::` is canonicalized to `/` first, the
-/// same normalization `workspace_package_id` applies, so both agree on the
-/// same package root and sub-path for a given specifier.
-pub(crate) fn workspace_sub_path(specifier: &str, lookup: &dyn SymbolLookup) -> Option<String> {
+/// Peels on `/`, normalizing a profile's source qualification separator first
+/// when needed. This keeps package-root lookup and sub-path matching in the
+/// generic resolver while the profile owns the source spelling.
+pub(crate) fn workspace_sub_path(
+    profile: &LanguageProfile,
+    specifier: &str,
+    lookup: &dyn SymbolLookup,
+) -> Option<String> {
     let normalized;
-    let specifier: &str = if specifier.contains("::") {
-        normalized = specifier.replace("::", "/");
+    let specifier: &str = if profile.imports.self_package_root.is_some()
+        && !profile.qname_separator.is_empty()
+        && profile.qname_separator != "/"
+        && specifier.contains(profile.qname_separator)
+    {
+        normalized = specifier.replace(profile.qname_separator, "/");
         &normalized
     } else {
         specifier
@@ -136,12 +144,12 @@ pub(crate) fn workspace_sub_path(specifier: &str, lookup: &dyn SymbolLookup) -> 
     None
 }
 
-/// When `specifier`'s leading segment is `profile.imports.self_package_root`
-/// (Rust's `crate`), the sub-path remainder that follows it: `Some(None)` for
-/// the bare keyword (`crate`), `Some(Some(rest))` for a deeper path
-/// (`crate::thing` -> `Some(Some("thing"))`). `None` when the profile carries
-/// no such keyword or `specifier` doesn't lead with it, so the caller falls
-/// back to the declared-name lookup.
+/// When `specifier` starts with `profile.imports.self_package_root`, it names
+/// this file's own package. Return the sub-path remainder that follows it:
+/// `Some(None)` for the bare keyword and `Some(Some(rest))` for a deeper
+/// source-qualified path. `None` when the profile carries no such keyword or
+/// `specifier` doesn't lead with it, so the caller falls back to the declared-
+/// name lookup.
 pub(crate) fn self_package_sub_path(
     profile: &LanguageProfile,
     specifier: &str,
@@ -156,10 +164,20 @@ pub(crate) fn self_package_sub_path(
         .map(|sub| Some(sub.to_string()))
 }
 
-/// `true` when `qualified_name` reads as `module_path` (slash / colon /
-/// dot-separated) prefix followed by `.` and one or more segments.
-pub(crate) fn qname_under_module(qualified_name: &str, module_path: &str) -> bool {
-    let dotted = module_path.replace("::", ".").replace('/', ".");
+/// `true` when `qualified_name` reads as a source module prefix followed by
+/// the index's dotted qname join. The profile owns source qualification; `/`
+/// remains the neutral path-segment separator used by module/file evidence.
+pub(crate) fn qname_under_module(
+    profile: &LanguageProfile,
+    qualified_name: &str,
+    module_path: &str,
+) -> bool {
+    let dotted = module_path_to_index_qname(profile, module_path);
+    index_qname_under_module(qualified_name, &dotted)
+}
+
+fn index_qname_under_module(qualified_name: &str, dotted_module: &str) -> bool {
+    let dotted = dotted_module;
     if dotted.is_empty() {
         return false;
     }
@@ -167,11 +185,65 @@ pub(crate) fn qname_under_module(qualified_name: &str, module_path: &str) -> boo
     qualified_name.starts_with(&needle) || qualified_name == dotted
 }
 
+/// The leaf of a canonical index qname. This intentionally parses the index
+/// representation, not source syntax; source names use `LanguageProfile`.
+pub(crate) fn index_qname_leaf(qname: &str) -> &str {
+    qname.rsplit('.').next().unwrap_or(qname)
+}
+
+/// The parent portion of a canonical index qname.
+pub(crate) fn index_qname_parent(qname: &str) -> Option<&str> {
+    qname.rsplit_once('.').map(|(parent, _)| parent)
+}
+
+/// Whether `qname` is equal to or nested under another canonical index key.
+pub(crate) fn index_qname_is_or_under(qname: &str, prefix: &str) -> bool {
+    qname == prefix
+        || qname
+            .strip_prefix(prefix)
+            .is_some_and(|rest| rest.starts_with('.'))
+}
+
+/// Whether a canonical index qname is exactly `suffix` or ends in that
+/// complete segment path. This parses stored index keys, never source syntax.
+pub(crate) fn index_qname_is_or_ends_with(qname: &str, suffix: &str) -> bool {
+    qname == suffix
+        || qname
+            .strip_suffix(suffix)
+            .is_some_and(|prefix| prefix.ends_with('.'))
+}
+
+/// Join canonical index-qname segments. Source-facing rules must first use a
+/// profile to convert their source spelling to index keys.
+pub(crate) fn join_index_qname(prefix: &str, leaf: &str) -> String {
+    if prefix.is_empty() {
+        leaf.to_string()
+    } else if leaf.is_empty() {
+        prefix.to_string()
+    } else {
+        format!("{prefix}.{leaf}")
+    }
+}
+
+/// The stable synthetic index key assigned to an object-literal callable
+/// return. `$Ret` is an index convention, not a source-language spelling.
+pub(crate) fn index_return_qname(callable_qname: &str) -> String {
+    format!("{callable_qname}$Ret")
+}
+
+/// Whether a canonical index qname is the synthetic object-return slot.
+pub(crate) fn index_qname_is_return_slot(qname: &str) -> bool {
+    qname.ends_with("$Ret")
+}
+
 /// Stricter form of `qname_under_module`: candidate must sit DIRECTLY under the
-/// module — exactly one segment deeper. `Assertions.assertTrue` matches
-/// `Assertions`; `Assertions.Nested.foo` does not.
-pub(crate) fn qname_directly_under(qualified_name: &str, module_path: &str) -> bool {
-    let dotted = module_path.replace("::", ".").replace('/', ".");
+/// module — exactly one segment deeper.
+pub(crate) fn qname_directly_under(
+    profile: &LanguageProfile,
+    qualified_name: &str,
+    module_path: &str,
+) -> bool {
+    let dotted = module_path_to_index_qname(profile, module_path);
     if dotted.is_empty() {
         return false;
     }
@@ -180,6 +252,13 @@ pub(crate) fn qname_directly_under(qualified_name: &str, module_path: &str) -> b
         return false;
     };
     !rest.contains('.')
+}
+
+/// Convert a source module spelling into the index's dotted qname surface.
+/// Profiles declare their source qualifier; the resolver never inventories
+/// language separators here.
+fn module_path_to_index_qname(profile: &LanguageProfile, module_path: &str) -> String {
+    profile.index_qname_from_source(module_path)
 }
 
 /// Minimum score margin the top candidate must beat the runner-up by for
@@ -212,21 +291,6 @@ pub(crate) fn score_candidate(
                 s += 500;
             }
         }
-        if qname_under_module(&sym.qualified_name, mod_path) {
-            s += 300;
-        }
-        // A crate-relative qname (Rust, C++) never carries the workspace
-        // package's own declared name as a leading qname segment — only a
-        // deeper submodule path does. Score the sub-path remainder after
-        // peeling the package's declared name off `mod_path`, so a same-
-        // package candidate under the submodule the import actually names
-        // (`tantivy::schema::Schema`) outranks a same-package candidate at
-        // the crate root that merely shares the bare name.
-        if let Some(sub) = workspace_sub_path(mod_path, lookup) {
-            if qname_under_module(&sym.qualified_name, &sub) {
-                s += 300;
-            }
-        }
     }
     // An implicit/global wildcard namespace (`<Using Include>`, SDK implicit
     // usings, manifest-declared opens) scopes a candidate exactly like a
@@ -234,7 +298,7 @@ pub(crate) fn score_candidate(
     // line, so `Xunit.Assert` outranks a same-named type from a package no
     // scope names.
     for ns in lookup.implicit_wildcard_namespaces(file_package_id) {
-        if qname_under_module(&sym.qualified_name, ns) {
+        if index_qname_under_module(&sym.qualified_name, ns) {
             s += 300;
             break;
         }
@@ -273,7 +337,12 @@ pub(crate) fn pick_ranked_candidate<'a>(
     }
     let mut scored: Vec<(i32, &'a Symbol)> = candidates
         .iter()
-        .map(|sym| (score_candidate(file_ctx, file_package_id, lookup, sym), *sym))
+        .map(|sym| {
+            (
+                score_candidate(file_ctx, file_package_id, lookup, sym),
+                *sym,
+            )
+        })
         .collect();
     scored.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.id.cmp(&b.1.id)));
     let (top_score, top) = scored[0];
@@ -291,31 +360,18 @@ fn path_proximity_score(caller_path: &str, candidate_path: &str) -> i32 {
     let caller_norm = caller_path.replace('\\', "/");
     let candidate_norm = candidate_path.replace('\\', "/");
     let caller_dir = caller_norm.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
-    let candidate_dir = candidate_norm.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+    let candidate_dir = candidate_norm
+        .rsplit_once('/')
+        .map(|(d, _)| d)
+        .unwrap_or("");
     let caller_segs: Vec<&str> = caller_dir.split('/').filter(|s| !s.is_empty()).collect();
-    let candidate_segs: Vec<&str> =
-        candidate_dir.split('/').filter(|s| !s.is_empty()).collect();
+    let candidate_segs: Vec<&str> = candidate_dir.split('/').filter(|s| !s.is_empty()).collect();
     caller_segs
         .iter()
         .zip(candidate_segs.iter())
         .take_while(|(a, b)| a == b)
         .count() as i32
         * 10
-}
-
-/// Strip a leading `{kw}.` from `target` when `kw` is one of `self_keywords`
-/// (Python `self.method` → `method`). Only the first matching keyword strips,
-/// and only when followed by `.`. An empty `self_keywords` slice returns
-/// `target` unchanged.
-pub(crate) fn strip_self_keyword<'t>(target: &'t str, self_keywords: &[&str]) -> &'t str {
-    for kw in self_keywords {
-        if let Some(rest) = target.strip_prefix(kw) {
-            if let Some(after) = rest.strip_prefix('.') {
-                return after;
-            }
-        }
-    }
-    target
 }
 
 /// Normalize a name for the bare-name binding comparison. Applied identically to

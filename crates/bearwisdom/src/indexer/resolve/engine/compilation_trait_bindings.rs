@@ -2,6 +2,10 @@
 use super::*;
 use crate::indexer::resolve::engine::{module_trait_inputs::Owner, trait_graph};
 
+/// Canonical internal identity for a trait's implicit receiver binder. This is
+/// intentionally not any source-language spelling (`Self`, `this`, etc.).
+const TRAIT_RECEIVER_BINDER_NAME: &str = "$trait_receiver";
+
 impl Compilation {
     pub(super) fn prepare_trait_sources(&mut self) {
         for input in self.modules.inputs.values() {
@@ -15,7 +19,7 @@ impl Compilation {
                 let info = self.type_info_by_id.entry(id).or_default();
                 if info.trait_self_param.is_none() {
                     info.trait_self_param = Some(self.arena.intern_generic(GenericParamData {
-                        name: "Self".into(),
+                        name: TRAIT_RECEIVER_BINDER_NAME.into(),
                         owner_symbol_index: 0,
                         bound: None,
                         kind: crate::type_checker::core::types::GenericParamKind::Type,

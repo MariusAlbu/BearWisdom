@@ -249,7 +249,10 @@ fn application_args_keep_their_own_applications_and_positions() {
     match target {
         AliasTarget::Application { root, args } => {
             assert_eq!(root, "Wrap");
-            assert_eq!(args, vec!["Inner<A, B>".to_string(), "'x' | 'y'".to_string()]);
+            assert_eq!(
+                args,
+                vec!["Inner<A, B>".to_string(), "'x' | 'y'".to_string()]
+            );
         }
         other => panic!("expected Application {{ root: \"Wrap\" }}, got {other:?}"),
     }
@@ -263,7 +266,13 @@ fn conditional_branches_keep_their_applied_args() {
     let target =
         classify("type DOmit<TObject, TKey> = TObject extends any ? Omit<TObject, TKey> : never;");
     match target {
-        AliasTarget::Conditional { check, extends, true_branch, false_branch, .. } => {
+        AliasTarget::Conditional {
+            check,
+            extends,
+            true_branch,
+            false_branch,
+            ..
+        } => {
             assert_eq!(check, "TObject");
             assert_eq!(extends, "any");
             assert_eq!(true_branch, "Omit<TObject, TKey>");
@@ -344,7 +353,10 @@ fn a_mapped_type_over_a_named_union_records_that_union_as_its_source() {
         .expect("the union alias is captured");
     match keys {
         crate::types::AliasTarget::Union(branches) => {
-            assert_eq!(branches, vec!["'click'".to_string(), "'change'".to_string()])
+            assert_eq!(
+                branches,
+                vec!["'click'".to_string(), "'change'".to_string()]
+            )
         }
         other => panic!("expected a Union target, got {other:?}"),
     }

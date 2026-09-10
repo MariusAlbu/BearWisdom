@@ -9,6 +9,8 @@
 use std::path::Path;
 use std::sync::Arc;
 
+pub(crate) mod declared_deps;
+
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
     SymbolLocationIndex,

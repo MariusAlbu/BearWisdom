@@ -69,5 +69,4 @@ impl LanguagePlugin for NixPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::NIX_PROFILE)
     }
-
 }

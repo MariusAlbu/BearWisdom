@@ -77,7 +77,12 @@ fn harvest_using_form(node: Node, src: &str, module_body: Node, out: &mut Vec<El
 /// The directive set inside a `quote do … end`. Walks the form's do-block for
 /// a nested `quote` call and harvests the `import`/`alias`/`use`/`def`
 /// directives in it.
-fn collect_quote_directives(node: Node, src: &str, module_body: Node, out: &mut Vec<ElixirInjection>) {
+fn collect_quote_directives(
+    node: Node,
+    src: &str,
+    module_body: Node,
+    out: &mut Vec<ElixirInjection>,
+) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "call" {
@@ -98,7 +103,12 @@ fn collect_quote_directives(node: Node, src: &str, module_body: Node, out: &mut 
 /// statements of a quote block. A nested `defmacro __using__` is the
 /// case-template idiom, not a real member — its delegate call is followed
 /// instead of being recorded as a `Def`.
-fn harvest_directives(quote_block: Node, src: &str, module_body: Node, out: &mut Vec<ElixirInjection>) {
+fn harvest_directives(
+    quote_block: Node,
+    src: &str,
+    module_body: Node,
+    out: &mut Vec<ElixirInjection>,
+) {
     let mut cursor = quote_block.walk();
     for child in quote_block.children(&mut cursor) {
         if child.kind() != "call" {
@@ -152,13 +162,19 @@ fn harvest_directives(quote_block: Node, src: &str, module_body: Node, out: &mut
 /// __proxy__(__MODULE__, opts)`); resolve the delegate by name within
 /// `module_body` and harvest its own `quote do … end` the same way a direct
 /// `using`/`defmacro __using__` form would be harvested.
-fn follow_proxy_call(nested_do_block: Node, module_body: Node, src: &str, out: &mut Vec<ElixirInjection>) {
+fn follow_proxy_call(
+    nested_do_block: Node,
+    module_body: Node,
+    src: &str,
+    out: &mut Vec<ElixirInjection>,
+) {
     let mut cursor = nested_do_block.walk();
     for child in nested_do_block.children(&mut cursor) {
         match child.kind() {
             "call" => {
                 if let Some(fn_name) = call_identifier(&child, src) {
-                    if let Some(helper_do_block) = find_sibling_def_body(module_body, &fn_name, src) {
+                    if let Some(helper_do_block) = find_sibling_def_body(module_body, &fn_name, src)
+                    {
                         collect_quote_directives(helper_do_block, src, module_body, out);
                     }
                 }
@@ -335,7 +351,11 @@ fn alias_as_rename(node: &Node, src: &str) -> Option<String> {
                     .find(|c| matches!(c.kind(), "keyword" | "identifier"))
                     .map(|c| node_text(*c, src))
                     .unwrap_or_default();
-                let key = key.trim().trim_end_matches(':').trim_start_matches(':').trim();
+                let key = key
+                    .trim()
+                    .trim_end_matches(':')
+                    .trim_start_matches(':')
+                    .trim();
                 if key != "as" {
                     continue;
                 }

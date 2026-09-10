@@ -57,6 +57,12 @@ pub enum SymbolKind {
     Test,
 }
 
+/// Normalized extractor metadata carried in a symbol signature for a member
+/// that admits arbitrary keys. This is semantic index data, not a spelling
+/// convention: language extractors opt in only when their grammar identified
+/// an index signature.
+pub const INDEX_SIGNATURE_MARKER: &str = "bearwisdom:index_signature";
+
 impl SymbolKind {
     pub fn as_str(self) -> &'static str {
         self.into()

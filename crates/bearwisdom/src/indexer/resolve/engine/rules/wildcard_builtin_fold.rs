@@ -14,7 +14,7 @@
 // same-named builtin binds first.
 // =============================================================================
 
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 
 pub struct WildcardBuiltinFoldRule;
 

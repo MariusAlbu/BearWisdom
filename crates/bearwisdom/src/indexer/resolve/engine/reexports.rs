@@ -13,16 +13,14 @@
 // the sibling `reexports_candidates` module.
 // =============================================================================
 
-use crate::indexer::resolve::engine::contract::{
-    SymbolInfo, SymbolLookup, RESOLVED_CONFIDENCE,
-};
-use crate::indexer::resolve::engine::path_match::is_relative_specifier;
-use crate::indexer::resolve::engine::reexports_candidates::{
-    resolve_reexport_by_matching_file, resolve_relative_reexport,
-};
+use crate::indexer::resolve::engine::contract::{SymbolInfo, SymbolLookup, RESOLVED_CONFIDENCE};
 pub(crate) use crate::indexer::resolve::engine::reexports_candidates::{
     relative_reexport_candidates, workspace_pkg_barrels, workspace_pkg_declared_symbol,
 };
+use crate::indexer::resolve::engine::reexports_candidates::{
+    resolve_reexport_by_matching_file, resolve_relative_reexport,
+};
+use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::EdgeKind;
 
 /// Walk re-export chains from `module_path` to the module that defines
@@ -39,7 +37,7 @@ pub(crate) fn follow_reexports(
     kind_compatible: &dyn Fn(EdgeKind, &str) -> bool,
     lookup: &dyn SymbolLookup,
     depth: u32,
-    barrel_stems: &[&str],
+    profile: &LanguageProfile,
 ) -> Option<SymbolInfo> {
     const MAX_DEPTH: u32 = 5;
     if depth >= MAX_DEPTH {
@@ -54,27 +52,38 @@ pub(crate) fn follow_reexports(
     let mut wildcard_sources: Vec<&str> = Vec::new();
 
     for (exported_name, source_module) in reexports {
-        // A bare workspace-package source may be a consumer-scoped Cargo dependency
-        // RENAME in the re-exporting file's own package (`pub use common::X` where
-        // `common` = `tantivy-common`). Rewrite the alias head to the target package
+        // A bare workspace-package source may use a consumer-scoped package
+        // alias. Rewrite the profile-delimited alias head to the target package
         // so the hop keys on the real member; the wildcard path keeps the original.
-        let renamed = if is_relative_specifier(source_module)
+        let renamed = if profile
+            .source_module_path_policy(source_module)
+            .is_relative(source_module)
             || lookup.workspace_package_id(source_module).is_some()
         {
             None
         } else {
-            let head = source_module.split("::").next().unwrap_or(source_module);
+            let head = if profile.qname_separator.is_empty() {
+                source_module
+            } else {
+                source_module
+                    .split(profile.qname_separator)
+                    .next()
+                    .unwrap_or(source_module)
+            };
             lookup
-                .dep_rename(lookup.package_id_for_file(module_path), head)
+                .resolve_package_alias(lookup.package_id_for_file(module_path), head)
                 .map(|t| format!("{t}{}", &source_module[head.len()..]))
         };
         let source = renamed.as_deref().unwrap_or(source_module);
 
         // A bare source is followable when it resolves to a file OR names a sibling
         // workspace package whose barrel can be recovered; a true external is skipped.
-        if !is_relative_specifier(source)
+        if !profile
+            .source_module_path_policy(source)
+            .is_relative(source)
             && lookup.resolve_module_from(module_path, source).is_none()
-            && workspace_pkg_barrels(lookup, source, barrel_stems).is_empty()
+            && workspace_pkg_barrels(lookup, source, profile.imports.reexport_barrel_stems)
+                .is_empty()
             && lookup.workspace_package_id(source).is_none()
         {
             continue;
@@ -93,7 +102,10 @@ pub(crate) fn follow_reexports(
         // directly (a member that owns the type, re-exported through this module),
         // rather than forwarding it onward. Chase one hop into the package's own
         // symbol set (the cross-member re-export seam).
-        if !is_relative_specifier(source) {
+        if !profile
+            .source_module_path_policy(source)
+            .is_relative(source)
+        {
             if let Some(id) = workspace_pkg_declared_symbol(
                 lookup,
                 source,
@@ -110,7 +122,10 @@ pub(crate) fn follow_reexports(
                 return Some(reexport_resolution(sym.id, "reexport_chain"));
             }
         }
-        if is_relative_specifier(source) {
+        if profile
+            .source_module_path_policy(source)
+            .is_relative(source)
+        {
             if let Some(res) = resolve_relative_reexport(
                 lookup,
                 module_path,
@@ -119,6 +134,7 @@ pub(crate) fn follow_reexports(
                 edge_kind,
                 kind_compatible,
                 "reexport_chain",
+                profile.source_module_path_policy(source),
             ) {
                 return Some(res);
             }
@@ -129,6 +145,7 @@ pub(crate) fn follow_reexports(
             edge_kind,
             kind_compatible,
             "reexport_chain",
+            profile.source_module_path_policy(source),
         ) {
             return Some(res);
         }
@@ -141,7 +158,7 @@ pub(crate) fn follow_reexports(
             kind_compatible,
             lookup,
             depth,
-            barrel_stems,
+            profile,
         ) {
             return Some(res);
         }
@@ -153,7 +170,10 @@ pub(crate) fn follow_reexports(
                 return Some(reexport_resolution(sym.id, "reexport_star"));
             }
         }
-        if is_relative_specifier(source_module) {
+        if profile
+            .source_module_path_policy(source_module)
+            .is_relative(source_module)
+        {
             if let Some(res) = resolve_relative_reexport(
                 lookup,
                 module_path,
@@ -162,6 +182,7 @@ pub(crate) fn follow_reexports(
                 edge_kind,
                 kind_compatible,
                 "reexport_star",
+                profile.source_module_path_policy(source_module),
             ) {
                 return Some(res);
             }
@@ -172,6 +193,7 @@ pub(crate) fn follow_reexports(
             edge_kind,
             kind_compatible,
             "reexport_star",
+            profile.source_module_path_policy(source_module),
         ) {
             return Some(res);
         }
@@ -184,7 +206,7 @@ pub(crate) fn follow_reexports(
             kind_compatible,
             lookup,
             depth,
-            barrel_stems,
+            profile,
         ) {
             return Some(res);
         }
@@ -207,7 +229,7 @@ fn follow_reexport_source(
     kind_compatible: &dyn Fn(EdgeKind, &str) -> bool,
     lookup: &dyn SymbolLookup,
     depth: u32,
-    barrel_stems: &[&str],
+    profile: &LanguageProfile,
 ) -> Option<SymbolInfo> {
     if let Some(next) = lookup.resolve_module_from(module_path, source_module) {
         let next = next.to_string();
@@ -218,11 +240,16 @@ fn follow_reexport_source(
             kind_compatible,
             lookup,
             depth + 1,
-            barrel_stems,
+            profile,
         );
     }
-    if !is_relative_specifier(source_module) {
-        for barrel in workspace_pkg_barrels(lookup, source_module, barrel_stems) {
+    if !profile
+        .source_module_path_policy(source_module)
+        .is_relative(source_module)
+    {
+        for barrel in
+            workspace_pkg_barrels(lookup, source_module, profile.imports.reexport_barrel_stems)
+        {
             if let Some(res) = follow_reexports(
                 &barrel,
                 target_name,
@@ -230,7 +257,7 @@ fn follow_reexport_source(
                 kind_compatible,
                 lookup,
                 depth + 1,
-                barrel_stems,
+                profile,
             ) {
                 return Some(res);
             }
@@ -240,7 +267,12 @@ fn follow_reexport_source(
     // A relative source with no `resolve_module_from` mapping: recurse on each
     // candidate file the joined-and-normalized path could name, so a multi-hop
     // relative re-export chain (`./a` re-exports from `./b`) still threads.
-    for next in relative_reexport_candidates(lookup, module_path, source_module) {
+    for next in relative_reexport_candidates(
+        lookup,
+        module_path,
+        source_module,
+        profile.source_module_path_policy(source_module),
+    ) {
         if let Some(res) = follow_reexports(
             &next,
             target_name,
@@ -248,7 +280,7 @@ fn follow_reexport_source(
             kind_compatible,
             lookup,
             depth + 1,
-            barrel_stems,
+            profile,
         ) {
             return Some(res);
         }

@@ -259,7 +259,7 @@ fn alias_templates_and_generic_receiver_bindings_stay_in_their_program() {
     );
     let lookup: &dyn SymbolLookup = &scoped;
     assert_eq!(expand(lookup, &arena, alias), Some(own));
-    assert_eq!(engine::alias::expand(alias, lookup, &arena), own);
+    assert_eq!(engine::alias::expand(alias, lookup, &arena, None), own);
     assert!(expand(lookup, &arena, arena.decl_in(b, "Alias", 20)).is_none());
     for base in [own, foreign] {
         let ty = arena.intern(Type::Apply {
@@ -311,10 +311,11 @@ fn nested_foreign_arguments_are_not_permission_to_read_the_correct_outer_owner()
     );
     assert!(expand(lookup, &arena, mixed).is_none());
     assert!(matches!(
-        arena.get(engine::alias::expand(mixed, lookup, &arena)),
+        arena.get(engine::alias::expand(mixed, lookup, &arena, None)),
         Type::Unknown
     ));
-    let projected = engine::chain::expand_receiver(Receiver::new(mixed, 10), lookup, &arena, None);
+    let projected =
+        engine::chain::expand_receiver(Receiver::new(mixed, 10), lookup, &arena, None, None);
     assert!(matches!(arena.get(projected.ty), Type::Unknown));
     assert!(projected.id.is_none());
 }

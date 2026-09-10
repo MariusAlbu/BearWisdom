@@ -27,7 +27,9 @@ use std::path::{Path, PathBuf};
 
 use tracing::debug;
 
-use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, SymbolLocationIndex};
+use super::{
+    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, SymbolLocationIndex,
+};
 use crate::ecosystem::externals::{
     coursier_cache_root, gradle_caches_root, maven_local_repo, resolve_coursier_bytecode_jar,
     resolve_gradle_bytecode_jar, resolve_maven_artifact_dir, ExternalDepRoot,

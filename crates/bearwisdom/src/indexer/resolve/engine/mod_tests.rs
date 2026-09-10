@@ -1,8 +1,6 @@
-use crate::indexer::resolve::engine::contract::{
-    FileContext, Symbol, SymbolLookup, SymbolSet,
-};
-use crate::indexer::resolve::engine::testkit::{accept_any, ref_ctx, source_symbol, sym};
+use crate::indexer::resolve::engine::contract::{FileContext, Symbol, SymbolLookup, SymbolSet};
 use crate::indexer::resolve::engine::rules::same_file::SameFileRule;
+use crate::indexer::resolve::engine::testkit::{accept_any, ref_ctx, source_symbol, sym};
 use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
 use crate::types::{EdgeKind, ExtractedRef};
@@ -30,8 +28,14 @@ impl FileLookup {
     }
 
     fn with(mut self, s: Symbol) -> Self {
-        self.by_name.entry(s.name.clone()).or_default().push(s.clone());
-        self.by_file.entry(s.file_path.to_string()).or_default().push(s);
+        self.by_name
+            .entry(s.name.clone())
+            .or_default()
+            .push(s.clone());
+        self.by_file
+            .entry(s.file_path.to_string())
+            .or_default()
+            .push(s);
         self
     }
 }
@@ -42,21 +46,44 @@ impl SymbolLookup for FileLookup {
     fn by_name(&self, name: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(self.by_name.get(name).map(|v| v.as_slice()).unwrap_or(&[]))
     }
-    fn by_qualified_name(&self, _: &str) -> Option<&Symbol> { None }
-    fn members_of(&self, _: &str) -> SymbolSet<'_> { SymbolSet::Borrowed(&self.empty) }
-    fn types_by_name(&self, _: &str) -> SymbolSet<'_> { SymbolSet::Borrowed(&self.empty) }
-    fn in_namespace(&self, _: &str) -> Vec<&Symbol> { Vec::new() }
-    fn has_in_namespace(&self, _: &str) -> bool { false }
+    fn by_qualified_name(&self, _: &str) -> Option<&Symbol> {
+        None
+    }
+    fn members_of(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
+    }
+    fn types_by_name(&self, _: &str) -> SymbolSet<'_> {
+        SymbolSet::Borrowed(&self.empty)
+    }
+    fn in_namespace(&self, _: &str) -> Vec<&Symbol> {
+        Vec::new()
+    }
+    fn has_in_namespace(&self, _: &str) -> bool {
+        false
+    }
     fn in_file(&self, file_path: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(
-            self.by_file.get(file_path).map(|v| v.as_slice()).unwrap_or(&[]),
+            self.by_file
+                .get(file_path)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]),
         )
     }
-    fn field_type_name(&self, _: &str) -> Option<&str> { None }
-    fn return_type_name(&self, _: &str) -> Option<&str> { None }
-    fn generic_params(&self, _: &str) -> Option<Vec<String>> { None }
-    fn reexports_from(&self, _: &str) -> &[(String, String)] { &self.empty_pairs }
-    fn is_external_name(&self, _: &str, _: &str) -> bool { false }
+    fn field_type_name(&self, _: &str) -> Option<&str> {
+        None
+    }
+    fn return_type_name(&self, _: &str) -> Option<&str> {
+        None
+    }
+    fn generic_params(&self, _: &str) -> Option<Vec<String>> {
+        None
+    }
+    fn reexports_from(&self, _: &str) -> &[(String, String)] {
+        &self.empty_pairs
+    }
+    fn is_external_name(&self, _: &str, _: &str) -> bool {
+        false
+    }
 }
 
 // ---------------------------------------------------------------------------

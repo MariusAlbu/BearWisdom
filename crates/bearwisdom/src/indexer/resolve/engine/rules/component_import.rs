@@ -1,8 +1,8 @@
 // =============================================================================
-// engine/rules/component_import — JSX/Vue/Svelte component tag resolution
+// engine/rules/component_import — language-owned component tag resolution
 //
-// A `Calls` ref whose target starts with an ASCII-uppercase letter is a JSX or
-// template component tag. Walks the file's imports looking for one whose
+// A `Calls` ref recognized by its active language plugin as a component tag
+// walks the file's imports looking for one whose
 // `imported_name` or `alias` matches the tag head, then binds a kind-compatible
 // symbol whose file path matches the import's module path.
 //
@@ -12,11 +12,12 @@
 // Path aliases are tried last — when the module specifier rewrites to a
 // concrete path, symbols in that rewritten file are scanned.
 //
-// Ungated: runs for every language that emits component-tag Calls refs.
+// Ungated: runs for every language, while unowned tag spellings decline.
 // =============================================================================
 
 use crate::indexer::resolve::engine::support::file_path_matches_module;
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
+use crate::languages::LanguagePlugin;
 use crate::types::EdgeKind;
 
 pub struct ComponentImportRule;
@@ -28,10 +29,11 @@ impl LookupRule for ComponentImportRule {
 
     fn apply(&self, ctx: &BinderContext) -> LookupResult {
         let target = ctx.target();
-        if ctx.edge_kind() != EdgeKind::Calls || !is_component_tag_target(target) {
+        if ctx.edge_kind() != EdgeKind::Calls {
             return LookupResult::Pass;
         }
-        let Some(head) = component_tag_head(target) else {
+        let component_policy = crate::languages::default_registry().get(&ctx.file_ctx.language);
+        let Some(head) = component_policy.component_tag_head(target) else {
             return LookupResult::Pass;
         };
         let edge_kind = ctx.edge_kind();
@@ -53,7 +55,8 @@ impl LookupRule for ComponentImportRule {
             };
 
             for sym in ctx.lookup.by_name(lookup_name) {
-                if (ctx.kind)(edge_kind, &sym.kind)
+                if component_policy.is_component_file(&sym.file_path)
+                    && (ctx.kind)(edge_kind, &sym.kind)
                     && file_path_matches_module(&sym.file_path, module_path, ctx.profile)
                 {
                     return LookupResult::Resolved(
@@ -62,17 +65,19 @@ impl LookupRule for ComponentImportRule {
                 }
             }
 
-            if let Some(res) = resolve_component_import_module_symbols(ctx, module_path) {
+            if let Some(res) =
+                resolve_component_import_module_symbols(ctx, module_path, component_policy)
+            {
                 return res;
             }
 
             if let Some(rewritten) = ctx
                 .lookup
-                .resolve_path_alias(ctx.ref_ctx.file_package_id, module_path)
+                .resolve_module_alias(ctx.ref_ctx.file_package_id, module_path)
             {
                 if rewritten != module_path {
                     for sym in ctx.lookup.in_file(&rewritten) {
-                        if is_component_file(&sym.file_path)
+                        if component_policy.is_component_file(&sym.file_path)
                             && is_component_symbol_kind(&sym.kind)
                             && (ctx.kind)(edge_kind, &sym.kind)
                         {
@@ -90,14 +95,18 @@ impl LookupRule for ComponentImportRule {
 
 /// Resolves via the module's symbols when there is exactly one component-kind
 /// candidate — ambiguity suppresses the result.
-fn resolve_component_import_module_symbols(ctx: &BinderContext<'_>, module_path: &str) -> Option<LookupResult> {
+fn resolve_component_import_module_symbols(
+    ctx: &BinderContext<'_>,
+    module_path: &str,
+    component_policy: &dyn LanguagePlugin,
+) -> Option<LookupResult> {
     let edge_kind = ctx.edge_kind();
     let mut compatible = ctx
         .lookup
         .in_module_from(&ctx.file_ctx.file_path, module_path)
         .into_iter()
         .filter(|sym| {
-            is_component_file(&sym.file_path)
+            component_policy.is_component_file(&sym.file_path)
                 && is_component_symbol_kind(&sym.kind)
                 && (ctx.kind)(edge_kind, &sym.kind)
         });
@@ -108,25 +117,6 @@ fn resolve_component_import_module_symbols(ctx: &BinderContext<'_>, module_path:
     Some(LookupResult::Resolved(
         ctx.resolved(first.id, "default_component_import"),
     ))
-}
-
-fn component_tag_head(target: &str) -> Option<&str> {
-    let head = target
-        .split(['.', ':', '/'])
-        .next()
-        .unwrap_or(target)
-        .trim();
-    (!head.is_empty()).then_some(head)
-}
-
-fn is_component_tag_target(target: &str) -> bool {
-    component_tag_head(target)
-        .and_then(|head| head.chars().next())
-        .is_some_and(|ch| ch.is_ascii_uppercase())
-}
-
-fn is_component_file(path: &str) -> bool {
-    path.ends_with(".vue") || path.ends_with(".svelte")
 }
 
 fn is_component_symbol_kind(kind: &str) -> bool {

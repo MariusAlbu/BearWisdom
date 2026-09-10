@@ -12,7 +12,9 @@ fn fortran_builtin_skip_declines_intrinsics_not_project_names() {
     // Compiler intrinsics decline (classified builtin, not counted as an
     // unresolved project ref); an ordinary project-declared name is NOT in
     // the skip set and reaches the resolution ladder.
-    let skip = FORTRAN_PROFILE.builtin_skip.expect("fortran builtin_skip set");
+    let skip = FORTRAN_PROFILE
+        .builtin_skip
+        .expect("fortran builtin_skip set");
     assert!(skip("size"));
     assert!(skip("SIZE"));
     assert!(skip("allocated"));

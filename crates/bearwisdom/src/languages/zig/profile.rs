@@ -54,7 +54,7 @@ pub const ZIG_PROFILE: LanguageProfile = LanguageProfile {
     id: "zig",
     qname_separator: ".",
     declaration_merging: crate::type_checker::profile::language_profile::MergeScope::None,
-    self_keywords: &[],
+    receiver_spellings: &[],
     supertype_discovery: SupertypeDiscovery::Structural,
     ancestor_order: crate::type_checker::profile::language_profile::AncestorOrder::Bfs,
     members_can_be_external: true,

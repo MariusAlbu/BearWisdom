@@ -62,10 +62,15 @@ fn collect_template_ref_vars(source: &str) -> Vec<String> {
         }
         // A `#` inside a tag, at an attribute boundary (preceded by whitespace or
         // the tag open), introduces a reference variable.
-        if in_tag && b == b'#' && (i == 0 || bytes[i - 1].is_ascii_whitespace() || bytes[i - 1] == b'<') {
+        if in_tag
+            && b == b'#'
+            && (i == 0 || bytes[i - 1].is_ascii_whitespace() || bytes[i - 1] == b'<')
+        {
             let start = i + 1;
             let mut j = start;
-            while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_' || bytes[j] == b'$') {
+            while j < bytes.len()
+                && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_' || bytes[j] == b'$')
+            {
                 j += 1;
             }
             if j > start {

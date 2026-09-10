@@ -79,7 +79,10 @@ pub(super) fn select_version_subdir(dir: &Path, requested: Option<&str>) -> Opti
     select_nearest_version(&candidates, requested)
 }
 
-pub(super) fn select_nearest_version(candidates: &[String], requested: Option<&str>) -> Option<String> {
+pub(super) fn select_nearest_version(
+    candidates: &[String],
+    requested: Option<&str>,
+) -> Option<String> {
     if let Some(req) = requested {
         if let Some(exact) = candidates.iter().find(|c| c.as_str() == req) {
             return Some(exact.clone());

@@ -58,5 +58,4 @@ impl LanguagePlugin for NunjucksPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::NUNJUCKS_PROFILE)
     }
-
 }

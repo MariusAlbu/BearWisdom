@@ -74,4 +74,11 @@ impl LanguagePlugin for ProtoPlugin {
         Some(&profile::PROTO_PROFILE)
     }
 
+    fn plugin_flow_emissions(
+        &self,
+        source: &str,
+        _file_path: &str,
+    ) -> Vec<(u32, crate::indexer::resolve::flow_emit::FlowEmission)> {
+        connectors::extract_proto_grpc_starts(source)
+    }
 }

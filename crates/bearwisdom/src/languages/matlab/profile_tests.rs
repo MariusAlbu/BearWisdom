@@ -36,4 +36,3 @@ fn matlab_namespaceless_global_is_on() {
         crate::type_checker::profile::language_profile::NamespaceScope::Global
     );
 }
-

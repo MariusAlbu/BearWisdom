@@ -17,6 +17,7 @@
 
 pub mod extract;
 pub mod keywords;
+pub(crate) mod module_paths;
 mod predicates;
 pub(crate) mod profile;
 pub use profile::NIM_PROFILE;
@@ -84,10 +85,17 @@ impl LanguagePlugin for NimPlugin {
         keywords::KEYWORDS
     }
 
+    fn signature_type_application(&self, text: &str) -> (String, Vec<String>) {
+        crate::languages::bracket_type_application(text)
+    }
+
+    fn signature_type_head<'a>(&self, text: &'a str) -> &'a str {
+        crate::languages::bracket_type_head(text)
+    }
+
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::NIM_PROFILE)
     }
-
 }

@@ -513,7 +513,10 @@ pub fn list_jar_class_entries(jar_path: &Path) -> Vec<(String, String)> {
         };
         if outer_owned.is_empty()
             || outer_owned.starts_with('<')
-            || outer_owned.chars().next().is_some_and(|c| c.is_ascii_digit())
+            || outer_owned
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_digit())
         {
             continue;
         }

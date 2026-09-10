@@ -1,5 +1,6 @@
 use super::*;
 use crate::indexer::resolve::engine::testkit::{file_ctx, Lookup};
+use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
 
 #[test]
 fn callable_yield_keeps_a_canonical_return_id_without_nominalizing_it() {
@@ -35,6 +36,7 @@ fn callable_yield_keeps_a_canonical_return_id_without_nominalizing_it() {
         &arena,
         &file_ctx(vec![], None),
         &segment,
+        &DEFAULT_PROFILE,
     )
     .unwrap();
     assert_eq!(result.ty, expected);

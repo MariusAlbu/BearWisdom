@@ -20,10 +20,8 @@ use rustc_hash::FxHashMap;
 
 use crate::ecosystem::symbol_index::SymbolLocationIndex;
 use crate::indexer::resolve::engine::compilation::Compilation;
-use crate::indexer::resolve::engine::contract::chain_walker::{
-    parse_return_type_from_signature_for_lang, parse_type_head_and_args,
-};
 use crate::indexer::resolve::engine::contract::SymbolLookup;
+use crate::languages::LanguagePlugin;
 use crate::type_checker::profile::language_profile::LanguageProfile;
 
 /// Pull the files that DEFINE a materialized external file's callables' RETURN
@@ -34,25 +32,33 @@ use crate::type_checker::profile::language_profile::LanguageProfile;
 /// signature: pull only an un-materialized, externally-defined head, so a return
 /// type already indexed (internal or pulled) adds nothing. Signature shape is
 /// per-language (TS/.NET `):`, Rust/Python `->`, Go's separator-less trailing
-/// result) — dispatched through `parse_return_type_from_signature_for_lang`, the
-/// same parser `populate_return_type_ids` uses for every language's own symbols.
+/// result) — dispatched through the owning language plugin, the same adapter
+/// `populate_return_type_ids` uses for every language's own symbols.
 pub(super) fn collect_return_type_files(
     symbols: &[crate::types::ExtractedSymbol],
     lang: &str,
+    profiles: &FxHashMap<&'static str, &'static LanguageProfile>,
     tree: &Compilation,
     loc: &SymbolLocationIndex,
     seen: &mut HashSet<PathBuf>,
     out: &mut Vec<PathBuf>,
 ) {
+    let Some(profile) = profiles.get(lang) else {
+        return;
+    };
     for s in symbols {
         let Some(sig) = s.signature.as_deref() else {
             continue;
         };
-        let Some(ret) = parse_return_type_from_signature_for_lang(sig, lang) else {
+        let Some(ret) = crate::languages::default_registry()
+            .get(lang)
+            .signature_return_type(sig)
+            .or_else(|| crate::ecosystem::signature::return_type_for_language(lang, sig))
+        else {
             continue;
         };
-        let (head, _args) = parse_type_head_and_args(&ret);
-        demand_type_head(head, tree, loc, seen, out);
+        let (head, _args) = crate::languages::signature_type_application(lang, &ret);
+        demand_type_head(&head, profile, tree, loc, seen, out);
     }
 }
 
@@ -76,38 +82,19 @@ pub(super) fn collect_callback_param_type_files(
     let Some(profile) = profiles.get(lang) else {
         return;
     };
-    if profile.delegate_wrappers.is_empty() {
-        return;
-    }
-    for s in symbols {
-        let Some(sig) = s.signature.as_deref() else {
+    for symbol in symbols {
+        let Some(signature) = symbol.signature.as_deref() else {
             continue;
         };
-        for (wrapper, _shape) in profile.delegate_wrappers {
-            let mut search_from = 0;
-            while let Some(pos) = sig[search_from..].find(wrapper) {
-                let abs = search_from + pos;
-                search_from = abs + wrapper.len();
-                // Require an applied form `Wrapper<...>` at a token boundary so
-                // `Func` doesn't match inside `FuncFactory`.
-                let boundary_ok = abs == 0
-                    || !sig.as_bytes()[abs - 1].is_ascii_alphanumeric()
-                        && sig.as_bytes()[abs - 1] != b'_';
-                if !boundary_ok || !sig[search_from..].starts_with('<') {
-                    continue;
-                }
-                let Some(args) = balanced_generic_args(&sig[search_from..]) else {
-                    continue;
-                };
-                for arg in split_top_level_commas(args) {
-                    let (head, _args) = parse_type_head_and_args(arg.trim());
-                    demand_type_head(head, tree, loc, seen, out);
-                }
-            }
+        for argument in crate::languages::default_registry()
+            .get(lang)
+            .signature_delegate_argument_types(signature)
+        {
+            let (head, _args) = crate::languages::signature_type_application(lang, &argument);
+            demand_type_head(&head, profile, tree, loc, seen, out);
         }
     }
 }
-
 /// Pull the files that DEFINE the type a member chain's ROOT segment was
 /// declared as. A root's `declared_type` is stamped at extract time — from a
 /// type annotation, or from a language keyword aliased to the library type it
@@ -129,11 +116,16 @@ pub(super) fn collect_callback_param_type_files(
 /// next hops.
 pub(super) fn collect_chain_root_type_files(
     refs: &[crate::types::ExtractedRef],
+    lang: &str,
+    profiles: &FxHashMap<&'static str, &'static LanguageProfile>,
     tree: &Compilation,
     loc: &SymbolLocationIndex,
     seen: &mut HashSet<PathBuf>,
     out: &mut Vec<PathBuf>,
 ) {
+    let Some(profile) = profiles.get(lang) else {
+        return;
+    };
     for r in refs {
         let Some(root) = r.chain.as_ref().and_then(|c| c.segments.first()) else {
             continue;
@@ -141,58 +133,18 @@ pub(super) fn collect_chain_root_type_files(
         let Some(declared) = root.declared_type.as_deref() else {
             continue;
         };
-        let (head, _args) = parse_type_head_and_args(declared);
-        if type_leaf(head) == head {
+        let (head, _args) = crate::languages::signature_type_application(lang, declared);
+        if type_leaf(&head, profile) == head {
             continue;
         }
-        demand_type_head(head, tree, loc, seen, out);
+        demand_type_head(&head, profile, tree, loc, seen, out);
     }
-}
-
-/// The text between an applied generic's outermost angle brackets, balanced:
-/// for `<A, Func<B, C>>rest` returns `A, Func<B, C>`.
-fn balanced_generic_args(s: &str) -> Option<&str> {
-    let mut depth = 0usize;
-    for (i, c) in s.char_indices() {
-        match c {
-            '<' => depth += 1,
-            '>' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(&s[1..i]);
-                }
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
-/// Split a generic-argument list on commas at nesting depth zero.
-fn split_top_level_commas(s: &str) -> Vec<&str> {
-    let mut out = Vec::new();
-    let mut depth = 0usize;
-    let mut start = 0;
-    for (i, c) in s.char_indices() {
-        match c {
-            '<' | '(' | '[' => depth += 1,
-            '>' | ')' | ']' => depth = depth.saturating_sub(1),
-            ',' if depth == 0 => {
-                out.push(&s[start..i]);
-                start = i + 1;
-            }
-            _ => {}
-        }
-    }
-    out.push(&s[start..]);
-    out
 }
 
 /// Demand-pull the file(s) defining `head` when the tree does not already
-/// hold it. The lookup key is the bare declared name — TS/namespace paths
-/// join segments with `.` (`ns.Type`), Rust/C++ paths with `::`
-/// (`gadgetcrate::Gadget`) — while the location index keys locations by leaf
-/// name. The already-indexed guard compares the identity the chain walker
+/// hold it. The lookup key is the bare declared name, split with the active
+/// profile's qualified-name separator, while the location index keys locations
+/// by leaf name. The already-indexed guard compares the identity the chain walker
 /// will look the type up by: for a QUALIFIED head the bare-leaf check is
 /// wrong in both directions — a same-named type from an unrelated module
 /// satisfies `by_name` and suppresses the pull of the one the signature
@@ -206,12 +158,13 @@ fn split_top_level_commas(s: &str) -> Vec<&str> {
 /// with no addressable entry falls back to the full leaf offering.
 fn demand_type_head(
     head: &str,
+    profile: &LanguageProfile,
     tree: &Compilation,
     loc: &SymbolLocationIndex,
     seen: &mut HashSet<PathBuf>,
     out: &mut Vec<PathBuf>,
 ) {
-    let leaf = type_leaf(head);
+    let leaf = type_leaf(head, profile);
     if leaf.is_empty() {
         return;
     }
@@ -241,11 +194,16 @@ fn demand_type_head(
     }
 }
 
-/// The bare declared name of a type head, under either qualified-name
-/// separator: `gadgetcrate::Gadget` → `Gadget`, `System.String` → `String`.
-fn type_leaf(head: &str) -> &str {
-    let leaf = head.rsplit("::").next().unwrap_or(head);
-    leaf.rsplit('.').next().unwrap_or(leaf)
+/// The bare declared name of a type head under the active profile's
+/// qualified-name separator.
+fn type_leaf<'a>(head: &'a str, profile: &LanguageProfile) -> &'a str {
+    type_leaf_for_separator(head, profile.qname_separator)
+}
+
+fn type_leaf_for_separator<'a>(head: &'a str, separator: &str) -> &'a str {
+    (!separator.is_empty())
+        .then(|| head.rsplit(separator).next().unwrap_or(head))
+        .unwrap_or(head)
 }
 
 /// True when an offering entry's path ADDRESSES `qualified` — a metadata

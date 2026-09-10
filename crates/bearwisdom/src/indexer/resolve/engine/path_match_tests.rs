@@ -45,7 +45,11 @@ fn trim_path_extension_strips_any_basename_extension() {
 #[test]
 fn file_path_matches_module_covers_the_three_forms() {
     // Stem suffix — relative import.
-    assert!(file_path_matches_module("src/app/foo.ts", "./foo", &DEFAULT_PROFILE));
+    assert!(file_path_matches_module(
+        "src/app/foo.ts",
+        "./foo",
+        &DEFAULT_PROFILE
+    ));
     // Dot-to-slash suffix — dotted FQN whose leaf names the file.
     assert!(file_path_matches_module(
         "ext:idx:C:/cache/jdk-src/java.base/java/util/Map.java",
@@ -64,16 +68,43 @@ fn file_path_matches_module_covers_the_three_forms() {
         "posthog.models",
         &DEFAULT_PROFILE
     ));
-    assert!(!file_path_matches_module("src/a/b.ts", "", &DEFAULT_PROFILE));
+    assert!(!file_path_matches_module(
+        "src/a/b.ts",
+        "",
+        &DEFAULT_PROFILE
+    ));
 }
 
 #[test]
-fn specifier_kind_predicates_split_on_leading_shape() {
-    assert!(is_bare_module_specifier("lodash"));
-    assert!(!is_bare_module_specifier("./local"));
-    assert!(!is_bare_module_specifier("/abs/path"));
-    assert!(!is_bare_module_specifier("C:/drive"));
-    assert!(is_relative_specifier("./local"));
-    assert!(is_relative_specifier("C:/drive"));
-    assert!(!is_relative_specifier("lodash"));
+fn qualified_module_path_variants_are_produced_by_the_active_profile() {
+    let mut profile = DEFAULT_PROFILE;
+    profile.qname_separator = "::";
+    assert!(file_path_matches_module(
+        "vendor/pkg/api/Client.rs",
+        "pkg::api::Client",
+        &profile
+    ));
+    // A colon-qualified profile does not silently treat a dotted source
+    // spelling as a package path.
+    assert!(!file_path_matches_module(
+        "vendor/pkg/api/Client.rs",
+        "pkg.api.Client",
+        &profile
+    ));
+}
+
+#[test]
+fn module_specifier_kind_is_adapter_owned() {
+    let js = crate::ecosystem::npm::module_specifier::SOURCE_MODULE_PATH_POLICY;
+    assert!(js.is_bare("lodash"));
+    assert!(!js.is_bare("./local"));
+    assert!(js.is_relative("./local"));
+    assert!(js.is_relative("C:/drive"));
+
+    // A profile with no adapter cannot accidentally inherit JavaScript's
+    // slash and drive grammar.
+    let unsupported =
+        crate::type_checker::profile::language_profile::SourceModulePathPolicy::unsupported();
+    assert!(!unsupported.is_bare("lodash"));
+    assert!(!unsupported.is_relative("./local"));
 }

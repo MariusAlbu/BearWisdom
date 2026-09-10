@@ -71,5 +71,4 @@ impl LanguagePlugin for StarlarkPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::STARLARK_PROFILE)
     }
-
 }

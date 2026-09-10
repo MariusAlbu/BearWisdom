@@ -80,7 +80,7 @@ fn bind(
             .map(|ty| Anchor::Receiver(Receiver::untyped(ty), index + 1))
             .ok_or(None);
         }
-        return lexical_root::resolve(local, lookup, arena, file, segment)
+        return lexical_root::resolve(local, lookup, arena, file, segment, profile)
             .map(|root| Anchor::Receiver(root, index + 1));
     }
     Err(None)

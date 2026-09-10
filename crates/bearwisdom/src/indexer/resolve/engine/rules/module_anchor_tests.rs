@@ -70,7 +70,13 @@ fn by_name_under_module_dir_qname_probe() {
             },
             ..DEFAULT_PROFILE
         };
-    let lookup = Lookup::new().with(sym(10, "User", "models.User", "class", "src/models/user.py"));
+    let lookup = Lookup::new().with(sym(
+        10,
+        "User",
+        "models.User",
+        "class",
+        "src/models/user.py",
+    ));
     assert_eq!(resolve(&lookup, "User", "models", &PROFILE), Some(10));
 }
 
@@ -88,9 +94,17 @@ fn by_name_under_module_dir_path_containment() {
             ..DEFAULT_PROFILE
         };
     // The qname is `TextChoices` (no `models.` prefix) but the file contains `models/`.
-    let lookup =
-        Lookup::new().with(sym(20, "TextChoices", "TextChoices", "class", "app/models/enums.py"));
-    assert_eq!(resolve(&lookup, "TextChoices", "models", &PROFILE), Some(20));
+    let lookup = Lookup::new().with(sym(
+        20,
+        "TextChoices",
+        "TextChoices",
+        "class",
+        "app/models/enums.py",
+    ));
+    assert_eq!(
+        resolve(&lookup, "TextChoices", "models", &PROFILE),
+        Some(20)
+    );
 }
 
 /// `ByNameUnderModuleDir` path-containment: a top-level declaration
@@ -111,8 +125,20 @@ fn path_containment_prefers_top_level_over_member() {
         };
     // The member registers first under the name; the top-level fn must win.
     let lookup = Lookup::new()
-        .with(sym(30, "parse", "Reader.parse", "method", "ext:rust:ser_x/src/de.rs"))
-        .with(sym(31, "parse", "parse", "function", "ext:rust:ser_x/src/de.rs"));
+        .with(sym(
+            30,
+            "parse",
+            "Reader.parse",
+            "method",
+            "ext:rust:ser_x/src/de.rs",
+        ))
+        .with(sym(
+            31,
+            "parse",
+            "parse",
+            "function",
+            "ext:rust:ser_x/src/de.rs",
+        ));
     assert_eq!(resolve(&lookup, "parse", "ser_x", &PROFILE), Some(31));
 }
 
@@ -131,8 +157,13 @@ fn path_containment_falls_back_to_member_when_no_top_level() {
             },
             ..DEFAULT_PROFILE
         };
-    let lookup =
-        Lookup::new().with(sym(32, "parse", "Reader.parse", "method", "ext:rust:ser_x/src/de.rs"));
+    let lookup = Lookup::new().with(sym(
+        32,
+        "parse",
+        "Reader.parse",
+        "method",
+        "ext:rust:ser_x/src/de.rs",
+    ));
     assert_eq!(resolve(&lookup, "parse", "ser_x", &PROFILE), Some(32));
 }
 
@@ -221,7 +252,14 @@ fn scheme_without_subpath_keeps_existing_candidates() {
     let got: Vec<&str> = candidates.iter().map(String::as_str).collect();
     assert_eq!(
         got,
-        ["node:fs", "fs", "@types/fs", "node/fs", "@types/node/fs", "node"]
+        [
+            "node:fs",
+            "fs",
+            "@types/fs",
+            "node/fs",
+            "@types/node/fs",
+            "node"
+        ]
     );
 }
 

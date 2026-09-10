@@ -264,7 +264,7 @@ fn legacy_unmarked_rbi_callback_defaults_to_trailing_block_only() {
 
     assert_eq!(
         callback_arg_policy(&contract, 0),
-        CallbackArgPolicy::TrailingBlockOnly,
+        CallbackArgumentPolicy::TrailingBlockOnly,
     );
     assert!(callback_arg_is_compatible(
         &contract,

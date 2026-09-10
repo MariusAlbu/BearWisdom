@@ -4,7 +4,10 @@ use crate::type_checker::profile::language_profile::NameNormalization;
 #[test]
 fn vbnet_profile_identity_and_shadow_mode() {
     assert_eq!(VBNET_PROFILE.id, "vbnet");
-    assert_eq!(VBNET_PROFILE.self_keywords, &["Me", "MyClass", "MyBase"]);
+    assert_eq!(
+        VBNET_PROFILE.receiver_spellings,
+        &["Me", "MyClass", "MyBase"]
+    );
 }
 
 #[test]

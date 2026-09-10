@@ -171,8 +171,9 @@ pub fn filter_extraction_to_demand(
         .enumerate()
         .filter(|(idx, _)| keep[*idx])
         .map(|(_, mut sym)| {
-            sym.parent_index =
-                sym.parent_index.and_then(|p| old_to_new.get(p).copied().flatten());
+            sym.parent_index = sym
+                .parent_index
+                .and_then(|p| old_to_new.get(p).copied().flatten());
             sym
         })
         .collect();

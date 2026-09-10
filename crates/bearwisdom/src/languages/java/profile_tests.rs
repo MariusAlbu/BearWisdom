@@ -22,9 +22,9 @@ fn structural_choices() {
 }
 
 #[test]
-fn this_and_super_are_self_keywords() {
-    assert!(JAVA_PROFILE.self_keywords.contains(&"this"));
-    assert!(JAVA_PROFILE.self_keywords.contains(&"super"));
+fn this_and_super_are_receiver_spellings() {
+    assert!(JAVA_PROFILE.has_receiver_spelling("this"));
+    assert!(JAVA_PROFILE.has_receiver_spelling("super"));
 }
 
 #[test]

@@ -1,5 +1,7 @@
 use super::*;
-use crate::indexer::resolve::engine::contract::{FileContext, ImportEntry, Symbol, SymbolLookup, SymbolSet};
+use crate::indexer::resolve::engine::contract::{
+    FileContext, ImportEntry, Symbol, SymbolLookup, SymbolSet,
+};
 use crate::indexer::resolve::engine::testkit::{accept_any, call_ref, ref_ctx, source_symbol, sym};
 use crate::indexer::resolve::engine::{BinderContext, LookupResult};
 use crate::type_checker::profile::language_profile::{
@@ -86,7 +88,11 @@ fn make_ctx<'a>(
     target: &'a str,
     imports: Vec<ImportEntry>,
     profile: &'a LanguageProfile,
-) -> (crate::types::ExtractedRef, crate::types::ExtractedSymbol, FileContext) {
+) -> (
+    crate::types::ExtractedRef,
+    crate::types::ExtractedSymbol,
+    FileContext,
+) {
     let r = call_ref(target);
     let s = source_symbol("caller");
     let fc = FileContext {
@@ -142,8 +148,13 @@ const ALIAS_DECODE_PROFILE: LanguageProfile = LanguageProfile {
 
 #[test]
 fn binds_symbol_by_name_in_imported_file_pass1() {
-    let lookup =
-        FileLookup::new().with(sym(50, "MyKeyword", "MyKeyword", "function", "lib/my_lib.py"));
+    let lookup = FileLookup::new().with(sym(
+        50,
+        "MyKeyword",
+        "MyKeyword",
+        "function",
+        "lib/my_lib.py",
+    ));
     let imports = vec![ImportEntry {
         imported_name: "MyLibrary".to_string(),
         module_path: Some("lib/my_lib.py".to_string()),
@@ -176,8 +187,13 @@ fn binds_symbol_by_name_in_imported_file_pass1() {
 
 #[test]
 fn declines_when_gate_is_off() {
-    let lookup =
-        FileLookup::new().with(sym(51, "MyKeyword", "MyKeyword", "function", "lib/my_lib.py"));
+    let lookup = FileLookup::new().with(sym(
+        51,
+        "MyKeyword",
+        "MyKeyword",
+        "function",
+        "lib/my_lib.py",
+    ));
     let imports = vec![ImportEntry {
         imported_name: "MyLibrary".to_string(),
         module_path: Some("lib/my_lib.py".to_string()),
@@ -202,13 +218,21 @@ fn declines_when_gate_is_off() {
         kind: &kind,
         profile: &DEFAULT_PROFILE, // FileScopedImports::Off
     };
-    assert!(matches!(FileScopedImportRule.apply(&ctx), LookupResult::Pass));
+    assert!(matches!(
+        FileScopedImportRule.apply(&ctx),
+        LookupResult::Pass
+    ));
 }
 
 #[test]
 fn declines_non_wildcard_import_when_wildcard_only() {
-    let lookup =
-        FileLookup::new().with(sym(52, "MyKeyword", "MyKeyword", "function", "lib/my_lib.py"));
+    let lookup = FileLookup::new().with(sym(
+        52,
+        "MyKeyword",
+        "MyKeyword",
+        "function",
+        "lib/my_lib.py",
+    ));
     let imports = vec![ImportEntry {
         imported_name: "MyLibrary".to_string(),
         module_path: Some("lib/my_lib.py".to_string()),
@@ -233,7 +257,10 @@ fn declines_non_wildcard_import_when_wildcard_only() {
         kind: &kind,
         profile: &WILDCARD_PROFILE,
     };
-    assert!(matches!(FileScopedImportRule.apply(&ctx), LookupResult::Pass));
+    assert!(matches!(
+        FileScopedImportRule.apply(&ctx),
+        LookupResult::Pass
+    ));
 }
 
 #[test]
@@ -241,8 +268,20 @@ fn binds_via_alias_decode_type_member() {
     // Import entry: imported_name="MyKeyword", alias="DispatchClass.my_method",
     // module_path="lib/dispatch.py" → bind sym named "my_method" in the file.
     let lookup = FileLookup::new()
-        .with(sym(53, "my_method", "DispatchClass.my_method", "function", "lib/dispatch.py"))
-        .with(sym(54, "DispatchClass", "DispatchClass", "class", "lib/dispatch.py"));
+        .with(sym(
+            53,
+            "my_method",
+            "DispatchClass.my_method",
+            "function",
+            "lib/dispatch.py",
+        ))
+        .with(sym(
+            54,
+            "DispatchClass",
+            "DispatchClass",
+            "class",
+            "lib/dispatch.py",
+        ));
     let imports = vec![ImportEntry {
         imported_name: "MyKeyword".to_string(),
         module_path: Some("lib/dispatch.py".to_string()),

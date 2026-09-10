@@ -2,7 +2,7 @@ use super::*;
 use crate::indexer::resolve::engine::testkit::{
     accept_any, file_ctx, ref_ctx, source_symbol, sym, Lookup,
 };
-use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
+use crate::type_checker::profile::language_profile::{LanguageProfile, DEFAULT_PROFILE};
 use crate::types::{EdgeKind, ExtractedRef};
 
 /// Build an `ExtractedRef` for `target` with `module` set.
@@ -24,7 +24,17 @@ fn module_ref(target: &str, module: &str) -> ExtractedRef {
     }
 }
 
-fn resolve(lookup: &Lookup, target: &str, module: &str) -> Option<i64> {
+static COLON_COLON_PROFILE: LanguageProfile = LanguageProfile {
+    qname_separator: "::",
+    ..DEFAULT_PROFILE
+};
+
+fn resolve_with_profile(
+    lookup: &Lookup,
+    target: &str,
+    module: &str,
+    profile: &'static LanguageProfile,
+) -> Option<i64> {
     let r = module_ref(target, module);
     let s = source_symbol("caller");
     let fc = file_ctx(vec![], None);
@@ -35,12 +45,16 @@ fn resolve(lookup: &Lookup, target: &str, module: &str) -> Option<i64> {
         ref_ctx: &rc,
         lookup,
         kind: &kind,
-        profile: &DEFAULT_PROFILE,
+        profile,
     };
     match RefModuleRule.apply(&ctx) {
         LookupResult::Resolved(res) => Some(res.target_symbol_id),
         _ => None,
     }
+}
+
+fn resolve(lookup: &Lookup, target: &str, module: &str) -> Option<i64> {
+    resolve_with_profile(lookup, target, module, &DEFAULT_PROFILE)
 }
 
 fn resolve_no_module(lookup: &Lookup, target: &str) -> Option<i64> {
@@ -73,10 +87,17 @@ fn binds_via_dot_qualified_name() {
 
 #[test]
 fn binds_via_double_colon_separator() {
-    // `dplyr::mutate` → exact qname with `::` separator.
+    // The profile's source separator supplements the dotted index join.
     let lookup = Lookup::new().with(sym(2, "mutate", "dplyr::mutate", "function", "R/dplyr.R"));
-    let got = resolve(&lookup, "mutate", "dplyr");
+    let got = resolve_with_profile(&lookup, "mutate", "dplyr", &COLON_COLON_PROFILE);
     assert_eq!(got, Some(2));
+}
+
+#[test]
+fn file_stem_fallback_uses_profile_module_separator() {
+    let lookup = Lookup::new().with(sym(22, "read", "read", "function", "src/io/reader.rs"));
+    let got = resolve_with_profile(&lookup, "read", "crate::io::reader", &COLON_COLON_PROFILE);
+    assert_eq!(got, Some(22));
 }
 
 #[test]
@@ -88,7 +109,13 @@ fn declines_when_no_module_set() {
 
 #[test]
 fn declines_when_qname_not_found() {
-    let lookup = Lookup::new().with(sym(4, "filter", "lists.filter", "function", "src/lists.erl"));
+    let lookup = Lookup::new().with(sym(
+        4,
+        "filter",
+        "lists.filter",
+        "function",
+        "src/lists.erl",
+    ));
     let got = resolve(&lookup, "map", "lists");
     assert_eq!(got, None);
 }

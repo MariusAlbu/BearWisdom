@@ -145,8 +145,7 @@ pub(crate) fn scan_markup_tags(source: &str) -> Vec<MarkupTag> {
                 if j > ns_start && j < bytes.len() && bytes[j] == b':' {
                     let name_start = j + 1;
                     let mut k = name_start;
-                    while k < bytes.len()
-                        && (bytes[k].is_ascii_alphanumeric() || bytes[k] == b'_')
+                    while k < bytes.len() && (bytes[k].is_ascii_alphanumeric() || bytes[k] == b'_')
                     {
                         k += 1;
                     }

@@ -25,7 +25,7 @@ use super::cause::{Cause, CauseKind};
 use super::chain::{import_scoped_external_root, Receiver};
 use super::contract::{FileContext, ImportEntry, Symbol, SymbolLookup};
 use super::kinds::is_type_kind;
-use super::support::{is_bare_module_specifier, workspace_sub_path};
+use super::support::workspace_sub_path;
 
 pub(super) enum RootImportOutcome {
     /// No non-wildcard import binds this name, or the import cannot be
@@ -69,17 +69,21 @@ pub(super) fn apply(
     if let Some(sym) = internal.iter().find(|s| s.name == lookup_name) {
         return type_candidate(lookup, arena, sym, seg.is_call);
     }
-    if spec.starts_with('.') {
+    let module_policy = profile.source_module_path_policy(spec);
+    if module_policy.is_relative(spec) {
         // Relative specifier with no internal link recovered here: linking
         // coverage varies by lookup, so this is not evidence of a dead import.
         return RootImportOutcome::Unconstrained;
     }
-    if lookup.resolve_module_from(&file_ctx.file_path, spec).is_some() {
+    if lookup
+        .resolve_module_from(&file_ctx.file_path, spec)
+        .is_some()
+    {
         // The module links to a file but that file does not declare the name
         // (re-export shapes this lookup cannot see). Not judgeable.
         return RootImportOutcome::Unconstrained;
     }
-    if !is_bare_module_specifier(spec) {
+    if !module_policy.is_bare(spec) {
         return RootImportOutcome::Unconstrained;
     }
 
@@ -87,7 +91,7 @@ pub(super) fn apply(
     // by the deep-import sub-path when one is present. `workspace_package_id`
     // peels deep specifiers itself.
     if let Some(pkg_id) = lookup.workspace_package_id(spec) {
-        let sub_path = workspace_sub_path(spec, lookup);
+        let sub_path = workspace_sub_path(profile, spec, lookup);
         let candidates = lookup.symbols_in_package(pkg_id);
         let sub = sub_path.as_deref();
         let hit = candidates
@@ -104,20 +108,19 @@ pub(super) fn apply(
     // Nothing links the specifier. Deny only on positive external evidence:
     // a scheme prefix. Anything else stays unconstrained — absence of linking
     // is not proof of death for module systems this gate cannot see.
-    if has_scheme_prefix(spec) {
+    if has_scheme_prefix(profile, spec) {
         return RootImportOutcome::Deny(Cause::new(None, CauseKind::ImportUnlinked));
     }
     RootImportOutcome::Unconstrained
 }
 
-/// The non-wildcard import that binds `name` at the use site — by its
-/// imported name or its alias, mirroring the external candidate arm's match.
+/// The non-wildcard import that binds `name` at the use site.
 fn binding_import<'a>(file_ctx: &'a FileContext, name: &str) -> Option<&'a ImportEntry> {
     file_ctx
         .imports
         .iter()
         .filter(|imp| !imp.is_wildcard)
-        .find(|imp| imp.imported_name == name || imp.alias.as_deref() == Some(name))
+        .find(|imp| imp.bound_name() == name)
 }
 
 /// Type a scoped candidate, or blame it: a candidate whose own return/field
@@ -154,10 +157,10 @@ fn type_candidate(
     RootImportOutcome::Deny(Cause::new(Some(sym.id), CauseKind::UncapturedField))
 }
 
-/// A single-colon URI-style scheme prefix (`node:fs`, `sass:math`). A double
-/// colon is a qualified-path separator, never a scheme.
-fn has_scheme_prefix(spec: &str) -> bool {
-    super::module_scheme::strip_scheme_prefix(spec).is_some()
+/// A URI-style scheme prefix (`node:fs`, `sass:math`) under the active
+/// language's qualified-name spelling.
+fn has_scheme_prefix(profile: &LanguageProfile, spec: &str) -> bool {
+    super::module_scheme::strip_scheme_prefix(profile, spec).is_some()
 }
 
 #[cfg(test)]

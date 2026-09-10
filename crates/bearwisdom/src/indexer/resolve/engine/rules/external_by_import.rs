@@ -2,7 +2,7 @@
 // engine/rules/external_by_import — import-scoped bind to an external symbol
 //
 // Gated on `profile.imports.external_by_import: Option<&ExternalByImport>`.  When the
-// profile opts in, a bare target with no dots or `::` is resolved against the
+// profile opts in, a bare target with no profile qname separator is resolved against the
 // file's EXTERNAL symbol index, restricted to symbols whose file is reachable
 // from one of the file's non-relative imports.
 //
@@ -10,14 +10,13 @@
 //   PkgSegment   — external file's `ext:<lang>:<pkg>` segment equals an import
 //                  root, or starts with `{root}-` (gem family: `aws-sdk-s3`
 //                  under `aws`).
-//   FileStemOrDir — external file's basename-stem / a dir-segment equals an
-//                  import LEAF (last path segment, `std/`/`pkg/` dropped) or an
-//                  import PACKAGE (first path segment), checked via
+//   FileStemOrDir — external file's basename-stem / a dir-segment equals one
+//                  of the profile adapter's import-path terms, checked via
 //                  `path_stem_matches`.
 // =============================================================================
 
 use crate::indexer::resolve::engine::support::path_stem_matches;
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 use crate::type_checker::profile::language_profile::ExtMatch;
 
 pub struct ExternalByImportRule;
@@ -34,7 +33,10 @@ impl LookupRule for ExternalByImportRule {
         }
 
         let target = ctx.target();
-        if target.is_empty() || target.contains('.') || target.contains("::") {
+        if target.is_empty()
+            || (!ctx.profile.qname_separator.is_empty()
+                && target.contains(ctx.profile.qname_separator))
+        {
             return LookupResult::Pass;
         }
         let edge_kind = ctx.edge_kind();
@@ -48,10 +50,13 @@ impl LookupRule for ExternalByImportRule {
                     .iter()
                     .filter_map(|imp| {
                         let m = imp.module_path.as_deref()?;
-                        if m.starts_with('.') {
+                        if ctx.profile.source_module_path_policy(m).is_relative(m) {
                             return None;
                         }
-                        Some(m.split('/').next().unwrap_or(m).to_string())
+                        crate::ecosystem::package_specifier::import_package_root(
+                            &ctx.file_ctx.language,
+                            m,
+                        )
                     })
                     .collect();
                 if import_roots.is_empty() {
@@ -60,28 +65,18 @@ impl LookupRule for ExternalByImportRule {
                 ExtFileMatcher::PkgSegment(import_roots)
             }
             ExtMatch::FileStemOrDir => {
-                // Leaf = last path segment (with `std/`/`pkg/` prefix dropped);
-                // package = first path segment (skipping `std`/`pkg` roots).
                 let mut needles: Vec<String> = Vec::new();
                 for imp in &ctx.file_ctx.imports {
                     let Some(m) = imp.module_path.as_deref() else {
                         continue;
                     };
-                    if m.starts_with('.') {
+                    if ctx.profile.source_module_path_policy(m).is_relative(m) {
                         continue;
                     }
-                    let stripped = m
-                        .strip_prefix("std/")
-                        .or_else(|| m.strip_prefix("pkg/"))
-                        .unwrap_or(m);
-                    let leaf = stripped.rsplit('/').next().unwrap_or(stripped);
-                    if !leaf.is_empty() {
-                        needles.push(leaf.to_lowercase());
-                    }
-                    let pkg = m.split('/').next().unwrap_or(m);
-                    if pkg != "std" && pkg != "pkg" && !pkg.is_empty() {
-                        needles.push(pkg.to_lowercase());
-                    }
+                    needles.extend((ctx
+                        .profile
+                        .source_module_path_policy(m)
+                        .external_import_match_terms)(m));
                 }
                 if needles.is_empty() {
                     return LookupResult::Pass;
@@ -99,11 +94,15 @@ impl LookupRule for ExternalByImportRule {
             }
             let matched = match &matcher {
                 ExtFileMatcher::PkgSegment(roots) => {
-                    let pkg_seg = external_package_segment(&sym.file_path);
-                    !pkg_seg.is_empty()
-                        && roots
+                    let pkg = crate::ecosystem::package_specifier::external_package_key(
+                        &ctx.file_ctx.language,
+                        &sym.file_path,
+                    );
+                    pkg.as_deref().is_some_and(|pkg| {
+                        roots
                             .iter()
-                            .any(|root| pkg_seg == root.as_str() || pkg_seg.starts_with(&format!("{root}-")))
+                            .any(|root| pkg == root || pkg.starts_with(&format!("{root}-")))
+                    })
                 }
                 ExtFileMatcher::FileStemOrDir(needles) => {
                     let file_lower = sym.file_path.to_lowercase();
@@ -127,20 +126,6 @@ impl LookupRule for ExternalByImportRule {
 enum ExtFileMatcher {
     PkgSegment(Vec<String>),
     FileStemOrDir(Vec<String>),
-}
-
-/// The package segment of an external file path under the
-/// `ext:<lang>:<pkg>/…` convention.  For `ext:ruby:aws-sdk-s3/lib/x.rb`
-/// returns `aws-sdk-s3`; for paths that don't match the three-colon shape
-/// returns `""`.
-fn external_package_segment(path: &str) -> &str {
-    let Some(rest) = path.strip_prefix("ext:") else {
-        return "";
-    };
-    let Some((_lang, after_lang)) = rest.split_once(':') else {
-        return "";
-    };
-    after_lang.split('/').next().unwrap_or("")
 }
 
 #[cfg(test)]

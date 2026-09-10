@@ -89,5 +89,4 @@ impl LanguagePlugin for MarkdownPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::MARKDOWN_PROFILE)
     }
-
 }

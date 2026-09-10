@@ -5,7 +5,7 @@ use crate::indexer::resolve::engine::testkit::{
 };
 use crate::indexer::resolve::engine::{BinderContext, LookupResult};
 use crate::type_checker::profile::language_profile::{
-    DEFAULT_PROFILE, NameTransform, SelectorResolution,
+    NameTransform, SelectorResolution, DEFAULT_PROFILE,
 };
 use crate::types::EdgeKind;
 
@@ -133,7 +133,13 @@ fn passes_when_selector_resolution_is_none() {
 
 #[test]
 fn binds_via_direct_by_qualified_name() {
-    let s = sym(10, "AppComponent", "app.AppComponent", "class", "src/app.ts");
+    let s = sym(
+        10,
+        "AppComponent",
+        "app.AppComponent",
+        "class",
+        "src/app.ts",
+    );
     let inner = Lookup::new().with(s);
     let lookup = SelectorLookup::new(inner).with_selector("app-root", "app.AppComponent");
     let profile = &SELECTOR_PROFILE;
@@ -159,7 +165,13 @@ fn binds_via_direct_by_qualified_name() {
 #[test]
 fn binds_via_by_name_scan_when_qname_not_key_indexed() {
     // `by_qualified_name` misses (export-wrapper shape); `by_name` scan pins qname.
-    let s = sym(11, "AppComponent", "app.AppComponent", "class", "src/app.ts");
+    let s = sym(
+        11,
+        "AppComponent",
+        "app.AppComponent",
+        "class",
+        "src/app.ts",
+    );
     // Register by name only (not by qname via the Lookup helper).
     let mut inner = Lookup::new();
     inner = inner.with(s);
@@ -194,8 +206,7 @@ fn binds_after_pascal_to_kebab_transform() {
     // registered in the selector map.
     let s = sym(12, "AppUserCard", "app.AppUserCard", "class", "src/card.ts");
     let inner = Lookup::new().with(s);
-    let lookup =
-        SelectorLookup::new(inner).with_selector("app-user-card", "app.AppUserCard");
+    let lookup = SelectorLookup::new(inner).with_selector("app-user-card", "app.AppUserCard");
     let profile = &SELECTOR_KEBAB_PROFILE;
     let r = call_ref("AppUserCard");
     let source = source_symbol("caller");
@@ -238,10 +249,15 @@ fn passes_when_selector_not_in_map() {
 fn passes_when_edge_kind_not_in_selector_resolution() {
     use crate::types::ExtractedRef;
 
-    let s = sym(13, "AppComponent", "app.AppComponent", "class", "src/app.ts");
+    let s = sym(
+        13,
+        "AppComponent",
+        "app.AppComponent",
+        "class",
+        "src/app.ts",
+    );
     let inner = Lookup::new().with(s);
-    let lookup =
-        SelectorLookup::new(inner).with_selector("app-root", "app.AppComponent");
+    let lookup = SelectorLookup::new(inner).with_selector("app-root", "app.AppComponent");
     // Profile only allows Calls; use TypeRef.
     let profile = &SELECTOR_PROFILE;
     let r = ExtractedRef {

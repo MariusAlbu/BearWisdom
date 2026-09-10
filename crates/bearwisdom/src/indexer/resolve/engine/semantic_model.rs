@@ -383,7 +383,7 @@ fn namespace_matches_import(
             .workspace_package_id(module)
             .is_some_and(|package_id| candidate.package_id == Some(package_id))
         || candidate.qualified_name == module
-        || super::support::qname_under_module(&candidate.qualified_name, module)
+        || super::support::qname_under_module(profile, &candidate.qualified_name, module)
         || super::support::file_path_matches_module(&candidate.file_path, module, profile)
 }
 

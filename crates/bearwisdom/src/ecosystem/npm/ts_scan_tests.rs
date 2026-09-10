@@ -20,7 +20,11 @@ declare module 'astro:content' {
 }
 "#;
     let exports = scan_ts_file_exports(source, "typescript");
-    assert_eq!(exports.ambient_modules.len(), 2, "both declared names must surface");
+    assert_eq!(
+        exports.ambient_modules.len(),
+        2,
+        "both declared names must surface"
+    );
 
     let (name_a, inner_a) = &exports.ambient_modules[0];
     assert_eq!(name_a, "virtual:pwa-register");

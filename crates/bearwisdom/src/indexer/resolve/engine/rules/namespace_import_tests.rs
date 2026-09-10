@@ -70,13 +70,7 @@ fn declines_non_dotted_prefix() {
 
 #[test]
 fn declines_when_symbol_absent() {
-    let lookup = Lookup::new().with(sym(
-        33,
-        "Other",
-        "eShop.Other",
-        "class",
-        "src/other.cs",
-    ));
+    let lookup = Lookup::new().with(sym(33, "Other", "eShop.Other", "class", "src/other.cs"));
     let imports = vec![import("*", Some("eShop.Catalog"))];
     assert_eq!(resolve(&lookup, "CatalogItem", imports), None);
 }

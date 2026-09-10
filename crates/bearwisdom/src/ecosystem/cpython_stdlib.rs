@@ -64,7 +64,6 @@ impl Ecosystem for CpythonStdlibEcosystem {
     }
 }
 
-
 impl ExternalSourceLocator for CpythonStdlibEcosystem {
     fn ecosystem(&self) -> &'static str {
         LEGACY_ECOSYSTEM_TAG

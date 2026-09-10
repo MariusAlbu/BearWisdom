@@ -71,8 +71,7 @@ fn push_use_clause(
     refs: &mut Vec<ExtractedRef>,
     current_symbol_count: usize,
 ) {
-    let is_type_binding =
-        inherited_type_binding && clause.child_by_field_name("type").is_none();
+    let is_type_binding = inherited_type_binding && clause.child_by_field_name("type").is_none();
     let mut cursor = clause.walk();
     let Some(name_node) = clause
         .children(&mut cursor)
@@ -305,10 +304,7 @@ fn append_qualified_import_type_refs(refs: &mut Vec<ExtractedRef>) {
                 return None;
             }
             let module = r.module.as_deref()?;
-            Some((
-                r.target_name.clone(),
-                format!("{module}\\{}", segment.name),
-            ))
+            Some((r.target_name.clone(), format!("{module}\\{}", segment.name)))
         })
         .collect();
     if imports.is_empty() {
@@ -317,7 +313,11 @@ fn append_qualified_import_type_refs(refs: &mut Vec<ExtractedRef>) {
 
     let mut demands = Vec::new();
     for reference in refs.iter() {
-        let Some(root) = reference.chain.as_ref().and_then(|chain| chain.segments.first()) else {
+        let Some(root) = reference
+            .chain
+            .as_ref()
+            .and_then(|chain| chain.segments.first())
+        else {
             continue;
         };
         if root.kind != SegmentKind::TypeAccess {

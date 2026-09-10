@@ -19,10 +19,15 @@
 
 use rustc_hash::FxHashMap;
 
+use crate::ecosystem::package_specifier;
 use crate::indexer::resolve::engine::contract::{
     FileContext, ImportEntry, RefContext, Symbol, SymbolInfo, SymbolLookup, RESOLVED_CONFIDENCE,
 };
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
+use crate::type_checker::profile::language_policy::{
+    alias_intrinsic, callable_return_operand, flat_callable_return_operand,
+    is_callable_return_extractor, AliasIntrinsic,
+};
 use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::{AliasTargetIds, SegmentKind};
 
@@ -49,7 +54,11 @@ use super::mapped_members;
 use super::root_import_discipline::RootImportOutcome;
 use super::segment_args::{bind_explicit_type_args, with_segment_args};
 use super::substitution::{substitute_supertype_args, substitute_through};
-use super::support::{import_scoped_package_id, pick_ranked_candidate};
+use super::support::{
+    import_scoped_package_id, index_qname_is_or_ends_with, index_qname_is_return_slot,
+    index_qname_leaf, index_qname_parent, index_return_qname, join_index_qname,
+    pick_ranked_candidate,
+};
 pub(crate) use call::apply_call_args;
 
 /// Strategy tag for a member-chain bind produced by the new engine.
@@ -127,7 +136,8 @@ pub fn bind_member_access(
         // (`const [a, b] = x`, emitted as a `tuple_index:N` ComputedAccess
         // segment): select the receiver tuple's element N, not a named member.
         if let Some(idx) = tuple_index_of(seg) {
-            let elem_ty = tuple_element_type(lookup, arena, current.ty, idx).ok_or(None)?;
+            let elem_ty =
+                tuple_element_type(lookup, arena, profile, current.ty, idx).ok_or(None)?;
             let elem_recv = project_receiver(
                 yielded_receiver(lookup, arena, elem_ty, None),
                 lookup,
@@ -156,7 +166,7 @@ pub fn bind_member_access(
         // the quoted key names a member. The `tuple_index:N` destructure form was
         // already consumed by the block above.
         if matches!(seg.kind, SegmentKind::ComputedAccess) {
-            if let Some(elem_ty) = array_element_type(arena, current.ty) {
+            if let Some(elem_ty) = array_element_type(profile, arena, current.ty) {
                 let elem_recv = project_receiver(
                     yielded_receiver(lookup, arena, elem_ty, None),
                     lookup,
@@ -252,17 +262,14 @@ pub fn bind_member_access(
                         current,
                         &seg.name,
                         Some(file_ctx),
+                        Some(profile),
                         profile.container_deref_targets,
                     ) {
                         current = reheaded;
                         borrowed = None;
                         m
                     } else if let Some(m) = super::extension_method::lookup_extension_method(
-                        lookup,
-                        arena,
-                        current,
-                        &seg.name,
-                        profile.implicit_root_types,
+                        lookup, arena, current, &seg.name, profile,
                     ) {
                         m
                     } else if let Some((m, alt)) = super::overload_alts::member_on_alt_yields(
@@ -270,7 +277,7 @@ pub fn bind_member_access(
                         arena,
                         &alt_yields,
                         &seg.name,
-                        profile.implicit_root_types,
+                        profile,
                     ) {
                         current = alt;
                         borrowed = None;
@@ -315,13 +322,14 @@ pub fn bind_member_access(
                 Some(branch) => (branch, None),
                 None => (current.ty, current.id),
             };
-            let yielded = yield_through(
+            let yielded = yield_through_with_profile(
                 lookup,
                 arena,
                 &member,
                 terminal_is_call,
                 yield_recv,
                 yield_id,
+                profile,
             )
             .map(|y| bind_explicit_type_args(lookup, arena, &member, seg, y));
             // The selector chooses source-owned operands. The ref payload is
@@ -356,7 +364,13 @@ pub fn bind_member_access(
                 confidence: RESOLVED_CONFIDENCE,
                 strategy: STRATEGY,
                 resolved_yield_type: resolved_yield_type.map(|y| {
-                    super::generic_shadow::mark_unbound_member_params(lookup, arena, &member, y)
+                    super::generic_shadow::mark_unbound_member_params(
+                        lookup,
+                        arena,
+                        &member,
+                        y,
+                        profile.qname_separator,
+                    )
                 }),
                 flow_emit: None,
             });
@@ -373,7 +387,15 @@ pub fn bind_member_access(
             Some(branch) => (branch, None),
             None => (current.ty, current.id),
         };
-        let yielded = match yield_through(lookup, arena, &member, seg.is_call, mid_recv, mid_id) {
+        let yielded = match yield_through_with_profile(
+            lookup,
+            arena,
+            &member,
+            seg.is_call,
+            mid_recv,
+            mid_id,
+            profile,
+        ) {
             Some(y) => bind_explicit_type_args(lookup, arena, &member, seg, y),
             None => {
                 // The member itself was found — the hop dies because ITS OWN
@@ -423,7 +445,13 @@ pub fn bind_member_access(
         let yielded_recv = yielded_receiver(
             lookup,
             arena,
-            super::generic_shadow::mark_unbound_member_params(lookup, arena, &member, yielded),
+            super::generic_shadow::mark_unbound_member_params(
+                lookup,
+                arena,
+                &member,
+                yielded,
+                profile.qname_separator,
+            ),
             member.package_id,
         );
         method_receiver = yielded_recv.ty;
@@ -463,6 +491,7 @@ fn lookup_member_on_deref_target(
     recv: Receiver,
     member: &str,
     file_ctx: Option<&FileContext>,
+    profile: Option<&LanguageProfile>,
     targets: &[(&str, &str)],
 ) -> Option<(Symbol, Receiver)> {
     if targets.is_empty() {
@@ -478,6 +507,7 @@ fn lookup_member_on_deref_target(
         lookup,
         arena,
         file_ctx,
+        profile,
     );
     let m = lookup_member_on(lookup, arena, reheaded, member, &|_kind| true)?;
     Some((m, reheaded))
@@ -559,6 +589,7 @@ pub(crate) fn expand_receiver(
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
     file_ctx: Option<&FileContext>,
+    profile: Option<&LanguageProfile>,
 ) -> Receiver {
     if !lookup.accepts_type_context(arena, recv.ty) {
         return Receiver::untyped(arena.intern(Type::Unknown));
@@ -567,7 +598,7 @@ pub(crate) fn expand_receiver(
     // Expand through the carried id when present, so a bare-name alias collision
     // (two sibling `type Logger = …`) expands the declaration the use site pinned,
     // not the name map's last writer.
-    let ty = alias::expand_with_id(recv.ty, recv.id, lookup, arena);
+    let ty = alias::expand_with_id(recv.ty, recv.id, lookup, arena, profile);
     let post_head = head_qname(arena, ty);
     let id = if let Some(id) = super::head_decl::head_decl_id(arena, ty) {
         Some(id)
@@ -596,8 +627,8 @@ pub(crate) fn expand_receiver(
 /// `expand_with_id` keys on its id rather than the name map's last writer.
 ///
 /// The import that brings the name into the file names its source module. A
-/// path-aliased internal module (`@/utils/logger`) is rewritten through
-/// `resolve_path_alias` to a file the candidate is matched against — decisive
+/// canonicalized internal module is resolved through `resolve_module_alias` to
+/// a file the candidate is matched against — decisive
 /// where same-package siblings tie on path proximity. Falls back to scored
 /// ranking when the name is not imported (ambient / same-file) or no file matches.
 fn import_scoped_decl_id(
@@ -608,7 +639,7 @@ fn import_scoped_decl_id(
     ty: TypeId,
 ) -> Option<i64> {
     let head = head_qname(arena, ty)?;
-    let simple = head.rsplit('.').next().unwrap_or(&head);
+    let simple = index_qname_leaf(&head);
     let types = lookup.types_by_name(simple);
     let candidates: Vec<&Symbol> = types.iter().collect();
     if candidates.len() < 2 {
@@ -621,7 +652,7 @@ fn import_scoped_decl_id(
         .and_then(|i| i.module_path.as_deref())
     {
         let resolved = lookup
-            .resolve_path_alias(ref_ctx.file_package_id, module)
+            .resolve_module_alias(ref_ctx.file_package_id, module)
             .unwrap_or_else(|| module.to_string());
         let mut matched: Option<&Symbol> = None;
         for cand in &candidates {
@@ -668,7 +699,28 @@ pub(super) fn lookup_member_on(
     member: &str,
     accept: &dyn Fn(&str) -> bool,
 ) -> Option<Symbol> {
-    let result = lookup_member_on_bounded(lookup, arena, recv, member, accept, MAX_MAPPED_DEPTH);
+    lookup_member_on_with_profile(lookup, arena, recv, member, accept, None)
+}
+
+/// Profile-aware member lookup. The optional form keeps source-independent
+/// callers fail-closed while chain resolution supplies its active profile.
+pub(super) fn lookup_member_on_with_profile(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    recv: Receiver,
+    member: &str,
+    accept: &dyn Fn(&str) -> bool,
+    profile: Option<&LanguageProfile>,
+) -> Option<Symbol> {
+    let result = lookup_member_on_bounded_with_profile(
+        lookup,
+        arena,
+        recv,
+        member,
+        accept,
+        MAX_MAPPED_DEPTH,
+        profile,
+    );
     let recv_str = arena.format_type(recv.ty);
     crate::tracef!(
         "  MEMBER '{}' on receiver={} (recv.id={:?}) -> {}",
@@ -698,6 +750,19 @@ pub(crate) fn field_type_on(
     recv_id: Option<i64>,
     field: &str,
 ) -> Option<TypeId> {
+    field_type_on_with_profile(lookup, arena, recv_ty, recv_id, field, None)
+}
+
+/// Profile-aware field projection for callers that retain the source language
+/// of the receiver. Alias semantics remain language-owned.
+pub(crate) fn field_type_on_with_profile(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    recv_ty: TypeId,
+    recv_id: Option<i64>,
+    field: &str,
+    profile: Option<&LanguageProfile>,
+) -> Option<TypeId> {
     let recv = expand_receiver(
         Receiver {
             ty: recv_ty,
@@ -706,12 +771,15 @@ pub(crate) fn field_type_on(
         lookup,
         arena,
         None,
+        profile,
     );
-    let member = lookup_member_on(lookup, arena, recv, field, &|_kind| true)?;
-    let yielded = yield_through(lookup, arena, &member, false, recv.ty, recv.id)?;
-    // Normalize the field's type — peel a `NoInfer<T>` intrinsic wrapper (and any
-    // transparent alias) so the recorded binding type is the concrete `T`.
-    Some(alias::expand(yielded, lookup, arena))
+    let member = lookup_member_on_with_profile(lookup, arena, recv, field, &|_kind| true, profile)?;
+    let yielded = yield_through_with_optional_profile(
+        lookup, arena, &member, false, recv.ty, recv.id, profile,
+    )?;
+    // Normalize the field's type through language-declared transparent
+    // intrinsics and aliases before recording the binding.
+    Some(alias::expand(yielded, lookup, arena, profile))
 }
 
 /// The qualified name of a synthesized `$Ret` member (see `parse_file.rs`'s
@@ -743,10 +811,11 @@ pub(crate) fn callable_member_id_on(
         lookup,
         arena,
         None,
+        None,
     );
     let member = lookup_member_on(lookup, arena, recv, field, &|_kind| true)?;
-    let decl_head = member.qualified_name.rsplit_once('.').map(|(h, _)| h)?;
-    if decl_head.ends_with("$Ret") {
+    let decl_head = index_qname_parent(&member.qualified_name)?;
+    if index_qname_is_return_slot(decl_head) {
         Some(member.id)
     } else {
         None
@@ -770,6 +839,18 @@ pub(crate) fn lookup_member_on_bounded(
     member: &str,
     accept: &dyn Fn(&str) -> bool,
     depth: usize,
+) -> Option<Symbol> {
+    lookup_member_on_bounded_with_profile(lookup, arena, recv, member, accept, depth, None)
+}
+
+fn lookup_member_on_bounded_with_profile(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    recv: Receiver,
+    member: &str,
+    accept: &dyn Fn(&str) -> bool,
+    depth: usize,
+    profile: Option<&LanguageProfile>,
 ) -> Option<Symbol> {
     if !lookup.accepts_type_context(arena, recv.ty) {
         return None;
@@ -808,7 +889,8 @@ pub(crate) fn lookup_member_on_bounded(
         match arena.get(recv.ty) {
             Type::Intersection(arms) => {
                 for arm in arms {
-                    let arm_recv = expand_receiver(Receiver::untyped(arm), lookup, arena, None);
+                    let arm_recv =
+                        expand_receiver(Receiver::untyped(arm), lookup, arena, None, None);
                     if let Some(m) =
                         lookup_member_on_bounded(lookup, arena, arm_recv, member, accept, depth - 1)
                     {
@@ -823,7 +905,8 @@ pub(crate) fn lookup_member_on_bounded(
                 }
                 let mut resolved: Option<Symbol> = None;
                 for arm in arms {
-                    let arm_recv = expand_receiver(Receiver::untyped(arm), lookup, arena, None);
+                    let arm_recv =
+                        expand_receiver(Receiver::untyped(arm), lookup, arena, None, None);
                     match lookup_member_on_bounded(
                         lookup,
                         arena,
@@ -878,17 +961,9 @@ pub(crate) fn lookup_member_on_bounded(
     // UPPERCASE first letter is already handled by the ordinary member walk
     // above; only a lowercase-first head that looks like a built-in primitive
     // triggers this. A capitalized probe that finds nothing is a no-op.
-    if let Some(m) = lookup_member_on_capitalized_primitive(lookup, &head, member, accept) {
-        return Some(m);
-    }
-    // Static-member receiver: a builtin value `Foo` (`Object`, `Promise`, `Date`,
-    // `Array`, `Number`, …) carries its static members on the co-named
-    // `${Foo}Constructor` interface, not on the instance `interface Foo`. TS encodes
-    // the value/type split as `declare var Foo: FooConstructor`, so `Foo.staticM`
-    // resolves on the constructor interface. After the instance side misses, retry on
-    // `${head}Constructor`. A head with no indexed `${head}Constructor` (every
-    // non-builtin head) finds nothing — a no-op.
-    if let Some(m) = lookup_member_on_constructor_interface(lookup, &head, member, accept) {
+    if let Some(m) = profile.and_then(|profile| {
+        lookup_member_on_primitive_surface(lookup, profile, &head, member, accept)
+    }) {
         return Some(m);
     }
     // Namespace-qualified receiver: a head like `Ns.Type` whose interface is
@@ -899,7 +974,7 @@ pub(crate) fn lookup_member_on_bounded(
         return Some(m);
     }
     if let Some(source_ty) = mapped_members::mapped_source_type(lookup, arena, recv.ty, &head) {
-        let source_recv = expand_receiver(Receiver::untyped(source_ty), lookup, arena, None);
+        let source_recv = expand_receiver(Receiver::untyped(source_ty), lookup, arena, None, None);
         // A mapped source that resolves back to the mapped type itself makes no
         // progress — skip rather than spin to the depth bound.
         if head_qname(arena, source_recv.ty).as_deref() != Some(head.as_str()) {
@@ -933,12 +1008,9 @@ pub(crate) fn lookup_member_on_bounded(
         return Some(m);
     }
     // Index-signature admission: a receiver (or a supertype) declaring an
-    // index signature — captured as a bracket-named member (`[key]`,
-    // `[index]`) — accepts ANY member name; the signature is the declaration
-    // such an access means (`process.env.VERCEL_URL` → `Dict.[key]`). A
-    // computed key (`[Symbol.iterator]`) is a real named member and never
-    // admits. The LAST fallback: every named and mapped path carries richer
-    // yields, so they all win first.
+    // index signature — normalized by a language extractor into semantic
+    // metadata — accepts ANY member name. The LAST fallback: every named and
+    // mapped path carries richer yields, so they all win first.
     lookup_member_on_index_signature(lookup, &head, accept)
 }
 
@@ -990,7 +1062,8 @@ fn lookup_member_on_mapped_supertype(
         if let Some(source_ty) =
             mapped_members::mapped_source_type(lookup, arena, parent_ty, parent_head)
         {
-            let source_recv = expand_receiver(Receiver::untyped(source_ty), lookup, arena, None);
+            let source_recv =
+                expand_receiver(Receiver::untyped(source_ty), lookup, arena, None, None);
             if head_qname(arena, source_recv.ty).as_deref() != Some(parent_head.as_str()) {
                 if let Some(m) =
                     lookup_member_on_bounded(lookup, arena, source_recv, member, accept, depth - 1)
@@ -1023,43 +1096,15 @@ fn lookup_member_on_mapped_supertype(
 /// last-resort fallback before the mapped-source hop, not a pre-pass.
 /// Returns `None` when the head is already uppercase or the capitalized probe
 /// finds no member.
-fn lookup_member_on_capitalized_primitive(
+fn lookup_member_on_primitive_surface(
     lookup: &dyn SymbolLookup,
+    profile: &LanguageProfile,
     head: &str,
     member: &str,
     accept: &dyn Fn(&str) -> bool,
 ) -> Option<Symbol> {
-    let first = head.chars().next()?;
-    if !first.is_lowercase() {
-        return None;
-    }
-    let capitalized = {
-        let mut s = String::with_capacity(head.len());
-        s.extend(first.to_uppercase());
-        s.push_str(&head[first.len_utf8()..]);
-        s
-    };
-    lookup_member(lookup, &capitalized, member, accept)
-}
-
-/// Static-member fallback: a builtin value `Foo` carries its static members on the
-/// co-named `${Foo}Constructor` interface (`Object.keys` → `ObjectConstructor.keys`,
-/// `Promise.resolve` → `PromiseConstructor.resolve`, `Date.now` → `DateConstructor.now`).
-/// TS declares the value as `declare var Foo: FooConstructor`; the instance
-/// `interface Foo` holds none of these. Resolve `member` on `${head}Constructor`.
-/// `None` when the head already ends in `Constructor` (no double-suffix probe) or no
-/// such interface is indexed.
-fn lookup_member_on_constructor_interface(
-    lookup: &dyn SymbolLookup,
-    head: &str,
-    member: &str,
-    accept: &dyn Fn(&str) -> bool,
-) -> Option<Symbol> {
-    if head.ends_with("Constructor") {
-        return None;
-    }
-    let ctor = format!("{head}Constructor");
-    lookup_member(lookup, &ctor, member, accept)
+    let nominal = profile.primitive_member_head(head)?;
+    lookup_member(lookup, &nominal, member, accept)
 }
 
 /// Namespace-qualified receiver fallback: a head like `Ns.Type` whose members are
@@ -1073,7 +1118,10 @@ fn lookup_member_on_namespaced(
     member: &str,
     accept: &dyn Fn(&str) -> bool,
 ) -> Option<Symbol> {
-    let (_, last) = head.rsplit_once('.')?;
+    let last = index_qname_leaf(head);
+    if last == head {
+        return None;
+    }
     if last.is_empty() {
         return None;
     }
@@ -1083,9 +1131,8 @@ fn lookup_member_on_namespaced(
     // (`@scope/pkg.Ns.Type`). Resolve `member` on the type-like symbol whose qname
     // IS `head` or ends with `.head`, climbing its supertypes by id. More specific
     // than the bare-segment fallback below, so it runs first.
-    let suffix = format!(".{head}");
     for cand in lookup.types_by_name(last).iter() {
-        if cand.qualified_name == head || cand.qualified_name.ends_with(&suffix) {
+        if index_qname_is_or_ends_with(&cand.qualified_name, head) {
             if let Some(m) = lookup_member_by_id(lookup, cand.id, member, accept) {
                 return Some(m);
             }
@@ -1098,10 +1145,9 @@ fn lookup_member_on_namespaced(
 /// Resolve `member` on `type_qname`, climbing its supertypes up to
 /// `MAX_SUPERTYPE_DEPTH`. `accept` gates a candidate by kind. The climb is
 /// bounded and cheap, so it is recomputed per call rather than memoized.
-/// The index-signature member declared on `type_qname` or a supertype: a
-/// bracket-named member (`[key]`, `[index]` — the binder name the extractor
-/// records) that admits any key. A computed key (`[Symbol.iterator]`) is a
-/// real named member, not an index signature, and never matches.
+/// The normalized index-signature member declared on `type_qname` or a
+/// supertype. Source bracket/computed-key grammar is classified by the
+/// language extractor before it reaches this generic walk.
 fn lookup_member_on_index_signature(
     lookup: &dyn SymbolLookup,
     type_qname: &str,
@@ -1110,9 +1156,7 @@ fn lookup_member_on_index_signature(
     let mut cur = type_qname.to_string();
     for _ in 0..MAX_SUPERTYPE_DEPTH {
         for m in lookup.members_of(&cur) {
-            if m.name.starts_with('[')
-                && m.name.ends_with(']')
-                && !m.name.starts_with("[Symbol.")
+            if m.signature.as_deref() == Some(crate::types::INDEX_SIGNATURE_MARKER)
                 && accept(&m.kind)
             {
                 return Some(m.clone());
@@ -1127,16 +1171,17 @@ fn lookup_member_on_index_signature(
             .parent_class_qname(&cur)
             .map(str::to_string)
             .or_else(|| {
-                cur.rsplit_once('.')
-                    .and_then(|(_, bare)| lookup.parent_class_qname(bare))
+                index_qname_parent(&cur)
+                    .and_then(|_| lookup.parent_class_qname(index_qname_leaf(&cur)))
                     .map(str::to_string)
             });
         match parent {
             Some(parent) => {
-                cur = if !parent.contains('.') && lookup.members_of(&parent).iter().next().is_none()
+                cur = if index_qname_parent(&parent).is_none()
+                    && lookup.members_of(&parent).iter().next().is_none()
                 {
-                    match cur.rsplit_once('.') {
-                        Some((ns, _)) => format!("{ns}.{parent}"),
+                    match index_qname_parent(&cur) {
+                        Some(ns) => join_index_qname(ns, &parent),
                         None => parent,
                     }
                 } else {
@@ -1205,6 +1250,7 @@ fn tuple_index_of(seg: &crate::types::ChainSegment) -> Option<usize> {
 fn tuple_element_type(
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
+    profile: &LanguageProfile,
     recv_ty: TypeId,
     idx: usize,
 ) -> Option<TypeId> {
@@ -1214,7 +1260,7 @@ fn tuple_element_type(
     // An array-destructure of an array (`const [a, b] = someArray`) emits the same
     // tuple_index segments; array applications are homogeneous, so every position
     // is the element type.
-    if let Some(elem) = array_element_type(arena, recv_ty) {
+    if let Some(elem) = array_element_type(profile, arena, recv_ty) {
         return Some(elem);
     }
     let head = head_qname(arena, recv_ty)?;
@@ -1243,18 +1289,22 @@ fn tuple_element_type(
 /// (non-sequence) container's subscript does not yield its first type
 /// argument. The caller falls through to named-member lookup so a
 /// string-keyed `obj['key']` index still resolves as a member.
-fn array_element_type(arena: &TypeArena, recv_ty: TypeId) -> Option<TypeId> {
+fn array_element_type(
+    profile: &LanguageProfile,
+    arena: &TypeArena,
+    recv_ty: TypeId,
+) -> Option<TypeId> {
     match arena.get(recv_ty) {
         Type::Apply { base, args } => {
             let head = head_qname(arena, base)?;
-            if matches!(head.as_str(), "Array" | "ReadonlyArray" | "Vec") {
+            if profile.has_homogeneous_computed_access(&head) {
                 args.first().copied()
             } else {
                 None
             }
         }
         Type::Optional(inner) | Type::AsyncWrapper(inner) | Type::Iterator(inner) => {
-            array_element_type(arena, inner)
+            array_element_type(profile, arena, inner)
         }
         _ => None,
     }
@@ -1293,10 +1343,10 @@ pub(crate) fn apply_args(arena: &TypeArena, id: TypeId) -> Vec<TypeId> {
 /// receiver's applied type arguments substituted for the declaring type's
 /// generic parameters: `Repository<User>` receiver + `find(): T` → `User`.
 ///
-/// Fluent-chain rebind: when the substituted yield type's head is `"this"` or
-/// `"Self"`, the member is a fluent step that returns the receiver itself.
+/// Fluent-chain rebind: when the substituted yield type's head is a
+/// profile-declared enclosing-type receiver, the member returns the receiver.
 /// Substitute the receiver type directly so the next member lookup stays on
-/// the receiver's type rather than dead-ending on a nominal `Class("this")`
+/// the receiver's type rather than dead-ending on a nominal receiver spelling
 /// that has no members.
 ///
 /// Callable-property unwrap: when `is_call=true` and the member's declared
@@ -1311,9 +1361,43 @@ pub(super) fn yield_through(
     receiver: TypeId,
     recv_id: Option<i64>,
 ) -> Option<TypeId> {
+    yield_through_with_optional_profile(lookup, arena, member, is_call, receiver, recv_id, None)
+}
+
+pub(super) fn yield_through_with_profile(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    member: &Symbol,
+    is_call: bool,
+    receiver: TypeId,
+    recv_id: Option<i64>,
+    profile: &LanguageProfile,
+) -> Option<TypeId> {
+    yield_through_with_optional_profile(
+        lookup,
+        arena,
+        member,
+        is_call,
+        receiver,
+        recv_id,
+        Some(profile),
+    )
+}
+
+fn yield_through_with_optional_profile(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    member: &Symbol,
+    is_call: bool,
+    receiver: TypeId,
+    recv_id: Option<i64>,
+    profile: Option<&LanguageProfile>,
+) -> Option<TypeId> {
     let result = lookup
         .projected_member_yield(arena, receiver, member.id, is_call)
-        .unwrap_or_else(|| yield_through_impl(lookup, arena, member, is_call, receiver, recv_id))
+        .unwrap_or_else(|| {
+            yield_through_impl(lookup, arena, member, is_call, receiver, recv_id, profile)
+        })
         .map(|ty| super::bound_call::member_yield(lookup, arena, member.id, receiver, ty));
     crate::tracef!(
         "  YIELD '{}' is_call={}: return_type_id={} field_type_id={} -> {}",
@@ -1343,9 +1427,9 @@ pub(super) fn yield_through(
 /// sibling that does (`Entity(string)` vs `Entity(string, Action<…>)`), or
 /// argument binding and lambda seeding zip against the wrong positions.
 /// Preference among arity-exact siblings: one whose pattern at every lambda
-/// argument position is callback-shaped. Strict Ruby callback syntax has no
-/// fallback when no sibling admits it; non-strict declarations retain the
-/// original-callee fallback so their patterns may still bind a prefix.
+/// argument position is callback-shaped. A declaration policy can reject a
+/// source callback form, in which case an incompatible overload never becomes
+/// an arity fallback.
 #[cfg(test)]
 pub(super) fn _test_select_overload_for_args(
     lookup: &dyn SymbolLookup,
@@ -1374,9 +1458,8 @@ fn select_overload_for_args(
             continue;
         }
         if !callback_syntax_fits(cand, args) {
-            // An RBI/RBS callback form has a declaration-level calling
-            // convention. Do not retain an incompatible candidate merely as
-            // an arity fallback: it could otherwise become a false callee.
+            // A declaration-level callback convention must not become an
+            // incompatible arity fallback.
             continue;
         }
         let lambdas_fit = args.iter().zip(patterns.iter()).all(|(a, &p)| {
@@ -1423,6 +1506,7 @@ fn yield_through_impl(
     is_call: bool,
     receiver: TypeId,
     recv_id: Option<i64>,
+    profile: Option<&LanguageProfile>,
 ) -> Option<TypeId> {
     let raw = member_yield_type(lookup, arena, member, is_call)?;
     // Callable-property unwrap: if the raw yield is a function type and the
@@ -1446,7 +1530,7 @@ fn yield_through_impl(
     let raw = substitute_supertype_args(lookup, arena, member, raw, receiver, recv_id);
     let substituted = substitute_through(lookup, arena, raw, receiver, recv_id);
     // Fluent-chain rebind: `this`/`Self` head means "return the receiver".
-    if is_self_head(arena, substituted) {
+    if is_self_head(profile, arena, substituted) {
         return Some(receiver);
     }
     // Covariant mapped-fluent rebind: a chaining getter `g(): Src` declared on
@@ -1473,7 +1557,7 @@ fn mapped_fluent_rebind(
     yielded: TypeId,
     receiver: TypeId,
 ) -> Option<TypeId> {
-    let decl = member.qualified_name.rsplit_once('.')?.0;
+    let decl = index_qname_parent(&member.qualified_name)?;
     let yield_head = head_qname(arena, yielded)?;
     if !qnames_same_type(decl, &yield_head) {
         return None;
@@ -1492,7 +1576,7 @@ fn mapped_fluent_rebind(
 /// difference: a package-local name `Ns.Type` and its indexed qname
 /// `@scope/pkg.Ns.Type` match. Exact, or one is the dotted suffix of the other.
 fn qnames_same_type(a: &str, b: &str) -> bool {
-    a == b || a.ends_with(&format!(".{b}")) || b.ends_with(&format!(".{a}"))
+    index_qname_is_or_ends_with(a, b) || index_qname_is_or_ends_with(b, a)
 }
 
 /// Whether `receiver_head` has a MAPPED supertype whose bound mapped source is
@@ -1589,7 +1673,7 @@ pub(crate) fn member_yield_type(
         // A synthesized object-literal return type (`{fn}$Ret`): the function's
         // body returned an object literal, materialized post-extract as a type
         // whose members are the object's properties. A call yields that type.
-        let synth_ret = format!("{qname}$Ret");
+        let synth_ret = index_return_qname(qname);
         if lookup.by_qualified_name(&synth_ret).is_some() {
             return Some(arena.class(&synth_ret));
         }
@@ -1630,13 +1714,15 @@ pub(crate) fn member_yield_type(
         .map(|s| arena.intern_type_str(&s))
 }
 
-/// `true` when the type's nominal head is the `this` or `Self` keyword —
-/// the fluent-return convention across TypeScript (`this`), Rust (`Self`),
-/// Swift (`Self`), and Kotlin (`this`). When a member's yield type has this
-/// head, the chain advances to the RECEIVER's type instead.
-fn is_self_head(arena: &TypeArena, id: TypeId) -> bool {
+/// `true` when the type's nominal head is a profile-declared enclosing-type
+/// receiver spelling. When a member's yield type has this head, the chain
+/// advances to the receiver's type instead.
+fn is_self_head(profile: Option<&LanguageProfile>, arena: &TypeArena, id: TypeId) -> bool {
     match head_qname(arena, id) {
-        Some(h) => h == "this" || h == "Self",
+        Some(h) => profile.is_some_and(|profile| {
+            profile.receiver_role(&h)
+                == Some(crate::type_checker::profile::language_profile::ReceiverRole::EnclosingType)
+        }),
         None => false,
     }
 }
@@ -1694,59 +1780,19 @@ mod lexical_root;
 #[path = "chain_namespace_root.rs"]
 mod namespace_root;
 
-/// Reduce an import specifier to its package root: `next/server` → `next`,
-/// `@scope/pkg/sub` → `@scope/pkg`, `zod` → `zod`. A scoped package keeps its
-/// first two slash segments; an unscoped one keeps the first.
-fn package_root(specifier: &str) -> &str {
-    if specifier.starts_with('@') {
-        // `@scope/pkg…` — the root is everything up to the second `/`.
-        let mut slashes = 0;
-        for (i, c) in specifier.char_indices() {
-            if c == '/' {
-                slashes += 1;
-                if slashes == 2 {
-                    return &specifier[..i];
-                }
-            }
-        }
-        specifier
-    } else {
-        match specifier.find('/') {
-            Some(i) => &specifier[..i],
-            None => specifier,
-        }
-    }
-}
-
-/// `true` when an external symbol's `ext:<lang>:<modpath>` file path sits under
-/// the package `root`: `ext:ts:vitest/globals.d.ts` is under `vitest`,
-/// `ext:ts:@tanstack/react-query/build/x.d.ts` under `@tanstack/react-query`. The
-/// module path keeps the literal specifier (slashes included), so this match is
-/// uniform across scoped and unscoped packages where a qname-prefix test is not.
-fn ext_file_under_module(file_path: &str, root: &str) -> bool {
-    let Some(rest) = file_path.strip_prefix("ext:") else {
-        return false;
-    };
-    // Drop the `<lang>:` segment (`ts:`, `js:`, …) to reach the module path.
-    let Some(colon) = rest.find(':') else {
-        return false;
-    };
-    let modpath = &rest[colon + 1..];
-    modpath == root
-        || modpath
-            .strip_prefix(root)
-            .is_some_and(|r| r.starts_with('/'))
-}
-
 /// The import entry binding the chain-root `name`, when the import is an
 /// EXTERNAL bare specifier (not a relative `./…` path). Relative imports
 /// return None — their declarations are not `ext:` files, so the scoped
 /// filter would be empty anyway; skipping them avoids the work.
-fn external_import_entry<'a>(file_ctx: &'a FileContext, name: &str) -> Option<&'a ImportEntry> {
+fn external_import_entry<'a>(
+    file_ctx: &'a FileContext,
+    profile: &LanguageProfile,
+    name: &str,
+) -> Option<&'a ImportEntry> {
     for import in &file_ctx.imports {
-        if import.imported_name == name || import.alias.as_deref() == Some(name) {
+        if import.bound_name() == name {
             let spec = import.module_path.as_deref()?;
-            if spec.starts_with('.') {
+            if profile.source_module_path_policy(spec).is_relative(spec) {
                 return None;
             }
             return Some(import);
@@ -1766,9 +1812,10 @@ pub(super) fn import_scoped_external_root(
     profile: &LanguageProfile,
     seg: &crate::types::ChainSegment,
 ) -> Option<Receiver> {
-    let entry = external_import_entry(file_ctx, &seg.name)?;
+    let entry = external_import_entry(file_ctx, profile, &seg.name)?;
     let spec = entry.module_path.as_deref()?;
-    let root = package_root(spec);
+    let root = package_specifier::package_root(&file_ctx.language, spec)
+        .unwrap_or_else(|| spec.to_string());
     let module_match = profile.module_path_match(spec);
     // A rename import binds `seg.name` locally, but the module's files declare
     // the ORIGINAL name — that is the name the scoped candidate set must carry.
@@ -1786,7 +1833,12 @@ pub(super) fn import_scoped_external_root(
             {
                 super::path_match::file_path_matches_module(&s.file_path, spec, profile)
             } else {
-                ext_file_under_module(&s.file_path, root)
+                package_specifier::external_file_under_module(
+                    &file_ctx.language,
+                    &s.file_path,
+                    &root,
+                )
+                .unwrap_or(false)
             }
         })
         .collect();
@@ -1796,8 +1848,8 @@ pub(super) fn import_scoped_external_root(
     // alias carries the same import-scoped evidence, so the declaration leads
     // the candidate set; the module's own binding symbols stay as fallbacks.
     if let Some(alias) = lookup
-        .reexport_alias_target(&format!("{spec}.{lookup_name}"))
-        .or_else(|| lookup.reexport_alias_target(&format!("{root}.{lookup_name}")))
+        .reexport_alias_target(&join_index_qname(spec, lookup_name))
+        .or_else(|| lookup.reexport_alias_target(&join_index_qname(&root, lookup_name)))
     {
         scoped.insert(0, alias);
     }
@@ -1822,7 +1874,7 @@ pub(super) fn import_scoped_external_root(
             if let Some(r) = function_typed_value_call_yield(arena, vty) {
                 return Some(Receiver::untyped(r));
             }
-            let recv = expand_receiver(Receiver::untyped(vty), lookup, arena, None);
+            let recv = expand_receiver(Receiver::untyped(vty), lookup, arena, None, None);
             if let Some(r) = function_typed_value_call_yield(arena, recv.ty) {
                 return Some(Receiver::untyped(r));
             }
@@ -1859,8 +1911,7 @@ pub(super) fn import_scoped_external_root(
 /// declaration over a same-named export of an unrelated package.
 fn ambient_global_package(lookup: &dyn SymbolLookup, name: &str) -> Option<String> {
     lookup.ambient_symbols(name).iter().find_map(|s| {
-        crate::ecosystem::externals::ts_package_from_virtual_path(&s.file_path)
-            .map(|p| p.to_string())
+        crate::ecosystem::package_specifier::external_package_key_from_path(&s.file_path)
     })
 }
 
@@ -1884,6 +1935,7 @@ fn value_root_type(
     source_qname: &str,
     file_ctx: &FileContext,
     file_package_id: Option<i64>,
+    profile: &LanguageProfile,
 ) -> Result<TypeId, Option<Cause>> {
     // A value root's type comes from a binding this file is entitled to root on
     // ("owned"): a scope-qualified match, the same file, an imported name, or an
@@ -1894,7 +1946,7 @@ fn value_root_type(
     // the first-winner leak that mis-typed `logger`/`z`/`response` to an unrelated
     // same-name value (a foreign `logger` typed `Array`).
     // The module `name` is imported from, if any. An import from an INTERNAL module
-    // — a relative path or a tsconfig path alias (`@/lib/toast`) — makes a same-name
+    // — a relative path or a resolver-owned module alias (`@/lib/toast`) — makes a same-name
     // EXTERNAL (`ext:`) symbol foreign, never the imported declaration; without this
     // an untyped internal binding (an uncaptured `Object.assign(...)` value) is
     // overridden by a borrowed external same-name's type. An import from a bare
@@ -1905,11 +1957,12 @@ fn value_root_type(
     let imported_module = file_ctx
         .imports
         .iter()
-        .find(|i| i.imported_name == name || i.alias.as_deref() == Some(name))
+        .find(|i| i.bound_name() == name)
         .and_then(|i| i.module_path.as_deref());
     let name_imported = imported_module.is_some();
     let import_is_internal = imported_module.is_some_and(|m| {
-        m.starts_with('.') || lookup.resolve_path_alias(file_package_id, m).is_some()
+        profile.source_module_path_policy(m).is_relative(m)
+            || lookup.resolve_module_alias(file_package_id, m).is_some()
     });
     let src_file = file_ctx.file_path.as_str();
     let is_owned = |s: &Symbol| {
@@ -1975,7 +2028,7 @@ fn value_root_type(
             // The globalizing package may itself re-export the declaration
             // from a sibling package — the registered re-export alias names
             // that declaration directly, outside the `{pkg}.` prefix below.
-            if let Some(decl) = lookup.reexport_alias_target(&format!("{pkg}.{name}")) {
+            if let Some(decl) = lookup.reexport_alias_target(&join_index_qname(&pkg, name)) {
                 if is_value_kind(&decl.kind) {
                     if let Some(id) = field_type_of(lookup, arena, decl.id, &decl.qualified_name) {
                         if !is_primitive_head(arena, id) {
@@ -1984,7 +2037,8 @@ fn value_root_type(
                     }
                 }
             }
-            let prefix = format!("{pkg}.");
+            let prefix = join_index_qname(&pkg, "");
+            let prefix = format!("{prefix}.");
             for cand in lookup.by_name(name) {
                 if !is_value_kind(&cand.kind) || !cand.qualified_name.starts_with(&prefix) {
                     continue;
@@ -2016,7 +2070,7 @@ fn value_root_type(
         let qn = if scope.is_empty() {
             name.to_string()
         } else {
-            format!("{scope}.{name}")
+            join_index_qname(scope, name)
         };
         if let Some(s) = lookup.by_qualified_name(&qn) {
             if is_value_kind(&s.kind)
@@ -2045,10 +2099,7 @@ fn value_root_type(
         if scope.is_empty() {
             break;
         }
-        scope = match scope.rfind('.') {
-            Some(i) => &scope[..i],
-            None => "",
-        };
+        scope = index_qname_parent(scope).unwrap_or("");
     }
     for cand in lookup.by_name(name) {
         if !is_value_kind(&cand.kind) || ext_yields_to_type(cand) || ext_member(cand) {
@@ -2191,7 +2242,7 @@ fn deref_value_typed(
         }
         // The maps are simple-name keyed; a qualified head (`Ns.I`) probes them by
         // its trailing segment.
-        let simple = head.rsplit('.').next().unwrap_or(&head);
+        let simple = index_qname_leaf(&head);
         // A nominal head whose declaration is a member-bearing type is already
         // the receiver. When a same-simple-name type exists but the head's own
         // declaration is a member-less value re-export shim, advance the receiver
@@ -2241,13 +2292,22 @@ fn call_value_root_type(
     source_qname: &str,
     file_ctx: &FileContext,
     file_package_id: Option<i64>,
+    profile: &LanguageProfile,
 ) -> Option<TypeId> {
-    let value_ty =
-        value_root_type(lookup, arena, name, source_qname, file_ctx, file_package_id).ok()?;
+    let value_ty = value_root_type(
+        lookup,
+        arena,
+        name,
+        source_qname,
+        file_ctx,
+        file_package_id,
+        profile,
+    )
+    .ok()?;
     if let Some(r) = function_typed_value_call_yield(arena, value_ty) {
         return Some(r);
     }
-    let recv = expand_receiver(Receiver::untyped(value_ty), lookup, arena, None);
+    let recv = expand_receiver(Receiver::untyped(value_ty), lookup, arena, None, None);
     if let Some(r) = function_typed_value_call_yield(arena, recv.ty) {
         return Some(r);
     }
@@ -2402,12 +2462,12 @@ fn resolve_callee_return_and_id(
     // factory's `return inner()` means, resolved before the unscoped name
     // fallback picks an arbitrary namesake. Its `$Ret` (object-literal return)
     // is authoritative, same as the general path below.
-    if let Some(scoped_qname) = enclosing_scope.map(|e| format!("{e}.{name}")) {
+    if let Some(scoped_qname) = enclosing_scope.map(|e| join_index_qname(e, name)) {
         if let Some(cand) = candidates
             .iter()
             .find(|s| is_callable(&s.kind) && s.qualified_name == scoped_qname)
         {
-            let ret_qname = format!("{}$Ret", cand.qualified_name);
+            let ret_qname = index_return_qname(&cand.qualified_name);
             if lookup.by_qualified_name(&ret_qname).is_some() {
                 return Ok((arena.class(&ret_qname), cand.id));
             }
@@ -2426,7 +2486,7 @@ fn resolve_callee_return_and_id(
     // return inferred from a param annotation (`Record`) or a body expression
     // (`Promise`). Prefer it before reading the stored slot.
     for cand in candidates.iter().filter(|s| is_callable(&s.kind)) {
-        let ret_qname = format!("{}$Ret", cand.qualified_name);
+        let ret_qname = index_return_qname(&cand.qualified_name);
         if lookup.by_qualified_name(&ret_qname).is_some() {
             return Ok((arena.class(&ret_qname), cand.id));
         }
@@ -2551,50 +2611,33 @@ pub(crate) fn call_return_with_type_args(
     Some(arena.rebind_class_params(ret, &subst))
 }
 
-/// Resolve a return-type-extraction application — `ReturnType<typeof fn>`, and
-/// any user alias of the same shape — to `fn`'s return type.
-///
-/// The shape is structural, not name-based (see `is_return_type_extraction`).
-/// Applied to `typeof fn`, the checked type is `fn`'s value, so the result is
-/// `fn`'s return type, resolved in the use site's import scope via
-/// `callee_return_type` so the correct overload / package is selected. `None`
-/// when `ty_str` is not such an application, or the callee or its return type
-/// can't be resolved.
+/// Resolve a language-owned callable-return extraction to its callee's return.
 pub(crate) fn resolve_return_type_extraction(
     ty: TypeId,
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
     file_ctx: &FileContext,
+    profile: Option<&LanguageProfile>,
 ) -> Option<TypeId> {
     let head = head_qname(arena, ty)?;
-    // Flat-interned `ReturnType<typeof f>` — a single Class head rather than an
-    // `Apply{ReturnType,[…]}` (the inferred `const x = f()` field type, whose
-    // `<…>` payload the type-ref capture does not decompose). Parse the wrapped
-    // value off the head string and resolve f's return directly.
-    if let Some(inner) = head
-        .strip_prefix("ReturnType<typeof ")
-        .and_then(|s| s.strip_suffix('>'))
-    {
-        return typeof_value_return_type(inner.trim(), lookup, arena, file_ctx);
+    // A flattened extraction keeps its language surface in the nominal head.
+    if let Some(value) = flat_callable_return_operand(profile, &head) {
+        return callable_value_return_type(value, lookup, arena, file_ctx);
     }
-    // Either a named alias whose RHS is `ReturnType<…>` (`type Logger =
-    // ReturnType<typeof createScopedLogger>`), or the raw `ReturnType` intrinsic
-    // applied directly — a variable inferred as `ReturnType<typeof f>` from a
-    // `const x = f(...)` initializer, which an importing file resolves on demand.
-    let is_rt = head == "ReturnType"
+    // A raw intrinsic or a named alias of its structural shape can delegate to
+    // the language policy for its callable operand.
+    let is_rt = alias_intrinsic(profile, &head) == Some(AliasIntrinsic::CallableReturn)
         || lookup
             .alias_target(&head)
-            .map(|t| is_return_type_extraction(arena, t))
+            .map(|t| is_callable_return_extractor(profile, arena, t))
             .unwrap_or(false);
     if !is_rt {
         return None;
     }
     let arg = apply_args(arena, ty).first().copied()?;
-    let value = head_qname(arena, arg)?
-        .strip_prefix("typeof ")
-        .map(str::trim)?
-        .to_string();
-    typeof_value_return_type(&value, lookup, arena, file_ctx)
+    let argument_head = head_qname(arena, arg)?;
+    let value = callable_return_operand(profile, &argument_head)?;
+    callable_value_return_type(value, lookup, arena, file_ctx)
 }
 
 /// The return type of the function bound to `value` at the use site. The binding
@@ -2604,7 +2647,7 @@ pub(crate) fn resolve_return_type_extraction(
 /// `callee_return_type`'s name-only fallback (which
 /// only package-scopes WORKSPACE imports) would otherwise pick a first-winner.
 /// Falls back to that name-only resolution for a value with no matching import.
-fn typeof_value_return_type(
+fn callable_value_return_type(
     value: &str,
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
@@ -2618,7 +2661,7 @@ fn typeof_value_return_type(
         let Some(module) = import.module_path.as_deref() else {
             continue;
         };
-        let qname = format!("{module}.{}", import.imported_name);
+        let qname = join_index_qname(module, &import.imported_name);
         if let Some(id) = lookup.return_type_id(&qname) {
             return Some(id);
         }
@@ -2627,35 +2670,6 @@ fn typeof_value_return_type(
         }
     }
     callee_return_type(lookup, arena, file_ctx, value)
-}
-
-/// A `Conditional` of the return-type-extraction shape: `T extends (...) => infer
-/// R ? R : …`. Recognised structurally — `extends` ends in `=> infer <V>` and the
-/// true branch is `<V>` — so it matches the lib `ReturnType<T>` and any alias
-/// written the same way, regardless of name.
-fn is_return_type_extraction(arena: &TypeArena, target: &AliasTargetIds) -> bool {
-    let AliasTargetIds::Conditional {
-        extends,
-        true_branch,
-        ..
-    } = target
-    else {
-        return false;
-    };
-    let extends_str = arena.format_type(*extends);
-    let Some((_, infer_tail)) = extends_str.rsplit_once("=> infer ") else {
-        return false;
-    };
-    let infer_var = infer_tail
-        .trim_start()
-        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
-        .next()
-        .unwrap_or("");
-    if infer_var.is_empty() {
-        return false;
-    }
-    let true_branch_str = arena.format_type(*true_branch);
-    infer_var == true_branch_str.trim()
 }
 
 /// `true` when `kind` names something a call can root on — a free function or a

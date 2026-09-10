@@ -64,7 +64,8 @@ fn extracts_specifier_from_multi_line_named_clause() {
     // Type-entry files routinely break a long named clause across physical
     // lines; the `from '<spec>'` clause then sits on a continuation line. The
     // logical-line collapse must join them so the specifier is still seen.
-    let src = "export {\n  Assertion,\n  JestAssertion,\n  ExpectStatic,\n} from 'runner-expect';\n";
+    let src =
+        "export {\n  Assertion,\n  JestAssertion,\n  ExpectStatic,\n} from 'runner-expect';\n";
     let specs = extract_bare_reexport_specifiers(src);
     assert_eq!(specs, vec!["runner-expect".to_string()]);
 }

@@ -323,7 +323,14 @@ fn _build_cfg_via_runner<P: crate::languages::LanguagePlugin>(
     let fc = plugin.flow_config().expect("flow config must exist");
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
-    let meta = run_flow_queries(src, &lang, fc, &mut symbols, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        src,
+        &lang,
+        fc,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
     meta.cfg
 }
 
@@ -635,7 +642,14 @@ fn cfg_go_expression_switch_discriminant_narrowing_emitted() {
     let fc = GoPlugin.flow_config().unwrap();
     let mut syms: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
-    let meta = run_flow_queries(src, &lang, fc, &mut syms, &mut refs, BindingSymbols::Synthesize);
+    let meta = run_flow_queries(
+        src,
+        &lang,
+        fc,
+        &mut syms,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
     assert!(
         meta.discriminant_narrowings
             .iter()

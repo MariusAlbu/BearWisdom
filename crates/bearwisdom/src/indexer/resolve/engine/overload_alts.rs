@@ -10,7 +10,9 @@ use crate::indexer::resolve::engine::contract::{FileContext, Symbol, SymbolLooku
 use crate::type_checker::core::types::{TypeArena, TypeId};
 use crate::type_checker::profile::language_profile::LanguageProfile;
 
-use super::chain::{lookup_member_on, project_receiver, yield_through, Receiver};
+use super::chain::{
+    lookup_member_on_with_profile, project_receiver, yield_through_with_profile, Receiver,
+};
 use super::head_decl::yielded_receiver;
 
 /// Bound on the sibling-overload yields carried between hops.
@@ -28,19 +30,17 @@ pub(super) fn member_on_alt_yields(
     arena: &TypeArena,
     alts: &[Receiver],
     member: &str,
-    implicit_root_types: &[&str],
+    profile: &LanguageProfile,
 ) -> Option<(Symbol, Receiver)> {
     for alt in alts {
-        if let Some(m) = lookup_member_on(lookup, arena, *alt, member, &|_k| true) {
+        if let Some(m) =
+            lookup_member_on_with_profile(lookup, arena, *alt, member, &|_k| true, Some(profile))
+        {
             return Some((m, *alt));
         }
-        if let Some(m) = super::extension_method::lookup_extension_method(
-            lookup,
-            arena,
-            *alt,
-            member,
-            implicit_root_types,
-        ) {
+        if let Some(m) =
+            super::extension_method::lookup_extension_method(lookup, arena, *alt, member, profile)
+        {
             return Some((m, *alt));
         }
     }
@@ -67,7 +67,9 @@ pub(super) fn collect_overload_alt_yields(
         if sib.id == member.id {
             continue;
         }
-        let Some(y) = yield_through(lookup, arena, sib, true, mid_recv, mid_id) else {
+        let Some(y) =
+            yield_through_with_profile(lookup, arena, sib, true, mid_recv, mid_id, profile)
+        else {
             continue;
         };
         let r = project_receiver(

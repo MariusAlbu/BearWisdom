@@ -233,8 +233,7 @@ fn rebar_vendored_prefixes(project_root: &Path, already: &[String]) -> Vec<Strin
 /// declares the rebar ecosystem. The unambiguous signal that vendored erlang
 /// checkouts inside the tree are foreign, not first-party.
 fn host_declares_rebar(project_root: &Path) -> bool {
-    project_root.join("rebar.config").is_file()
-        || project_root.join("rebar3.config").is_file()
+    project_root.join("rebar.config").is_file() || project_root.join("rebar3.config").is_file()
 }
 
 /// Recursive helper for `rebar_vendored_prefixes`. Prunes dotted dirs and the
@@ -285,7 +284,14 @@ fn walk_for_rebar_app(
         if name.starts_with('.') || name == "_build" {
             continue;
         }
-        walk_for_rebar_app(project_root, &entry.path(), depth + 1, max_depth, already, out);
+        walk_for_rebar_app(
+            project_root,
+            &entry.path(),
+            depth + 1,
+            max_depth,
+            already,
+            out,
+        );
     }
 }
 
@@ -299,11 +305,9 @@ fn declares_erlang_app(dir: &Path) -> bool {
     let Ok(entries) = std::fs::read_dir(&src) else {
         return false;
     };
-    entries.flatten().any(|e| {
-        e.file_name()
-            .to_string_lossy()
-            .ends_with(".app.src")
-    })
+    entries
+        .flatten()
+        .any(|e| e.file_name().to_string_lossy().ends_with(".app.src"))
 }
 
 /// True when `rel_path` (project-root-relative) falls inside one of the

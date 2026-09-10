@@ -6,12 +6,14 @@
 
 // Extraction sub-modules
 mod alias_classify;
+pub(crate) mod alias_intrinsics;
 mod alias_type_text;
 mod alias_union;
 mod ambient_modules;
 mod annotation_members;
 mod annotation_named_type;
 mod calls;
+pub(crate) mod component_tags;
 pub mod connectors;
 mod connectors_graphql;
 mod connectors_nestjs;
@@ -23,6 +25,7 @@ pub(crate) mod flow;
 mod helpers;
 mod imports;
 pub(crate) mod keywords;
+mod module_augmentations;
 mod narrowing;
 mod params;
 mod qualify_members;
@@ -36,6 +39,7 @@ mod expressions;
 pub mod extract;
 mod reexports;
 pub(crate) mod selectors;
+mod signature;
 mod type_scan;
 
 // Resolution sub-modules
@@ -54,6 +58,10 @@ mod extract_tests;
 #[cfg(test)]
 #[path = "calls_tests.rs"]
 mod calls_tests;
+
+#[cfg(test)]
+#[path = "module_augmentations_tests.rs"]
+mod module_augmentations_tests;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -108,6 +116,118 @@ impl LanguagePlugin for TypeScriptPlugin {
         );
         crate::languages::common::append_handlebars_register_helper_globals(source, &mut result);
         result
+    }
+
+    fn signature_type_application(&self, text: &str) -> (String, Vec<String>) {
+        crate::languages::angle_type_application(text)
+    }
+
+    fn signature_type_head<'a>(&self, text: &'a str) -> &'a str {
+        crate::languages::angle_type_head(text)
+    }
+
+    fn primitive_member_head(&self, head: &str) -> Option<String> {
+        match head {
+            "string" => Some("String".to_string()),
+            "number" => Some("Number".to_string()),
+            "bigint" => Some("BigInt".to_string()),
+            "boolean" => Some("Boolean".to_string()),
+            "symbol" => Some("Symbol".to_string()),
+            _ => None,
+        }
+    }
+
+    fn has_homogeneous_computed_access(&self, head: &str) -> bool {
+        matches!(head, "Array" | "ReadonlyArray")
+    }
+    fn signature_return_type(&self, signature: &str) -> Option<String> {
+        signature::return_type(signature)
+    }
+
+    fn signature_parameter_types(&self, signature: &str) -> Option<Vec<String>> {
+        signature::parameter_types(signature)
+    }
+
+    fn signature_declared_type(&self, signature: &str) -> Option<String> {
+        signature::declared_type(signature)
+    }
+
+    fn signature_object_type_members(&self, signature: &str) -> Vec<(String, String)> {
+        signature::object_type_members(signature)
+    }
+
+    fn signature_conditional_branches(&self, signature: &str) -> Option<(String, String)> {
+        signature::conditional_branches(signature)
+    }
+
+    fn signature_generic_params(
+        &self,
+        signature: &str,
+        name: &str,
+    ) -> Vec<(String, Option<String>, Option<String>)> {
+        signature::generic_params(signature, name)
+    }
+    fn signature_is_inline_object_result(&self, result: &str) -> bool {
+        signature::is_inline_object_result(result)
+    }
+
+    fn signature_is_tuple_result(&self, result: &str) -> bool {
+        signature::is_tuple_result(result)
+    }
+
+    fn signature_has_callable_return_extraction(&self, result: &str) -> bool {
+        signature::has_callable_return_extraction(result)
+    }
+    fn signature_field_type(&self, signature: &str) -> Option<String> {
+        let valid = !matches!(signature, "true" | "false" | "null" | "undefined")
+            && !signature.is_empty()
+            && signature
+                .chars()
+                .all(|ch| ch == '_' || ch == '$' || ch.is_ascii_alphanumeric())
+            && signature
+                .chars()
+                .next()
+                .is_some_and(|ch| ch == '_' || ch == '$' || ch.is_ascii_alphabetic());
+        valid.then(|| signature.to_string())
+    }
+
+    fn alias_intrinsic(
+        &self,
+        head: &str,
+    ) -> Option<crate::type_checker::profile::chain_specs::AliasIntrinsic> {
+        alias_intrinsics::member_resolution_intrinsic(head)
+    }
+
+    fn flat_callable_return_operand<'a>(&self, head: &'a str) -> Option<&'a str> {
+        alias_intrinsics::flat_callable_return_operand(head)
+    }
+
+    fn callable_return_operand<'a>(&self, head: &'a str) -> Option<&'a str> {
+        alias_intrinsics::callable_return_operand(head)
+    }
+
+    fn is_callable_return_extractor(
+        &self,
+        arena: &crate::type_checker::core::types::TypeArena,
+        target: &crate::types::AliasTargetIds,
+    ) -> bool {
+        alias_intrinsics::is_callable_return_extractor(arena, target)
+    }
+
+    fn external_module_augmentations(
+        &self,
+        source: &str,
+        virtual_path: &str,
+    ) -> Vec<crate::languages::ModuleAugmentation> {
+        module_augmentations::collect(source, virtual_path)
+    }
+
+    fn external_reexport_target_qname(
+        &self,
+        virtual_path: &str,
+        target_name: &str,
+    ) -> Option<String> {
+        module_augmentations::external_reexport_target_qname(virtual_path, target_name)
     }
 
     fn extract_with_demand(
@@ -180,6 +300,44 @@ impl LanguagePlugin for TypeScriptPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&TYPESCRIPT_PROFILE)
+    }
+
+    fn component_tag_head<'a>(&self, target: &'a str) -> Option<&'a str> {
+        component_tags::component_tag_head(target)
+    }
+
+    fn is_component_file(&self, path: &str) -> bool {
+        component_tags::is_component_file(path)
+    }
+
+    fn selector_binding_keys(&self, selector: &str) -> Vec<String> {
+        selectors::selector_binding_keys(selector)
+    }
+
+    fn component_selectors(
+        &self,
+        source: &str,
+        symbols: &[crate::types::ExtractedSymbol],
+    ) -> Vec<(String, String)> {
+        let mut selectors = selectors::extract_component_selectors(source, symbols);
+        selectors.extend(selectors::extract_custom_element_defines(source, symbols));
+        selectors
+    }
+
+    fn exact_module_entry_aliases(&self, declared_modules: &[String]) -> Vec<String> {
+        declared_modules
+            .iter()
+            .filter(|name| !name.contains('*'))
+            .cloned()
+            .collect()
+    }
+
+    fn plugin_flow_emissions(
+        &self,
+        source: &str,
+        _file_path: &str,
+    ) -> Vec<(u32, crate::indexer::resolve::flow_emit::FlowEmission)> {
+        connectors::extract_typescript_graphql(source)
     }
 
     // TODO(routes-dispatch): wire `connectors::discover_nestjs_routes` and

@@ -15,7 +15,7 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::contract::{camel_to_kebab, lexical_normalize};
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 use crate::type_checker::profile::language_profile::{CandidateDirs, ImportResolution, StemMatch};
 use crate::types::EdgeKind;
 
@@ -40,22 +40,15 @@ impl LookupRule for ImportPathRule {
         if ir.decline_leading_slash && target.starts_with('/') {
             return LookupResult::Pass;
         }
-        let Some(source_dir) =
-            std::path::Path::new(ctx.file_ctx.file_path.as_str()).parent()
+        let Some(source_dir) = std::path::Path::new(ctx.file_ctx.file_path.as_str()).parent()
         else {
             return LookupResult::Pass;
         };
 
         for candidate in import_path_candidates(source_dir, target, ir) {
             let path_str = candidate.to_string_lossy().replace('\\', "/");
-            let file_stem = candidate
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("");
-            let file_name = candidate
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or("");
+            let file_stem = candidate.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            let file_name = candidate.file_name().and_then(|s| s.to_str()).unwrap_or("");
             for sym in ctx.lookup.in_file(&path_str) {
                 if sym.kind != ir.bind_kind {
                     continue;
@@ -63,8 +56,7 @@ impl LookupRule for ImportPathRule {
                 let name_ok = match ir.stem_match {
                     StemMatch::StemExact => sym.name == file_stem,
                     StemMatch::StemOrUnderscoreStripped => {
-                        sym.name == file_stem
-                            || sym.name == file_stem.trim_start_matches('_')
+                        sym.name == file_stem || sym.name == file_stem.trim_start_matches('_')
                     }
                     StemMatch::BasenameWithExt => sym.name == file_name,
                     StemMatch::AnyClassInFile => true,

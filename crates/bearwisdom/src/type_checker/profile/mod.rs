@@ -9,8 +9,10 @@ pub mod chain_specs;
 pub mod default_profile;
 pub mod import_axes;
 pub mod import_specs;
+pub mod language_policy;
 pub mod language_profile;
 pub mod registry;
+pub(crate) mod signature_parser;
 pub mod syntax_specs;
 
 pub use language_profile::{

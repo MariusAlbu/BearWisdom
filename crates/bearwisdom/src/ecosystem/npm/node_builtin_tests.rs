@@ -43,9 +43,7 @@ fn node_builtin_declaration_root_is_exact_and_separator_stable() {
     assert!(!is_node_builtin_declaration_path(
         "ext:ts:@types/nodeish/path.d.ts"
     ));
-    assert!(!is_node_builtin_declaration_path(
-        "ext:ts:node/path.d.ts"
-    ));
+    assert!(!is_node_builtin_declaration_path("ext:ts:node/path.d.ts"));
     assert!(!is_node_builtin_declaration_path(
         "src/@types/node/path.d.ts"
     ));
@@ -58,10 +56,7 @@ fn module_match_describes_declaration_suffixes_and_node_authority() {
     let builtin = module_path_match("node:fs/promises");
     assert_eq!(builtin.module_path, "fs/promises");
     assert_eq!(builtin.required_file_prefix, Some(NODE_TYPES_VIRTUAL_ROOT));
-    assert_eq!(
-        builtin.compound_extensions,
-        &[".d.ts", ".d.mts", ".d.cts"]
-    );
+    assert_eq!(builtin.compound_extensions, &[".d.ts", ".d.mts", ".d.cts"]);
     assert_eq!(builtin.authority, ModuleMatchAuthority::Authoritative);
 
     let ordinary = module_path_match("react");

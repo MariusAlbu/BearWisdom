@@ -59,21 +59,32 @@ fn collect_pascal_names_rec(
     idx: &mut SymbolLocationIndex,
     depth: u32,
 ) {
-    if depth >= MAX_WALK_DEPTH { return }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, "tests" | "examples" | "demos" | "languages" | "images") {
+                if matches!(
+                    name,
+                    "tests" | "examples" | "demos" | "languages" | "images"
+                ) {
                     continue;
                 }
-                if name.starts_with('.') { continue }
+                if name.starts_with('.') {
+                    continue;
+                }
             }
             collect_pascal_names_rec(&path, dep, idx, depth + 1);
         } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
             let lower = name.to_ascii_lowercase();
             // `.lpr` files are Lazarus project entry points, not units —
             // irrelevant for external RTL indexing. `.inc` fragments ARE
@@ -99,7 +110,9 @@ fn collect_pascal_names_rec(
 /// line 1, so it never waits for a `unit`/`interface` marker that will never
 /// appear.
 fn scan_pascal_file(path: &Path, dep: &ExternalDepRoot, idx: &mut SymbolLocationIndex) {
-    let Ok(content) = std::fs::read_to_string(path) else { return };
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return;
+    };
     let module = &dep.module_path;
 
     let is_fragment = path
@@ -116,7 +129,9 @@ fn scan_pascal_file(path: &Path, dep: &ExternalDepRoot, idx: &mut SymbolLocation
 
     for raw_line in content.lines() {
         let stripped = strip_pascal_line_comment(raw_line).trim();
-        if stripped.is_empty() { continue }
+        if stripped.is_empty() {
+            continue;
+        }
         // Lower-case copy for keyword matching; the original `stripped` slice
         // preserves case for identifier registration.
         let lower = stripped.to_ascii_lowercase();
@@ -130,13 +145,17 @@ fn scan_pascal_file(path: &Path, dep: &ExternalDepRoot, idx: &mut SymbolLocation
                 if !unit_name.is_empty() && is_pascal_ident(unit_name) {
                     idx.insert(module, unit_name, path);
                     let lc = unit_name.to_ascii_lowercase();
-                    if lc != unit_name { idx.insert(module, &lc, path); }
+                    if lc != unit_name {
+                        idx.insert(module, &lc, path);
+                    }
                     // A `uses X` ref is module-tagged with the unit name
                     // itself, not the dep root's module path — register the
                     // unit file as that module's `.` entry so the tagged
                     // demand pull materializes the unit directly.
                     idx.insert_module_entry(unit_name, path);
-                    if lc != unit_name { idx.insert_module_entry(&lc, path); }
+                    if lc != unit_name {
+                        idx.insert_module_entry(&lc, path);
+                    }
                 }
                 // Consume the rest variable to avoid an unused-variable warning.
                 let _ = rest;
@@ -154,7 +173,9 @@ fn scan_pascal_file(path: &Path, dep: &ExternalDepRoot, idx: &mut SymbolLocation
             break;
         }
 
-        if !in_interface { continue }
+        if !in_interface {
+            continue;
+        }
 
         // Detect bare section keywords (`type`, `var`, `const`) on their own
         // line — common Pascal style for a block of declarations. A line is
@@ -207,7 +228,9 @@ fn scan_pascal_file(path: &Path, dep: &ExternalDepRoot, idx: &mut SymbolLocation
             if !name.is_empty() && is_pascal_ident(name) {
                 idx.insert(module, name, path);
                 let lc = name.to_ascii_lowercase();
-                if lc != name { idx.insert(module, &lc, path); }
+                if lc != name {
+                    idx.insert(module, &lc, path);
+                }
             }
         }
     }
@@ -224,7 +247,14 @@ fn scan_pascal_file(path: &Path, dep: &ExternalDepRoot, idx: &mut SymbolLocation
 ///   - `const MAX_SIZE = ...` → `"MAX_SIZE"`
 ///   - `class TFoo` → `"TFoo"`
 fn extract_decl_ident(line: &str) -> Option<&str> {
-    for kw in &["procedure ", "function ", "type ", "var ", "const ", "class "] {
+    for kw in &[
+        "procedure ",
+        "function ",
+        "type ",
+        "var ",
+        "const ",
+        "class ",
+    ] {
         if let Some(rest) = line.strip_prefix(kw) {
             let rest = rest.trim_start();
             // Take the identifier up to the first non-identifier character.
@@ -244,8 +274,12 @@ fn extract_decl_ident(line: &str) -> Option<&str> {
 /// underscore, followed by letters, digits, or underscores.
 fn is_pascal_ident(s: &str) -> bool {
     let mut chars = s.chars();
-    let Some(first) = chars.next() else { return false };
-    if !first.is_alphabetic() && first != '_' { return false }
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !first.is_alphabetic() && first != '_' {
+        return false;
+    }
     chars.all(|c| c.is_alphanumeric() || c == '_')
 }
 
@@ -262,7 +296,7 @@ fn strip_pascal_line_comment(line: &str) -> &str {
     if let Some(open) = line.find('{') {
         if let Some(close) = line[open..].find('}') {
             let _ = close; // close position within the slice
-            // Return everything before the `{`.
+                           // Return everything before the `{`.
             return &line[..open];
         }
     }

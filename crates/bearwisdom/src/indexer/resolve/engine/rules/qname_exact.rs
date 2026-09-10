@@ -13,7 +13,7 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::support::normalize_name;
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 use crate::type_checker::profile::language_profile::NameNormalization;
 
 pub struct QnameExactRule;
@@ -26,7 +26,7 @@ impl LookupRule for QnameExactRule {
     fn apply(&self, ctx: &BinderContext) -> LookupResult {
         let target = ctx.target();
         let edge_kind = ctx.edge_kind();
-        if !target.contains('.') && !target.contains("::") && !target.contains('/') {
+        if !ctx.profile.is_qualified_name(target) {
             return LookupResult::Pass;
         }
 
@@ -55,7 +55,7 @@ impl LookupRule for QnameExactRule {
         // language.
         let norm = ctx.profile.name_normalization;
         if !matches!(norm, NameNormalization::None) {
-            let leaf = target.rsplit(['.', ':', '/']).next().unwrap_or(target);
+            let leaf = ctx.profile.simple_name(target);
             let target_norm = normalize_name(norm, target);
             for sym in ctx.lookup.by_name(leaf) {
                 if normalize_name(norm, &sym.qualified_name) == target_norm

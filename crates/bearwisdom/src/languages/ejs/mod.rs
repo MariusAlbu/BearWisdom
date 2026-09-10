@@ -57,5 +57,4 @@ impl LanguagePlugin for EjsPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::EJS_PROFILE)
     }
-
 }

@@ -37,7 +37,8 @@ fn empty_file(path: &str) -> ParsedFile {
 #[test]
 fn extra_wildcard_imports_reads_main_unit_state_from_bag() {
     let fragment = empty_file("src/castleutils_fragment.inc");
-    let state_data = build_main_unit_state(std::slice::from_ref(&fragment), std::path::Path::new(""));
+    let state_data =
+        build_main_unit_state(std::slice::from_ref(&fragment), std::path::Path::new(""));
     let mut state = PluginStateBag::new();
     state.set(state_data);
 
@@ -56,7 +57,9 @@ fn extra_wildcard_imports_missing_project_state_yields_nothing() {
     let state = PluginStateBag::new();
     let fragment = empty_file("src/castleutils_fragment.inc");
 
-    assert!(PascalPlugin.extra_wildcard_imports(&state, &fragment).is_empty());
+    assert!(PascalPlugin
+        .extra_wildcard_imports(&state, &fragment)
+        .is_empty());
 }
 
 /// `PascalProjectState` present but this specific file has no entry (a
@@ -68,5 +71,7 @@ fn extra_wildcard_imports_file_with_no_entry_yields_nothing() {
     state.set(state_data);
     let file = empty_file("src/castleutils.pas");
 
-    assert!(PascalPlugin.extra_wildcard_imports(&state, &file).is_empty());
+    assert!(PascalPlugin
+        .extra_wildcard_imports(&state, &file)
+        .is_empty());
 }

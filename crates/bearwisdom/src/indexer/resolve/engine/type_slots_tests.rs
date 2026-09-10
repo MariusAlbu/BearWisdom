@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use super::{field_type_by_identity, return_type_by_identity};
-use crate::indexer::resolve::engine::contract::{Symbol as ContractSymbol, SymbolLookup, SymbolSet};
+use crate::indexer::resolve::engine::contract::{
+    Symbol as ContractSymbol, SymbolLookup, SymbolSet,
+};
 use crate::type_checker::core::types::{TypeArena, TypeId};
 
 struct SlotLookup {
@@ -70,10 +72,16 @@ impl SymbolLookup for SlotLookup {
         false
     }
     fn return_type_id_of(&self, symbol_id: i64) -> Option<TypeId> {
-        self.returns.iter().find(|(id, _)| *id == symbol_id).map(|(_, t)| *t)
+        self.returns
+            .iter()
+            .find(|(id, _)| *id == symbol_id)
+            .map(|(_, t)| *t)
     }
     fn field_type_id_of(&self, symbol_id: i64) -> Option<TypeId> {
-        self.fields.iter().find(|(id, _)| *id == symbol_id).map(|(_, t)| *t)
+        self.fields
+            .iter()
+            .find(|(id, _)| *id == symbol_id)
+            .map(|(_, t)| *t)
     }
 }
 

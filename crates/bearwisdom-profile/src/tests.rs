@@ -515,7 +515,10 @@ mod build_walker_tests {
         fs::write(tmp.join("stale.ts"), "const y = 2;").unwrap();
 
         let paths = walked_relative_paths(dir.path());
-        assert!(!paths.iter().any(|p| p.starts_with("tmp/")), "got: {paths:?}");
+        assert!(
+            !paths.iter().any(|p| p.starts_with("tmp/")),
+            "got: {paths:?}"
+        );
     }
 }
 
@@ -991,7 +994,10 @@ mod watcher_exclusions {
 
     #[test]
     fn project_source_file_is_not_excluded() {
-        assert!(!is_under_excluded_dir(Path::new("crates/bw/src/lib.rs"), &["target"]));
+        assert!(!is_under_excluded_dir(
+            Path::new("crates/bw/src/lib.rs"),
+            &["target"]
+        ));
     }
 
     #[test]
@@ -1004,7 +1010,13 @@ mod watcher_exclusions {
 
     #[test]
     fn root_only_names_pass_when_nested() {
-        assert!(is_under_excluded_dir(Path::new("vendor/lib/x.rb"), &["vendor"]));
-        assert!(!is_under_excluded_dir(Path::new("themes/a/vendor/x.scss"), &["vendor"]));
+        assert!(is_under_excluded_dir(
+            Path::new("vendor/lib/x.rb"),
+            &["vendor"]
+        ));
+        assert!(!is_under_excluded_dir(
+            Path::new("themes/a/vendor/x.scss"),
+            &["vendor"]
+        ));
     }
 }

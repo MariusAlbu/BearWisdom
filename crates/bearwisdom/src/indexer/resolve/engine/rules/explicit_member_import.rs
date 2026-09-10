@@ -12,7 +12,7 @@
 // declines to avoid false binds.
 // =============================================================================
 
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 
 pub struct ExplicitMemberImportRule;
 
@@ -26,7 +26,7 @@ impl LookupRule for ExplicitMemberImportRule {
             return LookupResult::Pass;
         }
         let target = ctx.target();
-        if target.contains('.') || target.contains("::") || target.contains('/') {
+        if ctx.profile.is_qualified_name(target) {
             return LookupResult::Pass;
         }
         let edge_kind = ctx.edge_kind();
@@ -42,7 +42,7 @@ impl LookupRule for ExplicitMemberImportRule {
             let Some(module) = import.module_path.as_deref() else {
                 return false;
             };
-            module.contains('.') && module.rsplit('.').next() == Some(target)
+            ctx.profile.is_qualified_name(module) && ctx.profile.simple_name(module) == target
         });
         if !armed {
             return LookupResult::Pass;
@@ -64,9 +64,7 @@ impl LookupRule for ExplicitMemberImportRule {
         if compatible.len() != 1 {
             return LookupResult::Pass;
         }
-        LookupResult::Resolved(
-            ctx.resolved(compatible[0].id, "default_explicit_member_import"),
-        )
+        LookupResult::Resolved(ctx.resolved(compatible[0].id, "default_explicit_member_import"))
     }
 }
 

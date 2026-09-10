@@ -74,5 +74,4 @@ impl LanguagePlugin for ScssPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::SCSS_PROFILE)
     }
-
 }

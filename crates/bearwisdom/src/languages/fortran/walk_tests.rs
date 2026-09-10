@@ -53,7 +53,8 @@ fn statement_keyword_suppression_is_case_insensitive() {
 /// the misparsed bare statement — the suppression must not reach it.
 #[test]
 fn member_call_named_deallocate_still_emits_ref() {
-    let src = "subroutine foo(obj)\n  class(resource) :: obj\n  call obj%deallocate()\nend subroutine";
+    let src =
+        "subroutine foo(obj)\n  class(resource) :: obj\n  call obj%deallocate()\nend subroutine";
     let targets = calls_targets(src);
     assert!(
         targets.iter().any(|t| t.eq_ignore_ascii_case("deallocate")),

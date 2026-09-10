@@ -1,7 +1,12 @@
 use super::*;
 use crate::types::Visibility;
 
-fn symbol(name: &str, qualified_name: &str, kind: SymbolKind, parent_index: Option<usize>) -> ExtractedSymbol {
+fn symbol(
+    name: &str,
+    qualified_name: &str,
+    kind: SymbolKind,
+    parent_index: Option<usize>,
+) -> ExtractedSymbol {
     ExtractedSymbol {
         name: name.to_string(),
         qualified_name: qualified_name.to_string(),

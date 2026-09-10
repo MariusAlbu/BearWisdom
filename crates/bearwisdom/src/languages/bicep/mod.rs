@@ -95,5 +95,4 @@ impl LanguagePlugin for BicepPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::BICEP_PROFILE)
     }
-
 }

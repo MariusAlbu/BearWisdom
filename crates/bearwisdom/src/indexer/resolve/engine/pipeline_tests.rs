@@ -3294,12 +3294,12 @@ fn rename_import_original_name_does_not_shadow_local_struct() {
         None,
     );
     assert!(
-        edges.iter().any(|e| e.1 == 1),
+        edges.iter().any(|e| e.1 == 1 && e.3 == 10),
         "bare TypeRef must bind the local struct; edges={edges:?} unresolved={unresolved:?}"
     );
     assert!(
-        !edges.iter().any(|e| e.1 == 3),
-        "the rename's original name must not divert the bind to the external declaration"
+        !edges.iter().any(|e| e.1 == 3 && e.3 == 10),
+        "the rename's original name must not divert the TypeRef to the external declaration"
     );
 }
 

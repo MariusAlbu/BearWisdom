@@ -9,7 +9,9 @@ pub const VUE_PROFILE: LanguageProfile = LanguageProfile {
     id: "vue",
     qname_separator: ".",
     declaration_merging: crate::type_checker::profile::language_profile::MergeScope::None,
-    self_keywords: &["this"],
+    receiver_spellings: &[
+        crate::type_checker::profile::language_profile::ReceiverSpelling::enclosing("this", "."),
+    ],
     supertype_discovery: SupertypeDiscovery::Explicit,
     ancestor_order: crate::type_checker::profile::language_profile::AncestorOrder::Bfs,
     members_can_be_external: false,
@@ -56,8 +58,10 @@ pub const VUE_PROFILE: LanguageProfile = LanguageProfile {
         module_prefix_rewrites:
             crate::type_checker::profile::language_profile::ModulePrefixRewrites::On {
                 module_path_adapter: Some(crate::ecosystem::npm::node_builtin::module_path_match),
-                candidate_prefixes: crate::ecosystem::npm::module_specifier::module_prefix_candidates,
-                declines_directory_match: crate::ecosystem::npm::module_specifier::declines_directory_match,
+                candidate_prefixes:
+                    crate::ecosystem::npm::module_specifier::module_prefix_candidates,
+                declines_directory_match:
+                    crate::ecosystem::npm::module_specifier::declines_directory_match,
             },
         workspace_packages: true,
         reexport_barrel_stems: &["index"],

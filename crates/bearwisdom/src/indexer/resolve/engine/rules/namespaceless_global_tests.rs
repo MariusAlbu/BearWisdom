@@ -3,7 +3,9 @@ use crate::indexer::resolve::engine::testkit::{
     accept_any, call_ref, file_ctx, ref_ctx, source_symbol, sym, Lookup,
 };
 use crate::indexer::resolve::engine::{BinderContext, LookupResult};
-use crate::type_checker::profile::language_profile::{NamespaceScope, DEFAULT_PROFILE};
+use crate::type_checker::profile::language_profile::{
+    NamespaceScope, ReceiverSpelling, DEFAULT_PROFILE,
+};
 
 #[test]
 fn passes_when_gate_is_off() {
@@ -21,7 +23,10 @@ fn passes_when_gate_is_off() {
         kind: &kind,
         profile: &DEFAULT_PROFILE,
     };
-    assert!(matches!(NamespacelessGlobalRule.apply(&ctx), LookupResult::Pass));
+    assert!(matches!(
+        NamespacelessGlobalRule.apply(&ctx),
+        LookupResult::Pass
+    ));
 }
 
 #[test]
@@ -78,7 +83,8 @@ fn directory_scoped_binds_same_dir_only() {
 
 #[test]
 fn strips_self_keyword_prefix_before_lookup() {
-    // `var.users` → `users` after stripping `var` self keyword.
+    // `var.users` → `users` through the profile-owned receiver prefix.
+    const RECEIVER_PREFIXES: &[ReceiverSpelling] = &[ReceiverSpelling::prefix("var", ".")];
     let lookup = Lookup::new().with(sym(30, "users", "users", "table", "schema/users.sql"));
     let r = call_ref("var.users");
     let s = source_symbol("query");
@@ -87,7 +93,7 @@ fn strips_self_keyword_prefix_before_lookup() {
     let kind = accept_any;
     let mut p = DEFAULT_PROFILE;
     p.namespaceless_global_type_lookup = NamespaceScope::Global;
-    p.self_keywords = &["var"];
+    p.receiver_spellings = RECEIVER_PREFIXES;
     let ctx = BinderContext {
         file_ctx: &fc,
         ref_ctx: &rc,
@@ -102,10 +108,40 @@ fn strips_self_keyword_prefix_before_lookup() {
 }
 
 #[test]
+fn leaf_fallback_uses_the_active_non_dot_separator() {
+    let lookup = Lookup::new().with(sym(31, "users", "users", "table", "schema/users.sql"));
+    let r = call_ref("schema::users");
+    let s = source_symbol("query");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let kind = accept_any;
+    let mut p = DEFAULT_PROFILE;
+    p.qname_separator = "::";
+    p.namespaceless_global_type_lookup = NamespaceScope::Global;
+    let ctx = BinderContext {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind: &kind,
+        profile: &p,
+    };
+    assert!(matches!(
+        NamespacelessGlobalRule.apply(&ctx),
+        LookupResult::Resolved(res) if res.target_symbol_id == 31
+    ));
+}
+
+#[test]
 fn skips_external_candidates() {
     // A symbol whose path starts with `ext:` is external and must not bind.
     let lookup = Lookup::new()
-        .with(sym(40, "len", "len", "function", "ext:py-stdlib:builtins.py"))
+        .with(sym(
+            40,
+            "len",
+            "len",
+            "function",
+            "ext:py-stdlib:builtins.py",
+        ))
         .with(sym(41, "len", "len", "function", "src/utils.sql"));
     let r = call_ref("len");
     let s = source_symbol("query");

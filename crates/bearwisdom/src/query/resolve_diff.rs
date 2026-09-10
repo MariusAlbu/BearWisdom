@@ -54,7 +54,10 @@ impl FlipBucket {
     fn from_all(mut all: Vec<FlipSample>, cap: usize) -> Self {
         let count = all.len();
         all.truncate(cap);
-        Self { count, samples: all }
+        Self {
+            count,
+            samples: all,
+        }
     }
 }
 
@@ -99,7 +102,10 @@ pub fn diff_snapshots(
     let mut retargeted = Vec::new();
     let mut drain_transitions = Vec::new();
 
-    let mut compared_keys: Vec<_> = old_by_key.keys().filter(|k| new_by_key.contains_key(*k)).collect();
+    let mut compared_keys: Vec<_> = old_by_key
+        .keys()
+        .filter(|k| new_by_key.contains_key(*k))
+        .collect();
     compared_keys.sort_unstable();
 
     for key in &compared_keys {

@@ -5,7 +5,7 @@ use crate::indexer::resolve::engine::testkit::{
 };
 use crate::indexer::resolve::engine::{BinderContext, LookupResult};
 use crate::type_checker::profile::language_profile::{
-    DEFAULT_PROFILE, LanguageProfile, WildcardMatch,
+    LanguageProfile, WildcardMatch, DEFAULT_PROFILE,
 };
 
 static FILESTEM_PROFILE: LanguageProfile = LanguageProfile {
@@ -14,15 +14,6 @@ static FILESTEM_PROFILE: LanguageProfile = LanguageProfile {
         wildcard_match: WildcardMatch::FileStem {
             underscore_prefix: false,
         },
-        ..DEFAULT_PROFILE.imports
-    },
-    ..DEFAULT_PROFILE
-};
-
-static PACKAGE_ROOT_PROFILE: LanguageProfile = LanguageProfile {
-    implicit_root_types: &[],
-    imports: crate::type_checker::profile::language_profile::ImportAxes {
-        wildcard_match: WildcardMatch::PackageRoot,
         ..DEFAULT_PROFILE.imports
     },
     ..DEFAULT_PROFILE
@@ -90,8 +81,7 @@ fn declines_dotted_target() {
 #[test]
 fn declines_when_symbol_is_not_direct_member() {
     // `my.mod.sub.Foo` is two segments deeper — NOT a direct member of `my.mod`.
-    let lookup =
-        Lookup::new().with(sym(10, "Foo", "my.mod.sub.Foo", "class", "src/mod.rs"));
+    let lookup = Lookup::new().with(sym(10, "Foo", "my.mod.sub.Foo", "class", "src/mod.rs"));
     let imports = vec![wildcard_import("*", "my.mod")];
     assert_eq!(resolve(&lookup, "Foo", imports), None);
 }
@@ -137,7 +127,12 @@ fn package_root_mode_binds_external_candidate_by_package_segment() {
     ));
     let imports = vec![wildcard_import("*", "flutter")];
     assert_eq!(
-        resolve_with_profile(&lookup, "BuildContext", imports, &PACKAGE_ROOT_PROFILE),
+        resolve_with_profile(
+            &lookup,
+            "BuildContext",
+            imports,
+            &crate::languages::dart::DART_PROFILE
+        ),
         Some(10)
     );
 }
@@ -153,7 +148,12 @@ fn package_root_mode_declines_a_different_package() {
     ));
     let imports = vec![wildcard_import("*", "flutter")];
     assert_eq!(
-        resolve_with_profile(&lookup, "Foo", imports, &PACKAGE_ROOT_PROFILE),
+        resolve_with_profile(
+            &lookup,
+            "Foo",
+            imports,
+            &crate::languages::dart::DART_PROFILE
+        ),
         None
     );
 }
@@ -167,7 +167,12 @@ fn package_root_mode_falls_back_to_file_stem_for_internal_candidate() {
     let lookup = Lookup::new().with(sym(20, "Bar", "Bar", "class", "src/widgets.dart"));
     let imports = vec![wildcard_import("*", "widgets")];
     assert_eq!(
-        resolve_with_profile(&lookup, "Bar", imports, &PACKAGE_ROOT_PROFILE),
+        resolve_with_profile(
+            &lookup,
+            "Bar",
+            imports,
+            &crate::languages::dart::DART_PROFILE
+        ),
         Some(20)
     );
 }
@@ -181,7 +186,12 @@ fn package_root_mode_internal_candidate_ignores_package_name_match() {
     let lookup = Lookup::new().with(sym(30, "Baz", "Baz", "class", "src/other.dart"));
     let imports = vec![wildcard_import("*", "flutter")];
     assert_eq!(
-        resolve_with_profile(&lookup, "Baz", imports, &PACKAGE_ROOT_PROFILE),
+        resolve_with_profile(
+            &lookup,
+            "Baz",
+            imports,
+            &crate::languages::dart::DART_PROFILE
+        ),
         None
     );
 }
@@ -205,7 +215,8 @@ fn resolve_with_profile(
 ) -> Option<i64> {
     let r = call_ref(target);
     let s = source_symbol("caller");
-    let fc = file_ctx(imports, None);
+    let mut fc = file_ctx(imports, None);
+    fc.language = profile.id.to_string();
     let rc = ref_ctx(&r, &s, vec![]);
     let kind = accept_any;
     let ctx = BinderContext {
@@ -226,9 +237,27 @@ fn same_qname_duplicate_rows_are_one_unambiguous_hit() {
     // One declaration surfaced as several rows under a single qname (arity
     // overloads: IEquatable / IEquatable<T>) is NOT ambiguous.
     let lookup = Lookup::new()
-        .with(sym(10, "IEquatable", "System.IEquatable", "interface", "ext:dotnet:CoreLib/CoreLib"))
-        .with(sym(11, "IEquatable", "System.IEquatable", "interface", "ext:dotnet:CoreLib/CoreLib"))
-        .with(sym(12, "IEquatable", "System.IEquatable", "interface", "ext:dotnet:CoreLib/CoreLib"));
+        .with(sym(
+            10,
+            "IEquatable",
+            "System.IEquatable",
+            "interface",
+            "ext:dotnet:CoreLib/CoreLib",
+        ))
+        .with(sym(
+            11,
+            "IEquatable",
+            "System.IEquatable",
+            "interface",
+            "ext:dotnet:CoreLib/CoreLib",
+        ))
+        .with(sym(
+            12,
+            "IEquatable",
+            "System.IEquatable",
+            "interface",
+            "ext:dotnet:CoreLib/CoreLib",
+        ));
     let imports = vec![wildcard_import("System", "System")];
     assert_eq!(resolve(&lookup, "IEquatable", imports), Some(10));
 }
@@ -236,7 +265,13 @@ fn same_qname_duplicate_rows_are_one_unambiguous_hit() {
 #[test]
 fn two_distinct_qnames_stay_ambiguous() {
     let lookup = Lookup::new()
-        .with(sym(10, "Color", "System.Color", "class", "ext:dotnet:CoreLib/CoreLib"))
+        .with(sym(
+            10,
+            "Color",
+            "System.Color",
+            "class",
+            "ext:dotnet:CoreLib/CoreLib",
+        ))
         .with(sym(11, "Color", "MyApp.Color", "class", "src/Color.cs"));
     let imports = vec![
         wildcard_import("System", "System"),
@@ -251,7 +286,13 @@ fn manifest_implicit_namespaces_open_bare_scope() {
     // file, yet bare `Guid` binds to `System.Guid`. Internal or external
     // origin is immaterial; the candidate set is the whole index.
     let lookup = Lookup::new()
-        .with(sym(20, "Guid", "System.Guid", "struct", "ext:dotnet:CoreLib/CoreLib"))
+        .with(sym(
+            20,
+            "Guid",
+            "System.Guid",
+            "struct",
+            "ext:dotnet:CoreLib/CoreLib",
+        ))
         .with_implicit_namespaces(&["System"]);
     assert_eq!(
         resolve_with_profile(&lookup, "Guid", vec![], &NAMESPACE_WILDCARD_PROFILE),
@@ -262,7 +303,13 @@ fn manifest_implicit_namespaces_open_bare_scope() {
 #[test]
 fn implicit_namespaces_gated_on_the_profile_flag() {
     let lookup = Lookup::new()
-        .with(sym(20, "Guid", "System.Guid", "struct", "ext:dotnet:CoreLib/CoreLib"))
+        .with(sym(
+            20,
+            "Guid",
+            "System.Guid",
+            "struct",
+            "ext:dotnet:CoreLib/CoreLib",
+        ))
         .with_implicit_namespaces(&["System"]);
     assert_eq!(
         resolve_with_profile(&lookup, "Guid", vec![], &DEFAULT_PROFILE),

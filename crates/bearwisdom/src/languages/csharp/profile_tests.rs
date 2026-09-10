@@ -34,9 +34,9 @@ fn structural_choices() {
 }
 
 #[test]
-fn this_and_base_are_self_keywords() {
-    assert!(CSHARP_PROFILE.self_keywords.contains(&"this"));
-    assert!(CSHARP_PROFILE.self_keywords.contains(&"base"));
+fn this_and_base_are_receiver_spellings() {
+    assert!(CSHARP_PROFILE.has_receiver_spelling("this"));
+    assert!(CSHARP_PROFILE.has_receiver_spelling("base"));
 }
 
 #[test]

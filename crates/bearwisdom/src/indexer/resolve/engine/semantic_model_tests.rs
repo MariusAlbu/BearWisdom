@@ -3,7 +3,9 @@ use super::{
     SolveOutcome,
 };
 use crate::indexer::resolve::engine::cause::CauseKind;
-use crate::indexer::resolve::engine::testkit::{file_ctx, import, ref_ctx, source_symbol, sym, Lookup};
+use crate::indexer::resolve::engine::testkit::{
+    file_ctx, import, ref_ctx, source_symbol, sym, Lookup,
+};
 use crate::languages::javascript::profile::JAVASCRIPT_PROFILE;
 use crate::languages::rust_lang::profile::RUST_PROFILE;
 use crate::languages::typescript::profile::TYPESCRIPT_PROFILE;
@@ -229,7 +231,7 @@ fn namespace_root_fallthrough_keeps_the_walks_cause() {
         "React",
         "react.React",
         "module",
-        "ext:typescript:react/index.d.ts",
+        "ext:ts:react/index.d.ts",
     ));
     let mut r = ExtractedRef {
         is_include: false,

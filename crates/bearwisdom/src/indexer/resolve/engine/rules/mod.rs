@@ -9,8 +9,8 @@
 
 use super::LookupRule;
 
-pub mod aliased_import;
 pub mod alias_module_qname;
+pub mod aliased_import;
 pub mod ambient_namespace_path;
 pub mod ambient_prefix_strip;
 pub mod ambient_scope;
@@ -25,8 +25,8 @@ pub mod file_scoped_import;
 pub mod generic_param;
 pub mod head_alias;
 pub mod implicit_prelude;
-pub mod imported_namespace;
 pub mod import_path;
+pub mod imported_namespace;
 pub mod local_flow_head;
 pub mod module_anchor;
 pub mod module_anchor_terminal;
@@ -51,8 +51,9 @@ pub mod wildcard_import;
 pub mod wildcard_workspace_package;
 pub mod workspace_package;
 
-use aliased_import::AliasedImportRule;
+use super::generic_shadow::GenericParamShadowRule;
 use alias_module_qname::AliasModuleQnameRule;
+use aliased_import::AliasedImportRule;
 use ambient_namespace_path::AmbientNamespacePathRule;
 use ambient_prefix_strip::AmbientPrefixStripRule;
 use ambient_scope::AmbientScopeRule;
@@ -65,11 +66,10 @@ use external_by_import::ExternalByImportRule;
 use file_import::FileImportRule;
 use file_scoped_import::FileScopedImportRule;
 use generic_param::GenericParamRule;
-use super::generic_shadow::GenericParamShadowRule;
 use head_alias::HeadAliasRule;
 use implicit_prelude::ImplicitPreludeRule;
-use imported_namespace::ImportedNamespaceRule;
 use import_path::ImportPathRule;
+use imported_namespace::ImportedNamespaceRule;
 use local_flow_head::LocalFlowHeadRule;
 use module_anchor::ModuleAnchorRule;
 use module_anchor_terminal::ModuleAnchorTerminalRule;

@@ -123,7 +123,8 @@ fn walk_use_tree(
                 return;
             }
 
-            let module = resolve_relative_module(&build_module_path(prefix, &path), qualified_prefix);
+            let module =
+                resolve_relative_module(&build_module_path(prefix, &path), qualified_prefix);
             refs.push(ExtractedRef {
                 is_include: false,
                 is_import_binding: false,

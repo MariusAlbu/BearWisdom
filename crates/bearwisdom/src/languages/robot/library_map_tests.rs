@@ -123,7 +123,9 @@ fn library_resolves_to_site_packages_ext_file() {
         pf("tests/foo.robot", vec![import_ref("SeleniumLibrary")]),
     ];
     let map = build_robot_library_map(&parsed);
-    let entry = map.get("tests/foo.robot").expect("must resolve to ext: lib");
+    let entry = map
+        .get("tests/foo.robot")
+        .expect("must resolve to ext: lib");
     assert_eq!(
         entry[0].py_file_path,
         "ext:python:site-packages/SeleniumLibrary.py"
@@ -377,17 +379,17 @@ fn dynamiccore_package_resolves_to_package_init() {
     // package entry point.
     let parsed = vec![
         pf("ext:py:SeleniumLibrary/__init__.py", Vec::new()),
-        pf("ext:py:SeleniumLibrary/keywords/browsermanagement.py", Vec::new()),
+        pf(
+            "ext:py:SeleniumLibrary/keywords/browsermanagement.py",
+            Vec::new(),
+        ),
         pf("tests/foo.robot", vec![import_ref("SeleniumLibrary")]),
     ];
     let map = build_robot_library_map(&parsed);
     let entry = map
         .get("tests/foo.robot")
         .expect("package library must resolve to its __init__.py");
-    assert_eq!(
-        entry[0].py_file_path,
-        "ext:py:SeleniumLibrary/__init__.py"
-    );
+    assert_eq!(entry[0].py_file_path, "ext:py:SeleniumLibrary/__init__.py");
 }
 
 #[test]
@@ -408,7 +410,10 @@ fn flat_module_preferred_over_package_init() {
 fn package_member_modules_lists_siblings_excluding_init() {
     let parsed = vec![
         pf("ext:py:SeleniumLibrary/__init__.py", Vec::new()),
-        pf("ext:py:SeleniumLibrary/keywords/browsermanagement.py", Vec::new()),
+        pf(
+            "ext:py:SeleniumLibrary/keywords/browsermanagement.py",
+            Vec::new(),
+        ),
         pf("ext:py:SeleniumLibrary/keywords/element.py", Vec::new()),
         // A different package under the same site-packages root must not leak.
         pf("ext:py:OtherLib/keywords/thing.py", Vec::new()),

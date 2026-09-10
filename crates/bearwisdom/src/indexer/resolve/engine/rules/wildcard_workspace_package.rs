@@ -23,10 +23,8 @@
 // stays unresolved rather than guessing.
 // =============================================================================
 
-use crate::indexer::resolve::engine::support::{
-    is_bare_module_specifier, self_package_sub_path, workspace_sub_path,
-};
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::support::{self_package_sub_path, workspace_sub_path};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 
 pub struct WildcardWorkspacePackageRule;
 
@@ -50,14 +48,18 @@ impl LookupRule for WildcardWorkspacePackageRule {
             let Some(specifier) = imp.module_path.as_deref().filter(|m| !m.is_empty()) else {
                 continue;
             };
-            if !is_bare_module_specifier(specifier) {
+            if !ctx
+                .profile
+                .source_module_path_policy(specifier)
+                .is_bare(specifier)
+            {
                 continue;
             }
             let (pkg_id, sub_path) = match self_package_sub_path(ctx.profile, specifier) {
                 Some(sub_path) => (ctx.ref_ctx.file_package_id, sub_path),
                 None => (
                     ctx.lookup.workspace_package_id(specifier),
-                    workspace_sub_path(specifier, ctx.lookup),
+                    workspace_sub_path(ctx.profile, specifier, ctx.lookup),
                 ),
             };
             let Some(pkg_id) = pkg_id else {

@@ -5,7 +5,7 @@
 // Go: `import "github.com/gin-gonic/gin"` brings short name `gin`; a function
 // call `NewRouter` is stored as `gin.NewRouter`. For each import, derive the
 // short name as the trailing path segment (split on `/`) and then on `sep`
-// (for `::`-path imports such as Hare's `crypto::sha256`). Probe both the
+// (for profiles whose qualified paths have their own separator). Probe both the
 // import's `imported_name` and the `last_path_segment` under `{prefix}{sep}{target}`.
 //
 // GATED: only fires when `ctx.profile.chain_qualification ==
@@ -18,7 +18,7 @@
 // site: `separators.last().copied().unwrap_or(".")`.
 // =============================================================================
 
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 use crate::type_checker::profile::language_profile::ChainQualification;
 
 pub struct PackageShortNameRule;
@@ -38,11 +38,7 @@ impl LookupRule for PackageShortNameRule {
         }
 
         let target = ctx.target();
-        if target.is_empty()
-            || target.contains('.')
-            || target.contains("::")
-            || target.contains('/')
-        {
+        if target.is_empty() || ctx.profile.is_qualified_name(target) {
             return LookupResult::Pass;
         }
 

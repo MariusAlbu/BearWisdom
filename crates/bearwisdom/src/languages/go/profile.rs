@@ -85,7 +85,7 @@ pub const GO_PROFILE: LanguageProfile = LanguageProfile {
     // Go has no `self`/`this`; methods take an explicit receiver parameter.
     // The extractor records the receiver's name on the method's scope
     // path; the chain walker doesn't need a keyword.
-    self_keywords: &[],
+    receiver_spellings: &[],
     // The hallmark of Go: structural interface satisfaction.
     supertype_discovery: SupertypeDiscovery::Structural,
     ancestor_order: crate::type_checker::profile::language_profile::AncestorOrder::Bfs,

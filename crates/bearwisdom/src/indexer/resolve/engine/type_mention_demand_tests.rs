@@ -52,12 +52,14 @@ fn collect_return_type_files_follows_rust_path_qualified_head() {
 
     let arena = Arc::new(TypeArena::new());
     let tree = Compilation::build(&[], &Default::default(), arena);
+    let profiles = crate::indexer::resolve::engine::pipeline::_test_build_profiles();
 
     let mut seen: HashSet<PathBuf> = HashSet::new();
     let mut out: Vec<PathBuf> = Vec::new();
     super::collect_return_type_files(
         std::slice::from_ref(&symbol),
         "rust",
+        &profiles,
         &tree,
         &loc,
         &mut seen,
@@ -80,7 +82,7 @@ fn collect_return_type_files_follows_rust_path_qualified_head() {
 #[test]
 fn qualified_return_head_not_suppressed_by_same_named_type() {
     let symbol = method_with_signature(
-        "Property(string): Microsoft.EntityFrameworkCore.Metadata.Builders.PropertyBuilder",
+        "Microsoft.EntityFrameworkCore.Metadata.Builders.PropertyBuilder Property(string)",
     );
 
     let mut loc = SymbolLocationIndex::new();
@@ -111,12 +113,14 @@ fn qualified_return_head_not_suppressed_by_same_named_type() {
     );
     let arena = Arc::new(TypeArena::new());
     let tree = Compilation::build(std::slice::from_ref(&decoy), &id_map.clone().into(), arena);
+    let profiles = crate::indexer::resolve::engine::pipeline::_test_build_profiles();
 
     let mut seen: HashSet<PathBuf> = HashSet::new();
     let mut out: Vec<PathBuf> = Vec::new();
     super::collect_return_type_files(
         std::slice::from_ref(&symbol),
         "csharp",
+        &profiles,
         &tree,
         &loc,
         &mut seen,
@@ -193,11 +197,14 @@ fn chain_root_declared_type_is_demanded() {
 
     let arena = Arc::new(TypeArena::new());
     let tree = Compilation::build(&[], &Default::default(), arena);
+    let profiles = crate::indexer::resolve::engine::pipeline::_test_build_profiles();
 
     let mut seen: HashSet<PathBuf> = HashSet::new();
     let mut out: Vec<PathBuf> = Vec::new();
     super::collect_chain_root_type_files(
         std::slice::from_ref(&r),
+        "csharp",
+        &profiles,
         &tree,
         &loc,
         &mut seen,
@@ -230,11 +237,14 @@ fn qualified_chain_root_pulls_only_the_addressed_entry() {
 
     let arena = Arc::new(TypeArena::new());
     let tree = Compilation::build(&[], &Default::default(), arena);
+    let profiles = crate::indexer::resolve::engine::pipeline::_test_build_profiles();
 
     let mut seen: HashSet<PathBuf> = HashSet::new();
     let mut out: Vec<PathBuf> = Vec::new();
     super::collect_chain_root_type_files(
         std::slice::from_ref(&r),
+        "csharp",
+        &profiles,
         &tree,
         &loc,
         &mut seen,
@@ -261,11 +271,14 @@ fn bare_chain_root_declared_type_pulls_nothing() {
 
     let arena = Arc::new(TypeArena::new());
     let tree = Compilation::build(&[], &Default::default(), arena);
+    let profiles = crate::indexer::resolve::engine::pipeline::_test_build_profiles();
 
     let mut seen: HashSet<PathBuf> = HashSet::new();
     let mut out: Vec<PathBuf> = Vec::new();
     super::collect_chain_root_type_files(
         std::slice::from_ref(&r),
+        "csharp",
+        &profiles,
         &tree,
         &loc,
         &mut seen,
@@ -288,11 +301,14 @@ fn chain_root_without_declared_type_pulls_nothing() {
 
     let arena = Arc::new(TypeArena::new());
     let tree = Compilation::build(&[], &Default::default(), arena);
+    let profiles = crate::indexer::resolve::engine::pipeline::_test_build_profiles();
 
     let mut seen: HashSet<PathBuf> = HashSet::new();
     let mut out: Vec<PathBuf> = Vec::new();
     super::collect_chain_root_type_files(
         std::slice::from_ref(&r),
+        "csharp",
+        &profiles,
         &tree,
         &loc,
         &mut seen,
@@ -300,6 +316,18 @@ fn chain_root_without_declared_type_pulls_nothing() {
     );
 
     assert!(out.is_empty(), "an untyped root demands nothing");
+}
+
+#[test]
+fn type_leaf_uses_the_active_separator() {
+    assert_eq!(
+        super::type_leaf_for_separator("package/subpackage/Type", "/"),
+        "Type"
+    );
+    assert_eq!(
+        super::type_leaf_for_separator("package.subpackage.Type", "/"),
+        "package.subpackage.Type"
+    );
 }
 
 fn external_file(path: &str, symbols: Vec<ExtractedSymbol>) -> ParsedFile {

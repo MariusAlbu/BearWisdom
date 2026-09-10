@@ -115,7 +115,10 @@ impl TypeArena {
         }
         // `readonly T[]` — the modifier doesn't change the array shape; strip it
         // so the suffix and the bare form converge.
-        let trimmed = trimmed.strip_prefix("readonly ").map(str::trim).unwrap_or(trimmed);
+        let trimmed = trimmed
+            .strip_prefix("readonly ")
+            .map(str::trim)
+            .unwrap_or(trimmed);
         // Trailing nullable marker (`Action<T>?`, `string?` — C#/Kotlin/Swift).
         // A conditional type's `?` is interior, never trailing, so the suffix
         // strip is unambiguous.
@@ -137,7 +140,10 @@ impl TypeArena {
             if !elem.is_empty() {
                 let inner = self.intern_type_str(elem);
                 let base = self.class("Array");
-                return self.intern(Type::Apply { base, args: vec![inner] });
+                return self.intern(Type::Apply {
+                    base,
+                    args: vec![inner],
+                });
             }
         }
         // Union / intersection: a top-level `|` (union) or `&` (intersection) at
@@ -198,7 +204,10 @@ impl TypeArena {
             if !elem_text.is_empty() {
                 let elem = self.intern_type_str(elem_text);
                 let base = self.class("Array");
-                return self.intern(Type::Apply { base, args: vec![elem] });
+                return self.intern(Type::Apply {
+                    base,
+                    args: vec![elem],
+                });
             }
         }
         // Locate the first generic-open at depth 0. Accept both `<` and

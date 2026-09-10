@@ -50,31 +50,38 @@ const TYPESCRIPT_DECLARATION_EXTENSIONS: &[&str] = &[".d.ts", ".d.mts", ".d.cts"
 pub(crate) fn module_path_match(
     specifier: &str,
 ) -> crate::type_checker::profile::language_profile::ModulePathMatch {
-    use crate::type_checker::profile::language_profile::{
-        ModuleMatchAuthority, ModulePathMatch,
-    };
+    use crate::type_checker::profile::language_profile::{ModuleMatchAuthority, ModulePathMatch};
 
     if let Some(alias) = node_builtin_module_alias(specifier) {
         return ModulePathMatch {
             module_path: alias.to_string(),
+            path_variants: Vec::new(),
             required_file_prefix: Some(NODE_TYPES_VIRTUAL_ROOT),
             compound_extensions: TYPESCRIPT_DECLARATION_EXTENSIONS,
             authority: ModuleMatchAuthority::Authoritative,
+            source_module_path_policy:
+                crate::ecosystem::npm::module_specifier::SOURCE_MODULE_PATH_POLICY,
         };
     }
     if specifier.starts_with("node:") {
         return ModulePathMatch {
             module_path: specifier.to_string(),
+            path_variants: Vec::new(),
             required_file_prefix: None,
             compound_extensions: TYPESCRIPT_DECLARATION_EXTENSIONS,
             authority: ModuleMatchAuthority::Reject,
+            source_module_path_policy:
+                crate::ecosystem::npm::module_specifier::SOURCE_MODULE_PATH_POLICY,
         };
     }
     ModulePathMatch {
         module_path: specifier.to_string(),
+        path_variants: Vec::new(),
         required_file_prefix: None,
         compound_extensions: TYPESCRIPT_DECLARATION_EXTENSIONS,
         authority: ModuleMatchAuthority::Heuristic,
+        source_module_path_policy:
+            crate::ecosystem::npm::module_specifier::SOURCE_MODULE_PATH_POLICY,
     }
 }
 

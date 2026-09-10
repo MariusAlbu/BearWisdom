@@ -107,5 +107,4 @@ impl LanguagePlugin for ErlangPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::ERLANG_PROFILE)
     }
-
 }

@@ -659,7 +659,11 @@ export function useNullLogger(): void {
             failures.push(*label);
         }
     }
-    println!("  {} / {} patterns resolved as expected\n", checks.len() - failures.len(), checks.len());
+    println!(
+        "  {} / {} patterns resolved as expected\n",
+        checks.len() - failures.len(),
+        checks.len()
+    );
 
     assert!(
         failures.is_empty(),

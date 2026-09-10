@@ -194,7 +194,6 @@ pub(super) fn extract_short_var_decl(
                 _ => {}
             }
         }
-
     }
 }
 

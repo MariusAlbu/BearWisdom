@@ -94,7 +94,10 @@ fn dart_plain_wildcard_import_is_still_a_wildcard() {
         .iter()
         .find(|i| i.imported_name == "*")
         .expect("the wildcard import lands an entry");
-    assert!(entry.is_wildcard, "a plain wildcard import stays a wildcard");
+    assert!(
+        entry.is_wildcard,
+        "a plain wildcard import stays a wildcard"
+    );
 }
 
 /// TS regression case: `export * from './x'` (the shape

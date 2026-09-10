@@ -28,7 +28,11 @@ pub(super) fn language_id_for_extension<'a, P: LanguagePlugin + ?Sized>(
     plugin: &'a P,
     ext: &str,
 ) -> Option<&'a str> {
-    if plugin.extensions().iter().any(|e| e.eq_ignore_ascii_case(ext)) {
+    if plugin
+        .extensions()
+        .iter()
+        .any(|e| e.eq_ignore_ascii_case(ext))
+    {
         // Default to the first declared `language_ids` entry — that's
         // what the registry's `by_lang_id` is keyed on. Falling back to
         // `plugin.id()` alone silently routed every file to the generic
@@ -37,7 +41,11 @@ pub(super) fn language_id_for_extension<'a, P: LanguagePlugin + ?Sized>(
         // splits .ts vs .tsx, C splits .c vs .cpp — must override the
         // trait method to pick per extension; this default is for
         // single-id plugins where any member of the list is correct.
-        plugin.language_ids().first().copied().or_else(|| Some(plugin.id()))
+        plugin
+            .language_ids()
+            .first()
+            .copied()
+            .or_else(|| Some(plugin.id()))
     } else {
         None
     }

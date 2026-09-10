@@ -58,5 +58,4 @@ impl LanguagePlugin for YamlPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::YAML_PROFILE)
     }
-
 }

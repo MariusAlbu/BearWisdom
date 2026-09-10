@@ -106,9 +106,9 @@ fn resolve_named(
             ExportSource::Local => Some((file.to_path_buf(), name.to_string())),
             // A namespace binding has no single declared symbol to alias.
             ExportSource::Namespace { .. } => None,
-            ExportSource::Reexport { module, original } => {
-                follow_spec(ctx, file, module, original, pkg_name, pkg_root, visited, depth)
-            }
+            ExportSource::Reexport { module, original } => follow_spec(
+                ctx, file, module, original, pkg_name, pkg_root, visited, depth,
+            ),
         };
     }
     // Not named directly — the declaring file may be behind a wildcard.

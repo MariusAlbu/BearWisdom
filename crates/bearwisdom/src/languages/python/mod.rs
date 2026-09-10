@@ -108,12 +108,30 @@ impl LanguagePlugin for PythonPlugin {
         keywords::KEYWORDS
     }
 
+    fn signature_type_application(&self, text: &str) -> (String, Vec<String>) {
+        crate::languages::bracket_type_application(text)
+    }
+
+    fn signature_type_head<'a>(&self, text: &'a str) -> &'a str {
+        crate::languages::bracket_type_head(text)
+    }
+
+    fn signature_parameter_types(&self, signature: &str) -> Option<Vec<String>> {
+        crate::languages::colon_parameter_types(signature)
+    }
+
+    fn source_module_path_policy(
+        &self,
+        _specifier: &str,
+    ) -> crate::type_checker::profile::language_profile::SourceModulePathPolicy {
+        predicates::SOURCE_MODULE_PATH_POLICY
+    }
+
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&PYTHON_PROFILE)
     }
-
 
     // TODO(routes-dispatch): wire `connectors::discover_django_routes` and
     // `connectors::discover_fastapi_routes` into the indexer route-population
@@ -136,5 +154,13 @@ impl LanguagePlugin for PythonPlugin {
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::PY_FLOW_CONFIG)
+    }
+
+    fn plugin_flow_emissions(
+        &self,
+        source: &str,
+        _file_path: &str,
+    ) -> Vec<(u32, crate::indexer::resolve::flow_emit::FlowEmission)> {
+        connectors::extract_python_graphql(source)
     }
 }

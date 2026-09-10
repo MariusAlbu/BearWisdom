@@ -33,6 +33,102 @@ pub use common::emit_chain_type_ref;
 pub use plugin_defaults::Synthesized;
 pub use registry::LanguageRegistry;
 
+/// A language-owned declaration that augments an interface exported by another
+/// module. Resolver code only consumes these normalized names; each language
+/// recognizes and constructs the record from its own source syntax.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModuleAugmentation {
+    pub module: String,
+    pub interface: String,
+    pub augmenting_qname: String,
+}
+
+/// Shared structural adapter for languages that spell parameters and fields as
+/// `Type name`. Individual plugins opt into it; the resolver never selects a
+/// language by name.
+pub(crate) fn prefix_parameter_types(signature: &str) -> Option<Vec<String>> {
+    crate::type_checker::profile::signature_parser::parse_parameter_types(
+        signature,
+        crate::type_checker::profile::signature_parser::ParameterTypeLayout::Prefix,
+        0,
+    )
+}
+
+pub(crate) fn prefix_declared_type(signature: &str) -> Option<String> {
+    crate::type_checker::profile::signature_parser::parse_declared_type_from_signature(
+        signature,
+        crate::type_checker::profile::signature_parser::DeclaredTypeLayout::Prefix,
+    )
+}
+
+/// Explicit opt-in for languages whose extractor stores `Return name(args)`.
+pub(crate) fn prefix_return_type(signature: &str) -> Option<String> {
+    let token = crate::type_checker::profile::signature_parser::first_top_level_token(
+        signature.trim_start(),
+    );
+    (!token.is_empty() && !token.contains('(') && !token.contains(')') && token != "void")
+        .then(|| token.to_string())
+}
+
+/// Shared depth-aware machinery for a language which chooses colon-annotated
+/// parameter slots.  The owning plugin opts into this source spelling.
+pub(crate) fn colon_parameter_types(signature: &str) -> Option<Vec<String>> {
+    crate::type_checker::profile::signature_parser::parse_parameter_types(
+        signature,
+        crate::type_checker::profile::signature_parser::ParameterTypeLayout::AfterMarker(':'),
+        0,
+    )
+}
+
+/// Shared depth-aware machinery for a language which chooses a postfix
+/// colon result annotation.  This is intentionally opt-in at each plugin.
+pub(crate) fn colon_return_type(signature: &str) -> Option<String> {
+    crate::type_checker::profile::signature_parser::after_top_level_marker(signature, ':')
+}
+/// Normalize a language-owned applied type spelling for generic consumers.
+pub(crate) fn signature_type_application(language: &str, text: &str) -> (String, Vec<String>) {
+    default_registry()
+        .get(language)
+        .signature_type_application(text)
+}
+
+/// Read the nominal head of a language-owned type application without
+/// allocating.  Generic engine rules use this borrowed semantic view when
+/// they only need lookup identity.
+pub(crate) fn signature_type_head<'a>(language: &str, text: &'a str) -> &'a str {
+    default_registry().get(language).signature_type_head(text)
+}
+
+/// Shared structural adapter for languages that deliberately spell type
+/// applications with angle brackets. The language plugin, rather than a
+/// generic resolver, opts into this spelling.
+pub(crate) fn angle_type_application(text: &str) -> (String, Vec<String>) {
+    let (head, args) =
+        crate::type_checker::profile::signature_parser::parse_type_head_and_args(text);
+    (
+        head.to_string(),
+        args.into_iter().map(str::to_string).collect(),
+    )
+}
+
+pub(crate) fn angle_type_head(text: &str) -> &str {
+    crate::type_checker::profile::signature_parser::parse_type_head_and_args(text).0
+}
+
+/// Shared structural adapter for languages that deliberately spell type
+/// applications with square brackets. The language plugin opts in explicitly.
+pub(crate) fn bracket_type_application(text: &str) -> (String, Vec<String>) {
+    let (head, args) =
+        crate::type_checker::profile::signature_parser::parse_type_head_and_args_bracket(text);
+    (
+        head.to_string(),
+        args.into_iter().map(str::to_string).collect(),
+    )
+}
+
+pub(crate) fn bracket_type_head(text: &str) -> &str {
+    crate::type_checker::profile::signature_parser::parse_type_head_and_args_bracket(text).0
+}
 /// A language plugin provides grammar, scope config, and extraction for one or
 /// more language IDs (e.g., TypeScript handles both "typescript" and "tsx").
 pub trait LanguagePlugin: Send + Sync + 'static {
@@ -76,6 +172,186 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// - `lang_id`: the language ID from detection (e.g., "typescript" or "tsx")
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult;
 
+    /// Normalize one source-language type application into its semantic head
+    /// and direct arguments. The default is fail-closed: no surface parsing.
+    fn signature_type_application(&self, text: &str) -> (String, Vec<String>) {
+        (text.trim().to_string(), Vec::new())
+    }
+
+    /// Borrow the nominal head of an applied type.  The default deliberately
+    /// recognizes no language surface syntax.
+    fn signature_type_head<'a>(&self, text: &'a str) -> &'a str {
+        text.trim()
+    }
+
+    /// The nominal head that supplies instance members for a primitive source
+    /// type.  Defaults fail closed so a lowercase user type is never promoted.
+    fn primitive_member_head(&self, _head: &str) -> Option<String> {
+        None
+    }
+
+    /// Whether an applied nominal head is a homogeneous container whose
+    /// computed access yields its first type argument. Defaults fail closed.
+    fn has_homogeneous_computed_access(&self, _head: &str) -> bool {
+        false
+    }
+
+    /// Module-specifier classification for generic resolver rules. Languages
+    /// opt in with their own source grammar; the default accepts nothing.
+    fn source_module_path_policy(
+        &self,
+        _specifier: &str,
+    ) -> crate::type_checker::profile::language_profile::SourceModulePathPolicy {
+        crate::type_checker::profile::language_profile::SourceModulePathPolicy::unsupported()
+    }
+
+    /// Interpret the return portion of one of this language's stored callable
+    /// signatures.  The resolver asks the owning plugin instead of selecting a
+    /// parser from a language-id branch; languages with a distinct signature
+    /// spelling override this hook next to their extractor.
+    fn signature_return_type(&self, _signature: &str) -> Option<String> {
+        None
+    }
+
+    /// Interpret the parameter portion of this language's stored callable
+    /// signature. Defaults fail closed; source plugins opt in explicitly.
+    fn signature_parameter_types(&self, _signature: &str) -> Option<Vec<String>> {
+        None
+    }
+
+    /// Interpret a stored field/property annotation for this language.
+    fn signature_declared_type(&self, _signature: &str) -> Option<String> {
+        None
+    }
+
+    /// Parse members of an inline result type only when the owning language
+    /// deliberately records that shape.
+    fn signature_object_type_members(&self, _signature: &str) -> Vec<(String, String)> {
+        Vec::new()
+    }
+
+    /// Parse conditional result branches only when owned by this language.
+    fn signature_conditional_branches(&self, _signature: &str) -> Option<(String, String)> {
+        None
+    }
+
+    /// Parse declaration-site generic parameters only when owned by this language.
+    fn signature_generic_params(
+        &self,
+        _signature: &str,
+        _name: &str,
+    ) -> Vec<(String, Option<String>, Option<String>)> {
+        Vec::new()
+    }
+    /// Whether this language deliberately stores an inline object result.
+    fn signature_is_inline_object_result(&self, _result: &str) -> bool {
+        false
+    }
+
+    /// Whether this language deliberately stores a tuple result.
+    fn signature_is_tuple_result(&self, _result: &str) -> bool {
+        false
+    }
+
+    /// Whether a stored result has this language's callable-return extraction form.
+    fn signature_has_callable_return_extraction(&self, _result: &str) -> bool {
+        false
+    }
+
+    /// Callback parameter type evidence decoded by the language that owns its
+    /// delegate wrapper syntax. Defaults fail closed.
+    fn signature_delegate_argument_types(&self, _signature: &str) -> Vec<String> {
+        Vec::new()
+    }
+    /// Return an extension-method receiver encoded by this language's
+    /// signature syntax.  Most languages have no such marker.
+    fn signature_extension_receiver(&self, _signature: &str) -> Option<String> {
+        None
+    }
+
+    /// Return field-type evidence encoded directly in a signature when the
+    /// extractor deliberately omitted a TypeRef for it.
+    fn signature_field_type(&self, _signature: &str) -> Option<String> {
+        None
+    }
+
+    /// Resolve one language-owned include spelling against indexed files.
+    /// The engine supplies opaque `(path, language)` facts and only consumes
+    /// the exact target path returned by the owning plugin.
+    fn resolve_include_target(
+        &self,
+        _source_file: &str,
+        _include_specifier: &str,
+        _indexed_files: &[(&str, &str)],
+    ) -> Option<String> {
+        None
+    }
+
+    /// The member-resolution semantics of a language-owned alias intrinsic.
+    /// `None` leaves the generic alias walker to treat the name as an ordinary
+    /// declaration.
+    fn alias_intrinsic(
+        &self,
+        _head: &str,
+    ) -> Option<crate::type_checker::profile::chain_specs::AliasIntrinsic> {
+        None
+    }
+
+    /// Decode a flattened callable-return extraction stored in a nominal type
+    /// head. The returned value is the source callable name.
+    fn flat_callable_return_operand<'a>(&self, _head: &'a str) -> Option<&'a str> {
+        None
+    }
+
+    /// Decode the callable operand in an applied callable-return extractor.
+    fn callable_return_operand<'a>(&self, _head: &'a str) -> Option<&'a str> {
+        None
+    }
+
+    /// Whether an alias target has this language's callable-return extraction
+    /// shape.
+    fn is_callable_return_extractor(
+        &self,
+        _arena: &crate::type_checker::core::types::TypeArena,
+        _target: &crate::types::AliasTargetIds,
+    ) -> bool {
+        false
+    }
+
+    /// A declaration's callback calling convention. `None` means the plugin
+    /// does not own the source file; `Some` supplies its semantic contract.
+    fn callback_argument_policy(
+        &self,
+        _file_path: &str,
+        _signature: Option<&str>,
+        _index: usize,
+    ) -> Option<crate::type_checker::profile::chain_specs::CallbackArgumentPolicy> {
+        None
+    }
+
+    /// Discover cross-module interface augmentations in one external source
+    /// file. The generic demand pass reads the file and forwards these records
+    /// without interpreting declaration syntax, file extensions, or package
+    /// path conventions.
+    fn external_module_augmentations(
+        &self,
+        _source: &str,
+        _virtual_path: &str,
+    ) -> Vec<ModuleAugmentation> {
+        Vec::new()
+    }
+
+    /// Build the qualified target for a re-exported external declaration. The
+    /// owning language controls how its external virtual path identifies a
+    /// package or module; `None` leaves the generic re-export pass unchanged.
+    fn external_reexport_target_qname(
+        &self,
+        _virtual_path: &str,
+        _target_name: &str,
+    ) -> Option<String> {
+        None
+    }
+
     /// R6 demand-driven extraction. Same as `extract` except that `demand`,
     /// when `Some`, is the set of top-level declaration names the caller
     /// cares about — declarations outside the set may be dropped. Used when
@@ -111,7 +387,9 @@ pub trait LanguagePlugin: Send + Sync + 'static {
         demand: Option<&std::collections::HashSet<String>>,
         arena: &crate::type_checker::core::types::TypeArena,
     ) -> ExtractionResult {
-        plugin_defaults::extract_with_arena_and_demand(self, source, file_path, lang_id, demand, arena)
+        plugin_defaults::extract_with_arena_and_demand(
+            self, source, file_path, lang_id, demand, arena,
+        )
     }
 
     /// Return sub-language text regions contained in this file (e.g. the
@@ -234,6 +512,75 @@ pub trait LanguagePlugin: Send + Sync + 'static {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         None
+    }
+
+    /// Recognize a component-tag call emitted by this language and return its
+    /// imported head. Component tag spelling belongs to the language parser;
+    /// resolver rules only compare the normalized head with import evidence.
+    fn component_tag_head<'a>(&self, _target: &'a str) -> Option<&'a str> {
+        None
+    }
+
+    /// Whether an indexed file can supply a component for this language.
+    /// File extensions are language policy, not resolver policy.
+    fn is_component_file(&self, _path: &str) -> bool {
+        false
+    }
+
+    /// Interpret declaration-side component selector spelling into the lookup
+    /// keys used by the resolver. Selector grammars belong to the language
+    /// that emits the declaration; the default deliberately admits nothing.
+    fn selector_binding_keys(&self, _selector: &str) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Extract component declarations from this language's source. A parser
+    /// plugin owns both the declaration grammar and the decision to surface
+    /// selector metadata; unrelated languages fail closed.
+    fn component_selectors(
+        &self,
+        _source: &str,
+        _symbols: &[crate::types::ExtractedSymbol],
+    ) -> Vec<(String, String)> {
+        Vec::new()
+    }
+
+    /// Exact importable aliases declared in this file. The language plugin
+    /// interprets declaration grammar (including any pattern syntax) and only
+    /// returns aliases that are valid exact module entries.
+    fn exact_module_entry_aliases(&self, _declared_modules: &[String]) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// File-structure flow emissions whose grammar is owned by this plugin.
+    /// Resolver orchestration persists the result but never dispatches on a
+    /// language identifier itself.
+    fn plugin_flow_emissions(
+        &self,
+        _source: &str,
+        _file_path: &str,
+    ) -> Vec<(u32, crate::indexer::resolve::flow_emit::FlowEmission)> {
+        Vec::new()
+    }
+
+    /// Whether this plugin recognizes a generated platform header that should
+    /// be excluded from normal source extraction.
+    fn is_generated_source_file(&self, _content: &str) -> bool {
+        false
+    }
+
+    /// Whether this plugin recognizes a vendored source file. Source-layout
+    /// and banner grammars belong to the language plugin; the indexer only
+    /// applies the resulting classification.
+    fn is_vendored_source_file(&self, _path: &str, _content: &str) -> bool {
+        false
+    }
+
+    /// Whether textual include refs from this language participate in the
+    /// namespace-fragment splice pass. Most languages preserve the historical
+    /// generic behavior; languages with graph-only include semantics opt out.
+    fn supports_namespace_include_splicing(&self) -> bool {
+        true
     }
 
     // `connectors()` trait method removed (Phase H) — no `impl Connector for X`
@@ -480,3 +827,5 @@ pub mod groovy;
 pub mod perl;
 pub mod powershell;
 
+#[cfg(test)]
+mod signature_application_tests;

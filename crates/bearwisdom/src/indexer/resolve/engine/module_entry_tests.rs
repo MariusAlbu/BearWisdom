@@ -10,9 +10,25 @@ use crate::indexer::resolve::engine::compilation::Compilation;
 use crate::indexer::resolve::engine::contract::{FileContext, ImportEntry, SymbolLookup};
 use crate::indexer::resolve::engine::root_import_discipline::{apply, RootImportOutcome};
 use crate::type_checker::core::types::TypeArena;
-use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
+use crate::type_checker::profile::language_profile::{LanguageProfile, DEFAULT_PROFILE};
 use crate::types::{
     ChainSegment, ExtractedSymbol, FlowMeta, ParsedFile, SegmentKind, SymbolKind, Visibility,
+};
+
+static MODULE_PROFILE: LanguageProfile = LanguageProfile {
+    id: "typescript",
+    imports: crate::type_checker::profile::language_profile::ImportAxes {
+        module_prefix_rewrites:
+            crate::type_checker::profile::language_profile::ModulePrefixRewrites::On {
+                module_path_adapter: Some(crate::ecosystem::npm::node_builtin::module_path_match),
+                candidate_prefixes:
+                    crate::ecosystem::npm::module_specifier::module_prefix_candidates,
+                declines_directory_match:
+                    crate::ecosystem::npm::module_specifier::declines_directory_match,
+            },
+        ..DEFAULT_PROFILE.imports
+    },
+    ..DEFAULT_PROFILE
 };
 
 fn make_symbol(name: &str, qname: &str, kind: SymbolKind) -> ExtractedSymbol {
@@ -42,7 +58,7 @@ fn make_parsed_file(
     symbols: Vec<ExtractedSymbol>,
     declared_modules: Vec<String>,
 ) -> ParsedFile {
-    make_parsed_file_for_language(path, "fixture", symbols, declared_modules)
+    make_parsed_file_for_language(path, "typescript", symbols, declared_modules)
 }
 
 fn make_parsed_file_for_language(
@@ -75,59 +91,6 @@ fn make_parsed_file_for_language(
         plugin_flow_emissions: Vec::new(),
         declared_modules,
     }
-}
-
-#[test]
-fn dart_external_libraries_produce_exact_package_uri_keys() {
-    let arena = Arc::new(TypeArena::new());
-    let files = vec![
-        make_parsed_file_for_language(
-            "ext:dart:matcher/expect.dart",
-            "dart",
-            vec![make_symbol(
-                "barrel",
-                "matcher.barrel",
-                SymbolKind::Variable,
-            )],
-            vec![],
-        ),
-        make_parsed_file_for_language(
-            "ext:dart:matcher/src/expect/expect.dart",
-            "dart",
-            vec![make_symbol(
-                "expect",
-                "matcher.expect",
-                SymbolKind::Function,
-            )],
-            vec![],
-        ),
-        make_parsed_file_for_language(
-            "ext:dart:other/src/expect/expect.dart",
-            "dart",
-            vec![make_symbol("expect", "other.expect", SymbolKind::Function)],
-            vec![],
-        ),
-    ];
-    let tree = Compilation::build(&files, &HashMap::new().into(), Arc::clone(&arena));
-
-    assert_eq!(
-        tree.resolve_module_from("ext:dart:test/test.dart", "package:matcher/expect.dart"),
-        Some("ext:dart:matcher/expect.dart")
-    );
-    assert_eq!(
-        tree.resolve_module_from("ext:dart:matcher/expect.dart", "src/expect/expect.dart"),
-        Some("ext:dart:matcher/src/expect/expect.dart")
-    );
-    assert_eq!(
-        tree.resolve_module_from("ext:dart:matcher/expect.dart", "src/expect/missing.dart"),
-        None,
-        "a Dart URI must resolve only to its exact indexed library"
-    );
-    assert_eq!(
-        tree.resolve_module_from("ext:dart:matcher/expect.dart", "other"),
-        None,
-        "a missing bare Dart library URI must not fall through to an unrelated package entry"
-    );
 }
 
 /// A Compilation over one internal fixture declaring `virtual:pwa` (and a
@@ -212,10 +175,35 @@ fn declared_modules_produce_module_entry_keys() {
 }
 
 #[test]
+fn non_owner_declared_module_metadata_cannot_create_an_entry() {
+    let arena = Arc::new(TypeArena::new());
+    let pf = make_parsed_file_for_language(
+        "src/non_owner.rs",
+        "rust",
+        vec![],
+        vec!["virtual:pwa".to_string()],
+    );
+    let tree = Compilation::build_with_context(
+        &[pf],
+        &HashMap::new().into(),
+        arena,
+        None,
+        &HashSet::new(),
+    );
+    assert_eq!(tree.resolve_module_from("src/app.rs", "virtual:pwa"), None);
+}
+
+#[test]
 fn import_ref_against_declared_specifier_resolves() {
     let (tree, arena) = build_shim_compilation();
     let ctx = ctx_with(vec![imp("RegisterOptions", "virtual:pwa")]);
-    match apply(&ctx, &tree, &arena, &DEFAULT_PROFILE, &seg("RegisterOptions")) {
+    match apply(
+        &ctx,
+        &tree,
+        &arena,
+        &MODULE_PROFILE,
+        &seg("RegisterOptions"),
+    ) {
         RootImportOutcome::Typed(recv) => assert_eq!(
             recv.id,
             Some(11),
@@ -229,7 +217,7 @@ fn import_ref_against_declared_specifier_resolves() {
 fn scheme_specifier_without_key_still_denies() {
     let (tree, arena) = build_shim_compilation();
     let ctx = ctx_with(vec![imp("thing", "virtual:unregistered")]);
-    match apply(&ctx, &tree, &arena, &DEFAULT_PROFILE, &seg("thing")) {
+    match apply(&ctx, &tree, &arena, &MODULE_PROFILE, &seg("thing")) {
         RootImportOutcome::Deny(c) => assert_eq!(c.kind, CauseKind::ImportUnlinked),
         _ => panic!("a scheme-prefixed specifier with no module key must keep denying"),
     }

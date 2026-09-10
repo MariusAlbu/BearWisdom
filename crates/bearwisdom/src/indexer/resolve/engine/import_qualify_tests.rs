@@ -110,7 +110,13 @@ fn internal_file(arena: &TypeArena) -> (ParsedFile, HashMap<(String, String), i6
     let pf = make_parsed_file("src/wrapper.ts", symbols, refs);
     let mut id_map = HashMap::new();
     id_map.insert(("src/wrapper.ts".to_string(), "Wrapper".to_string()), 1);
-    id_map.insert(("src/wrapper.ts".to_string(), "Wrapper.getClient".to_string()), 2);
+    id_map.insert(
+        (
+            "src/wrapper.ts".to_string(),
+            "Wrapper.getClient".to_string(),
+        ),
+        2,
+    );
     (pf, id_map)
 }
 
@@ -125,10 +131,13 @@ fn external_file() -> (ParsedFile, HashMap<(String, String), i64>) {
     )];
     let pf = make_parsed_file("ext:ts:@ms/graph/index.d.ts", symbols, Vec::new());
     let mut id_map = HashMap::new();
-    id_map.insert((
-        "ext:ts:@ms/graph/index.d.ts".to_string(),
-        "@ms/graph.Client".to_string(),
-    ), 100);
+    id_map.insert(
+        (
+            "ext:ts:@ms/graph/index.d.ts".to_string(),
+            "@ms/graph.Client".to_string(),
+        ),
+        100,
+    );
     (pf, id_map)
 }
 
@@ -148,7 +157,11 @@ fn bare_head_requalifies_when_external_materializes_in_later_ingest() {
     assert_eq!(fmt(&tree, 2), "Client");
 
     let (external, ext_ids) = external_file();
-    tree.ingest(&[external], &ext_ids.clone().into(), &std::collections::HashSet::new());
+    tree.ingest(
+        &[external],
+        &ext_ids.clone().into(),
+        &std::collections::HashSet::new(),
+    );
 
     assert_eq!(fmt(&tree, 2), "@ms/graph.Client");
 }
@@ -159,7 +172,11 @@ fn bare_head_requalifies_within_a_single_batch() {
     let (internal, mut id_map) = internal_file(&arena);
     let (external, ext_ids) = external_file();
     id_map.extend(ext_ids);
-    let tree = Compilation::build(&[internal, external], &id_map.clone().into(), Arc::clone(&arena));
+    let tree = Compilation::build(
+        &[internal, external],
+        &id_map.clone().into(),
+        Arc::clone(&arena),
+    );
 
     assert_eq!(fmt(&tree, 2), "@ms/graph.Client");
 }
@@ -169,7 +186,10 @@ fn applied_argument_heads_requalify_alongside_the_base() {
     let arena = Arc::new(TypeArena::new());
     let base = arena.class("Promise");
     let arg = arena.class("Client");
-    let applied = arena.intern(Type::Apply { base, args: vec![arg] });
+    let applied = arena.intern(Type::Apply {
+        base,
+        args: vec![arg],
+    });
 
     let symbols = vec![
         make_symbol("Wrapper", "Wrapper", SymbolKind::Class, None, None, None),
@@ -186,7 +206,10 @@ fn applied_argument_heads_requalify_alongside_the_base() {
     let pf = make_parsed_file("src/wrapper.ts", symbols, refs);
     let mut id_map = HashMap::new();
     id_map.insert(("src/wrapper.ts".to_string(), "Wrapper".to_string()), 1);
-    id_map.insert(("src/wrapper.ts".to_string(), "Wrapper.fetch".to_string()), 2);
+    id_map.insert(
+        ("src/wrapper.ts".to_string(), "Wrapper.fetch".to_string()),
+        2,
+    );
     let (external, ext_ids) = external_file();
     id_map.extend(ext_ids);
     let tree = Compilation::build(&[pf, external], &id_map.clone().into(), Arc::clone(&arena));
@@ -213,7 +236,13 @@ fn subpath_specifier_falls_back_to_the_package_root_qname() {
     let pf = make_parsed_file("src/wrapper.ts", symbols, refs);
     let mut id_map = HashMap::new();
     id_map.insert(("src/wrapper.ts".to_string(), "Wrapper".to_string()), 1);
-    id_map.insert(("src/wrapper.ts".to_string(), "Wrapper.getClient".to_string()), 2);
+    id_map.insert(
+        (
+            "src/wrapper.ts".to_string(),
+            "Wrapper.getClient".to_string(),
+        ),
+        2,
+    );
     let (external, ext_ids) = external_file();
     id_map.extend(ext_ids);
     let tree = Compilation::build(&[pf, external], &id_map.clone().into(), Arc::clone(&arena));
@@ -242,7 +271,13 @@ fn locally_declared_type_shadows_the_import() {
     let pf = make_parsed_file("src/wrapper.ts", symbols, refs);
     let mut id_map = HashMap::new();
     id_map.insert(("src/wrapper.ts".to_string(), "Wrapper".to_string()), 1);
-    id_map.insert(("src/wrapper.ts".to_string(), "Wrapper.getClient".to_string()), 2);
+    id_map.insert(
+        (
+            "src/wrapper.ts".to_string(),
+            "Wrapper.getClient".to_string(),
+        ),
+        2,
+    );
     id_map.insert(("src/wrapper.ts".to_string(), "Client".to_string()), 3);
     let (external, ext_ids) = external_file();
     id_map.extend(ext_ids);
@@ -270,7 +305,13 @@ fn relative_import_never_requalifies() {
     let pf = make_parsed_file("src/wrapper.ts", symbols, refs);
     let mut id_map = HashMap::new();
     id_map.insert(("src/wrapper.ts".to_string(), "Wrapper".to_string()), 1);
-    id_map.insert(("src/wrapper.ts".to_string(), "Wrapper.getClient".to_string()), 2);
+    id_map.insert(
+        (
+            "src/wrapper.ts".to_string(),
+            "Wrapper.getClient".to_string(),
+        ),
+        2,
+    );
     let (external, ext_ids) = external_file();
     id_map.extend(ext_ids);
     let tree = Compilation::build(&[pf, external], &id_map.clone().into(), Arc::clone(&arena));
@@ -297,7 +338,13 @@ fn already_qualified_head_is_untouched() {
     let pf = make_parsed_file("src/wrapper.ts", symbols, refs);
     let mut id_map = HashMap::new();
     id_map.insert(("src/wrapper.ts".to_string(), "Wrapper".to_string()), 1);
-    id_map.insert(("src/wrapper.ts".to_string(), "Wrapper.getClient".to_string()), 2);
+    id_map.insert(
+        (
+            "src/wrapper.ts".to_string(),
+            "Wrapper.getClient".to_string(),
+        ),
+        2,
+    );
     let (external, ext_ids) = external_file();
     id_map.extend(ext_ids);
     let tree = Compilation::build(&[pf, external], &id_map.clone().into(), Arc::clone(&arena));

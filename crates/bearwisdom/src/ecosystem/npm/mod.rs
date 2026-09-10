@@ -24,6 +24,9 @@ use std::sync::Arc;
 
 use tracing::debug;
 
+pub(crate) mod declared_deps;
+pub(crate) mod resolver_policy;
+
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
     SymbolLocationIndex,
@@ -294,7 +297,6 @@ fn file_contributes_globals(content: &str) -> bool {
     false
 }
 
-
 /// Try each canonical declaration-file path under `dep.root`. Return one
 /// `WalkedFile` per file actually present. Probes filenames known to host
 /// `declare global { ... }` blocks across `@types/jest`, `@types/mocha`,
@@ -341,7 +343,6 @@ pub(crate) fn probe_global_decl_files(dep: &ExternalDepRoot) -> Vec<WalkedFile> 
     }
     out
 }
-
 
 pub(super) fn scan_for_scss_bounded(dir: &Path, depth: u32) -> bool {
     if depth >= 6 {
@@ -391,7 +392,6 @@ pub(super) fn scan_for_scss_bounded(dir: &Path, depth: u32) -> bool {
     }
     false
 }
-
 
 // ---------------------------------------------------------------------------
 // Legacy ExternalSourceLocator impl — adapter for the indexer pipeline
@@ -658,10 +658,11 @@ mod externals;
 mod externals_imports;
 mod externals_node_modules;
 mod module_registration;
-pub(crate) mod node_builtin;
 pub(crate) mod module_specifier;
+pub(crate) mod node_builtin;
 mod post_process;
 mod reexport_bridge;
+pub(crate) mod relative_imports;
 mod symbol_index;
 mod ts_scan;
 mod ts_scan_ambient;

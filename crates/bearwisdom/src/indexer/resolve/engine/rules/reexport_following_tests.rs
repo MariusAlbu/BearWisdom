@@ -25,7 +25,7 @@ fn apply(lookup: &dyn SymbolLookup, target: &str, imports: Vec<ImportEntry>) -> 
         ref_ctx: &rc,
         lookup,
         kind: &kind,
-        profile: &DEFAULT_PROFILE,
+        profile: &crate::languages::typescript::TYPESCRIPT_PROFILE,
     };
     match ReexportFollowingRule.apply(&ctx) {
         LookupResult::Resolved(res) => Some(res.target_symbol_id),
@@ -376,10 +376,10 @@ fn binds_via_named_reexport_hop() {
 
 // ---------------------------------------------------------------------------
 // Language-resolver fallback: the third branch, reached only when both the
-// module map AND `is_relative_specifier` miss.
+// module map AND adapter-relative classification miss.
 // ---------------------------------------------------------------------------
 
-/// A bare specifier that is neither in the module map nor `is_relative_specifier`
+/// A bare specifier that is neither in the module map nor adapter-relative
 /// (Dart's bare-relative `'foo.dart'` shape) reaches the rule's last-resort
 /// `resolve_module_via_language_resolver` hop, and the resolved path is walked
 /// through `follow_reexports` exactly like the first two branches' resolutions.
@@ -423,7 +423,7 @@ fn declines_when_language_resolver_also_misses() {
     assert_eq!(apply(&lookup, "Foo", imports), None);
 }
 
-/// TS regression: an existing relative-specifier import (`is_relative_specifier`
+/// TS regression: an existing adapter-relative import
 /// true) resolves through the SECOND branch exactly as before — the language
 /// resolver is never consulted (`language_resolved` stays `None` and would panic
 /// on no such fixture anyway; leaving it unset proves the branch is unreached).

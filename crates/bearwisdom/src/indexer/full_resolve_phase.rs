@@ -56,7 +56,12 @@ pub fn resolve_with_plugin_refresh(
         let loc_c = Arc::clone(&loc);
         with_resolve_pool(move || {
             pipeline::materialize_and_build_tree(
-                db_ref, parsed_ref, sid_ref, Some(pctx_ref), arena_c, loc_c,
+                db_ref,
+                parsed_ref,
+                sid_ref,
+                Some(pctx_ref),
+                arena_c,
+                loc_c,
             )
         })
         .context("Failed to materialize externals / build compilation")?
@@ -78,14 +83,22 @@ pub fn resolve_with_plugin_refresh(
         // saw. Splice them now; a re-parented symbol changes qnames the
         // tree already ingested, so it forces the same rebuild synthesized
         // members do. Idempotent over the eager batch.
-        let spliced = crate::indexer::include_assembly::assemble_includes(
-            db, parsed, symbol_id_map,
-        )?;
+        let spliced =
+            crate::indexer::include_assembly::assemble_includes(db, parsed, symbol_id_map)?;
         plugin_state_phase::populate_post_externals(
-            registry, project_ctx, parsed, project_root, None,
+            registry,
+            project_ctx,
+            parsed,
+            project_root,
+            None,
         );
         let gained_members = plugin_state_phase::synthesize_and_persist(
-            registry, project_ctx, parsed, db, symbol_id_map, arena.as_ref(),
+            registry,
+            project_ctx,
+            parsed,
+            db,
+            symbol_id_map,
+            arena.as_ref(),
         )?;
         if gained_members || spliced > 0 {
             let parsed_ref = &*parsed;

@@ -89,6 +89,89 @@ pub(super) fn build_method_signature(
     Some(format!("function {name}{params}{ret}"))
 }
 
+/// Read the type prefix of each stored PHP callable parameter. PHPDoc callback
+/// enrichment records structural slots as `(Item) -> Result $callback`; the
+/// arrow is PHP-owned contract syntax, so the generic prefix parser must not
+/// mistake its `>` for a generic close and discard the result type.
+pub(super) fn signature_parameter_types(signature: &str) -> Option<Vec<String>> {
+    let open = signature.find('(')?;
+    let close = matching_paren(&signature[open..])? + open;
+    let parameters = &signature[open + 1..close];
+    if parameters.trim().is_empty() {
+        return Some(Vec::new());
+    }
+
+    Some(
+        split_signature_parameters(parameters)
+            .into_iter()
+            .map(php_parameter_type)
+            .filter(|type_| !type_.is_empty())
+            .collect(),
+    )
+}
+
+fn matching_paren(text: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    for (index, ch) in text.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(index);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn split_signature_parameters(parameters: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0usize;
+    let mut depth = 0i32;
+    let mut previous = '\0';
+    for (index, ch) in parameters.char_indices() {
+        match ch {
+            '(' | '[' | '{' | '<' => depth += 1,
+            ')' | ']' | '}' => depth -= 1,
+            '>' if previous != '-' => depth -= 1,
+            ',' if depth == 0 => {
+                parts.push(&parameters[start..index]);
+                start = index + 1;
+            }
+            _ => {}
+        }
+        previous = ch;
+    }
+    parts.push(&parameters[start..]);
+    parts
+}
+
+fn php_parameter_type(parameter: &str) -> String {
+    let parameter = parameter.trim();
+    let mut depth = 0i32;
+    let mut last_whitespace = None;
+    let mut previous = '\0';
+    for (index, ch) in parameter.char_indices() {
+        match ch {
+            '(' | '[' | '{' | '<' => depth += 1,
+            ')' | ']' | '}' => depth -= 1,
+            // The callback result arrow is neither generic syntax nor a
+            // bracket close. Keep the following whitespace at depth zero so
+            // it separates the full callback type from its parameter name.
+            '>' if previous != '-' => depth -= 1,
+            ch if ch.is_whitespace() && depth == 0 => last_whitespace = Some(index),
+            _ => {}
+        }
+        previous = ch;
+    }
+    last_whitespace
+        .map(|index| parameter[..index].trim().to_string())
+        .unwrap_or_else(|| parameter.to_string())
+}
+
 #[derive(Debug)]
 struct PhpDocCallableParam {
     name: String,

@@ -430,9 +430,7 @@ fn ingest_unplugin_dts(
             registry
                 .components
                 .entry(entry.name)
-                .or_insert(VueComponentSource::AutoImportModule {
-                    module,
-                });
+                .or_insert(VueComponentSource::AutoImportModule { module });
         }
     }
     debug!(

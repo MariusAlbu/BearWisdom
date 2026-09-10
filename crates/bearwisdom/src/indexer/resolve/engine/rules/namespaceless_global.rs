@@ -16,14 +16,13 @@
 //
 // Name candidates in order: the raw target; the self-keyword-stripped leaf
 // (flat-namespace sigil languages keep the sigil in the ref — `var.X` — but
-// declare the symbol bare); then, for a dotted target that missed both, its
-// last `.`-segment (`schema.table` → `table`).
+// declare the symbol bare); then the active profile's qualified-name leaf.
 //
 // Runs last in the ladder so every structural rung above wins first.
 // =============================================================================
 
-use crate::indexer::resolve::engine::support::{parent_dir, strip_self_keyword};
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::support::parent_dir;
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 use crate::type_checker::profile::language_profile::NamespaceScope;
 
 pub struct NamespacelessGlobalRule;
@@ -43,18 +42,17 @@ impl LookupRule for NamespacelessGlobalRule {
             return LookupResult::Pass;
         }
         let edge_kind = ctx.edge_kind();
-        let self_keywords = ctx.profile.self_keywords;
-        let stripped = strip_self_keyword(target, self_keywords);
+        let stripped = ctx.profile.normalize_receiver_member_target(target);
         let mut candidates: Vec<&str> = vec![target];
         if stripped != target {
             candidates.push(stripped);
         }
-        // Dotted-target leaf fallback (`schema.table` → `table`): only the last
-        // `.`-segment, only when distinct from what's already queued.
-        if let Some(leaf) = target.rsplit('.').next() {
-            if leaf != target && !candidates.contains(&leaf) {
-                candidates.push(leaf);
-            }
+        // Qualified-target leaf fallback: source separator policy belongs to
+        // the active profile, so a non-dot language never inherits SQL's
+        // dotted spelling by accident.
+        let leaf = ctx.profile.simple_name(target);
+        if leaf != target && !candidates.contains(&leaf) {
+            candidates.push(leaf);
         }
         let dir_scoped = scope == NamespaceScope::DirectoryScoped;
         let src_dir = parent_dir(&ctx.file_ctx.file_path);

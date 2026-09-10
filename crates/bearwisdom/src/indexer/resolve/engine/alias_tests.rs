@@ -1,5 +1,7 @@
 use super::*;
 use crate::indexer::resolve::engine::testkit::{sym, Lookup};
+use crate::languages::ruby::RUBY_PROFILE;
+use crate::languages::typescript::TYPESCRIPT_PROFILE;
 use crate::type_checker::core::types::Type;
 use crate::types::AliasTarget;
 
@@ -15,7 +17,7 @@ fn expands_non_generic_alias_to_its_target() {
     // type UserMap = Map<string, User>
     let lookup = Lookup::new().with_alias("UserMap", app("Map", &["string", "User"]));
     let arena = lookup.type_arena().unwrap();
-    let out = expand(arena.class("UserMap"), &lookup, arena);
+    let out = expand(arena.class("UserMap"), &lookup, arena, None);
     assert_eq!(arena.format_type(out), "Map<string, User>");
 }
 
@@ -30,7 +32,7 @@ fn expands_generic_alias_substituting_its_parameter() {
         base: arena.class("Box"),
         args: vec![arena.class("User")],
     });
-    let out = expand(boxed, &lookup, arena);
+    let out = expand(boxed, &lookup, arena, None);
     assert_eq!(arena.format_type(out), "Container<User>");
 }
 
@@ -48,14 +50,31 @@ fn expand_with_id_prefers_id_keyed_target_over_colliding_bare_name() {
                 args: vec!["createScopedLogger".to_string()],
             },
         )
-        .with(sym(1, "createScopedLogger", "createScopedLogger", "function", "a.ts"))
+        .with(sym(
+            1,
+            "createScopedLogger",
+            "createScopedLogger",
+            "function",
+            "a.ts",
+        ))
         .with_return_type("createScopedLogger", "ScopedRet");
     let arena = lookup.type_arena().unwrap();
     // With the use-site id, the alias resolves to ITS target — createScopedLogger's return.
-    let out = expand_with_id(arena.class("Logger"), Some(8534), &lookup, arena);
+    let out = expand_with_id(
+        arena.class("Logger"),
+        Some(8534),
+        &lookup,
+        arena,
+        Some(&TYPESCRIPT_PROFILE),
+    );
     assert_eq!(arena.format_type(out), "ScopedRet");
     // Without the id, the name map's (wrong) last-writer target wins.
-    let bare = expand(arena.class("Logger"), &lookup, arena);
+    let bare = expand(
+        arena.class("Logger"),
+        &lookup,
+        arena,
+        Some(&TYPESCRIPT_PROFILE),
+    );
     assert_eq!(arena.format_type(bare), "WrongRet");
 }
 
@@ -64,7 +83,7 @@ fn leaves_a_non_alias_unchanged() {
     let lookup = Lookup::new();
     let arena = lookup.type_arena().unwrap();
     let t = arena.class("User");
-    assert_eq!(expand(t, &lookup, arena), t);
+    assert_eq!(expand(t, &lookup, arena, None), t);
 }
 
 #[test]
@@ -74,7 +93,7 @@ fn follows_an_alias_of_an_alias() {
         .with_alias("A", app("B", &[]))
         .with_alias("B", app("Map", &["K", "V"]));
     let arena = lookup.type_arena().unwrap();
-    let out = expand(arena.class("A"), &lookup, arena);
+    let out = expand(arena.class("A"), &lookup, arena, None);
     assert_eq!(arena.format_type(out), "Map<K, V>");
 }
 
@@ -87,7 +106,7 @@ fn follows_a_member_less_alias_through_its_field_type() {
         .with(sym(1, "ExpectTypeOf", "ExpectTypeOf", "type_alias", "f.ts"))
         .with_field_type("ExpectTypeOf", "PositiveExpectTypeOf");
     let arena = lookup.type_arena().unwrap();
-    let out = expand(arena.class("ExpectTypeOf"), &lookup, arena);
+    let out = expand(arena.class("ExpectTypeOf"), &lookup, arena, None);
     assert_eq!(arena.format_type(out), "PositiveExpectTypeOf");
 }
 
@@ -101,7 +120,7 @@ fn keeps_an_object_literal_alias_that_carries_its_own_members() {
         .with_member_id(1, sym(2, "x", "Foo.x", "property", "f.ts"));
     let arena = lookup.type_arena().unwrap();
     let foo = arena.class("Foo");
-    assert_eq!(expand(foo, &lookup, arena), foo);
+    assert_eq!(expand(foo, &lookup, arena, None), foo);
 }
 
 #[test]
@@ -128,7 +147,10 @@ fn evaluates_a_decidable_conditional_to_its_false_branch() {
         base: arena.class("Upd"),
         args: vec![arena.class("Base"), arena.class("false"), arena.class("x")],
     });
-    assert_eq!(arena.format_type(expand(applied, &lookup, arena)), "Base");
+    assert_eq!(
+        arena.format_type(expand(applied, &lookup, arena, Some(&TYPESCRIPT_PROFILE))),
+        "Base"
+    );
 }
 
 #[test]
@@ -156,31 +178,32 @@ fn undecidable_conditional_carries_both_branches_as_an_intersection() {
         base: arena.class("Cond"),
         args: vec![arena.class("User")],
     });
-    assert_eq!(arena.format_type(expand(applied, &lookup, arena)), "A & B");
+    assert_eq!(
+        arena.format_type(expand(applied, &lookup, arena, None)),
+        "A & B"
+    );
 }
 
 #[test]
 fn infer_capture_yields_the_matched_type_argument() {
     // type Elem<T> = T extends Array<infer U> ? U : never;   Elem<User[]>
-    let lookup = Lookup::new()
-        .with_generics("Elem", &["T"])
-        .with_alias(
-            "Elem",
-            AliasTarget::Conditional {
-                check: "T".to_string(),
-                extends: "Array".to_string(),
-                true_branch: "U".to_string(),
-                false_branch: "never".to_string(),
-                infer_binding: Some(("U".to_string(), 0)),
-            },
-        );
+    let lookup = Lookup::new().with_generics("Elem", &["T"]).with_alias(
+        "Elem",
+        AliasTarget::Conditional {
+            check: "T".to_string(),
+            extends: "Array".to_string(),
+            true_branch: "U".to_string(),
+            false_branch: "never".to_string(),
+            infer_binding: Some(("U".to_string(), 0)),
+        },
+    );
     let arena = lookup.type_arena().unwrap();
     let applied = arena.intern(Type::Apply {
         base: arena.class("Elem"),
         args: vec![arena.intern_type_str("User[]")],
     });
 
-    let out = expand(applied, &lookup, arena);
+    let out = expand(applied, &lookup, arena, None);
 
     assert_eq!(arena.get(out), Type::Class("User".to_string()));
 }
@@ -189,25 +212,23 @@ fn infer_capture_yields_the_matched_type_argument() {
 fn infer_capture_declines_when_the_checked_type_is_not_the_pattern() {
     // Elem<User> — `User` is not an `Array<…>`, so the capture cannot match and
     // the expander keeps its undecidable behaviour instead of picking a branch.
-    let lookup = Lookup::new()
-        .with_generics("Elem", &["T"])
-        .with_alias(
-            "Elem",
-            AliasTarget::Conditional {
-                check: "T".to_string(),
-                extends: "Array".to_string(),
-                true_branch: "U".to_string(),
-                false_branch: "never".to_string(),
-                infer_binding: Some(("U".to_string(), 0)),
-            },
-        );
+    let lookup = Lookup::new().with_generics("Elem", &["T"]).with_alias(
+        "Elem",
+        AliasTarget::Conditional {
+            check: "T".to_string(),
+            extends: "Array".to_string(),
+            true_branch: "U".to_string(),
+            false_branch: "never".to_string(),
+            infer_binding: Some(("U".to_string(), 0)),
+        },
+    );
     let arena = lookup.type_arena().unwrap();
     let applied = arena.intern(Type::Apply {
         base: arena.class("Elem"),
         args: vec![arena.class("User")],
     });
 
-    let out = expand(applied, &lookup, arena);
+    let out = expand(applied, &lookup, arena, None);
 
     assert_ne!(arena.get(out), Type::Class("User".to_string()));
 }
@@ -218,13 +239,28 @@ fn contested_head_skips_name_keyed_fallback() {
     // names the member-bearing class, so the alias's target must not swap it:
     // expansion declines and the input comes back unchanged.
     let lookup = Lookup::new()
-        .with(sym(1, "Playwright", "Playwright", "class", "lib/browsers/playwright.ts"))
+        .with(sym(
+            1,
+            "Playwright",
+            "Playwright",
+            "class",
+            "lib/browsers/playwright.ts",
+        ))
         .with_alias("Playwright", app("ReturnType", &["getPlaywright"]))
-        .with(sym(2, "getPlaywright", "getPlaywright", "function", "lib/browsers/util.ts"))
+        .with(sym(
+            2,
+            "getPlaywright",
+            "getPlaywright",
+            "function",
+            "lib/browsers/util.ts",
+        ))
         .with_return_type("getPlaywright", "PlaywrightSession");
     let arena = lookup.type_arena().unwrap();
     let recv = arena.class("Playwright");
-    assert_eq!(expand_with_id(recv, None, &lookup, arena), recv);
+    assert_eq!(
+        expand_with_id(recv, None, &lookup, arena, Some(&TYPESCRIPT_PROFILE)),
+        recv
+    );
 }
 
 #[test]
@@ -233,13 +269,31 @@ fn id_keyed_target_expands_despite_contested_name() {
     // identity is never gated, so the id-keyed target expands through the
     // named callable's return.
     let lookup = Lookup::new()
-        .with(sym(1, "Playwright", "Playwright", "class", "lib/browsers/playwright.ts"))
+        .with(sym(
+            1,
+            "Playwright",
+            "Playwright",
+            "class",
+            "lib/browsers/playwright.ts",
+        ))
         .with_alias("Playwright", app("ReturnType", &["getPlaywright"]))
         .with_alias_id(100017, app("ReturnType", &["getPlaywright"]))
-        .with(sym(2, "getPlaywright", "getPlaywright", "function", "lib/browsers/util.ts"))
+        .with(sym(
+            2,
+            "getPlaywright",
+            "getPlaywright",
+            "function",
+            "lib/browsers/util.ts",
+        ))
         .with_return_type("getPlaywright", "PlaywrightSession");
     let arena = lookup.type_arena().unwrap();
-    let out = expand_with_id(arena.class("Playwright"), Some(100017), &lookup, arena);
+    let out = expand_with_id(
+        arena.class("Playwright"),
+        Some(100017),
+        &lookup,
+        arena,
+        Some(&TYPESCRIPT_PROFILE),
+    );
     assert_eq!(arena.format_type(out), "PlaywrightSession");
 }
 
@@ -251,7 +305,7 @@ fn uncontested_bare_alias_still_expands_by_name() {
         .with(sym(1, "PageMap", "PageMap", "type_alias", "types.ts"))
         .with_alias("PageMap", app("Map", &["string", "Page"]));
     let arena = lookup.type_arena().unwrap();
-    let out = expand_with_id(arena.class("PageMap"), None, &lookup, arena);
+    let out = expand_with_id(arena.class("PageMap"), None, &lookup, arena, None);
     assert_eq!(arena.format_type(out), "Map<string, Page>");
 }
 
@@ -261,15 +315,39 @@ fn transparent_target_refused_order_independently() {
     // exact qname. Whichever declaration was inserted first, the transparent
     // probe must refuse — the nominal class owns the head.
     let alias_first = Lookup::new()
-        .with(sym(1, "Playwright", "Playwright", "type_alias", "types.d.ts"))
-        .with(sym(2, "Playwright", "Playwright", "class", "lib/browsers/playwright.ts"))
+        .with(sym(
+            1,
+            "Playwright",
+            "Playwright",
+            "type_alias",
+            "types.d.ts",
+        ))
+        .with(sym(
+            2,
+            "Playwright",
+            "Playwright",
+            "class",
+            "lib/browsers/playwright.ts",
+        ))
         .with_field_type("Playwright", "Hijacked");
     let arena = alias_first.type_arena().unwrap();
     assert!(transparent_alias_target(&alias_first, arena, "Playwright").is_none());
 
     let class_first = Lookup::new()
-        .with(sym(2, "Playwright", "Playwright", "class", "lib/browsers/playwright.ts"))
-        .with(sym(1, "Playwright", "Playwright", "type_alias", "types.d.ts"))
+        .with(sym(
+            2,
+            "Playwright",
+            "Playwright",
+            "class",
+            "lib/browsers/playwright.ts",
+        ))
+        .with(sym(
+            1,
+            "Playwright",
+            "Playwright",
+            "type_alias",
+            "types.d.ts",
+        ))
         .with_field_type("Playwright", "Hijacked");
     let arena = class_first.type_arena().unwrap();
     assert!(transparent_alias_target(&class_first, arena, "Playwright").is_none());
@@ -282,17 +360,47 @@ fn member_resolves_on_class_past_contested_alias() {
     // hijacking alias, and the qname climb finds the class's method even when
     // the pinned id lands on the member-less alias row.
     let lookup = Lookup::new()
-        .with(sym(1, "Playwright", "Playwright", "class", "lib/browsers/playwright.ts"))
-        .with(sym(3, "Playwright", "Playwright", "type_alias", "types.d.ts"))
+        .with(sym(
+            1,
+            "Playwright",
+            "Playwright",
+            "class",
+            "lib/browsers/playwright.ts",
+        ))
+        .with(sym(
+            3,
+            "Playwright",
+            "Playwright",
+            "type_alias",
+            "types.d.ts",
+        ))
         .with_alias("Playwright", app("ReturnType", &["getPlaywright"]))
-        .with(sym(2, "getPlaywright", "getPlaywright", "function", "lib/browsers/util.ts"))
+        .with(sym(
+            2,
+            "getPlaywright",
+            "getPlaywright",
+            "function",
+            "lib/browsers/util.ts",
+        ))
         .with_return_type("getPlaywright", "PlaywrightSession")
         .with_member(
             "Playwright",
-            sym(4, "elementByCss", "Playwright.elementByCss", "method", "lib/browsers/playwright.ts"),
+            sym(
+                4,
+                "elementByCss",
+                "Playwright.elementByCss",
+                "method",
+                "lib/browsers/playwright.ts",
+            ),
         );
     let arena = lookup.type_arena().unwrap();
-    let recv = expand_receiver(Receiver::untyped(arena.class("Playwright")), &lookup, arena, None);
+    let recv = expand_receiver(
+        Receiver::untyped(arena.class("Playwright")),
+        &lookup,
+        arena,
+        None,
+        Some(&TYPESCRIPT_PROFILE),
+    );
     assert_eq!(arena.format_type(recv.ty), "Playwright");
     let m = lookup_member_on(&lookup, arena, recv, "elementByCss", &|_| true)
         .expect("member on the nominal class");
@@ -314,5 +422,27 @@ fn returntype_intrinsic_beats_a_same_named_package_alias() {
         base: arena.class("ReturnType"),
         args: vec![arena.class("render")],
     });
-    assert_eq!(arena.format_type(expand(ty, &lookup, arena)), "RenderResult");
+    assert_eq!(
+        arena.format_type(expand(ty, &lookup, arena, Some(&TYPESCRIPT_PROFILE))),
+        "RenderResult"
+    );
+}
+
+#[test]
+fn a_non_typescript_alias_named_like_an_intrinsic_is_ordinary() {
+    let lookup = Lookup::new().with_alias("Omit", app("RubyOwned", &[]));
+    let arena = lookup.type_arena().unwrap();
+    let omit = arena.intern(Type::Apply {
+        base: arena.class("Omit"),
+        args: vec![arena.class("Foreign")],
+    });
+
+    assert_eq!(
+        arena.format_type(expand(omit, &lookup, arena, Some(&RUBY_PROFILE))),
+        "RubyOwned"
+    );
+    assert_eq!(
+        arena.format_type(expand(omit, &lookup, arena, Some(&TYPESCRIPT_PROFILE))),
+        "Foreign"
+    );
 }

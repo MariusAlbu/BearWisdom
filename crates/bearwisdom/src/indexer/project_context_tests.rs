@@ -334,6 +334,32 @@ mod m2_tests {
     }
 }
 
+#[test]
+fn non_cargo_hyphenated_name_keeps_only_its_manifest_spelling() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path();
+    let packages = vec![PackageInfo {
+        id: Some(1),
+        name: "web-client".into(),
+        path: "".into(),
+        kind: Some("npm".into()),
+        manifest: Some("package.json".into()),
+        declared_name: Some("web-client".into()),
+        is_publishable: true,
+    }];
+
+    let ctx = build_project_context_with_packages(root, &packages);
+    assert_eq!(
+        ctx.workspace_pkg_by_declared_name.get("web-client"),
+        Some(&1)
+    );
+    assert!(
+        !ctx.workspace_pkg_by_declared_name
+            .contains_key("web_client"),
+        "only Cargo contributes underscore aliases"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Activation-evaluator tests — ManifestMatch + ManifestFieldContains
 // ---------------------------------------------------------------------------

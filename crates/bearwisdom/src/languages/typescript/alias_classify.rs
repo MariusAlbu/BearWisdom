@@ -155,13 +155,17 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
                 // Named branch(es) AND a mapped branch — carry both so neither is
                 // dropped: `lookup_member_on_intersection` climbs the named
                 // branches and `mapped_source_type` follows the mapped source.
-                (false, Some(AliasTarget::Mapped { source, value_template })) => {
-                    AliasTarget::IntersectionMapped {
-                        branches,
+                (
+                    false,
+                    Some(AliasTarget::Mapped {
                         source,
                         value_template,
-                    }
-                }
+                    }),
+                ) => AliasTarget::IntersectionMapped {
+                    branches,
+                    source,
+                    value_template,
+                },
                 // Only named branches (or a non-mapped fallback) — plain intersection.
                 (_, _) => AliasTarget::Intersection(branches),
             }
@@ -362,8 +366,7 @@ fn collect_intersection_branches(
         let name = branch_type_text(&child, src);
         if !name.is_empty() {
             branches.push(name);
-        } else if matches!(child.kind(), "object_type" | "mapped_type")
-            && mapped_fallback.is_none()
+        } else if matches!(child.kind(), "object_type" | "mapped_type") && mapped_fallback.is_none()
         {
             if let Some(AliasTarget::Mapped {
                 source,
@@ -403,7 +406,9 @@ fn classify_mapped_object(node: &Node, src: &[u8]) -> Option<AliasTarget> {
         // directly under object_type. Descend one level when we see it.
         if child.kind() == "index_signature" {
             for j in 0..child.child_count() {
-                let Some(sig_child) = child.child(j) else { continue };
+                let Some(sig_child) = child.child(j) else {
+                    continue;
+                };
                 if sig_child.kind() == "mapped_type_clause" {
                     has_clause = true;
                     extract_mapped_source(&sig_child, src, &mut source);
@@ -411,7 +416,9 @@ fn classify_mapped_object(node: &Node, src: &[u8]) -> Option<AliasTarget> {
                     // `type_annotation` holds the `:` plus the value type; skip
                     // the colon token and grab the first named type child.
                     for k in 0..sig_child.child_count() {
-                        let Some(ann_child) = sig_child.child(k) else { continue };
+                        let Some(ann_child) = sig_child.child(k) else {
+                            continue;
+                        };
                         if ann_child.kind() == ":" {
                             continue;
                         }
@@ -428,7 +435,10 @@ fn classify_mapped_object(node: &Node, src: &[u8]) -> Option<AliasTarget> {
             extract_mapped_source(&child, src, &mut source);
         } else if child.is_named()
             && value_template.is_empty()
-            && !matches!(child.kind(), "{" | "}" | ":" | "?" | "+" | "-" | "readonly" | ";" | ",")
+            && !matches!(
+                child.kind(),
+                "{" | "}" | ":" | "?" | "+" | "-" | "readonly" | ";" | ","
+            )
         {
             // Fallback for direct-child value template in top-level `mapped_type`.
             value_template = node_text(child, src).trim().to_string();
@@ -451,7 +461,9 @@ fn extract_mapped_source(clause: &Node, src: &[u8], source: &mut String) {
     // `[K in keyof T]` — the source is the type whose keys are mapped.
     if matches!(type_node.kind(), "keyof_type" | "index_type_query") {
         for j in 0..type_node.child_count() {
-            let Some(op) = type_node.child(j) else { continue };
+            let Some(op) = type_node.child(j) else {
+                continue;
+            };
             if op.kind() == "keyof" {
                 continue;
             }

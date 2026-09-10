@@ -409,8 +409,7 @@ fn scan_ingests_components_dts_bare_package_reexport() {
     )
     .unwrap();
 
-    let registry =
-        scan_global_registrations(dir.path(), &["src/components.d.ts".to_string()]);
+    let registry = scan_global_registrations(dir.path(), &["src/components.d.ts".to_string()]);
     assert_eq!(module_path_for(&registry, "ExtWidget"), Some("@scope/ui"));
 }
 
@@ -427,8 +426,7 @@ fn scan_ingests_auto_imports_dts_composable() {
     )
     .unwrap();
 
-    let registry =
-        scan_global_registrations(dir.path(), &["src/auto-imports.d.ts".to_string()]);
+    let registry = scan_global_registrations(dir.path(), &["src/auto-imports.d.ts".to_string()]);
     assert_eq!(
         module_path_for(&registry, "useThing"),
         Some("@scope/composables")
@@ -499,10 +497,7 @@ fn scan_dts_first_binding_wins() {
 #[test]
 fn resolve_dts_module_folds_relative_against_dts_dir() {
     assert_eq!(
-        _test_resolve_dts_module(
-            "packages/app/src/components.d.ts",
-            "./components/Foo.vue"
-        ),
+        _test_resolve_dts_module("packages/app/src/components.d.ts", "./components/Foo.vue"),
         "packages/app/src/components/Foo.vue"
     );
 }

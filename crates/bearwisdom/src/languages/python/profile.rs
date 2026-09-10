@@ -69,7 +69,10 @@ pub const PYTHON_PROFILE: LanguageProfile = LanguageProfile {
     id: "python",
     qname_separator: ".",
     declaration_merging: crate::type_checker::profile::language_profile::MergeScope::None,
-    self_keywords: &["self", "cls"],
+    receiver_spellings: &[
+        crate::type_checker::profile::language_profile::ReceiverSpelling::enclosing("self", "."),
+        crate::type_checker::profile::language_profile::ReceiverSpelling::enclosing("cls", "."),
+    ],
     // Python uses explicit inheritance (`class Admin(User):`). The engine's
     // Explicit discovery reads Inherits refs straight from the extractor.
     supertype_discovery: SupertypeDiscovery::Explicit,

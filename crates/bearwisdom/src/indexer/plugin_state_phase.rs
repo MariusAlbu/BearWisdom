@@ -32,8 +32,8 @@ use crate::db::Database;
 use crate::indexer::plugin_state::PluginStateBag;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::write::{self, SymbolIdMap};
-use crate::languages::LanguageRegistry;
 use crate::languages::robot::RobotExternalSources;
+use crate::languages::LanguageRegistry;
 use crate::type_checker::core::types::TypeArena;
 use crate::types::{ExtractedSymbol, ParsedFile};
 
@@ -82,7 +82,9 @@ pub fn populate_post_externals(
     robot_external_sources: Option<RobotExternalSources>,
 ) {
     if let Some(sources) = robot_external_sources {
-        project_ctx.plugin_state.set::<RobotExternalSources>(sources);
+        project_ctx
+            .plugin_state
+            .set::<RobotExternalSources>(sources);
     }
     let mut bag = std::mem::take(&mut project_ctx.plugin_state);
     for plugin in registry.all() {

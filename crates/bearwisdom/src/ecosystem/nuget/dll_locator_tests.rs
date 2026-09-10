@@ -42,8 +42,6 @@ fn missing_or_malformed_assets_json_yields_nothing() {
     assert!(collect_transitive_coords_from_assets_json(bad.path()).is_empty());
 }
 
-
-
 #[test]
 fn find_dlls_returns_all_tfm_assets_primary_first() {
     // A package's assembly names are independent of its package id: the

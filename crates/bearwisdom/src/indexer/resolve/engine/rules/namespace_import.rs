@@ -11,7 +11,7 @@
 
 use crate::indexer::resolve::engine::contract::ImportEntry;
 use crate::indexer::resolve::engine::support::normalize_name;
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 use crate::type_checker::profile::language_profile::NameNormalization;
 
 pub struct NamespaceImportRule;
@@ -28,10 +28,10 @@ impl LookupRule for NamespaceImportRule {
 
         for import in &ctx.file_ctx.imports {
             for prefix in candidate_namespace_prefixes(import) {
-                if !prefix.contains('.') {
+                if !ctx.profile.is_qualified_name(prefix) {
                     continue;
                 }
-                let qname = format!("{prefix}.{target}");
+                let qname = ctx.profile.index_qname_join(prefix, target);
                 if let Some(sym) = ctx.lookup.by_qualified_name(&qname) {
                     if (ctx.kind)(edge_kind, &sym.kind) {
                         return LookupResult::Resolved(
@@ -45,7 +45,8 @@ impl LookupRule for NamespaceImportRule {
                 // non-identity spec — case-sensitive languages skip it.
                 if !matches!(norm, NameNormalization::None) {
                     let expected_norm = normalize_name(norm, &qname);
-                    for sym in ctx.lookup.in_namespace(prefix) {
+                    let indexed_prefix = ctx.profile.index_qname_from_source(prefix);
+                    for sym in ctx.lookup.in_namespace(&indexed_prefix) {
                         if normalize_name(norm, &sym.qualified_name) == expected_norm
                             && (ctx.kind)(edge_kind, &sym.kind)
                         {

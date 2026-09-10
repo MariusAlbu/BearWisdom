@@ -1,7 +1,7 @@
 //! Tests for the Angular selector extractor and the web-component
 //! `customElements.define()` selector harvester.
 
-use super::{extract_component_selectors, extract_custom_element_defines};
+use super::{extract_component_selectors, extract_custom_element_defines, selector_binding_keys};
 use crate::types::{ExtractedSymbol, SymbolKind, Visibility};
 
 fn fake_class(name: &str, qname: &str) -> ExtractedSymbol {
@@ -24,6 +24,18 @@ fn fake_class(name: &str, qname: &str) -> ExtractedSymbol {
         param_types: Vec::new(),
         generic_params: Vec::new(),
     }
+}
+
+#[test]
+fn selector_binding_keys_own_angular_attribute_selector_spelling() {
+    assert_eq!(
+        selector_binding_keys("button[nbButton], a[nbButton^=\"compact\"]"),
+        ["nbButton", "nbButton"]
+    );
+    assert_eq!(
+        selector_binding_keys("ngx-legend-chart"),
+        ["ngx-legend-chart"]
+    );
 }
 
 #[test]

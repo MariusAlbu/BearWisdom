@@ -16,7 +16,7 @@
 // guard passes through to the next rule.
 // =============================================================================
 
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 
 pub struct ModuleSkipRule;
 

@@ -46,10 +46,9 @@ fn named(local: &str, exported: &str, module: &str) -> ImportEntry {
 #[test]
 fn namespace_qualified_typeref_splits_prefix() {
     let mut refs = vec![typeref("Oazapfts.RequestOpts")];
-    let imports: HashMap<_, _> =
-        [("Oazapfts".to_string(), ns("Oazapfts", "@oazapfts/runtime"))]
-            .into_iter()
-            .collect();
+    let imports: HashMap<_, _> = [("Oazapfts".to_string(), ns("Oazapfts", "@oazapfts/runtime"))]
+        .into_iter()
+        .collect();
     resolve_import_refs(&mut refs, &imports);
     assert_eq!(refs[0].target_name, "RequestOpts");
     assert_eq!(refs[0].module.as_deref(), Some("@oazapfts/runtime"));

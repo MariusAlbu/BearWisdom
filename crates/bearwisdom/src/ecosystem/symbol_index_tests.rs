@@ -4,7 +4,6 @@
 
 use super::*;
 
-
 #[test]
 fn insert_and_locate_roundtrip() {
     let mut idx = SymbolLocationIndex::new();
@@ -112,10 +111,22 @@ fn extend_accumulates_every_same_key_name_entry() {
     // (module, name) entries map keeps one; the reverse name index must keep
     // BOTH across an extend, or the second class is never locatable.
     let mut child = SymbolLocationIndex::new();
-    child.insert("efcore.relational", "HasColumnType", "/dll!!A!!ComplexExtensions");
-    child.insert("efcore.relational", "HasColumnType", "/dll!!A!!PropertyExtensions");
+    child.insert(
+        "efcore.relational",
+        "HasColumnType",
+        "/dll!!A!!ComplexExtensions",
+    );
+    child.insert(
+        "efcore.relational",
+        "HasColumnType",
+        "/dll!!A!!PropertyExtensions",
+    );
     let mut master = SymbolLocationIndex::new();
     master.extend(child);
     let hits = master.find_by_name("HasColumnType");
-    assert_eq!(hits.len(), 2, "both offering classes must survive the merge");
+    assert_eq!(
+        hits.len(),
+        2,
+        "both offering classes must survive the merge"
+    );
 }

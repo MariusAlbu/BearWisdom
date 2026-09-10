@@ -283,4 +283,3 @@ pub(crate) fn is_make_builtin(name: &str) -> bool {
             | "LINTFLAGS"
     )
 }
-

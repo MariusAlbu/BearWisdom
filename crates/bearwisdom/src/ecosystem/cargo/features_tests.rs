@@ -89,7 +89,11 @@ fn collect_unions_features_across_workspace_members() {
     let member_b = root.join("crates").join("b");
     std::fs::create_dir_all(&member_a).unwrap();
     std::fs::create_dir_all(&member_b).unwrap();
-    std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = [\"crates/*\"]\n").unwrap();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/*\"]\n",
+    )
+    .unwrap();
     std::fs::write(
         member_a.join("Cargo.toml"),
         "[dependencies]\nwindows = { version = \"0.61\", features = [\"Win32_Foundation\"] }\n",
@@ -103,7 +107,10 @@ fn collect_unions_features_across_workspace_members() {
 
     let map = _test_collect_crate_features(root);
     let windows = map.get("windows").expect("windows entry");
-    assert!(windows.contains(&"Win32_Foundation".to_string()), "{windows:?}");
+    assert!(
+        windows.contains(&"Win32_Foundation".to_string()),
+        "{windows:?}"
+    );
     assert!(
         windows.contains(&"Win32_UI_Controls".to_string()),
         "{windows:?}"

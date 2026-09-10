@@ -2,7 +2,33 @@
 // dart/predicates.rs — Dart builtin and helper predicates
 // =============================================================================
 
+use crate::type_checker::profile::language_profile::{
+    ModuleSpecifierClass, SourceModulePathPolicy,
+};
 use crate::types::EdgeKind;
+
+pub(crate) const SOURCE_MODULE_PATH_POLICY: SourceModulePathPolicy = SourceModulePathPolicy {
+    classify_specifier: classify_module_specifier,
+    relative_candidate_paths: |base| vec![base.to_string(), format!("{base}.dart")],
+    bare_module_matches_file: |_file, _module| false,
+    external_import_match_terms: |_| Vec::new(),
+};
+
+/// Dart source URIs accepted by the resolver's re-export and workspace rules.
+/// Bare library, `dart:`, and `package:` URIs remain non-relative and can be
+/// handled by Dart's module resolver instead of generic path joining.
+fn classify_module_specifier(specifier: &str) -> ModuleSpecifierClass {
+    if specifier.starts_with('.')
+        || specifier.starts_with('/')
+        || (specifier.len() >= 2 && specifier.as_bytes()[1] == b':')
+    {
+        ModuleSpecifierClass::Relative
+    } else if specifier.is_empty() {
+        ModuleSpecifierClass::Unsupported
+    } else {
+        ModuleSpecifierClass::Bare
+    }
+}
 
 /// Check that the edge kind is compatible with the symbol kind.
 pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {

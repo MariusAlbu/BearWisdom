@@ -91,7 +91,11 @@ fn fragment_file(path: &str, main_unit_directive: &str) -> ParsedFile {
 }
 
 fn wildcards_of<'a>(state: &'a PascalProjectState, path: &str) -> Vec<&'a str> {
-    state.wildcards_for(path).iter().map(String::as_str).collect()
+    state
+        .wildcards_for(path)
+        .iter()
+        .map(String::as_str)
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -150,10 +154,7 @@ fn resolve_relative_parent_directory() {
 
 #[test]
 fn resolve_relative_above_root_declines() {
-    assert_eq!(
-        resolve_relative("fragment.inc", "../../outside.pas"),
-        None
-    );
+    assert_eq!(resolve_relative("fragment.inc", "../../outside.pas"), None);
 }
 
 // ---------------------------------------------------------------------------
@@ -208,7 +209,11 @@ fn include_directive_imports_are_excluded_from_uses_clause_units() {
     // The main unit's `Imports` ref for its own `{$I fragment.inc}` splice is
     // anchored to the unit's root symbol (index 0), not the `"uses"` symbol —
     // it must not leak into the fragment's wildcard list as a fake unit name.
-    let mut main = main_unit_file("src/audio/castlesoundengine.pas", "castlesoundengine", &["SysUtils"]);
+    let mut main = main_unit_file(
+        "src/audio/castlesoundengine.pas",
+        "castlesoundengine",
+        &["SysUtils"],
+    );
     main.refs.push(ExtractedRef {
         is_include: false,
         is_import_binding: false,

@@ -82,7 +82,9 @@ fn extract_import_spec_recursive(
         // to those names; a plain or `hide`-restricted export re-exports
         // every OTHER declaration, approximated as a full wildcard
         // re-export (same hide approximation the import path uses).
-        let export_show_names = is_export.then(|| show_combinator_names(node, src)).flatten();
+        let export_show_names = is_export
+            .then(|| show_combinator_names(node, src))
+            .flatten();
         // A plain `import '...';` — no `as` prefix, no `show` combinator —
         // brings every declaration into unqualified scope.
         let wildcard_worthy =
@@ -99,7 +101,13 @@ fn extract_import_spec_recursive(
                 };
                 let module = raw.trim_matches('"').trim_matches('\'').to_string();
                 if is_export {
-                    push_export_refs(&export_show_names, &module, current_symbol_count, child, refs);
+                    push_export_refs(
+                        &export_show_names,
+                        &module,
+                        current_symbol_count,
+                        child,
+                        refs,
+                    );
                     continue;
                 }
                 let stem = module
@@ -198,7 +206,9 @@ fn push_export_refs(
 /// flutter/material.dart` → `flutter`; `dart:async` → `async`). `None` for a
 /// relative or otherwise schemeless URI, which carries no package identity.
 fn dart_package_identity(uri: &str) -> Option<&str> {
-    let rest = uri.strip_prefix("package:").or_else(|| uri.strip_prefix("dart:"))?;
+    let rest = uri
+        .strip_prefix("package:")
+        .or_else(|| uri.strip_prefix("dart:"))?;
     let pkg = rest.split('/').next().unwrap_or(rest);
     (!pkg.is_empty()).then_some(pkg)
 }

@@ -10,9 +10,9 @@ use super::keywords::KEYWORDS;
 fn language_spec_names_kept() {
     // Primitives + core FSharp.Core prelude types/cases + intrinsic functions.
     for name in [
-        "int", "string", "bool", "unit", "obj", "decimal", "Ok", "Error", "Some", "None",
-        "Result", "Option", "Async", "Task", "List", "Array", "Seq", "Map", "Set", "printfn",
-        "failwith", "ignore", "id", "fst", "snd", "box", "unbox", "nameof",
+        "int", "string", "bool", "unit", "obj", "decimal", "Ok", "Error", "Some", "None", "Result",
+        "Option", "Async", "Task", "List", "Array", "Seq", "Map", "Set", "printfn", "failwith",
+        "ignore", "id", "fst", "snd", "box", "unbox", "nameof",
     ] {
         assert!(
             KEYWORDS.contains(&name),

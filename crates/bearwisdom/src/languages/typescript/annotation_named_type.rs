@@ -95,7 +95,10 @@ pub(super) fn enrich_ambient_declarator_signatures(
         // A multi-line annotation (a function type returning a large applied
         // generic) collapses to single-space tokens so the signature stays one
         // line and the type-string parsers see uniform whitespace.
-        let ty = node_text(tv, src).split_whitespace().collect::<Vec<_>>().join(" ");
+        let ty = node_text(tv, src)
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
         if ty.is_empty() {
             continue;
         }

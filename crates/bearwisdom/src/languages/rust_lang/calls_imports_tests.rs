@@ -50,8 +50,5 @@ mod foo {
     }
 }
 "#;
-    assert_eq!(
-        wildcard_import_module(src),
-        Some("crate::foo".to_string())
-    );
+    assert_eq!(wildcard_import_module(src), Some("crate::foo".to_string()));
 }

@@ -7,6 +7,7 @@
 // uncluttered.
 // =============================================================================
 
+use crate::languages::LanguagePlugin;
 use crate::type_checker::core::types::TypeArena;
 use crate::types::{EmbeddedOrigin, EmbeddedRegion, ExtractionResult, SymbolKind};
 use tree_sitter::{Node, Parser};
@@ -27,7 +28,7 @@ use tree_sitter::{Node, Parser};
 ///   - Callable kinds (Method / Function / Constructor) get the return
 ///     type and parameter types parsed from their signature via
 ///     `parse_return_type_from_signature` and the language-aware
-///     `parse_param_types_from_signature_for_lang`, then interned
+///     the language plugin's signature adapter, then interned
 ///     through `arena.intern_type_str` so generic applications decompose
 ///     into structural `Apply { base, args }`.
 ///
@@ -51,11 +52,9 @@ pub fn populate_return_type_ids(result: &mut ExtractionResult, arena: &TypeArena
                     continue;
                 };
                 if sym.return_type.is_none() {
-                    if let Some(rt) =
-                        crate::indexer::resolve::engine::contract::chain_walker::parse_return_type_from_signature_for_lang(
-                            sig,
-                            lang_id,
-                        )
+                    if let Some(rt) = crate::languages::default_registry()
+                        .get(lang_id)
+                        .signature_return_type(sig)
                     {
                         // A bare (unqualified) return-type name is only safe to
                         // intern here when the symbol has no enclosing scope: a
@@ -76,16 +75,11 @@ pub fn populate_return_type_ids(result: &mut ExtractionResult, arena: &TypeArena
                     }
                 }
                 if sym.param_types.is_empty() {
-                    if let Some(params) =
-                        crate::indexer::resolve::engine::contract::chain_walker::parse_param_types_from_signature_for_lang(
-                            sig,
-                            lang_id,
-                        )
+                    if let Some(params) = crate::languages::default_registry()
+                        .get(lang_id)
+                        .signature_parameter_types(sig)
                     {
-                        sym.param_types = params
-                            .iter()
-                            .map(|p| arena.intern_type_str(p))
-                            .collect();
+                        sym.param_types = params.iter().map(|p| arena.intern_type_str(p)).collect();
                     }
                 }
             }
@@ -99,11 +93,9 @@ pub fn populate_return_type_ids(result: &mut ExtractionResult, arena: &TypeArena
                 let Some(sig) = sym.signature.as_deref() else {
                     continue;
                 };
-                if let Some(ty) =
-                    crate::indexer::resolve::engine::contract::chain_walker::parse_declared_type_from_signature_for_lang(
-                        sig,
-                        lang_id,
-                    )
+                if let Some(ty) = crate::languages::default_registry()
+                    .get(lang_id)
+                    .signature_declared_type(sig)
                 {
                     if !ty.is_empty() {
                         sym.declared_type = Some(arena.intern_type_str(&ty));

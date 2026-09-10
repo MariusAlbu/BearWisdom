@@ -72,7 +72,6 @@ impl LanguagePlugin for RLangPlugin {
         Some(&profile::R_PROFILE)
     }
 
-
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::R_FLOW_CONFIG)
     }

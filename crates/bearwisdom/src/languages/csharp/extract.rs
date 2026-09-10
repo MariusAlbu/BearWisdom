@@ -1014,7 +1014,12 @@ fn scan_all_type_positions(
             // The type field is a direct child (not inside a type-container).
             "cast_expression" => {
                 if let Some(type_node) = child.child_by_field_name("type") {
-                    super::types::extract_type_refs_from_type_node(type_node, src, attr.source_at(type_node.start_position().row as u32), refs);
+                    super::types::extract_type_refs_from_type_node(
+                        type_node,
+                        src,
+                        attr.source_at(type_node.start_position().row as u32),
+                        refs,
+                    );
                 }
                 scan_all_type_positions(child, src, attr, refs);
             }
@@ -1026,7 +1031,12 @@ fn scan_all_type_positions(
                 let mut tc = child.walk();
                 for c in child.children(&mut tc) {
                     if !matches!(c.kind(), "typeof" | "(" | ")") {
-                        super::types::extract_type_refs_from_type_node(c, src, attr.source_at(c.start_position().row as u32), refs);
+                        super::types::extract_type_refs_from_type_node(
+                            c,
+                            src,
+                            attr.source_at(c.start_position().row as u32),
+                            refs,
+                        );
                         break;
                     }
                 }
@@ -1064,7 +1074,12 @@ fn scan_all_type_positions(
                 let mut tc = child.walk();
                 for c in child.children(&mut tc) {
                     if !matches!(c.kind(), "default" | "(" | ")") {
-                        super::types::extract_type_refs_from_type_node(c, src, attr.source_at(c.start_position().row as u32), refs);
+                        super::types::extract_type_refs_from_type_node(
+                            c,
+                            src,
+                            attr.source_at(c.start_position().row as u32),
+                            refs,
+                        );
                         break;
                     }
                 }

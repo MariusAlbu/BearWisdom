@@ -1,6 +1,6 @@
 use super::RUST_PROFILE;
 use crate::type_checker::profile::language_profile::{
-    KindCompatibility, ModuleAnchor, ModuleAnchorBind, SupertypeDiscovery,
+    KindCompatibility, ModuleAnchor, ModuleAnchorBind, SupertypeDiscovery, WildcardMatch,
 };
 use crate::types::{EdgeKind, SymbolKind};
 
@@ -8,7 +8,7 @@ use crate::types::{EdgeKind, SymbolKind};
 fn rust_profile_identity() {
     assert_eq!(RUST_PROFILE.id, "rust");
     assert_eq!(RUST_PROFILE.qname_separator, "::");
-    assert_eq!(RUST_PROFILE.self_keywords, &["self", "Self"]);
+    assert_eq!(RUST_PROFILE.receiver_spellings, &["self", "Self"]);
 }
 
 #[test]
@@ -162,4 +162,12 @@ fn rust_module_anchor_binds_by_name_under_module_dir() {
     // Non-terminal: a missed anchor falls through to the scope / import / qname
     // binders rather than ending the ladder.
     assert!(!RUST_PROFILE.imports.module_anchor_terminal);
+}
+
+#[test]
+fn rust_wildcards_add_physical_module_evidence() {
+    assert!(matches!(
+        RUST_PROFILE.imports.wildcard_match,
+        WildcardMatch::QnameUnderWithPhysicalFiles { .. }
+    ));
 }

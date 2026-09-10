@@ -72,5 +72,4 @@ impl LanguagePlugin for CMakePlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::CMAKE_PROFILE)
     }
-
 }

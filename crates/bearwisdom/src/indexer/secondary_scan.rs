@@ -166,7 +166,9 @@ fn rewrite_alias_specifier(
     }
     let ts_dir = nearest_tsconfig_dir(from_file, project_root)?;
     let aliases = cache.entry(ts_dir.clone()).or_insert_with(|| {
-        crate::ecosystem::manifest::npm::parse_tsconfig_paths_with_extends(&ts_dir.join("tsconfig.json"))
+        crate::ecosystem::manifest::npm::parse_tsconfig_paths_with_extends(
+            &ts_dir.join("tsconfig.json"),
+        )
     });
     let (alias, target) = aliases
         .iter()
@@ -182,8 +184,12 @@ fn rewrite_alias_specifier(
 fn nearest_tsconfig_dir(from_file: &Path, project_root: &Path) -> Option<PathBuf> {
     let mut dir = from_file.parent()?;
     loop {
-        if !dir.starts_with(project_root) { return None; }
-        if dir.join("tsconfig.json").is_file() { return Some(dir.to_path_buf()); }
+        if !dir.starts_with(project_root) {
+            return None;
+        }
+        if dir.join("tsconfig.json").is_file() {
+            return Some(dir.to_path_buf());
+        }
         dir = dir.parent()?;
     }
 }

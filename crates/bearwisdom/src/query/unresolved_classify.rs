@@ -723,12 +723,21 @@ pub(super) fn _test_classify_row_ext(
         language,
         drained: false,
     };
-    classify_row(&row, external_member_names, workspace_packages, imports_for_file)
+    classify_row(
+        &row,
+        external_member_names,
+        workspace_packages,
+        imports_for_file,
+    )
 }
 
 /// Drives `classify_row` with `drained: true` — the BuiltinSkipRule path.
 #[cfg(test)]
-pub(super) fn _test_classify_row_drained(target_name: &str, kind: &str, language: &str) -> UnresolvedCategory {
+pub(super) fn _test_classify_row_drained(
+    target_name: &str,
+    kind: &str,
+    language: &str,
+) -> UnresolvedCategory {
     let empty = HashSet::new();
     let row = ClassifyRow {
         target_name,

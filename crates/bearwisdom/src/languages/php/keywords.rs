@@ -12,6 +12,19 @@ pub(crate) const KEYWORDS: &[&str] = &[
 /// but which are NOT functions (the engine sees them as call targets). Closed
 /// set fixed by the language grammar; never a library/runtime API list.
 pub(crate) const CONSTRUCTS: &[&str] = &[
-    "isset", "empty", "unset", "echo", "print", "list", "eval", "exit", "die", "include",
-    "include_once", "require", "require_once", "array", "__halt_compiler",
+    "isset",
+    "empty",
+    "unset",
+    "echo",
+    "print",
+    "list",
+    "eval",
+    "exit",
+    "die",
+    "include",
+    "include_once",
+    "require",
+    "require_once",
+    "array",
+    "__halt_compiler",
 ];

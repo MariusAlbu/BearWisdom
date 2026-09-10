@@ -11,17 +11,17 @@
 //   SameDirUnique       — same directory boundary, but binds only when EXACTLY
 //                         ONE distinct internal kind-compatible declaration
 //                         survives after dedup.
-//   SourcesTargetSubtree — SwiftPM whole-module layout: every file under one
-//                         `Sources/<Target>/` or `Tests/<Target>/` subtree is in
-//                         the same module.  Binds iff EXACTLY ONE candidate
+//   SourcesTargetSubtree — profile-configured whole-module layout: every file
+//                         under one `<root>/<module>/` subtree is in the same
+//                         module. Binds iff EXACTLY ONE candidate
 //                         survives after (qualified_name, kind) dedup.
 //
-// Declines on an empty, dotted, `::`, or `/`-bearing target.  Runs late in the
+// Declines on an empty or profile-qualified target. Runs late in the
 // ladder so any real import or structural rule wins first.
 // =============================================================================
 
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
 use crate::indexer::resolve::engine::contract::Symbol;
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 use crate::type_checker::profile::language_profile::ModuleScope;
 
 pub struct ModuleScopeRule;
@@ -36,7 +36,7 @@ impl LookupRule for ModuleScopeRule {
             ModuleScope::Off => LookupResult::Pass,
             ModuleScope::SameDir => same_dir(ctx),
             ModuleScope::SameDirUnique => same_dir_unique(ctx),
-            ModuleScope::SourcesTargetSubtree => sources_target_subtree(ctx),
+            ModuleScope::SourcesTargetSubtree { roots } => sources_target_subtree(ctx, roots),
         }
     }
 }
@@ -50,11 +50,7 @@ impl LookupRule for ModuleScopeRule {
 /// compile error in the target languages.
 fn same_dir(ctx: &BinderContext) -> LookupResult {
     let target = ctx.target();
-    if target.is_empty()
-        || target.contains('.')
-        || target.contains("::")
-        || target.contains('/')
-    {
+    if target.is_empty() || ctx.profile.is_qualified_name(target) {
         return LookupResult::Pass;
     }
     let edge_kind = ctx.edge_kind();
@@ -76,11 +72,7 @@ fn same_dir(ctx: &BinderContext) -> LookupResult {
 /// EXACTLY ONE distinct internal kind-compatible declaration survives.
 fn same_dir_unique(ctx: &BinderContext) -> LookupResult {
     let target = ctx.target();
-    if target.is_empty()
-        || target.contains('.')
-        || target.contains("::")
-        || target.contains('/')
-    {
+    if target.is_empty() || ctx.profile.is_qualified_name(target) {
         return LookupResult::Pass;
     }
     let edge_kind = ctx.edge_kind();
@@ -93,9 +85,7 @@ fn same_dir_unique(ctx: &BinderContext) -> LookupResult {
         .into_iter()
         .filter(|sym| !ctx.lookup.is_external_file(&sym.file_path))
         .filter(|sym| (ctx.kind)(edge_kind, &sym.kind))
-        .filter(|sym| {
-            parent_dir_basename(&sym.file_path).as_deref() == Some(src_parent.as_str())
-        })
+        .filter(|sym| parent_dir_basename(&sym.file_path).as_deref() == Some(src_parent.as_str()))
         .collect();
     compatible.sort_by(|a, b| {
         a.qualified_name
@@ -112,20 +102,16 @@ fn same_dir_unique(ctx: &BinderContext) -> LookupResult {
     LookupResult::Resolved(ctx.resolved(compatible[0].id, "default_module_scope"))
 }
 
-/// `SourcesTargetSubtree`: SwiftPM whole-module case.  A candidate is in-module
-/// iff it shares the source's `Sources/<seg>/` (or `Tests/<seg>/`) prefix.
+/// `SourcesTargetSubtree`: a profile-owned whole-module layout. A candidate is
+/// in-module iff it shares the source's `<root>/<seg>/` prefix.
 /// Binds iff EXACTLY ONE candidate survives after (qualified_name, kind) dedup.
-fn sources_target_subtree(ctx: &BinderContext) -> LookupResult {
+fn sources_target_subtree(ctx: &BinderContext, roots: &[&str]) -> LookupResult {
     let target = ctx.target();
-    if target.is_empty()
-        || target.contains('.')
-        || target.contains("::")
-        || target.contains('/')
-    {
+    if target.is_empty() || ctx.profile.is_qualified_name(target) {
         return LookupResult::Pass;
     }
     let edge_kind = ctx.edge_kind();
-    let Some(src_prefix) = module_subtree_prefix(&ctx.file_ctx.file_path) else {
+    let Some(src_prefix) = module_subtree_prefix(&ctx.file_ctx.file_path, roots) else {
         return LookupResult::Pass;
     };
     let mut compatible: Vec<&Symbol> = ctx
@@ -135,7 +121,7 @@ fn sources_target_subtree(ctx: &BinderContext) -> LookupResult {
         .filter(|sym| !ctx.lookup.is_external_file(&sym.file_path))
         .filter(|sym| (ctx.kind)(edge_kind, &sym.kind))
         .filter(|sym| {
-            module_subtree_prefix(&sym.file_path).as_deref() == Some(src_prefix.as_str())
+            module_subtree_prefix(&sym.file_path, roots).as_deref() == Some(src_prefix.as_str())
         })
         .collect();
     // Dedup on (qualified_name, kind): one logical symbol indexed in multiple
@@ -165,16 +151,15 @@ fn parent_dir_basename(file_path: &str) -> Option<String> {
     Some(dir.rsplit('/').next().unwrap_or(dir).to_string())
 }
 
-/// The SwiftPM module-subtree prefix of a file path: the substring up to and
-/// including `Sources/<seg>/` (or `Tests/<seg>/`). Returns `None` when the
-/// path has no such prefix.
-fn module_subtree_prefix(file_path: &str) -> Option<String> {
+/// A profile-owned module-subtree prefix: the substring up to and including
+/// `<root>/<seg>/`. Returns `None` when the path has no configured root.
+fn module_subtree_prefix(file_path: &str, roots: &[&str]) -> Option<String> {
     let normalized = file_path.replace('\\', "/");
     let segs: Vec<&str> = normalized.split('/').collect();
     // Require a root segment, a target segment, and at least one more (the
     // file) so the prefix is `<root>/<target>/`.
     segs.iter().enumerate().find_map(|(i, seg)| {
-        if (*seg == "Sources" || *seg == "Tests") && i + 2 < segs.len() {
+        if roots.contains(seg) && i + 2 < segs.len() {
             Some(segs[..=i + 1].join("/") + "/")
         } else {
             None

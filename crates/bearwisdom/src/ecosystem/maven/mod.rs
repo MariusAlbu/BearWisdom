@@ -34,6 +34,8 @@ use super::{
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
 use crate::ecosystem::manifest::maven::{parse_pom_xml_coords, MavenCoord};
+
+pub mod signature;
 use crate::ecosystem::manifest::{
     clojure as clojure_manifest, gradle as gradle_manifest, sbt as sbt_manifest,
 };

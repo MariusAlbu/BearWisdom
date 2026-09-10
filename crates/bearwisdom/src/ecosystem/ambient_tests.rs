@@ -217,7 +217,10 @@ fn lib_path_recognises_ts_lib_types_node_and_stdlib() {
         "ext:lua-stdlib:string.lua",
         "ext:python-stdlib:os.py",
     ] {
-        assert!(is_ambient_global_lib_path(p), "lib source should match: {p}");
+        assert!(
+            is_ambient_global_lib_path(p),
+            "lib source should match: {p}"
+        );
     }
 }
 
@@ -254,8 +257,14 @@ fn ambient_qnames_surfaces_prelude_enum_variants() {
     );
     let qn = ambient_global_qnames(&[prelude]);
     assert!(qn.contains("Option"), "top-level enum stays ambient");
-    assert!(qn.contains("Option.Some"), "prelude variant Some must be surfaced");
-    assert!(qn.contains("Option.None"), "prelude variant None must be surfaced");
+    assert!(
+        qn.contains("Option.Some"),
+        "prelude variant Some must be surfaced"
+    );
+    assert!(
+        qn.contains("Option.None"),
+        "prelude variant None must be surfaced"
+    );
 }
 
 #[test]
@@ -280,6 +289,9 @@ fn lib_path_rejects_ordinary_externals() {
         "src/app.ts",
         "ext:rust:serde/src/lib.rs", // a crate is not -stdlib
     ] {
-        assert!(!is_ambient_global_lib_path(p), "must NOT be a lib source: {p}");
+        assert!(
+            !is_ambient_global_lib_path(p),
+            "must NOT be a lib source: {p}"
+        );
     }
 }

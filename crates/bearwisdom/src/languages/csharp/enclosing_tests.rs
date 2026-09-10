@@ -71,5 +71,8 @@ fn claim_rejects_sites_already_emitted_by_symbol_passes() {
         "same (name, line) as a symbol-pass ref must be skipped"
     );
     assert!(attr.claim("User", 5), "different line is a fresh site");
-    assert!(!attr.claim("User", 5), "second scan emission at one site dedups");
+    assert!(
+        !attr.claim("User", 5),
+        "second scan emission at one site dedups"
+    );
 }

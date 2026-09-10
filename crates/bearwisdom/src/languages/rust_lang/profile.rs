@@ -112,8 +112,8 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     // `self`, `Self`, and `&self` / `&mut self` — the chain extractor
     // collapses receivers to a single `self` token; engine treats it
     // uniformly. `super::` is a module-path qualifier handled by the
-    // qname separator + namespace lookup, not via self_keywords.
-    self_keywords: &["self", "Self"],
+    // qname separator + namespace lookup, not as a receiver spelling.
+    receiver_spellings: &[crate::type_checker::profile::language_profile::ReceiverSpelling::enclosing("self", "."), crate::type_checker::profile::language_profile::ReceiverSpelling::enclosing("Self", "::")],
     // Rust's supertyping is via trait bounds, not struct extension —
     // explicit trait edges (Implements / trait `: Bound` clauses).
     supertype_discovery: SupertypeDiscovery::Explicit,
@@ -202,14 +202,21 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
         relative_marker: crate::type_checker::profile::language_profile::RelativeMarker::None,
         external_by_import: None,
         module_scope: crate::type_checker::profile::language_profile::ModuleScope::Off,
-        wildcard_match: crate::type_checker::profile::language_profile::WildcardMatch::QnameUnder,
+        wildcard_match:
+            crate::type_checker::profile::language_profile::WildcardMatch::QnameUnderWithPhysicalFiles {
+                candidate_files: super::module_paths::relative_wildcard_module_files,
+            },
         namespace_imports_are_wildcards: false,
         ext_match: crate::type_checker::profile::language_profile::ExtMatch::PkgSegment,
         head_alias: crate::type_checker::profile::language_profile::HeadAliasBind::Off,
         file_scoped_imports: crate::type_checker::profile::language_profile::FileScopedImports::Off,
         alias_module_qname: false,
         module_prefix_rewrites:
-            crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
+            crate::type_checker::profile::language_profile::ModulePrefixRewrites::On {
+                module_path_adapter: Some(super::module_paths::module_path_match),
+                candidate_prefixes: super::module_paths::module_prefix_candidates,
+                declines_directory_match: super::module_paths::does_not_decline_directory_match,
+            },
         // A bench/example/test target imports its own package by its published
         // crate name (`use tantivy::Index`) exactly like a sibling would — Cargo
         // has no separate "internal" import syntax for it. The workspace-package

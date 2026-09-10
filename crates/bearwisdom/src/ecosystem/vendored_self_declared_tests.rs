@@ -19,11 +19,7 @@ fn npm_pkg(path: &str, declared_name: &str) -> PackageInfo {
 fn write_package_json(root: &Path, rel: &str, name: &str) {
     let dir = root.join(rel);
     fs::create_dir_all(&dir).unwrap();
-    fs::write(
-        dir.join("package.json"),
-        format!("{{\"name\":\"{name}\"}}"),
-    )
-    .unwrap();
+    fs::write(dir.join("package.json"), format!("{{\"name\":\"{name}\"}}")).unwrap();
 }
 
 /// Write `bower.json` declaring `name` under `<root>/<rel>`.
@@ -93,7 +89,10 @@ fn java_host_vendored_npm_subtree_is_external() {
         &format!("{vendored}/editormd.js"),
         &prefixes
     ));
-    assert!(!is_under_self_declared_vendor("src/main/java/App.java", &prefixes));
+    assert!(!is_under_self_declared_vendor(
+        "src/main/java/App.java",
+        &prefixes
+    ));
 }
 
 // A depth-1 npm subproject of a non-JS host (a `frontend/` SPA) is plausibly
@@ -230,7 +229,10 @@ fn under_vendor_matches_subtree_not_prefix_sibling() {
         "src/plugins/editormd/lib/x.js",
         &prefixes
     ));
-    assert!(is_under_self_declared_vendor("src/plugins/editormd", &prefixes));
+    assert!(is_under_self_declared_vendor(
+        "src/plugins/editormd",
+        &prefixes
+    ));
     assert!(!is_under_self_declared_vendor(
         "src/plugins/editormd-extra/x.js",
         &prefixes
@@ -266,7 +268,10 @@ fn rebar_host_vendored_dep_with_app_src_is_external() {
     let prefixes = self_declared_vendor_prefixes(root, &[], None);
 
     assert_eq!(prefixes, vec!["deps/cowboy".to_string()]);
-    assert!(is_under_self_declared_vendor("deps/cowboy/src/cowboy.erl", &prefixes));
+    assert!(is_under_self_declared_vendor(
+        "deps/cowboy/src/cowboy.erl",
+        &prefixes
+    ));
 }
 
 // A `deps/<pkg>` declaring itself via its own `rebar.config` (rather than an
@@ -355,7 +360,10 @@ fn go_project_own_module_is_not_classified() {
 
     let prefixes = self_declared_vendor_prefixes(root, &[], None);
     assert!(!is_under_self_declared_vendor("go.mod", &prefixes));
-    assert!(!is_under_self_declared_vendor("services/api/main.go", &prefixes));
+    assert!(!is_under_self_declared_vendor(
+        "services/api/main.go",
+        &prefixes
+    ));
     assert!(is_under_self_declared_vendor(
         "services/api/vendor/github.com/x/y/y.go",
         &prefixes

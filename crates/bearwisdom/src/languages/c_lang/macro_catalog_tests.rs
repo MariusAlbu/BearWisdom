@@ -57,7 +57,9 @@ fn empty_body_is_attribute_shaped() {
 fn attribute_and_declspec_bodies_are_attribute_shaped() {
     assert!(_is_attribute_shaped_body("__attribute__((noreturn))"));
     assert!(_is_attribute_shaped_body("__declspec(dllimport)"));
-    assert!(_is_attribute_shaped_body("extern \"C\" __declspec(dllimport)"));
+    assert!(_is_attribute_shaped_body(
+        "extern \"C\" __declspec(dllimport)"
+    ));
 }
 
 #[test]

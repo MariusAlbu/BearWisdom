@@ -41,7 +41,6 @@ pub mod compilation;
 mod compilation_persist;
 pub mod composite_members;
 pub(crate) mod contract;
-mod declared_deps;
 mod demand_reachability;
 pub mod demand_veto;
 mod elided_inputs;
@@ -70,7 +69,6 @@ pub mod mapped_members;
 pub mod member_index;
 mod member_selection;
 mod merge_canonical;
-pub mod module_augmentation;
 mod module_entry;
 mod module_graph;
 pub mod module_identity;
@@ -94,7 +92,6 @@ mod program_types;
 mod program_view;
 pub mod reexports;
 mod reexports_candidates;
-pub mod relative_imports;
 mod root_import_discipline;
 pub mod rules;
 pub mod segment_args;
@@ -160,10 +157,7 @@ impl<'a> BinderContext<'a> {
             | EdgeKind::Implements
             | EdgeKind::TypeRef
             | EdgeKind::Instantiates => {
-                crate::indexer::resolve::engine::contract::chain_walker::parse_type_head_and_args(
-                    raw,
-                )
-                .0
+                crate::languages::signature_type_head(&self.file_ctx.language, raw)
             }
             _ => raw,
         }

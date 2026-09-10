@@ -1,10 +1,6 @@
 //! Call instantiation keeps method receiver evidence separate from arguments.
 use super::*;
-use crate::indexer::resolve::engine::{
-    bound_call,
-    contract::{generic_return, signature_generic_params},
-    lambda_seed,
-};
+use crate::indexer::resolve::engine::{bound_call, contract::generic_return, lambda_seed};
 use crate::type_checker::{core::types::Type, profile::language_profile::DelegateShape};
 use crate::types::CallArg;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -96,8 +92,8 @@ pub(super) fn apply_with_receiver(
     let source_owned = lookup.source_call_arguments(selector).is_some();
     let args = super::super::arg_types::at(lookup, selector, args)?;
     // Source-owned operands attest the call syntax, but not the display
-    // callee row supplied by this legacy path. Do not apply a strict RBI/RBS
-    // callback declaration when that row rejects the attested syntax.
+    // callee row supplied by this legacy path. Do not apply a strict
+    // declaration callback policy when that row rejects the attested syntax.
     if source_owned && !super::callback_syntax_fits(callee, args) {
         return None;
     }
@@ -195,13 +191,16 @@ fn legacy_callback_env(
         .or_else(|| lookup.generic_params(&callee.qualified_name))
         .map(LegacyGenericParams::Metadata)
         .or_else(|| {
-            callee.signature.as_deref().and_then(|signature| {
-                let params: Vec<_> = signature_generic_params(signature, &callee.name)
-                    .into_iter()
-                    .map(|(name, _, _)| name)
-                    .collect();
-                (!params.is_empty()).then_some(LegacyGenericParams::Signature(params))
-            })
+            let lang =
+                crate::indexer::resolve::engine::generics::lang_for_symbol_path(&callee.file_path);
+            let signature = callee.signature.as_deref()?;
+            let params: Vec<String> = crate::languages::default_registry()
+                .get(lang)
+                .signature_generic_params(signature, &callee.name)
+                .into_iter()
+                .map(|(name, _, _)| name)
+                .collect();
+            (!params.is_empty()).then_some(LegacyGenericParams::Signature(params))
         });
     let Some(params) = params else {
         return Some(LegacyCallbackEnv {
@@ -306,8 +305,8 @@ fn uniquely_contextual_callback_callee(
 }
 
 /// Callback-bearing syntax understood by the contextual overload selector.
-/// `TrailingBlockAt` stays distinct until lambda seeding, where strict Ruby
-/// declaration contracts can require it specifically.
+/// `TrailingBlockAt` remains distinct until language declaration policy checks
+/// its required source form.
 fn is_contextual_callback_arg(arg: &CallArg) -> bool {
     matches!(
         arg,

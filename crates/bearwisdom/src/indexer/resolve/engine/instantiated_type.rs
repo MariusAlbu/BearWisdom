@@ -3,7 +3,9 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::contract::{resolve_type_name_in_scope, SymbolLookup};
+use crate::indexer::resolve::engine::support::{index_qname_parent, join_index_qname};
 use crate::type_checker::core::types::{Type, TypeId};
+use crate::type_checker::profile::language_profile::LanguageProfile;
 
 use super::compilation::Compilation;
 
@@ -20,10 +22,12 @@ pub(super) fn instantiated_type(
     name: &str,
     scope_path: Option<&str>,
     file: &str,
+    profile: &LanguageProfile,
 ) -> TypeId {
-    let mut scope = scope_path.unwrap_or("");
+    let normalized_scope = scope_path.map(|scope| profile.index_qname_from_source(scope));
+    let mut scope = normalized_scope.as_deref().unwrap_or("");
     while !scope.is_empty() {
-        let qn = format!("{scope}.{name}");
+        let qn = join_index_qname(scope, name);
         // Sibling packages repeat scope qnames (`useBaseQuery.Observer` in
         // four framework adapters) — the value in THIS file is the one the
         // initializer names, so a same-file candidate wins over the qname
@@ -52,11 +56,9 @@ pub(super) fn instantiated_type(
                 }
             }
         }
-        scope = match scope.rfind('.') {
-            Some(i) => &scope[..i],
-            None => "",
-        };
+        scope = index_qname_parent(scope).unwrap_or("");
     }
-    let resolved = resolve_type_name_in_scope(name, scope_path, &comp.by_qname);
+    let resolved =
+        resolve_type_name_in_scope(name, normalized_scope.as_deref(), &comp.by_qname, profile);
     comp.arena.class(&resolved)
 }

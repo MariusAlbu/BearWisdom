@@ -53,9 +53,15 @@ const LANGUAGES: &[&str] = &["pascal"];
 pub struct FreePascalRuntimeEcosystem;
 
 impl Ecosystem for FreePascalRuntimeEcosystem {
-    fn id(&self) -> EcosystemId { ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn id(&self) -> EcosystemId {
+        ID
+    }
+    fn kind(&self) -> EcosystemKind {
+        EcosystemKind::Stdlib
+    }
+    fn languages(&self) -> &'static [&'static str] {
+        LANGUAGES
+    }
 
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::LanguagePresent("pascal")
@@ -90,7 +96,9 @@ impl Ecosystem for FreePascalRuntimeEcosystem {
 }
 
 impl ExternalSourceLocator for FreePascalRuntimeEcosystem {
-    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+    fn ecosystem(&self) -> &'static str {
+        LEGACY_ECOSYSTEM_TAG
+    }
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_freepascal_roots()
     }
@@ -102,7 +110,9 @@ impl ExternalSourceLocator for FreePascalRuntimeEcosystem {
 pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     use std::sync::OnceLock;
     static LOCATOR: OnceLock<Arc<FreePascalRuntimeEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(FreePascalRuntimeEcosystem)).clone()
+    LOCATOR
+        .get_or_init(|| Arc::new(FreePascalRuntimeEcosystem))
+        .clone()
 }
 
 #[cfg(test)]

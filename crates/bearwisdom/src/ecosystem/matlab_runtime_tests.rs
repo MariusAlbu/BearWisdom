@@ -211,12 +211,13 @@ fn build_symbol_index_returns_non_empty_for_fixture() {
     use crate::ecosystem::Ecosystem;
     let fixture = make_install_fixture();
     let roots = with_matlab_root(fixture.path(), discover_matlab_toolbox);
-    assert!(!roots.is_empty(), "fixture must produce at least one dep root");
+    assert!(
+        !roots.is_empty(),
+        "fixture must produce at least one dep root"
+    );
 
     // Write actual parseable MATLAB content into one toolbox file.
-    let m_file = fixture
-        .path()
-        .join("toolbox/matlab/general/zeros.m");
+    let m_file = fixture.path().join("toolbox/matlab/general/zeros.m");
     fs::write(&m_file, "function y = zeros(n)\n  y = 0;\nend\n").unwrap();
 
     let index = MatlabRuntimeEcosystem.build_symbol_index(&roots);

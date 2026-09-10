@@ -212,7 +212,10 @@ fn intra_file_ref_pulls_sibling_into_keep_set() {
     let filtered = filter_extraction_to_demand(intra_file_fixture(), &demand_of(&["A"]));
     let names: Vec<&str> = filtered.symbols.iter().map(|s| s.name.as_str()).collect();
     assert!(names.contains(&"A"), "A must be kept (seed)");
-    assert!(names.contains(&"B"), "B must be kept (intra-file ref from A)");
+    assert!(
+        names.contains(&"B"),
+        "B must be kept (intra-file ref from A)"
+    );
     assert!(!names.contains(&"C"), "C must be dropped (unreferenced)");
 }
 

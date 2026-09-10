@@ -42,6 +42,20 @@ impl EcosystemRegistry {
             .filter(|e| e.languages().iter().any(|l| *l == lang))
             .collect()
     }
+
+    /// Source-name aliases contributed by the ecosystem that owns a workspace
+    /// package-kind label. The context remains agnostic of spelling rules.
+    pub fn workspace_package_name_aliases(&self, kind: &str, declared_name: &str) -> Vec<String> {
+        self.ecosystems
+            .iter()
+            .filter(|eco| {
+                eco.workspace_package_files()
+                    .iter()
+                    .any(|(_, label)| *label == kind)
+            })
+            .flat_map(|eco| eco.workspace_package_name_aliases(declared_name))
+            .collect()
+    }
 }
 
 /// Bridge to the legacy `ExternalSourceLocator` trait, keeping the

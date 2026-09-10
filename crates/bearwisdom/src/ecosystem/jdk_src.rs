@@ -70,7 +70,6 @@ impl Ecosystem for JdkSrcEcosystem {
     ) -> crate::ecosystem::symbol_index::SymbolLocationIndex {
         super::maven::build_maven_symbol_index(dep_roots)
     }
-
 }
 
 impl ExternalSourceLocator for JdkSrcEcosystem {

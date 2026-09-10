@@ -1,10 +1,12 @@
 //! ruby language plugin.
 
+pub(crate) mod callback_contract;
 mod calls;
 pub mod extract;
 pub(crate) mod flow;
 mod helpers;
 pub(crate) mod keywords;
+pub(crate) mod package_specifier;
 mod params;
 mod rbi;
 mod rbs;
@@ -85,6 +87,32 @@ impl LanguagePlugin for RubyPlugin {
         }
     }
 
+    fn callback_argument_policy(
+        &self,
+        file_path: &str,
+        signature: Option<&str>,
+        index: usize,
+    ) -> Option<crate::type_checker::profile::chain_specs::CallbackArgumentPolicy> {
+        Some(callback_contract::argument_policy(
+            file_path, signature, index,
+        ))
+    }
+
+    fn signature_return_type(&self, signature: &str) -> Option<String> {
+        crate::languages::colon_return_type(signature)
+    }
+
+    fn signature_parameter_types(&self, signature: &str) -> Option<Vec<String>> {
+        crate::languages::colon_parameter_types(signature)
+    }
+
+    fn signature_declared_type(&self, signature: &str) -> Option<String> {
+        crate::type_checker::profile::signature_parser::parse_declared_type_from_signature(
+            signature,
+            crate::type_checker::profile::signature_parser::DeclaredTypeLayout::AfterMarker(':'),
+        )
+    }
+
     fn symbol_node_kinds(&self) -> &[&str] {
         &[
             "class",
@@ -111,5 +139,13 @@ impl LanguagePlugin for RubyPlugin {
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::RUBY_FLOW_CONFIG)
+    }
+
+    fn plugin_flow_emissions(
+        &self,
+        source: &str,
+        file_path: &str,
+    ) -> Vec<(u32, crate::indexer::resolve::flow_emit::FlowEmission)> {
+        connectors::extract_ruby_graphql(source, file_path)
     }
 }

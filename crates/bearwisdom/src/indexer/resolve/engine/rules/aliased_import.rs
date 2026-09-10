@@ -1,5 +1,5 @@
 // =============================================================================
-// engine/rules/aliased_import — import specifier resolved via path alias
+// engine/rules/aliased_import — import specifier resolved via module alias
 //
 // `resolve_via_file_import` matches an import's `module_path` directly against
 // candidate file paths. This rule handles specifiers that are path aliases
@@ -9,7 +9,7 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::support::file_path_matches_module;
-use crate::indexer::resolve::engine::{LookupRule, BinderContext, LookupResult};
+use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 
 pub struct AliasedImportRule;
 
@@ -32,7 +32,7 @@ impl LookupRule for AliasedImportRule {
             };
             let Some(rewritten) = ctx
                 .lookup
-                .resolve_path_alias(ctx.ref_ctx.file_package_id, raw_module)
+                .resolve_module_alias(ctx.ref_ctx.file_package_id, raw_module)
             else {
                 continue;
             };
@@ -48,9 +48,7 @@ impl LookupRule for AliasedImportRule {
                 if (ctx.kind)(edge_kind, &sym.kind)
                     && file_path_matches_module(&sym.file_path, &rewritten, ctx.profile)
                 {
-                    return LookupResult::Resolved(
-                        ctx.resolved(sym.id, "engine_aliased_import"),
-                    );
+                    return LookupResult::Resolved(ctx.resolved(sym.id, "engine_aliased_import"));
                 }
             }
         }

@@ -111,7 +111,10 @@ fn passes_when_gate_is_off() {
         kind: &kind,
         profile: &DEFAULT_PROFILE,
     };
-    assert!(matches!(RankedCandidatesRule.apply(&ctx), LookupResult::Pass));
+    assert!(matches!(
+        RankedCandidatesRule.apply(&ctx),
+        LookupResult::Pass
+    ));
 }
 
 #[test]
@@ -132,7 +135,10 @@ fn passes_for_dotted_target() {
         kind: &kind,
         profile,
     };
-    assert!(matches!(RankedCandidatesRule.apply(&ctx), LookupResult::Pass));
+    assert!(matches!(
+        RankedCandidatesRule.apply(&ctx),
+        LookupResult::Pass
+    ));
 }
 
 #[test]
@@ -151,7 +157,10 @@ fn passes_when_only_one_candidate() {
         kind: &kind,
         profile,
     };
-    assert!(matches!(RankedCandidatesRule.apply(&ctx), LookupResult::Pass));
+    assert!(matches!(
+        RankedCandidatesRule.apply(&ctx),
+        LookupResult::Pass
+    ));
 }
 
 #[test]
@@ -174,7 +183,10 @@ fn passes_when_margin_is_insufficient() {
         kind: &kind,
         profile,
     };
-    assert!(matches!(RankedCandidatesRule.apply(&ctx), LookupResult::Pass));
+    assert!(matches!(
+        RankedCandidatesRule.apply(&ctx),
+        LookupResult::Pass
+    ));
 }
 
 #[test]
@@ -182,11 +194,16 @@ fn resolves_ambient_candidate_over_non_ambient() {
     // Ambient path gives +200 — enough to exceed RANK_MARGIN over a zero-score
     // sibling with no other signals.
     let profile = &RANKED_PROFILE;
-    let s_ambient = sym(10, "describe", "jest.describe", "function", "node_modules/@types/jest/index.d.ts");
+    let s_ambient = sym(
+        10,
+        "describe",
+        "jest.describe",
+        "function",
+        "node_modules/@types/jest/index.d.ts",
+    );
     let s_project = sym(11, "describe", "suite.describe", "function", "src/suite.ts");
     let inner = Lookup::new().with(s_ambient).with(s_project);
-    let lookup = ScoredLookup::new(inner)
-        .with_ambient("node_modules/@types/jest/index.d.ts");
+    let lookup = ScoredLookup::new(inner).with_ambient("node_modules/@types/jest/index.d.ts");
     let r = call_ref("describe");
     let s = source_symbol("caller");
     let fc = file_ctx(vec![], None);
@@ -215,8 +232,20 @@ fn resolves_closer_path_candidate() {
     // Simpler: just test that a candidate with path proximity AND ambient beats
     // a bare candidate.
     let profile = &RANKED_PROFILE;
-    let near = sym(20, "helper", "views.helper", "function", "src/views/helper.ts");
-    let far = sym(21, "helper", "other.helper", "function", "src/other/helper.ts");
+    let near = sym(
+        20,
+        "helper",
+        "views.helper",
+        "function",
+        "src/views/helper.ts",
+    );
+    let far = sym(
+        21,
+        "helper",
+        "other.helper",
+        "function",
+        "src/other/helper.ts",
+    );
     let inner = Lookup::new().with(near).with(far);
     let lookup = ScoredLookup::new(inner).with_ambient("src/views/helper.ts");
     let r = call_ref("helper");

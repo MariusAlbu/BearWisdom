@@ -6,9 +6,7 @@
 
 use std::sync::Arc;
 
-use crate::indexer::resolve::engine::contract::{
-    FileContext, ImportEntry, RefContext, Symbol,
-};
+use crate::indexer::resolve::engine::contract::{FileContext, ImportEntry, RefContext, Symbol};
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 
 /// A symbol-index row.

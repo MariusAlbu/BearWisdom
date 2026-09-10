@@ -13,6 +13,7 @@ pub(super) fn resolve(
     arena: &TypeArena,
     file: &FileContext,
     segment: &ChainSegment,
+    profile: &LanguageProfile,
 ) -> Result<Receiver, Option<Cause>> {
     if !segment.is_call
         && (matches!(
@@ -74,6 +75,6 @@ pub(super) fn resolve(
             .ok_or(None);
     }
     Ok(Receiver::untyped(
-        resolve_return_type_extraction(ty, lookup, arena, file).unwrap_or(ty),
+        resolve_return_type_extraction(ty, lookup, arena, file, Some(profile)).unwrap_or(ty),
     ))
 }

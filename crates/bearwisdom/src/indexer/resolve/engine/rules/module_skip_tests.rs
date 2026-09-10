@@ -12,7 +12,10 @@ static SKIP_STD_PROFILE: crate::type_checker::profile::language_profile::Languag
         ..DEFAULT_PROFILE
     };
 
-fn run_with_module(module: Option<&str>, profile: &crate::type_checker::profile::language_profile::LanguageProfile) -> LookupResult {
+fn run_with_module(
+    module: Option<&str>,
+    profile: &crate::type_checker::profile::language_profile::LanguageProfile,
+) -> LookupResult {
     let mut r = call_ref("foo");
     r.module = module.map(|s| s.to_string());
 

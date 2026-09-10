@@ -1,4 +1,3 @@
-use super::contract::chain_walker::parse_type_head_and_args;
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 
 // ---------------------------------------------------------------------------
@@ -39,18 +38,22 @@ pub(super) fn unwrap_async_yield_id(
 /// `"Promise<Response>"` → `"Response"` when `"Promise"` is in `async_wrappers`.
 /// Returns `None` when the string has no wrapper head or the first arg is empty,
 /// so the caller keeps the original string unchanged.
-pub(super) fn unwrap_async_yield_str<'a>(ty: &'a str, async_wrappers: &[&str]) -> Option<&'a str> {
+pub(super) fn unwrap_async_yield_str(
+    ty: &str,
+    language: &str,
+    async_wrappers: &[&str],
+) -> Option<String> {
     if async_wrappers.is_empty() {
         return None;
     }
-    let (head, args) = parse_type_head_and_args(ty);
+    let (head, args) = crate::languages::signature_type_application(language, ty);
     if args.is_empty() {
         return None;
     }
-    if async_wrappers.contains(&head) {
+    if async_wrappers.contains(&head.as_str()) {
         let inner = args[0].trim();
         if !inner.is_empty() {
-            return Some(inner);
+            return Some(inner.to_string());
         }
     }
     None

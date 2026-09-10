@@ -99,7 +99,6 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "google.shopping.type.Price",
 ];
 
-
 pub(crate) fn is_proto_scalar(name: &str) -> bool {
     matches!(
         name,
@@ -129,4 +128,3 @@ pub(crate) fn is_proto_builtin(name: &str) -> bool {
     let bare = name.trim_start_matches('.');
     is_proto_scalar(bare) || bare.starts_with("google.protobuf.")
 }
-

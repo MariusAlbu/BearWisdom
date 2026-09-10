@@ -38,7 +38,9 @@ pub(crate) fn build_demand_symbol_index(
 ) -> SymbolLocationIndex {
     reset_all_demand_caches();
     let mut symbol_index = SymbolLocationIndex::new();
-    let _t_symidx = Some(crate::indexer::phase_timer::scope("externals.build_symbol_index"));
+    let _t_symidx = Some(crate::indexer::phase_timer::scope(
+        "externals.build_symbol_index",
+    ));
     let mut eco_tags: Vec<&'static str> = demand_driven_by_eco.keys().copied().collect();
     eco_tags.sort_unstable();
     for tag in &eco_tags {

@@ -23,11 +23,7 @@ fn php_module_path_normalization_is_confined_to_the_path_matching_view() {
 #[test]
 fn php_qualified_import_candidates_keep_namespace_and_containment_boundaries() {
     assert_eq!(
-        super::php_qualified_import_type_candidates(
-            "Illuminate\\Database",
-            "Eloquent",
-            "Builder",
-        ),
+        super::php_qualified_import_type_candidates("Illuminate\\Database", "Eloquent", "Builder",),
         vec![
             "Illuminate\\Database\\Eloquent\\Builder",
             "Illuminate\\Database\\Eloquent.Builder",
@@ -37,26 +33,35 @@ fn php_qualified_import_candidates_keep_namespace_and_containment_boundaries() {
 
 #[test]
 fn php_qualified_import_candidates_decline_empty_namespace_components() {
-    assert!(super::php_qualified_import_type_candidates("Illuminate\\", "Eloquent", "Builder")
-        .is_empty());
+    assert!(
+        super::php_qualified_import_type_candidates("Illuminate\\", "Eloquent", "Builder")
+            .is_empty()
+    );
     assert!(super::php_qualified_import_type_candidates("Illuminate", "", "Builder").is_empty());
-    assert!(super::php_qualified_import_type_candidates("Illuminate", "Eloquent", "Builder\\")
-        .is_empty());
+    assert!(
+        super::php_qualified_import_type_candidates("Illuminate", "Eloquent", "Builder\\")
+            .is_empty()
+    );
 }
 
 #[test]
 fn php_chain_qualification_is_same_package_and_imports() {
     // Same-namespace + `use`-statement qualification through the engine walker.
-    assert!(PHP_PROFILE.chain_qualification.uses_same_package_and_imports());
-    assert!(PHP_PROFILE.chain_qualification.qualified_import_root().is_some());
+    assert!(PHP_PROFILE
+        .chain_qualification
+        .uses_same_package_and_imports());
+    assert!(PHP_PROFILE
+        .chain_qualification
+        .qualified_import_root()
+        .is_some());
 }
 
 #[test]
-fn php_profile_self_keywords_cover_receiver_forms() {
-    assert!(PHP_PROFILE.self_keywords.contains(&"$this"));
-    assert!(PHP_PROFILE.self_keywords.contains(&"self"));
-    assert!(PHP_PROFILE.self_keywords.contains(&"static"));
-    assert!(PHP_PROFILE.self_keywords.contains(&"parent"));
+fn php_profile_receiver_spellings_cover_receiver_forms() {
+    assert!(PHP_PROFILE.has_receiver_spelling("$this"));
+    assert!(PHP_PROFILE.has_receiver_spelling("self"));
+    assert!(PHP_PROFILE.has_receiver_spelling("static"));
+    assert!(PHP_PROFILE.has_receiver_spelling("parent"));
 }
 
 #[test]

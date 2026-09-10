@@ -1,5 +1,7 @@
 use super::*;
-use crate::indexer::resolve::engine::testkit::{accept_any, call_ref, file_ctx, ref_ctx, source_symbol, sym, Lookup};
+use crate::indexer::resolve::engine::testkit::{
+    accept_any, call_ref, file_ctx, ref_ctx, source_symbol, sym, Lookup,
+};
 use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
 
 fn resolve(lookup: &Lookup, target: &str) -> Option<i64> {

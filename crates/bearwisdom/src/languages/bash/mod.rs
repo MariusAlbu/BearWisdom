@@ -85,5 +85,4 @@ impl LanguagePlugin for BashPlugin {
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::BASH_PROFILE)
     }
-
 }

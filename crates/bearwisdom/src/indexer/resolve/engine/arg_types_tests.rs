@@ -151,10 +151,7 @@ fn positions_stay_aligned_when_one_argument_declines() {
     let tys = resolve_arg_types(
         &lookup,
         arena,
-        &[
-            CallArg::Other,
-            CallArg::Ident("user".into()),
-        ],
+        &[CallArg::Other, CallArg::Ident("user".into())],
     );
 
     assert_eq!(tys.len(), 2);

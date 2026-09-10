@@ -64,10 +64,12 @@ pub(crate) fn php_module_path_match(
 ) -> crate::type_checker::profile::language_profile::ModulePathMatch {
     crate::type_checker::profile::language_profile::ModulePathMatch {
         module_path: normalize_php_module_path_for_match(module),
+        path_variants: Vec::new(),
         required_file_prefix: None,
         compound_extensions: &[],
-        authority:
-            crate::type_checker::profile::language_profile::ModuleMatchAuthority::Heuristic,
+        authority: crate::type_checker::profile::language_profile::ModuleMatchAuthority::Heuristic,
+        source_module_path_policy:
+            crate::type_checker::profile::language_profile::SourceModulePathPolicy::unsupported(),
     }
 }
 
@@ -113,7 +115,12 @@ pub const PHP_PROFILE: LanguageProfile = LanguageProfile {
     id: "php",
     qname_separator: "\\",
     declaration_merging: crate::type_checker::profile::language_profile::MergeScope::None,
-    self_keywords: &["$this", "self", "static", "parent"],
+    receiver_spellings: &[
+        crate::type_checker::profile::language_profile::ReceiverSpelling::enclosing("$this", "->"),
+        crate::type_checker::profile::language_profile::ReceiverSpelling::enclosing("self", "::"),
+        crate::type_checker::profile::language_profile::ReceiverSpelling::enclosing("static", "::"),
+        crate::type_checker::profile::language_profile::ReceiverSpelling::parent("parent", "::"),
+    ],
     supertype_discovery: SupertypeDiscovery::Explicit,
     ancestor_order: crate::type_checker::profile::language_profile::AncestorOrder::Bfs,
     members_can_be_external: true,

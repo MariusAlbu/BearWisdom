@@ -38,13 +38,71 @@ pub enum MergeScope {
     SamePackage,
 }
 
+/// The semantic declaration selected by a receiver spelling. Resolver rules
+/// consume only this language-neutral meaning; source spellings and member
+/// separators live in each language profile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReceiverRole {
+    /// The type enclosing the reference's source symbol.
+    EnclosingType,
+    /// The enclosing type's recorded direct parent.
+    DirectParent,
+}
+
+/// One source spelling that is meaningful at a receiver position.
+///
+/// `role: None` permits a language-owned qualification prefix such as HCL's
+/// `var.name` to normalize for bare-name rules without granting it receiver
+/// semantics. The separator is source syntax, never a generic resolver
+/// assumption.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReceiverSpelling {
+    pub spelling: &'static str,
+    pub role: Option<ReceiverRole>,
+    pub member_separator: &'static str,
+}
+
+impl ReceiverSpelling {
+    pub const fn enclosing(spelling: &'static str, member_separator: &'static str) -> Self {
+        Self {
+            spelling,
+            role: Some(ReceiverRole::EnclosingType),
+            member_separator,
+        }
+    }
+
+    pub const fn parent(spelling: &'static str, member_separator: &'static str) -> Self {
+        Self {
+            spelling,
+            role: Some(ReceiverRole::DirectParent),
+            member_separator,
+        }
+    }
+
+    pub const fn prefix(spelling: &'static str, member_separator: &'static str) -> Self {
+        Self {
+            spelling,
+            role: None,
+            member_separator,
+        }
+    }
+}
+
+impl PartialEq<&str> for ReceiverSpelling {
+    fn eq(&self, other: &&str) -> bool {
+        self.spelling == *other
+    }
+}
+
 pub struct LanguageProfile {
     // === Identity ===
     pub id: &'static str,
     pub qname_separator: &'static str,
     /// Declaration-merging reach for this language's type declarations.
     pub declaration_merging: MergeScope,
-    pub self_keywords: &'static [&'static str],
+    /// Receiver-role and member-prefix spellings owned by this language.
+    /// Empty is fail-closed: no bare word receives special treatment.
+    pub receiver_spellings: &'static [ReceiverSpelling],
     /// Whether demand-pulled external files of this language reduce to their
     /// declaration contract. `false` for macro-expansion languages whose
     /// function bodies DEFINE contract — a quoted `defmodule`/`def` inside a
@@ -343,20 +401,154 @@ pub struct LanguageProfile {
 }
 
 impl LanguageProfile {
+    /// The declared receiver meaning of an exact source spelling. Does not
+    /// infer from the spelling, so an unconfigured language fails closed.
+    pub fn receiver_role(&self, spelling: &str) -> Option<ReceiverRole> {
+        self.receiver_spellings
+            .iter()
+            .find(|entry| entry.spelling == spelling)
+            .and_then(|entry| entry.role)
+    }
+
+    /// Whether a source spelling is declared as a receiver or prefix form.
+    pub fn has_receiver_spelling(&self, spelling: &str) -> bool {
+        self.receiver_spellings
+            .iter()
+            .any(|entry| entry.spelling == spelling)
+    }
+
+    /// Normalize one profile-declared receiver/prefix member expression to
+    /// its member target. The language declares both the prefix and separator
+    /// (`.`, `::`, `->`, …); the generic resolver strips neither itself.
+    pub fn normalize_receiver_member_target<'a>(&self, target: &'a str) -> &'a str {
+        self.receiver_spellings
+            .iter()
+            .find_map(|entry| {
+                target
+                    .strip_prefix(entry.spelling)
+                    .and_then(|tail| tail.strip_prefix(entry.member_separator))
+            })
+            .unwrap_or(target)
+    }
+
+    /// Ask the owning language whether a primitive head has a nominal member
+    /// surface. This is deliberately not a capitalization heuristic.
+    pub fn primitive_member_head(&self, head: &str) -> Option<String> {
+        crate::languages::default_registry()
+            .get_dedicated(self.id)
+            .and_then(|plugin| plugin.primitive_member_head(head))
+    }
+
+    /// Whether this language explicitly declares an applied head to be a
+    /// homogeneous container for computed-access projection.
+    pub fn has_homogeneous_computed_access(&self, head: &str) -> bool {
+        crate::languages::default_registry()
+            .get_dedicated(self.id)
+            .is_some_and(|plugin| plugin.has_homogeneous_computed_access(head))
+    }
+
     /// Adapt a source module specifier into generic file-path evidence. The
     /// callback itself is always owned by the language/ecosystem profile.
     pub fn module_path_match(&self, module: &str) -> ModulePathMatch {
+        let matched = if let Some(config) = self.chain_qualification.qualified_import_root() {
+            (config.module_path_adapter)(module)
+        } else if let ModulePrefixRewrites::On {
+            module_path_adapter: Some(adapter),
+            ..
+        } = self.imports.module_prefix_rewrites
+        {
+            adapter(module)
+        } else {
+            ModulePathMatch::heuristic(module)
+        };
+        matched.with_source_separator_path_variant(module, self.qname_separator)
+    }
+
+    /// Re-export source-path evidence for one module spelling. Adapters own
+    /// extension and bare-module conventions; the generic walker only applies
+    /// the returned callbacks to indexed paths.
+    pub fn source_module_path_policy(&self, source_module: &str) -> SourceModulePathPolicy {
         if let Some(config) = self.chain_qualification.qualified_import_root() {
-            return (config.module_path_adapter)(module);
+            return (config.module_path_adapter)(source_module).source_module_path_policy;
         }
         if let ModulePrefixRewrites::On {
             module_path_adapter: Some(adapter),
             ..
         } = self.imports.module_prefix_rewrites
         {
-            return adapter(module);
+            return adapter(source_module).source_module_path_policy;
         }
-        ModulePathMatch::heuristic(module)
+        crate::languages::default_registry()
+            .get_dedicated(self.id)
+            .map(|plugin| plugin.source_module_path_policy(source_module))
+            .unwrap_or_else(SourceModulePathPolicy::unsupported)
+    }
+
+    /// Whether module-anchor binding treats this source module as relative.
+    /// The profile owns the marker spelling; resolver rules consume only this
+    /// normalized decision.
+    pub fn module_anchor_is_relative(&self, module: &str) -> bool {
+        self.imports.relative_marker.is_relative(module)
+    }
+
+    /// Whether source text denotes a qualified name or a path-shaped name under
+    /// this profile. Physical `/` path components remain neutral evidence.
+    pub fn is_qualified_name(&self, name: &str) -> bool {
+        name.contains('/')
+            || (!self.qname_separator.is_empty() && name.contains(self.qname_separator))
+    }
+
+    /// Whether a name contains this language's qualified-name separator.
+    /// URI grammar treats physical `/` path components independently, so it
+    /// must not use `is_qualified_name` here.
+    pub fn has_qualified_separator(&self, name: &str) -> bool {
+        !self.qname_separator.is_empty() && name.contains(self.qname_separator)
+    }
+
+    /// The unqualified leaf after a neutral path component and this profile's
+    /// qualified-name separator.
+    pub fn simple_name<'a>(&self, name: &'a str) -> &'a str {
+        let path_leaf = name.rsplit('/').next().unwrap_or(name);
+        if self.qname_separator.is_empty() {
+            path_leaf
+        } else {
+            path_leaf
+                .rsplit(self.qname_separator)
+                .next()
+                .unwrap_or(path_leaf)
+        }
+    }
+
+    /// Convert a source-qualified name to the resolver's canonical index key.
+    /// Source separators are profile data; the dot is only the index storage
+    /// separator and must not be used to parse source text in engine rules.
+    pub fn index_qname_from_source(&self, name: &str) -> String {
+        let qualified = if self.qname_separator.is_empty() || self.qname_separator == "." {
+            name.to_string()
+        } else {
+            name.replace(self.qname_separator, ".")
+        };
+        qualified.replace('/', ".")
+    }
+
+    /// Convert source module/name spelling into a neutral path fragment for
+    /// indexed-file evidence. Source separators stay profile-owned; `/` here
+    /// denotes physical path components only.
+    pub fn index_qname_path_from_source(&self, name: &str) -> String {
+        self.index_qname_from_source(name).replace('.', "/")
+    }
+
+    /// Form a canonical index qname from source-spelled prefix and leaf.
+    pub fn index_qname_join(&self, prefix: &str, leaf: &str) -> String {
+        let prefix = self.index_qname_from_source(prefix);
+        let leaf = self.index_qname_from_source(leaf);
+        if prefix.is_empty() {
+            leaf
+        } else if leaf.is_empty() {
+            prefix
+        } else {
+            format!("{prefix}.{leaf}")
+        }
     }
 }
 

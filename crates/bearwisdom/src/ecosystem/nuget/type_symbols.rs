@@ -204,7 +204,11 @@ pub(super) fn emittable_static_field(flags: u32, name: &str) -> bool {
 /// the demand closure pull each supertype's own defining file, so an
 /// interface chain materializes transitively. Targets carry the bare declared
 /// name, matching the source-level extractor's base-list emission.
-fn emit_supertype_refs(type_def: &CilType, source_symbol_index: usize, refs: &mut Vec<ExtractedRef>) {
+fn emit_supertype_refs(
+    type_def: &CilType,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
     let mut push = |name: &str, kind: EdgeKind| {
         let simple = strip_backtick_arity(name);
         if simple.is_empty() {

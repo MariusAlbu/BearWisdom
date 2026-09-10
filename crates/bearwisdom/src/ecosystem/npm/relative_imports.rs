@@ -1,5 +1,5 @@
 // =============================================================================
-// engine/relative_imports — following a declaration file's own relative imports
+// ecosystem/npm/relative_imports — following a declaration file's own imports
 //
 // An external `.d.ts` can name a supertype declared in a SIBLING file of the
 // same package, reached by a relative specifier. The module-location index keys
@@ -86,11 +86,17 @@ pub(crate) fn relative_named_imports(content: &str) -> Vec<(String, Vec<String>)
             continue;
         }
         let Some(open) = t.find('{') else { continue };
-        let Some(close) = t[open..].find('}') else { continue };
+        let Some(close) = t[open..].find('}') else {
+            continue;
+        };
         let names: Vec<String> = t[open + 1..open + close]
             .split(',')
             .filter_map(|part| {
-                let p = part.trim().strip_prefix("type ").unwrap_or(part.trim()).trim();
+                let p = part
+                    .trim()
+                    .strip_prefix("type ")
+                    .unwrap_or(part.trim())
+                    .trim();
                 // The LOCAL binding (after `as`) is what an `extends` clause names.
                 let local = p.rsplit(" as ").next().unwrap_or(p).trim();
                 (!local.is_empty()).then(|| local.to_string())

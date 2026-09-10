@@ -19,6 +19,8 @@ use super::{
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
 
+pub(crate) mod module_specifier;
+
 pub const ID: EcosystemId = EcosystemId::new("pub");
 
 const MANIFESTS: &[ManifestSpec] = &[];
@@ -127,8 +129,8 @@ mod symbol_index;
 mod walk;
 
 pub use discovery::{discover_dart_externals, find_pub_cache, parse_pubspec_lock};
-pub use manifest::{parse_pubspec_deps, PubspecManifest};
 pub(crate) use manifest::parse_pubspec_name;
+pub use manifest::{parse_pubspec_deps, PubspecManifest};
 pub(crate) use symbol_index::build_dart_symbol_index;
 pub use walk::walk_dart_root;
 

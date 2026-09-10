@@ -45,4 +45,3 @@ fn graphql_type_ref_accepts_type_kinds_rejects_callables() {
         SymbolKind::Function
     ));
 }
-
