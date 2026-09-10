@@ -997,6 +997,45 @@ fn full_lexical_context_precedes_an_overlapping_callback_graph() {
 }
 
 #[test]
+fn scala_case_bindings_read_types_by_exact_arm_identity_before_legacy_names() {
+    let arena = Arc::new(TypeArena::new());
+    let tree = Compilation::build(&[], &Default::default(), Arc::clone(&arena));
+    let mut graph = LexicalBindings::default();
+    let root = graph.add_scope(None, 0, 100, true);
+    let first_arm = graph.add_scope(Some(root), 10, 30, false);
+    let second_arm = graph.add_scope(Some(root), 30, 50, false);
+    let value = graph.intern("value");
+    let first = graph.declare(first_arm, value, 10, None);
+    let second = graph.declare(second_arm, value, 30, None);
+    graph.attach_symbol(1, first);
+    graph.attach_symbol(2, second);
+    graph.references.insert(20, first);
+    graph.references.insert(40, second);
+
+    let mut lookup = FileLookup::new(&tree, "scala");
+    lookup.case_lexical = Some(super::super::super::lexical_cache::LexicalCache::new(
+        &graph, &arena,
+    ));
+    let legacy = arena.class("Legacy");
+    let left = arena.class("Left");
+    let right = arena.class("Right");
+    lookup.record_local_type_id("value".into(), legacy);
+    lookup.record_symbol_type(1, "value", left);
+    lookup.record_symbol_type(2, "value", right);
+
+    lookup.set_cursor(20);
+    assert_eq!(lookup.local_type_id("value"), Some(left));
+    lookup.set_cursor(40);
+    assert_eq!(lookup.local_type_id("value"), Some(right));
+    lookup.set_cursor(5);
+    assert_eq!(
+        lookup.local_type_id("value"),
+        Some(legacy),
+        "the identity graph must reserve only captured case uses"
+    );
+}
+
+#[test]
 fn scala_lambda_at_span_seeds_its_exact_callback_root() {
     use crate::types::CallArg;
     use rustc_hash::FxHashMap;

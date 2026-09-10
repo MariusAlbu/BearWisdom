@@ -2747,6 +2747,128 @@ def use(): Unit = {
     );
 }
 
+#[test]
+fn scala_case_tuple_bindings_keep_sibling_names_distinct_hot_and_cold() {
+    use crate::types::EdgeKind;
+
+    let source = r#"
+class First { def first(): Unit = () }
+class Second { def second(): Unit = () }
+def pair(): (First, Second) = (new First, new Second)
+def use(): Unit = {
+  pair() match {
+    case (value, ignored) => value.first()
+    case (ignored, value) => value.second()
+  }
+}
+"#;
+    let dir = tempfile::tempdir().unwrap();
+    let absolute_path = dir.path().join("case_tuple.scala");
+    std::fs::write(&absolute_path, source).unwrap();
+    let arena = Arc::new(TypeArena::new());
+    let parsed = crate::indexer::parse_file::parse_file_with_arena(
+        &crate::walker::WalkedFile {
+            relative_path: "case_tuple.scala".into(),
+            absolute_path,
+            language: "scala",
+        },
+        crate::languages::default_registry(),
+        &arena,
+    )
+    .expect("parse Scala cases");
+    let files = [parsed];
+    let first_use = source.find("value.first").expect("first case use") as u32;
+    let second_use = source.find("value.second").expect("second case use") as u32;
+    let case_graph = files[0]
+        .flow
+        .case_lexical
+        .as_ref()
+        .expect("hot Scala parse builds case identity");
+    assert_ne!(
+        case_graph.references.get(&first_use),
+        case_graph.references.get(&second_use),
+        "same name in sibling arms needs distinct bindings"
+    );
+    let pair_ref = files[0]
+        .refs
+        .iter()
+        .position(|reference| reference.kind == EdgeKind::Calls && reference.target_name == "pair")
+        .expect("match scrutinee call");
+    assert!(
+        files[0]
+            .flow
+            .flow_binding_destructure
+            .get(&pair_ref)
+            .is_some_and(|entries| entries.len() >= 4),
+        "every direct flat binding projects from the match scrutinee"
+    );
+
+    let path = "case_tuple.scala";
+    let mut id_map = HashMap::new();
+    for (index, symbol) in files[0].symbols.iter().enumerate() {
+        id_map.insert(
+            (path.to_string(), symbol.qualified_name.clone()),
+            index as i64 + 1,
+        );
+    }
+    let first_id = id_map[&(path.to_string(), "First.first".to_string())];
+    let second_id = id_map[&(path.to_string(), "Second.second".to_string())];
+    let profiles = super::build_profiles();
+    let solver = super::SemanticModel::production();
+    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
+        &files,
+        &id_map.clone().into(),
+        Arc::clone(&arena),
+    );
+    let (hot_edges, hot_unresolved, _ref_log, _census) = super::resolve_one_file(
+        &files[0],
+        &tree,
+        &profiles,
+        &no_plugins(),
+        None,
+        &solver,
+        &id_map.clone().into(),
+        None,
+    );
+    for expected in [first_id, second_id] {
+        assert!(
+            hot_edges.iter().any(|edge| edge.1 == expected),
+            "hot case-arm call must resolve; edges={hot_edges:?}; unresolved={hot_unresolved:?}"
+        );
+    }
+
+    let (cold_arena, cold_files) = cold_cache_files(&files, &arena);
+    assert!(
+        cold_files[0].flow.case_lexical.is_some()
+            && cold_files[0]
+                .flow
+                .flow_binding_destructure
+                .contains_key(&pair_ref),
+        "portable restoration rebuilds Scala case identity and tuple flow"
+    );
+    let cold_tree = crate::indexer::resolve::engine::compilation::Compilation::build(
+        &cold_files,
+        &id_map.clone().into(),
+        Arc::clone(&cold_arena),
+    );
+    let (cold_edges, cold_unresolved, _ref_log, _census) = super::resolve_one_file(
+        &cold_files[0],
+        &cold_tree,
+        &profiles,
+        &no_plugins(),
+        None,
+        &solver,
+        &id_map.clone().into(),
+        None,
+    );
+    for expected in [first_id, second_id] {
+        assert!(
+            cold_edges.iter().any(|edge| edge.1 == expected),
+            "cold case-arm call must resolve; edges={cold_edges:?}; unresolved={cold_unresolved:?}"
+        );
+    }
+}
+
 /// A rename import ref (`use m::Orig as Bound;`) carries the module's original
 /// declared name as a single-segment chain. `build_file_context` must key the
 /// entry on the ORIGINAL name — that is what the module's files declare — with

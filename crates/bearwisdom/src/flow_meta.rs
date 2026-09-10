@@ -21,6 +21,12 @@ pub struct FlowMeta {
     /// RHS's yield type (`R["a"]`), not from the whole object `R`. A single RHS
     /// ref carries one entry per destructured binding.
     pub flow_binding_destructure: HashMap<usize, Vec<(usize, String)>>,
+    /// Case-only lexical identity for Scala's direct tuple-pattern arms. Scala
+    /// has no full lexical graph yet; this graph therefore contains only the
+    /// exact case declarations, their symbol slots, and captured body reads.
+    /// It is source-derived and intentionally absent from portable payloads;
+    /// `contract_bindings::restore` rebuilds it from source.
+    pub case_lexical: Option<crate::indexer::lexical::LexicalBindings>,
     /// Set of `ref_idx` (the destructure RHS's own ref, the same key
     /// `flow_binding_destructure` uses) whose initializer is an `await`
     /// expression: `const { data } = await p.refetch()`. Unlike

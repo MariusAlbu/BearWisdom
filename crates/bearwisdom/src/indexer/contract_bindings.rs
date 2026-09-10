@@ -27,17 +27,33 @@ pub(super) fn restore(pf: &mut ParsedFile) {
     let Some(tree) = parser.parse(source.as_bytes(), None) else {
         return;
     };
-    let identity = super::flow::identity::capture(
-        source,
-        config.strategy_prefix,
-        &mut pf.symbols,
-        &mut pf.refs,
-        tree.root_node(),
-        super::flow_bindings::BindingSymbols::CorrelateOnly,
-    );
-    pf.flow.lexical = identity.lexical;
-    pf.flow.callback_lexical = identity.callback_lexical;
-    pf.flow.namespaces = identity.namespaces;
+    if config.strategy_prefix == "scala" {
+        // Scala case metadata is intentionally not portable: external
+        // filtering changes row slots, and case-arm ownership is
+        // source-addressed. Rebuild its flow products from retained source,
+        // correlating only so cold external files never synthesize body
+        // symbols absent from the cache.
+        pf.flow = super::flow::run_flow_queries_with_tree(
+            source,
+            config,
+            &mut pf.symbols,
+            &mut pf.refs,
+            &tree,
+            super::flow_bindings::BindingSymbols::CorrelateOnly,
+        );
+    } else {
+        let identity = super::flow::identity::capture(
+            source,
+            config.strategy_prefix,
+            &mut pf.symbols,
+            &mut pf.refs,
+            tree.root_node(),
+            super::flow_bindings::BindingSymbols::CorrelateOnly,
+        );
+        pf.flow.lexical = identity.lexical;
+        pf.flow.callback_lexical = identity.callback_lexical;
+        pf.flow.namespaces = identity.namespaces;
+    }
 }
 
 #[cfg(test)]

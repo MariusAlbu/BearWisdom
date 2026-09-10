@@ -16,6 +16,14 @@ impl FileLookup<'_> {
             .is_some_and(|cache| cache.attested_binding(name).is_some())
     }
 
+    /// A case-only graph is intentionally incomplete like the callback graph:
+    /// hide legacy facts only for an extracted read of this exact binding.
+    fn case_binding_at_cursor(&self, name: &str) -> bool {
+        self.case_lexical
+            .as_ref()
+            .is_some_and(|cache| cache.attested_binding(name).is_some())
+    }
+
     pub(crate) fn record_failed_write(
         &self,
         reference: usize,
@@ -76,9 +84,15 @@ impl FileLookup<'_> {
             if let Some(&binding) = cache.bindings.symbols.get(&symbol) {
                 cache.record(binding, ty, true);
             }
-        } else {
-            self.record_local_type_id(legacy_name.to_owned(), ty);
+            return;
         }
+        if let Some(cache) = &self.case_lexical {
+            if let Some(&binding) = cache.bindings.symbols.get(&symbol) {
+                cache.record(binding, ty, true);
+                return;
+            }
+        }
+        self.record_local_type_id(legacy_name.to_owned(), ty);
     }
     pub(crate) fn record_symbol_callable(&self, symbol: usize, legacy_name: &str, target: i64) {
         if let Some(cache) = &self.lexical {
@@ -422,6 +436,11 @@ impl<'a> FlowCacheLookup for FileLookup<'a> {
                     .as_ref()
                     .and_then(|cache| cache.reference(byte))
             })
+            .or_else(|| {
+                self.case_lexical
+                    .as_ref()
+                    .and_then(|cache| cache.reference(byte))
+            })
             .or_else(|| self.namespace_roots.get(&byte).cloned())
     }
     fn record_contextual_type(&self, parameter: crate::types::SourceSpan, ty: TypeId) {
@@ -443,7 +462,7 @@ impl<'a> FlowCacheLookup for FileLookup<'a> {
         if self.lexical.is_some() {
             return None;
         }
-        if self.callback_binding_at_cursor(name) {
+        if self.callback_binding_at_cursor(name) || self.case_binding_at_cursor(name) {
             return None;
         }
         self.locals.borrow().get(name).cloned()
@@ -465,7 +484,10 @@ impl<'a> FlowCacheLookup for FileLookup<'a> {
     /// both miss, so a stale hint left behind by an earlier failed seed for
     /// this name is never read once this record succeeds.
     fn record_local_type(&self, name: String, type_name: String) {
-        if self.lexical.is_some() || self.callback_binding_at_cursor(&name) {
+        if self.lexical.is_some()
+            || self.callback_binding_at_cursor(&name)
+            || self.case_binding_at_cursor(&name)
+        {
             return;
         } // Scoped writes require declaration identity.
         self.locals_id.borrow_mut().remove(&name);
@@ -484,6 +506,11 @@ impl<'a> FlowCacheLookup for FileLookup<'a> {
                 return ty;
             }
         }
+        if let Some(cache) = &self.case_lexical {
+            if cache.attested_binding(name).is_some() {
+                return cache.attested_local_type(name).flatten();
+            }
+        }
         self.locals_id.borrow().get(name).copied()
     }
 
@@ -492,7 +519,10 @@ impl<'a> FlowCacheLookup for FileLookup<'a> {
     /// resolves to a TypeId supersedes an earlier String binding (and vice
     /// versa via `record_local_type`).
     fn record_local_type_id(&self, name: String, id: TypeId) {
-        if self.lexical.is_some() || self.callback_binding_at_cursor(&name) {
+        if self.lexical.is_some()
+            || self.callback_binding_at_cursor(&name)
+            || self.case_binding_at_cursor(&name)
+        {
             return;
         } // Never guess a lambda binding from its name.
         self.locals.borrow_mut().remove(&name);
@@ -504,21 +534,30 @@ impl<'a> FlowCacheLookup for FileLookup<'a> {
         name: String,
         cause: crate::indexer::resolve::engine::cause::Cause,
     ) {
-        if self.lexical.is_some() || self.callback_binding_at_cursor(&name) {
+        if self.lexical.is_some()
+            || self.callback_binding_at_cursor(&name)
+            || self.case_binding_at_cursor(&name)
+        {
             return;
         }
         self.root_cause_hints.borrow_mut().insert(name, cause);
     }
 
     fn local_callable_head(&self, name: &str) -> Option<String> {
-        if self.lexical.is_some() || self.callback_binding_at_cursor(name) {
+        if self.lexical.is_some()
+            || self.callback_binding_at_cursor(name)
+            || self.case_binding_at_cursor(name)
+        {
             return None;
         }
         self.local_callable_heads.borrow().get(name).cloned()
     }
 
     fn record_local_callable_head(&self, name: String, qname: String) {
-        if self.lexical.is_some() || self.callback_binding_at_cursor(&name) {
+        if self.lexical.is_some()
+            || self.callback_binding_at_cursor(&name)
+            || self.case_binding_at_cursor(&name)
+        {
             return;
         }
         self.local_callable_heads.borrow_mut().insert(name, qname);
@@ -528,7 +567,7 @@ impl<'a> FlowCacheLookup for FileLookup<'a> {
         if let Some(cache) = &self.lexical {
             return cache.cause(name);
         }
-        if self.callback_binding_at_cursor(name) {
+        if self.callback_binding_at_cursor(name) || self.case_binding_at_cursor(name) {
             return None;
         }
         self.root_cause_hints.borrow().get(name).copied()
@@ -543,6 +582,9 @@ impl<'a> FlowCacheLookup for FileLookup<'a> {
         if let Some(cache) = &self.callback_lexical {
             cache.set_cursor(byte);
         }
+        if let Some(cache) = &self.case_lexical {
+            cache.set_cursor(byte);
+        }
     }
 
     fn has_local_binding(&self, name: &str) -> bool {
@@ -550,6 +592,7 @@ impl<'a> FlowCacheLookup for FileLookup<'a> {
             .as_ref()
             .is_some_and(|cache| cache.binding(name).is_some())
             || self.callback_binding_at_cursor(name)
+            || self.case_binding_at_cursor(name)
     }
 
     fn local_callable_id(&self, name: &str) -> Option<i64> {
@@ -576,6 +619,9 @@ impl<'a> FlowCacheLookup for FileLookup<'a> {
             cache.clear();
         }
         if let Some(cache) = &self.callback_lexical {
+            cache.clear();
+        }
+        if let Some(cache) = &self.case_lexical {
             cache.clear();
         }
         self.locals.borrow_mut().clear();

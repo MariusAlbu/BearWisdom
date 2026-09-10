@@ -392,6 +392,59 @@ pub(super) fn push_val_var(
     });
 }
 
+/// Emit Variables for the one case-pattern form whose bindings are exact:
+/// `case (left, right, ...) => ...`, with two-or-more direct identifiers.
+/// Every richer pattern abstains because a direct child then carries semantics
+/// (nested structure, a type, extractor, wildcard, named/default form, or
+/// repetition) that this flat positional representation cannot preserve.
+pub(super) fn push_direct_case_tuple_bindings(
+    case_clause: &Node,
+    src: &[u8],
+    scope_tree: &scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) {
+    let Some(pattern) = case_clause
+        .child_by_field_name("pattern")
+        .filter(|pattern| pattern.kind() == "tuple_pattern")
+    else {
+        return;
+    };
+    let mut cursor = pattern.walk();
+    let bindings: Vec<_> = pattern.named_children(&mut cursor).collect();
+    if bindings.len() < 2
+        || bindings
+            .iter()
+            .any(|binding| binding.kind() != "identifier")
+    {
+        return;
+    }
+
+    for binding in bindings {
+        let name = node_text(binding, src);
+        let scope = enclosing_scope(scope_tree, binding.start_byte(), binding.end_byte());
+        symbols.push(ExtractedSymbol {
+            name: name.clone(),
+            qualified_name: scope_tree::qualify(&name, scope),
+            kind: SymbolKind::Variable,
+            visibility: None,
+            start_line: binding.start_position().row as u32,
+            end_line: binding.end_position().row as u32,
+            start_col: binding.start_position().column as u32,
+            end_col: binding.end_position().column as u32,
+            signature: None,
+            doc_comment: None,
+            scope_path: scope_tree::scope_path(scope),
+            parent_index,
+            byte_offset: binding.start_byte() as u32,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        });
+    }
+}
+
 /// Return only a directly positional tuple binding. Nested tuples, typed
 /// patterns, extractor/case patterns, wildcards, defaults, and rest patterns
 /// all have a non-identifier direct child and therefore abstain.

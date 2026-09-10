@@ -6,9 +6,9 @@ use super::calls::extract_calls_from_body;
 use super::decorators::{extract_case_class_params, extract_decorators, extract_match_patterns};
 use super::helpers::{call_target_name, classify_class, node_text};
 use super::symbols::{
-    extract_enum_body, extract_extends_with, push_export, push_extension_definition,
-    push_function_def, push_given_definition, push_import, push_package_clause, push_type_def,
-    push_type_definition, push_val_var, recurse_body,
+    extract_enum_body, extract_extends_with, push_direct_case_tuple_bindings, push_export,
+    push_extension_definition, push_function_def, push_given_definition, push_import,
+    push_package_clause, push_type_def, push_type_definition, push_val_var, recurse_body,
 };
 use super::{calls, decorators, helpers, symbols};
 
@@ -497,6 +497,13 @@ pub(super) fn extract_node<'a>(
                 extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
 
+            "case_clause" => {
+                let binding_parent =
+                    enclosing_function_parent(symbols, parent_index).or(parent_index);
+                push_direct_case_tuple_bindings(&child, src, scope_tree, symbols, binding_parent);
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+            }
+
             // for-expression / for-comprehension — extract embedded calls and type refs.
             "for_expression" => {
                 if let Some(sym_idx) = parent_index {
@@ -573,6 +580,23 @@ pub(super) fn extract_node<'a>(
             }
         }
     }
+}
+
+/// The recursive walker may temporarily make a local val/var the parent while
+/// descending into its initializer. Case bindings still belong to the nearest
+/// enclosing function, never that intermediate declaration.
+fn enclosing_function_parent(
+    symbols: &[ExtractedSymbol],
+    mut parent_index: Option<usize>,
+) -> Option<usize> {
+    while let Some(index) = parent_index {
+        let symbol = symbols.get(index)?;
+        if matches!(symbol.kind, SymbolKind::Method | SymbolKind::Function) {
+            return Some(index);
+        }
+        parent_index = symbol.parent_index;
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------

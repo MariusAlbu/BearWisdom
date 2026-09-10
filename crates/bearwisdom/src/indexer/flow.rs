@@ -47,6 +47,12 @@ pub use super::flow_bindings::BindingSymbols;
 use super::flow_bindings::{correlate_rhs_ref, nested_function_ranges};
 use tree_sitter::{Language, Node, Parser, Query, QueryCursor, StreamingIterator};
 
+pub(crate) const TUPLE_INDEX_KEY_PREFIX: &str = super::flow_assignments::TUPLE_INDEX_KEY_PREFIX;
+
+pub(crate) fn correlate_scala_rhs_ref(refs: &[ExtractedRef], rhs: &Node) -> Option<usize> {
+    correlate_rhs_ref(refs, rhs, "scala")
+}
+
 #[path = "flow_identity.rs"]
 pub(super) mod identity;
 
@@ -169,6 +175,15 @@ fn run_flow_queries_on_root(
         return meta;
     }
     run_assignment_query(&root, src_bytes, cfg, symbols, refs, &mut meta, bindings);
+    // Scala case arms lack the full lexical graph used by migrated languages.
+    // Its strict flat tuple patterns still support the same positional flow
+    // projection as `val (a, b) = rhs`, with reference-byte ownership keeping
+    // same-spelled bindings in sibling arms distinct.
+    if cfg.strategy_prefix == "scala" {
+        crate::languages::scala::flow::bind_match_tuple_cases(
+            &root, src_bytes, symbols, refs, &mut meta,
+        );
+    }
     // Go table-driven anonymous-struct slices: type a `range` value variable as
     // the slice's anonymous-struct element. The element's fields are indexed as
     // members of the enclosing function, so the binding is a structural pass

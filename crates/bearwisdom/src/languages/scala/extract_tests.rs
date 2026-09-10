@@ -111,6 +111,130 @@ fn direct_tuple_val_emits_each_identifier_as_a_binding_symbol() {
 }
 
 #[test]
+fn direct_tuple_case_patterns_emit_distinct_variables_with_function_parent() {
+    let source = r#"object O {
+  def decode(value: (Int, Int)) = value match {
+    case (left, right) => left + right
+    case (left, right) => right + left
+  }
+}"#;
+    let result = extract::extract(source);
+    let function_index = result
+        .symbols
+        .iter()
+        .position(|symbol| symbol.name == "decode" && symbol.kind == SymbolKind::Method)
+        .expect("decode method");
+    let bindings: Vec<_> = result
+        .symbols
+        .iter()
+        .filter(|symbol| symbol.kind == SymbolKind::Variable)
+        .filter(|symbol| matches!(symbol.name.as_str(), "left" | "right"))
+        .collect();
+
+    assert_eq!(bindings.len(), 4, "{:?}", result.symbols);
+    assert_eq!(
+        bindings
+            .iter()
+            .filter(|symbol| symbol.name == "left")
+            .count(),
+        2,
+        "same-named sibling arms must remain distinct"
+    );
+    let first_case = source.find("case (left, right)").unwrap();
+    let second_case = source.rfind("case (left, right)").unwrap();
+    for (name, line, column, offset) in [
+        ("left", 2, 10, first_case + "case (".len()),
+        ("right", 2, 16, first_case + "case (left, ".len()),
+        ("left", 3, 10, second_case + "case (".len()),
+        ("right", 3, 16, second_case + "case (left, ".len()),
+    ] {
+        assert!(
+            bindings.iter().any(|binding| {
+                binding.name == name
+                    && binding.start_line == line
+                    && binding.end_line == line
+                    && binding.start_col == column
+                    && binding.end_col == column + name.len() as u32
+                    && binding.byte_offset == offset as u32
+                    && binding.parent_index == Some(function_index)
+            }),
+            "missing exact {name} binding at {line}:{column}; bindings={bindings:?}"
+        );
+    }
+}
+
+#[test]
+fn direct_tuple_case_patterns_use_initializer_or_top_level_parent() {
+    let source = r#"class C {
+  val classResult = value match { case (classLeft, classRight) => 0 }
+}
+object O {
+  val objectResult = value match { case (objectLeft, objectRight) => 0 }
+}
+value match { case (topLeft, topRight) => 0 }
+"#;
+    let result = extract::extract(source);
+    let class_result = result
+        .symbols
+        .iter()
+        .position(|symbol| symbol.name == "classResult" && symbol.kind == SymbolKind::Property)
+        .expect("class initializer property");
+    let object_result = result
+        .symbols
+        .iter()
+        .position(|symbol| symbol.name == "objectResult" && symbol.kind == SymbolKind::Property)
+        .expect("object initializer property");
+
+    for (name, parent) in [
+        ("classLeft", Some(class_result)),
+        ("classRight", Some(class_result)),
+        ("objectLeft", Some(object_result)),
+        ("objectRight", Some(object_result)),
+        ("topLeft", None),
+        ("topRight", None),
+    ] {
+        assert!(
+            result.symbols.iter().any(|symbol| {
+                symbol.kind == SymbolKind::Variable
+                    && symbol.name == name
+                    && symbol.parent_index == parent
+            }),
+            "missing {name} with parent {parent:?}; symbols={:?}",
+            result.symbols
+        );
+    }
+}
+
+#[test]
+fn non_flat_case_patterns_do_not_emit_case_binding_symbols() {
+    let cases = [
+        ("nested tuple", "case ((nested, pair), outer) => 0"),
+        ("typed tuple member", "case (typed: Int, other) => 0"),
+        ("extractor", "case Pair(extracted, other) => 0"),
+        ("wildcard", "case (_, wildcard) => 0"),
+        (
+            "named/default tuple member",
+            "case (first = one, second = two) => 0",
+        ),
+        ("default arm", "case _ => 0"),
+        ("rest pattern", "case (head, tail*) => 0"),
+    ];
+
+    for (label, clause) in cases {
+        let source = format!("object O {{ def decode(value: Any) = value match {{ {clause} }} }}");
+        let result = extract::extract(&source);
+        assert!(
+            result
+                .symbols
+                .iter()
+                .all(|symbol| symbol.kind != SymbolKind::Variable),
+            "{label} must not emit supported case bindings: {:?}",
+            result.symbols
+        );
+    }
+}
+
+#[test]
 fn full_enum_case_emits_enum_member() {
     let r = extract::extract("enum Planet:\n  case Earth(mass: Double, radius: Double)");
     assert!(
