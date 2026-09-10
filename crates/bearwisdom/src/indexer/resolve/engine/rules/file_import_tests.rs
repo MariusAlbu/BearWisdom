@@ -77,3 +77,25 @@ fn binds_fqn_import_against_package_directory_path() {
     let imports = vec![import("Map", Some("java.util.Map"))];
     assert_eq!(resolve(&lookup, "Map", imports), Some(14));
 }
+
+#[test]
+fn binds_node_builtin_import_only_to_supplied_node_declaration() {
+    // `import { join } from "node:path"` must follow Node's builtin alias
+    // into the supplied @types/node declaration surface.
+    let lookup = Lookup::new().with(sym(
+        15,
+        "join",
+        "path.join",
+        "function",
+        "ext:ts:@types/node/path.d.ts",
+    ));
+    let imports = vec![import("join", Some("node:path"))];
+    assert_eq!(resolve(&lookup, "join", imports), Some(15));
+}
+
+#[test]
+fn node_builtin_import_does_not_bind_project_path_stranger() {
+    let lookup = Lookup::new().with(sym(16, "join", "join", "function", "src/path.ts"));
+    let imports = vec![import("join", Some("node:path"))];
+    assert_eq!(resolve(&lookup, "join", imports), None);
+}

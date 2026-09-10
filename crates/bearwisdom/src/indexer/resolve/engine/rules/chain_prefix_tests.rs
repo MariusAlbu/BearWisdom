@@ -111,3 +111,42 @@ fn declines_chain_too_short() {
     let got = resolve(&lookup, "helper", vec!["helper"], imports);
     assert_eq!(got, None);
 }
+
+#[test]
+fn binds_node_path_chain_to_supplied_node_declaration() {
+    // `import * as path from "node:path"; path.join(...)`.
+    let lookup = Lookup::new().with(sym(
+        14,
+        "join",
+        "path.join",
+        "function",
+        "ext:ts:@types/node/path.d.ts",
+    ));
+    let imports = vec![ImportEntry {
+        imported_name: "path".to_string(),
+        module_path: Some("node:path".to_string()),
+        alias: None,
+        is_wildcard: false,
+    }];
+    let got = resolve(&lookup, "join", vec!["path", "join"], imports);
+    assert_eq!(got, Some(14));
+}
+
+#[test]
+fn node_path_chain_does_not_bind_unrelated_project_candidate() {
+    let lookup = Lookup::new().with(sym(
+        15,
+        "join",
+        "join",
+        "function",
+        "src/path/helpers.ts",
+    ));
+    let imports = vec![ImportEntry {
+        imported_name: "path".to_string(),
+        module_path: Some("node:path".to_string()),
+        alias: None,
+        is_wildcard: false,
+    }];
+    let got = resolve(&lookup, "join", vec!["path", "join"], imports);
+    assert_eq!(got, None);
+}

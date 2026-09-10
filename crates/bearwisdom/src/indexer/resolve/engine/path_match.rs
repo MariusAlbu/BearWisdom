@@ -110,9 +110,26 @@ pub(crate) fn file_path_matches_module(file_path: &str, module: &str) -> bool {
         return false;
     }
     let normalized = file_path.replace('\\', "/");
-    let cleaned =
-        trim_source_extension(module.trim_start_matches("./").trim_start_matches("../"));
-    let stem = trim_path_extension(&normalized);
+    let module = match super::module_scheme::node_builtin_module_alias(module) {
+        Some(alias) => {
+            // `node:` is Node's builtin namespace, never a project path or an
+            // arbitrary external package. Only its supplied declaration files
+            // under the canonical @types/node virtual root may use the bare
+            // alias for path matching.
+            if !normalized.starts_with("ext:ts:@types/node/") {
+                return false;
+            }
+            alias
+        }
+        None if module.starts_with("node:") => return false,
+        None => module,
+    };
+    file_path_matches_normalized_module(&normalized, module)
+}
+
+fn file_path_matches_normalized_module(normalized: &str, module: &str) -> bool {
+    let cleaned = trim_source_extension(module.trim_start_matches("./").trim_start_matches("../"));
+    let stem = trim_indexed_path_extension(normalized);
     if stem.ends_with(cleaned) || stem.ends_with(&cleaned.replace('.', "/")) {
         return true;
     }
@@ -121,6 +138,19 @@ pub(crate) fn file_path_matches_module(file_path: &str, module: &str) -> bool {
         return false;
     }
     path_contains_segment_run(&normalized, &dotted)
+}
+
+/// Strip an indexed source path's extension while treating TypeScript
+/// declaration suffixes as one unit. The generic path helper intentionally
+/// removes only the final extension, which would leave `path.d` from
+/// `path.d.ts` and prevent a `path` module from matching its declaration file.
+fn trim_indexed_path_extension(path: &str) -> &str {
+    for suffix in [".d.ts", ".d.mts", ".d.cts"] {
+        if let Some(stem) = path.strip_suffix(suffix) {
+            return stem;
+        }
+    }
+    trim_path_extension(path)
 }
 
 /// `true` when `run` appears in `path` as a `/`-bounded contiguous segment run.

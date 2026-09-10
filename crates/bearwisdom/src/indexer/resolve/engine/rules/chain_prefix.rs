@@ -50,6 +50,13 @@ impl LookupRule for ChainPrefixRule {
             }
         }
 
+        // A `node:` specifier has an authoritative supplied-type root. If the
+        // fenced matcher above did not find it, a same-named project directory
+        // is not evidence for the builtin import.
+        if module_path.starts_with("node:") {
+            return LookupResult::Pass;
+        }
+
         for sym in &candidates {
             if !(ctx.kind)(edge_kind, &sym.kind) {
                 continue;

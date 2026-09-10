@@ -323,6 +323,22 @@ fn import_type_single_line_emits_module_tagged_bindings() {
 }
 
 #[test]
+fn node_scheme_import_keeps_raw_module_on_binding_and_use() {
+    let src = r#"import { join } from "node:path"; join("a", "b");"#;
+    let extracted = extract::extract(src, false);
+    assert!(extracted.refs.iter().any(|r| {
+        r.is_import_binding
+            && r.target_name == "join"
+            && r.module.as_deref() == Some("node:path")
+    }));
+    assert!(extracted.refs.iter().any(|r| {
+        r.kind == EdgeKind::Calls
+            && r.target_name == "join"
+            && r.module.as_deref() == Some("node:path")
+    }));
+}
+
+#[test]
 fn import_mixed_per_specifier_type_keyword_emits_bindings() {
     // `import { type X, Y }` — the `type` keyword sits on the first specifier
     // only. Both names must still bind with the module.

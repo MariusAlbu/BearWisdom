@@ -1767,6 +1767,11 @@ pub(super) fn import_scoped_external_root(
     let entry = external_import_entry(file_ctx, &seg.name)?;
     let spec = entry.module_path.as_deref()?;
     let root = package_root(spec);
+    // Node built-ins are declared in the `@types/node` supplied type tree, not
+    // under a package whose name equals the literal `node:` specifier. Let the
+    // shared matcher recognize that deliberately narrow path shape; every
+    // other external import keeps the package-root fence below.
+    let is_node_builtin = super::module_scheme::node_builtin_module_alias(spec).is_some();
     // A rename import binds `seg.name` locally, but the module's files declare
     // the ORIGINAL name — that is the name the scoped candidate set must carry.
     let lookup_name = if entry.alias.as_deref() == Some(seg.name.as_str()) {
@@ -1777,7 +1782,13 @@ pub(super) fn import_scoped_external_root(
     let by_name = lookup.by_name(lookup_name);
     let mut scoped: Vec<&Symbol> = by_name
         .iter()
-        .filter(|s| ext_file_under_module(&s.file_path, root))
+        .filter(|s| {
+            if is_node_builtin {
+                super::path_match::file_path_matches_module(&s.file_path, spec)
+            } else {
+                ext_file_under_module(&s.file_path, root)
+            }
+        })
         .collect();
     // A barrel module re-exporting `name` from the package that DECLARES it
     // registers `{module}.{name}` as an alias of that declaration — a file

@@ -1,4 +1,4 @@
-use super::strip_scheme_prefix;
+use super::{node_builtin_module_alias, strip_scheme_prefix};
 
 #[test]
 fn node_scheme_strips() {
@@ -20,4 +20,37 @@ fn non_scheme_shapes_pass_through() {
     assert_eq!(strip_scheme_prefix(":leading"), None);
     assert_eq!(strip_scheme_prefix("node:"), None);
     assert_eq!(strip_scheme_prefix("1um:x"), None);
+}
+
+#[test]
+fn node_builtin_alias_accepts_builtin_and_subpath() {
+    assert_eq!(node_builtin_module_alias("node:path"), Some("path"));
+    assert_eq!(
+        node_builtin_module_alias("node:fs/promises"),
+        Some("fs/promises")
+    );
+    assert_eq!(
+        node_builtin_module_alias("node:diagnostics_channel"),
+        Some("diagnostics_channel")
+    );
+}
+
+#[test]
+fn node_builtin_alias_rejects_other_schemes_and_malformed_paths() {
+    for spec in [
+        "path",
+        "sass:math",
+        "jsr:@std/path",
+        "node:",
+        "node:/path",
+        "node:path/",
+        "node:fs//promises",
+        "node:./path",
+        "node:../path",
+        "node:fs/../path",
+        "node:fs?query",
+        "node:fs\\path",
+    ] {
+        assert_eq!(node_builtin_module_alias(spec), None, "{spec}");
+    }
 }

@@ -43,6 +43,14 @@ fn trim_source_extension_strips_known_extensions() {
 }
 
 #[test]
+fn indexed_path_extension_strips_typescript_declaration_suffixes_as_a_unit() {
+    assert_eq!(trim_indexed_path_extension("path.d.ts"), "path");
+    assert_eq!(trim_indexed_path_extension("path.d.mts"), "path");
+    assert_eq!(trim_indexed_path_extension("path.d.cts"), "path");
+    assert_eq!(trim_indexed_path_extension("src/path.ts"), "src/path");
+}
+
+#[test]
 fn file_path_matches_module_covers_the_three_forms() {
     // Stem suffix — relative import.
     assert!(file_path_matches_module("src/app/foo.ts", "./foo"));
@@ -59,6 +67,42 @@ fn file_path_matches_module_covers_the_three_forms() {
     // Boundary check: a segment run must not match inside a longer segment.
     assert!(!file_path_matches_module("src/posthog_models/x.py", "posthog.models"));
     assert!(!file_path_matches_module("src/a/b.ts", ""));
+}
+
+#[test]
+fn node_builtin_modules_match_only_supplied_node_declarations() {
+    assert!(file_path_matches_module(
+        "ext:ts:@types/node/path.d.ts",
+        "node:path"
+    ));
+    assert!(file_path_matches_module(
+        "ext:ts:@types/node/fs/promises.d.ts",
+        "node:fs/promises"
+    ));
+
+    // `node:` never turns a project file or a different external package into
+    // a builtin declaration candidate.
+    assert!(!file_path_matches_module("src/path.ts", "node:path"));
+    assert!(!file_path_matches_module(
+        "ext:ts:some-package/path.d.ts",
+        "node:path"
+    ));
+    assert!(!file_path_matches_module(
+        "ext:ts:@types/nodeish/path.d.ts",
+        "node:path"
+    ));
+    assert!(!file_path_matches_module(
+        "ext:ts:@types/node/path.d.ts",
+        "sass:math"
+    ));
+    assert!(!file_path_matches_module(
+        "ext:ts:@types/node/path.d.ts",
+        "jsr:@std/path"
+    ));
+    assert!(!file_path_matches_module(
+        "ext:ts:@types/node/path.d.ts",
+        "node:../path"
+    ));
 }
 
 #[test]

@@ -17,6 +17,7 @@ struct FakeLookup {
     packages: HashMap<String, i64>,
     package_symbols: HashMap<i64, Vec<ContractSymbol>>,
     return_types: HashMap<i64, TypeId>,
+    field_types: HashMap<String, String>,
     external_names: Vec<String>,
     declared_deps: Vec<String>,
     empty: Vec<ContractSymbol>,
@@ -67,8 +68,8 @@ impl SymbolLookup for FakeLookup {
     fn resolve_module_from(&self, _source: &str, spec: &str) -> Option<&str> {
         self.module_files.get(spec).map(String::as_str)
     }
-    fn field_type_name(&self, _: &str) -> Option<&str> {
-        None
+    fn field_type_name(&self, qname: &str) -> Option<&str> {
+        self.field_types.get(qname).map(String::as_str)
     }
     fn return_type_name(&self, _: &str) -> Option<&str> {
         None
@@ -164,6 +165,53 @@ fn scheme_prefixed_unlinked_import_denies_with_import_unlinked() {
             assert_eq!(c.symbol_id, None);
         }
         _ => panic!("scheme-prefixed unlinked import must deny"),
+    }
+}
+
+#[test]
+fn node_builtin_value_uses_its_types_node_field_type() {
+    let mut lookup = FakeLookup::default();
+    lookup.by_name.insert(
+        "path".into(),
+        vec![sym(
+            10,
+            "path",
+            "path",
+            "variable",
+            "ext:ts:@types/node/path.d.ts",
+        )],
+    );
+    lookup
+        .field_types
+        .insert("path".into(), "path.PlatformPath".into());
+    let arena = TypeArena::new();
+    let ctx = ctx_with(vec![imp("path", "node:path")]);
+    match apply(&ctx, &lookup, &arena, &seg("path", false)) {
+        RootImportOutcome::Typed(recv) => {
+            assert_eq!(arena.format_type(recv.ty), "path.PlatformPath")
+        }
+        _ => panic!("node builtin must type from its @types/node value"),
+    }
+}
+
+#[test]
+fn node_missing_denies_when_an_unrelated_node_candidate_exists() {
+    let mut lookup = FakeLookup::default();
+    lookup.by_name.insert(
+        "missing".into(),
+        vec![sym(
+            11,
+            "missing",
+            "@types/node.path.missing",
+            "variable",
+            "ext:ts:@types/node/path.d.ts",
+        )],
+    );
+    let arena = TypeArena::new();
+    let ctx = ctx_with(vec![imp("missing", "node:missing")]);
+    match apply(&ctx, &lookup, &arena, &seg("missing", false)) {
+        RootImportOutcome::Deny(c) => assert_eq!(c.kind, CauseKind::ImportUnlinked),
+        _ => panic!("node builtin must not borrow an unrelated @types/node file"),
     }
 }
 
