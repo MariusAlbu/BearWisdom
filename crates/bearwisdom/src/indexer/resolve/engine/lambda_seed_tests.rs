@@ -207,6 +207,9 @@ fn strict_ruby_block_contracts_reject_positional_callbacks_and_accept_trailing_b
         let arena = TypeArena::new();
         let mut contract = map_method();
         contract.file_path = format!("contracts/catalog.{extension}").into();
+        if extension == "rbi" {
+            contract.signature = Some("map(&block: (T) -> U): Array<U>".into());
+        }
         let parameter = crate::types::SourceSpan { start: 24, end: 28 };
 
         for positional in [
@@ -253,10 +256,38 @@ fn strict_ruby_block_contracts_reject_positional_callbacks_and_accept_trailing_b
 }
 
 #[test]
-fn direct_selected_rbi_contract_seeding_requires_a_trailing_block() {
+fn legacy_unmarked_rbi_callback_defaults_to_trailing_block_only() {
+    let mut contract = map_method();
+    contract.file_path = "contracts/catalog.rbi".into();
+    contract.signature = Some("map(block: (Item) -> Result): void".into());
+    let span = crate::types::SourceSpan { start: 24, end: 28 };
+
+    assert_eq!(
+        callback_arg_policy(&contract, 0),
+        CallbackArgPolicy::TrailingBlockOnly,
+    );
+    assert!(callback_arg_is_compatible(
+        &contract,
+        0,
+        &CallArg::TrailingBlockAt {
+            params: vec![Some(span)],
+        },
+    ));
+    assert!(!callback_arg_is_compatible(
+        &contract,
+        0,
+        &CallArg::LambdaAt {
+            params: vec![Some(span)],
+        },
+    ));
+}
+
+#[test]
+fn direct_selected_rbi_block_contract_seeding_requires_a_trailing_block() {
     let arena = TypeArena::new();
     let mut contract = map_method();
     contract.file_path = "contracts/catalog.rbi".into();
+    contract.signature = Some("map(&block: (Item) -> Result): void".into());
     let callback = arena.intern(Type::Function {
         params: vec![arena.class("Item")],
         return_: arena.class("Result"),
@@ -276,6 +307,7 @@ fn direct_selected_rbi_contract_seeding_requires_a_trailing_block() {
         &[callback],
         &Default::default(),
         &[],
+        true,
     );
     assert!(arrow_lookup.contextual.borrow().is_empty());
 
@@ -290,11 +322,96 @@ fn direct_selected_rbi_contract_seeding_requires_a_trailing_block() {
         &[callback],
         &Default::default(),
         &[],
+        true,
     );
     assert_eq!(
         block_lookup.contextual.borrow().as_slice(),
         &[(parameter, arena.class("Item"))]
     );
+
+    let unproven_lookup = SeedLookup::new("Array", &[]);
+    seed_patterns_for_callee(
+        &unproven_lookup,
+        &arena,
+        &contract,
+        &[CallArg::TrailingBlockAt {
+            params: vec![Some(parameter)],
+        }],
+        &[callback],
+        &Default::default(),
+        &[],
+        false,
+    );
+    assert!(unproven_lookup.contextual.borrow().is_empty());
+}
+
+#[test]
+fn direct_selected_rbi_positional_proc_requires_a_source_addressed_lambda() {
+    let arena = TypeArena::new();
+    let mut contract = map_method();
+    contract.file_path = "contracts/catalog.rbi".into();
+    contract.signature = Some("visit(^callback: (Item) -> Result): void".into());
+    let callback = arena.intern(Type::Function {
+        params: vec![arena.class("Item")],
+        return_: arena.class("Result"),
+    });
+    let parameter = crate::types::SourceSpan { start: 24, end: 28 };
+
+    let direct = SeedLookup::new("Array", &[]);
+    seed_patterns_for_callee(
+        &direct,
+        &arena,
+        &contract,
+        &[CallArg::LambdaAt {
+            params: vec![Some(parameter)],
+        }],
+        &[callback],
+        &Default::default(),
+        &[],
+        true,
+    );
+    assert_eq!(
+        direct.contextual.borrow().as_slice(),
+        &[(parameter, arena.class("Item"))]
+    );
+
+    for arg in [
+        CallArg::Lambda {
+            params: vec!["item".into()],
+        },
+        CallArg::TrailingBlockAt {
+            params: vec![Some(parameter)],
+        },
+    ] {
+        let rejected = SeedLookup::new("Array", &[]);
+        seed_patterns_for_callee(
+            &rejected,
+            &arena,
+            &contract,
+            &[arg],
+            &[callback],
+            &Default::default(),
+            &[],
+            true,
+        );
+        assert!(rejected.contextual.borrow().is_empty());
+        assert!(rejected.seeded.borrow().is_empty());
+    }
+
+    let unproven = SeedLookup::new("Array", &[]);
+    seed_patterns_for_callee(
+        &unproven,
+        &arena,
+        &contract,
+        &[CallArg::LambdaAt {
+            params: vec![Some(parameter)],
+        }],
+        &[callback],
+        &Default::default(),
+        &[],
+        false,
+    );
+    assert!(unproven.contextual.borrow().is_empty());
 }
 
 #[test]

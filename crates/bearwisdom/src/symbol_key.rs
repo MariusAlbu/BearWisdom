@@ -7,6 +7,7 @@
 // Computed from the extracted symbol alone — syntactic and pre-resolution, so
 // it never depends on (and never triggers) name resolution:
 //   qualified_name # kind # generic_arity [# "(" param_types ")"]
+//     [# "rbi-callback=" convention]
 // Parameter types are the symbol's interned `TypeId`s formatted through the
 // workspace `TypeArena` (canonical — whitespace is structural, not source).
 // An un-typed parameter formats to the Unknown sentinel and becomes `_`,
@@ -75,6 +76,17 @@ pub fn symbol_key(
             core.push_str(&format_param(arena, pt));
         }
         core.push(')');
+
+        // Strict RBI contracts use a canonical formal marker to distinguish
+        // Ruby's attached block (`&name`) from an ordinary proc argument
+        // (`^name`). The function type alone is identical, but changing this
+        // calling convention changes which source calls are valid and must
+        // invalidate consumers. Legacy unmarked signatures carry no positive
+        // positional provenance, so deliberately contribute no suffix.
+        if let Some(convention) = rbi_callback_convention(language, sym.signature.as_deref()) {
+            core.push_str("#rbi-callback=");
+            core.push_str(convention);
+        }
     }
 
     if is_mergeable(language, sym.kind, sym.signature.as_deref()) {
@@ -91,6 +103,43 @@ fn is_overloadable(kind: SymbolKind) -> bool {
         kind,
         SymbolKind::Method | SymbolKind::Function | SymbolKind::Constructor
     )
+}
+
+/// Read the strict RBI callback marker at the start of a top-level formal.
+/// Nested callback-function parentheses are skipped, so only `&name` and
+/// `^name` in the declaration's own parameter list affect identity.
+fn rbi_callback_convention(language: &str, signature: Option<&str>) -> Option<&'static str> {
+    if language != "rbi" {
+        return None;
+    }
+    let signature = signature?;
+    let open = signature.find('(')?;
+    let mut depth = 0usize;
+    let mut formal_start = false;
+
+    for byte in signature.as_bytes()[open..].iter().copied() {
+        match byte {
+            b'(' => {
+                depth += 1;
+                if depth == 1 {
+                    formal_start = true;
+                }
+            }
+            b')' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return None;
+                }
+            }
+            b',' if depth == 1 => formal_start = true,
+            b' ' | b'\t' if depth == 1 && formal_start => {}
+            b'&' if depth == 1 && formal_start => return Some("block"),
+            b'^' if depth == 1 && formal_start => return Some("positional"),
+            _ if depth == 1 && formal_start => formal_start = false,
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Canonical spelling of one parameter type. The arena format is structural,

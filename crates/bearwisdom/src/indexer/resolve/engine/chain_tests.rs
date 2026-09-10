@@ -3816,7 +3816,8 @@ fn call_args_bind_against_the_arity_matching_overload() {
             params: vec!["b".to_string()],
         },
     ];
-    let picked = super::_test_select_overload_for_args(&lookup, arena, &one, &args);
+    let picked = super::_test_select_overload_for_args(&lookup, arena, &one, &args)
+        .expect("the arity-compatible delegate overload");
     assert_eq!(picked.id, 31, "the 2-param delegate overload must win");
 }
 
@@ -3859,8 +3860,114 @@ fn trailing_block_prefers_the_callback_shaped_same_arity_overload() {
         CallArg::TrailingBlockAt { params: vec![None] },
     ];
 
-    let picked = super::_test_select_overload_for_args(&lookup, arena, &one, &args);
+    let picked = super::_test_select_overload_for_args(&lookup, arena, &one, &args)
+        .expect("the trailing-block callback overload");
     assert_eq!(picked.id, 34, "the structural callback overload must win");
+}
+
+#[test]
+fn rbi_proc_overloads_distinguish_positional_lambdas_from_attached_blocks() {
+    use crate::indexer::resolve::engine::testkit::sym_with_sig;
+    use crate::types::CallArg;
+
+    let positional = sym_with_sig(
+        35,
+        "visit",
+        "Catalog.visit",
+        "method",
+        "catalog.rbi",
+        "visit(^callback: (Item) -> Result): Response",
+    );
+    let trailing = sym_with_sig(
+        36,
+        "visit",
+        "Catalog.visit",
+        "method",
+        "catalog.rbi",
+        "visit(&block: (Item) -> Result): Response",
+    );
+    let lookup = Lookup::new().with(positional.clone()).with(trailing);
+    let arena = lookup.type_arena().expect("arena");
+
+    let arrow = vec![CallArg::LambdaAt { params: vec![None] }];
+    assert_eq!(
+        super::_test_select_overload_for_args(&lookup, arena, &positional, &arrow)
+            .expect("the positional proc overload")
+            .id,
+        35,
+    );
+
+    let block = vec![CallArg::TrailingBlockAt { params: vec![None] }];
+    assert_eq!(
+        super::_test_select_overload_for_args(&lookup, arena, &positional, &block)
+            .expect("the attached block overload")
+            .id,
+        36,
+    );
+}
+
+#[test]
+fn strict_ruby_callback_syntax_mismatch_has_no_arity_fallback() {
+    use crate::indexer::resolve::engine::testkit::sym_with_sig;
+    use crate::types::CallArg;
+
+    let positional = sym_with_sig(
+        37,
+        "visit",
+        "Catalog.visit",
+        "method",
+        "catalog.rbi",
+        "visit(^callback: (Item) -> Result): Response",
+    );
+    let lookup = Lookup::new().with(positional.clone());
+    let arena = lookup.type_arena().expect("arena");
+    assert!(super::_test_select_overload_for_args(
+        &lookup,
+        arena,
+        &positional,
+        &[CallArg::TrailingBlockAt { params: vec![None] }],
+    )
+    .is_none());
+
+    let rbs = sym_with_sig(
+        38,
+        "visit",
+        "RbsCatalog.visit",
+        "method",
+        "catalog.rbs",
+        "visit(callback: (Item) -> Result): Response",
+    );
+    let rbs_lookup = Lookup::new().with(rbs.clone());
+    let rbs_arena = rbs_lookup.type_arena().expect("arena");
+    assert!(super::_test_select_overload_for_args(
+        &rbs_lookup,
+        rbs_arena,
+        &rbs,
+        &[CallArg::LambdaAt { params: vec![None] }],
+    )
+    .is_none());
+
+    let legacy = sym_with_sig(
+        39,
+        "visit",
+        "LegacyCatalog.visit",
+        "method",
+        "catalog.rb",
+        "visit(callback: (Item) -> Result): Response",
+    );
+    let legacy_lookup = Lookup::new().with(legacy.clone());
+    let legacy_arena = legacy_lookup.type_arena().expect("arena");
+    assert_eq!(
+        super::_test_select_overload_for_args(
+            &legacy_lookup,
+            legacy_arena,
+            &legacy,
+            &[CallArg::TrailingBlockAt { params: vec![None] }],
+        )
+        .map(|symbol| symbol.id),
+        Some(39),
+        "ordinary Ruby retains the legacy arity fallback",
+    );
 }
 
 #[test]

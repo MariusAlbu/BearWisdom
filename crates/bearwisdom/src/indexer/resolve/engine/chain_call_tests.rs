@@ -20,6 +20,8 @@ use std::sync::Arc;
 struct CallbackSeedLookup {
     callee: Symbol,
     generic_params: Option<Vec<String>>,
+    source_args: Option<Vec<CallArg>>,
+    type_info: Option<TypeInfo>,
     empty: Vec<Symbol>,
     pairs: Vec<(String, String)>,
     seeded: RefCell<Vec<(String, TypeId)>>,
@@ -30,6 +32,8 @@ impl CallbackSeedLookup {
         Self {
             callee,
             generic_params: Some(vec!["T".to_string()]),
+            source_args: None,
+            type_info: None,
             empty: Vec::new(),
             pairs: Vec::new(),
             seeded: RefCell::new(Vec::new()),
@@ -40,6 +44,23 @@ impl CallbackSeedLookup {
         Self {
             callee,
             generic_params: None,
+            source_args: None,
+            type_info: None,
+            empty: Vec::new(),
+            pairs: Vec::new(),
+            seeded: RefCell::new(Vec::new()),
+        }
+    }
+
+    fn source_attested(callee: Symbol, source_args: Vec<CallArg>, callback: TypeId) -> Self {
+        Self {
+            callee,
+            generic_params: None,
+            source_args: Some(source_args),
+            type_info: Some(TypeInfo {
+                parameter_type_ids: Some(vec![callback]),
+                ..Default::default()
+            }),
             empty: Vec::new(),
             pairs: Vec::new(),
             seeded: RefCell::new(Vec::new()),
@@ -50,6 +71,10 @@ impl CallbackSeedLookup {
 impl FlowCacheLookup for CallbackSeedLookup {
     fn record_local_type_id(&self, name: String, ty: TypeId) {
         self.seeded.borrow_mut().push((name, ty));
+    }
+
+    fn source_call_arguments(&self, _: u32) -> Option<Result<&[CallArg], ()>> {
+        self.source_args.as_deref().map(Ok)
     }
 }
 
@@ -91,6 +116,11 @@ impl SymbolLookup for CallbackSeedLookup {
     }
     fn is_external_name(&self, _: &str, _: &str) -> bool {
         false
+    }
+    fn canonical_type_info(&self, id: i64) -> Option<&TypeInfo> {
+        (id == self.callee.id)
+            .then_some(self.type_info.as_ref())
+            .flatten()
     }
 }
 
@@ -241,6 +271,104 @@ fn zero_argument_calls_substitute_only_attested_matching_receiver_regions() {
 }
 
 #[test]
+fn source_attested_calls_reject_strict_callback_syntax_before_applying_the_callee() {
+    let arena = TypeArena::new();
+    let callback = arena.intern(Type::Function {
+        params: vec![arena.class("Item")],
+        return_: arena.class("Result"),
+    });
+    let response = arena.class("Response");
+    let receiver = arena.class("Catalog");
+    let arrow = CallArg::LambdaAt { params: vec![None] };
+    let trailing = CallArg::TrailingBlockAt { params: vec![None] };
+
+    for (callee, args) in [
+        (
+            sym_with_sig(
+                70,
+                "visit",
+                "Catalog.visit",
+                "method",
+                "catalog.rbi",
+                "visit(^callback: (Item) -> Result): Response",
+            ),
+            vec![trailing.clone()],
+        ),
+        (
+            sym_with_sig(
+                71,
+                "visit",
+                "Catalog.block_visit",
+                "method",
+                "catalog.rbi",
+                "visit(&block: (Item) -> Result): Response",
+            ),
+            vec![arrow.clone()],
+        ),
+        (
+            sym_with_sig(
+                72,
+                "visit",
+                "Catalog.rbs_visit",
+                "method",
+                "catalog.rbs",
+                "visit(callback: (Item) -> Result): Response",
+            ),
+            vec![arrow.clone()],
+        ),
+    ] {
+        let lookup = CallbackSeedLookup::source_attested(callee.clone(), args.clone(), callback);
+        assert_eq!(
+            apply_with_receiver(
+                &lookup,
+                &arena,
+                &callee,
+                7,
+                &args,
+                &[],
+                receiver,
+                None,
+                Some(response),
+                &[],
+                None,
+            ),
+            None,
+            "{} must reject the source-attested callback syntax before applying its yield",
+            callee.file_path,
+        );
+        assert!(lookup.seeded.borrow().is_empty());
+    }
+
+    let legacy = sym_with_sig(
+        73,
+        "visit",
+        "Catalog.legacy_visit",
+        "method",
+        "catalog.rb",
+        "visit(callback: (Item) -> Result): Response",
+    );
+    let args = vec![trailing];
+    let lookup = CallbackSeedLookup::source_attested(legacy.clone(), args.clone(), callback);
+    assert_eq!(
+        apply_with_receiver(
+            &lookup,
+            &arena,
+            &legacy,
+            7,
+            &args,
+            &[],
+            receiver,
+            None,
+            Some(response),
+            &[],
+            None,
+        ),
+        Some(response),
+        "ordinary Ruby keeps its source-attested call behavior",
+    );
+}
+
+#[test]
 fn legacy_callback_seeding_uses_the_one_callback_shaped_overload() {
     let non_callback = sym_with_sig(
         30,
@@ -307,6 +435,59 @@ fn trailing_blocks_select_callback_shaped_overloads_for_contextual_seeding() {
     let selected =
         super::_test_uniquely_contextual_callback_callee(&lookup, arena, &non_callback, &args, &[]);
     assert_eq!(selected.map(|symbol| symbol.id), Some(33));
+}
+
+#[test]
+fn rbi_callback_overloads_require_their_declared_callback_syntax() {
+    let positional = sym_with_sig(
+        34,
+        "visit",
+        "Catalog.visit",
+        "method",
+        "catalog.rbi",
+        "visit(^callback: (Item) -> Result): void",
+    );
+    let trailing = sym_with_sig(
+        35,
+        "visit",
+        "Catalog.visit",
+        "method",
+        "catalog.rbi",
+        "visit(&block: (Item) -> Result): void",
+    );
+    let lookup = Lookup::new().with(positional.clone()).with(trailing);
+    let arena = lookup.type_arena().expect("arena");
+    let span = crate::types::SourceSpan { start: 40, end: 44 };
+
+    let arrow = vec![CallArg::LambdaAt {
+        params: vec![Some(span)],
+    }];
+    assert_eq!(
+        super::_test_uniquely_contextual_callback_callee(&lookup, arena, &positional, &arrow, &[],)
+            .map(|symbol| symbol.id),
+        Some(34),
+    );
+
+    let block = vec![CallArg::TrailingBlockAt {
+        params: vec![Some(span)],
+    }];
+    assert_eq!(
+        super::_test_uniquely_contextual_callback_callee(&lookup, arena, &positional, &block, &[],)
+            .map(|symbol| symbol.id),
+        Some(35),
+    );
+
+    let legacy = vec![CallArg::Lambda {
+        params: vec!["item".into()],
+    }];
+    assert!(super::_test_uniquely_contextual_callback_callee(
+        &lookup,
+        arena,
+        &positional,
+        &legacy,
+        &[],
+    )
+    .is_none());
 }
 
 #[test]

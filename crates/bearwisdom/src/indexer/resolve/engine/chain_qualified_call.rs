@@ -38,6 +38,7 @@ pub(super) fn anchor(
                 &call.parameters,
                 &Default::default(),
                 profile.delegate_wrappers,
+                true,
             ),
             None => super::super::lambda_seed::seed_patterns(
                 lookup,

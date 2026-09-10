@@ -45,9 +45,22 @@ fn cache_key_embeds_schema_version() {
 }
 
 #[test]
+fn positional_rbi_proc_contracts_bypass_prior_cache_schema() {
+    use std::path::Path;
+
+    let path = Path::new("/source/catalog.rbi");
+    let hash = "unchanged";
+    assert_ne!(
+        cache_key(path, hash),
+        format!("83:{}:{hash}", normalize_path_key(path)),
+        "the positional RBI Proc signature marker needs a fresh extraction"
+    );
+}
+
+#[test]
 fn pre_scoped_owner_payloads_cannot_match_current_cache_keys() {
     let current = cache_key(Path::new("/source/lib.rs"), "unchanged");
-    assert!(EXTRACTOR_SCHEMA_VERSION >= 32);
+    assert!(EXTRACTOR_SCHEMA_VERSION >= 84);
     assert_ne!(
         current,
         format!(

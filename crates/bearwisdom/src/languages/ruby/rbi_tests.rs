@@ -35,7 +35,7 @@ end
     assert_eq!(method.start_col, 8);
     assert_eq!(
         method.signature.as_deref(),
-        Some("visit(request: Request, block: (Item) -> Result): Response")
+        Some("visit(request: Request, &block: (Item) -> Result): Response")
     );
 }
 
@@ -55,7 +55,7 @@ end
         .expect("RBI method");
     assert_eq!(
         method.signature.as_deref(),
-        Some("each(block: () -> void): void")
+        Some("each(&block: () -> void): void")
     );
 
     let arena = TypeArena::new();
@@ -70,6 +70,143 @@ end
         Type::Function { params, return_ }
             if params.is_empty() && matches!(arena.get(return_), Type::Class(name) if name == "void")
     ));
+}
+
+#[test]
+fn rbi_required_positional_proc_is_a_structural_callback_contract() {
+    let source = r#"
+class Catalog
+  sig { params(callback: T.proc.params(item: Item).returns(Result)).returns(Response) }
+  def visit(callback); end
+end
+"#;
+    let mut extracted = super::rbi::extract(source);
+    let method = extracted
+        .symbols
+        .iter()
+        .find(|symbol| symbol.qualified_name == "Catalog::visit")
+        .expect("strict positional RBI method contract");
+    assert_eq!(
+        method.signature.as_deref(),
+        Some("visit(^callback: (Item) -> Result): Response")
+    );
+
+    let arena = TypeArena::new();
+    crate::languages::common::populate_return_type_ids(&mut extracted, &arena, "rbi");
+    let method = extracted
+        .symbols
+        .iter()
+        .find(|symbol| symbol.qualified_name == "Catalog::visit")
+        .unwrap();
+    assert!(matches!(
+        arena.get(method.param_types[0]),
+        Type::Function { params, return_ }
+            if matches!(arena.get(params[0]), Type::Class(name) if name == "Item")
+                && matches!(arena.get(return_), Type::Class(name) if name == "Result")
+    ));
+}
+
+#[test]
+fn rbi_required_positional_void_proc_is_structural() {
+    let source = r#"
+class Catalog
+  sig { params(callback: T.proc.void).void }
+  def each(callback); end
+end
+"#;
+    let mut extracted = super::rbi::extract(source);
+    let method = extracted
+        .symbols
+        .iter()
+        .find(|symbol| symbol.qualified_name == "Catalog::each")
+        .expect("strict positional RBI void contract");
+    assert_eq!(
+        method.signature.as_deref(),
+        Some("each(^callback: () -> void): void")
+    );
+    let arena = TypeArena::new();
+    crate::languages::common::populate_return_type_ids(&mut extracted, &arena, "rbi");
+    let method = extracted
+        .symbols
+        .iter()
+        .find(|symbol| symbol.qualified_name == "Catalog::each")
+        .unwrap();
+    assert!(matches!(
+        arena.get(method.param_types[0]),
+        Type::Function { params, return_ }
+            if params.is_empty() && matches!(arena.get(return_), Type::Class(name) if name == "void")
+    ));
+}
+
+#[test]
+fn rbi_rejects_non_exact_positional_proc_contract_shapes() {
+    let cases = [
+        (
+            "missing positional parameter",
+            "sig { params(callback: T.proc.void).void }\n  def each; end",
+        ),
+        (
+            "additional ordinary parameter",
+            "sig { params(value: Value, callback: T.proc.void).void }\n  def each(value, callback); end",
+        ),
+        (
+            "attached block alongside callback",
+            "sig { params(callback: T.proc.void, block: T.proc.void).void }\n  def each(callback, &block); end",
+        ),
+        (
+            "optional positional parameter",
+            "sig { params(callback: T.proc.void).void }\n  def each(callback = nil); end",
+        ),
+        (
+            "keyword positional parameter",
+            "sig { params(callback: T.proc.void).void }\n  def each(callback:); end",
+        ),
+        (
+            "splat positional parameter",
+            "sig { params(callback: T.proc.void).void }\n  def each(*callback); end",
+        ),
+        (
+            "destructured positional parameter",
+            "sig { params(callback: T.proc.void).void }\n  def each((callback)); end",
+        ),
+        (
+            "parameter name mismatch",
+            "sig { params(callback: T.proc.void).void }\n  def each(handler); end",
+        ),
+        (
+            "ordinary parameter is not a proc",
+            "sig { params(callback: Callback).void }\n  def each(callback); end",
+        ),
+        (
+            "proc option",
+            "sig { params(callback: T.proc.bind(Context).void).void }\n  def each(callback); end",
+        ),
+        (
+            "generic proc input",
+            "sig { params(callback: T.proc.params(item: T::Array[Item]).void).void }\n  def each(callback); end",
+        ),
+        (
+            "empty params proc spelling",
+            "sig { params(callback: T.proc.params().void).void }\n  def each(callback); end",
+        ),
+    ];
+
+    for (label, declaration) in cases {
+        let source = format!("class Catalog\n  {declaration}\nend\n");
+        let extracted = super::rbi::extract(&source);
+        assert!(
+            extracted
+                .symbols
+                .iter()
+                .all(|symbol| symbol.qualified_name != "Catalog::each"),
+            "{label} must not produce an RBI contract: {:?}",
+            extracted
+                .symbols
+                .iter()
+                .map(|symbol| &symbol.qualified_name)
+                .collect::<Vec<_>>()
+        );
+    }
 }
 
 #[test]

@@ -256,6 +256,11 @@ fn rbi_callback_contract_keeps_its_structural_type_through_portable_cache() {
         .iter()
         .find(|symbol| symbol.qualified_name == "Catalog::visit")
         .expect("strict RBI visit contract");
+    assert_eq!(
+        visit.signature.as_deref(),
+        Some("visit(&block: (Item) -> Result): void"),
+        "the canonical signature keeps attached-block provenance"
+    );
     let callback = visit.param_types[0];
     assert!(matches!(
         arena.get(callback),
@@ -279,6 +284,77 @@ fn rbi_callback_contract_keeps_its_structural_type_through_portable_cache() {
         .iter()
         .find(|symbol| symbol.qualified_name == "Catalog::visit")
         .expect("cold RBI visit contract");
+    assert_eq!(
+        cold_visit.signature, visit.signature,
+        "the portable cache must retain attached-block provenance"
+    );
+    let cold_callback = cold_visit.param_types[0];
+    assert!(matches!(
+        cold_arena.get(cold_callback),
+        Type::Function { params, return_ }
+            if params == vec![cold_arena.class("Item")]
+                && return_ == cold_arena.class("Result")
+    ));
+}
+
+#[test]
+fn rbi_positional_callback_contract_keeps_its_marker_through_portable_cache() {
+    use crate::type_checker::core::types::{Type, TypeArena};
+
+    let source = "class Catalog\n  sig { params(callback: T.proc.params(item: Item).returns(Result)).void }\n  def visit(callback); end\nend\n";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("catalog.rbi");
+    std::fs::write(&path, source).unwrap();
+    let arena = TypeArena::new();
+    let mut parsed = crate::indexer::parse_file::parse_file_with_arena(
+        &crate::walker::WalkedFile {
+            relative_path: "ext:ruby:pkg/catalog.rbi".into(),
+            absolute_path: path,
+            language: "rbi",
+        },
+        crate::languages::default_registry(),
+        &arena,
+    )
+    .unwrap();
+    crate::indexer::contract_filter::reduce_to_contract(&mut parsed);
+
+    let visit = parsed
+        .symbols
+        .iter()
+        .find(|symbol| symbol.qualified_name == "Catalog::visit")
+        .expect("strict positional RBI visit contract");
+    assert_eq!(
+        visit.signature.as_deref(),
+        Some("visit(^callback: (Item) -> Result): void"),
+        "the canonical signature keeps ordinary-callback provenance"
+    );
+    let callback = visit.param_types[0];
+    assert!(matches!(
+        arena.get(callback),
+        Type::Function { params, return_ }
+            if params == vec![arena.class("Item")] && return_ == arena.class("Result")
+    ));
+
+    let payload = super::super::external_parse_payload::CachedParse::from_parsed(&parsed, &arena);
+    let payload: super::super::external_parse_payload::CachedParse =
+        serde_json::from_str(&serde_json::to_string(&payload).unwrap()).unwrap();
+    let cold_arena = TypeArena::new();
+    let cold = payload.into_parsed(
+        &cold_arena,
+        &parsed.path,
+        &parsed.content_hash,
+        parsed.size,
+        parsed.mtime,
+    );
+    let cold_visit = cold
+        .symbols
+        .iter()
+        .find(|symbol| symbol.qualified_name == "Catalog::visit")
+        .expect("cold positional RBI visit contract");
+    assert_eq!(
+        cold_visit.signature, visit.signature,
+        "the portable cache must retain ordinary-callback provenance"
+    );
     let cold_callback = cold_visit.param_types[0];
     assert!(matches!(
         cold_arena.get(cold_callback),

@@ -1343,15 +1343,16 @@ pub(super) fn yield_through(
 /// sibling that does (`Entity(string)` vs `Entity(string, Action<…>)`), or
 /// argument binding and lambda seeding zip against the wrong positions.
 /// Preference among arity-exact siblings: one whose pattern at every lambda
-/// argument position is callback-shaped. The original callee stands when no
-/// sibling fits — its patterns may still bind a prefix.
+/// argument position is callback-shaped. Strict Ruby callback syntax has no
+/// fallback when no sibling admits it; non-strict declarations retain the
+/// original-callee fallback so their patterns may still bind a prefix.
 #[cfg(test)]
 pub(super) fn _test_select_overload_for_args(
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
     callee: &Symbol,
     args: &[crate::types::CallArg],
-) -> Symbol {
+) -> Option<Symbol> {
     select_overload_for_args(lookup, arena, callee, args)
 }
 
@@ -1360,15 +1361,22 @@ fn select_overload_for_args(
     arena: &TypeArena,
     callee: &Symbol,
     args: &[crate::types::CallArg],
-) -> Symbol {
+) -> Option<Symbol> {
     let n = args.len();
-    if param_patterns(lookup, arena, callee).len() == n {
-        return callee.clone();
+    let callee_patterns = param_patterns(lookup, arena, callee);
+    if callee_patterns.len() == n && callback_syntax_fits(callee, args) {
+        return Some(callee.clone());
     }
     let mut arity_match: Option<Symbol> = None;
     for cand in lookup.all_by_qualified_name(&callee.qualified_name) {
         let patterns = param_patterns(lookup, arena, cand);
         if patterns.len() != n {
+            continue;
+        }
+        if !callback_syntax_fits(cand, args) {
+            // An RBI/RBS callback form has a declaration-level calling
+            // convention. Do not retain an incompatible candidate merely as
+            // an arity fallback: it could otherwise become a false callee.
             continue;
         }
         let lambdas_fit = args.iter().zip(patterns.iter()).all(|(a, &p)| {
@@ -1389,11 +1397,22 @@ fn select_overload_for_args(
             )
         });
         if lambdas_fit {
-            return cand.clone();
+            return Some(cand.clone());
         }
         arity_match.get_or_insert_with(|| cand.clone());
     }
-    arity_match.unwrap_or_else(|| callee.clone())
+    arity_match.or_else(|| callback_syntax_fits(callee, args).then(|| callee.clone()))
+}
+
+fn callback_syntax_fits(callee: &Symbol, args: &[crate::types::CallArg]) -> bool {
+    args.iter().enumerate().all(|(index, arg)| {
+        !matches!(
+            arg,
+            crate::types::CallArg::Lambda { .. }
+                | crate::types::CallArg::LambdaAt { .. }
+                | crate::types::CallArg::TrailingBlockAt { .. }
+        ) || super::lambda_seed::callback_arg_is_compatible(callee, index, arg)
+    })
 }
 
 /// Inner body of `yield_through`. See `yield_through` for the contract.

@@ -186,17 +186,36 @@ fn walk_scopes(
 }
 
 fn contract_signature(sig: Node, method: Node, src: &[u8]) -> Option<String> {
-    let (method_names, block_name) = method_parameters(method, src)?;
     let parsed = sig_expression(sig, src)?;
+    let name = text(method.child_by_field_name("name")?, src);
+    match method_parameters(method, src)? {
+        MethodParameters::FinalBlock {
+            ordinary,
+            block_name,
+        } => block_contract_signature(&name, ordinary, block_name, parsed, src),
+        MethodParameters::PositionalProc { callback_name } => {
+            positional_proc_contract_signature(&name, callback_name, parsed, src)
+        }
+    }
+}
+
+/// The established attached-block form. Its leading `&` is retained in the
+/// canonical parameter name so callers can distinguish the Ruby calling
+/// convention after this source CST is no longer available.
+fn block_contract_signature(
+    name: &str,
+    method_names: Vec<String>,
+    block_name: String,
+    parsed: Params<'_>,
+    src: &[u8],
+) -> Option<String> {
     if parsed.entries.len() != method_names.len() + 1 {
         return None;
     }
 
     let mut signature_params = Vec::with_capacity(parsed.entries.len());
     for (expected_name, (actual_name, type_node)) in method_names.iter().zip(&parsed.entries) {
-        let Some(ty) = simple_type(*type_node, src) else {
-            return None;
-        };
+        let ty = simple_type(*type_node, src)?;
         if expected_name != actual_name {
             return None;
         }
@@ -208,14 +227,39 @@ fn contract_signature(sig: Node, method: Node, src: &[u8]) -> Option<String> {
     }
     let callback = parse_proc(*callback, src)?;
     signature_params.push(format!(
-        "{block_name}: ({}) -> {}",
+        "&{block_name}: ({}) -> {}",
         callback.params.join(", "),
         callback.return_type
     ));
-    let name = text(method.child_by_field_name("name")?, src);
     Some(format!(
         "{name}({}): {}",
         signature_params.join(", "),
+        parsed.return_type
+    ))
+}
+
+/// The only ordinary Proc parameter admitted by this strict RBI slice. It is
+/// deliberately mutually exclusive with `&block`: one required identifier,
+/// one same-named Sorbet entry, and no other method inputs. Its `^` canonical
+/// marker records that the callback is an ordinary positional argument while
+/// retaining the source parameter name.
+fn positional_proc_contract_signature(
+    name: &str,
+    callback_name: String,
+    parsed: Params<'_>,
+    src: &[u8],
+) -> Option<String> {
+    let [(declared_name, callback)] = parsed.entries.as_slice() else {
+        return None;
+    };
+    if declared_name != &callback_name {
+        return None;
+    }
+    let callback = parse_proc(*callback, src)?;
+    Some(format!(
+        "{name}(^{callback_name}: ({}) -> {}): {}",
+        callback.params.join(", "),
+        callback.return_type,
         parsed.return_type
     ))
 }
@@ -297,9 +341,26 @@ fn parse_proc(node: Node, src: &[u8]) -> Option<ProcType> {
     })
 }
 
-fn method_parameters(method: Node, src: &[u8]) -> Option<(Vec<String>, String)> {
+enum MethodParameters {
+    FinalBlock {
+        ordinary: Vec<String>,
+        block_name: String,
+    },
+    PositionalProc {
+        callback_name: String,
+    },
+}
+
+fn method_parameters(method: Node, src: &[u8]) -> Option<MethodParameters> {
     let parameters = method.child_by_field_name("parameters")?;
     let parameters = named_children(parameters);
+    if let [parameter] = parameters.as_slice() {
+        if parameter.kind() == "identifier" {
+            let callback_name = text(*parameter, src);
+            return is_identifier(&callback_name)
+                .then_some(MethodParameters::PositionalProc { callback_name });
+        }
+    }
     let (last, ordinary) = parameters.split_last()?;
     if last.kind() != "block_parameter" {
         return None;
@@ -327,7 +388,10 @@ fn method_parameters(method: Node, src: &[u8]) -> Option<(Vec<String>, String)> 
     {
         return None;
     }
-    Some((names, block_name))
+    Some(MethodParameters::FinalBlock {
+        ordinary: names,
+        block_name,
+    })
 }
 
 fn exact_call<'tree>(node: Node<'tree>, name: &str, src: &[u8]) -> Option<Node<'tree>> {

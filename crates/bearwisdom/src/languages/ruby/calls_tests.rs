@@ -195,6 +195,33 @@ end
 }
 
 #[test]
+fn call_args_callback_forms_keep_their_ordinary_argument_index() {
+    for (callback, parameter) in [
+        ("->(item) { item.touch }", "item"),
+        ("proc { |item| item.touch }", "item"),
+        ("lambda { |item| item.touch }", "item"),
+        ("Proc.new { |item| item.touch }", "item"),
+    ] {
+        let src =
+            format!("def caller(prefix, suffix)\n  consume(prefix, {callback}, suffix)\nend\n");
+        let args = call_args_for(&src, "consume");
+        assert!(
+            matches!(
+                args.as_slice(),
+                [CallArg::Ident(prefix), CallArg::LambdaAt { .. }, CallArg::Ident(suffix)]
+                    if prefix == "prefix" && suffix == "suffix"
+            ),
+            "callback `{callback}` must stay at positional index 1: {args:?}"
+        );
+        assert_eq!(
+            callback_param_slices(&src, &args),
+            vec![vec![Some(parameter)]],
+            "callback `{callback}` must retain its declaration span at index 1: {args:?}"
+        );
+    }
+}
+
+#[test]
 fn call_args_zero_arity_callbacks_remain_explicit_lambda_arguments() {
     for source in [
         "def caller(arr)\n  arr.each { touch }\nend\n",

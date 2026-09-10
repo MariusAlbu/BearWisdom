@@ -95,6 +95,12 @@ pub(super) fn apply_with_receiver(
 ) -> Option<TypeId> {
     let source_owned = lookup.source_call_arguments(selector).is_some();
     let args = super::super::arg_types::at(lookup, selector, args)?;
+    // Source-owned operands attest the call syntax, but not the display
+    // callee row supplied by this legacy path. Do not apply a strict RBI/RBS
+    // callback declaration when that row rejects the attested syntax.
+    if source_owned && !super::callback_syntax_fits(callee, args) {
+        return None;
+    }
     // Zero ordinary arguments still require receiver-region substitution.
     let bound = lookup
         .member_info(arena, receiver, callee.id)
@@ -105,7 +111,10 @@ pub(super) fn apply_with_receiver(
     let callee = if bound || source_owned {
         callee.clone()
     } else {
-        select_overload_for_args(lookup, arena, callee, args)
+        // The legacy member walk has no authoritative overload identity. A
+        // strict callback convention cannot be satisfied by its display-row
+        // fallback, so stop before borrowing that row's patterns.
+        select_overload_for_args(lookup, arena, callee, args)?
     };
     let actual = resolve_arg_types(lookup, arena, args);
     if let Some(env) = bound_call::environment_with_receiver(
@@ -125,6 +134,10 @@ pub(super) fn apply_with_receiver(
             &patterns,
             &Default::default(),
             wrappers,
+            // `member_info` only proves that this declaration applies to the
+            // receiver. It does not identify which overload the call chose;
+            // source-bound overload calls are handled by `bound_method`.
+            false,
         );
         return yielded.map(rewrite);
     }
@@ -273,9 +286,15 @@ fn uniquely_contextual_callback_callee(
         }
         let patterns = param_patterns(lookup, arena, &candidate);
         if patterns.len() != args.len()
-            || !args.iter().zip(&patterns).all(|(arg, &pattern)| {
-                !is_contextual_callback_arg(arg) || callback_pattern(arena, pattern, wrappers)
-            })
+            || !args
+                .iter()
+                .zip(&patterns)
+                .enumerate()
+                .all(|(index, (arg, &pattern))| {
+                    !is_contextual_callback_arg(arg)
+                        || (lambda_seed::callback_arg_is_compatible(&candidate, index, arg)
+                            && callback_pattern(arena, pattern, wrappers))
+                })
         {
             continue;
         }

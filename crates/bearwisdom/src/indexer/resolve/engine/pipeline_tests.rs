@@ -277,6 +277,98 @@ fn engine_selects_an_rbi_contract_before_typing_a_ruby_trailing_block() {
     );
 }
 
+#[test]
+fn engine_selects_an_rbi_positional_proc_before_typing_a_ruby_arrow_lambda() {
+    let dir = tempfile::tempdir().unwrap();
+    let rbi_path = dir.path().join("catalog.rbi");
+    let ruby_path = dir.path().join("callbacks.rb");
+    std::fs::write(
+        &rbi_path,
+        "class Catalog\n  sig { params(callback: T.proc.params(item: Item).returns(Result)).returns(Response) }\n  def visit(callback); end\nend\n",
+    )
+    .unwrap();
+    std::fs::write(
+        &ruby_path,
+        "class Item\n  def touch\n  end\nend\nclass Catalog\n  def run\n    visit(->(item) { item.touch })\n  end\nend\n",
+    )
+    .unwrap();
+
+    let arena = Arc::new(TypeArena::new());
+    let registry = crate::languages::default_registry();
+    let rbi = crate::indexer::parse_file::parse_file_with_arena(
+        &crate::walker::WalkedFile {
+            relative_path: "catalog.rbi".into(),
+            absolute_path: rbi_path,
+            language: "rbi",
+        },
+        registry,
+        &arena,
+    )
+    .unwrap();
+    let ruby = crate::indexer::parse_file::parse_file_with_arena(
+        &crate::walker::WalkedFile {
+            relative_path: "callbacks.rb".into(),
+            absolute_path: ruby_path,
+            language: "ruby",
+        },
+        registry,
+        &arena,
+    )
+    .unwrap();
+    let files = vec![rbi, ruby];
+    let db = crate::Database::open_in_memory().unwrap();
+    let (_, ids) = crate::indexer::write::write_parsed_files_with_origin(
+        &db,
+        &files,
+        "internal",
+        Some(&arena),
+    )
+    .unwrap();
+    let visit_index = files[0]
+        .symbols
+        .iter()
+        .position(|symbol| symbol.qualified_name == "Catalog::visit")
+        .expect("RBI positional visit contract");
+    let touch_index = files[1]
+        .symbols
+        .iter()
+        .position(|symbol| symbol.qualified_name == "Item::touch")
+        .expect("Ruby Item#touch method");
+    let visit_id = ids
+        .row_id("catalog.rbi", visit_index)
+        .expect("RBI visit id");
+    let touch_id = ids
+        .row_id("callbacks.rb", touch_index)
+        .expect("Ruby touch id");
+
+    let tree = crate::indexer::resolve::engine::compilation::Compilation::build(
+        &files,
+        &ids,
+        Arc::clone(&arena),
+    );
+    let profiles = super::build_profiles();
+    let solver = super::SemanticModel::production();
+    let (edges, unresolved, _ref_log, _census) = super::resolve_one_file(
+        &files[1],
+        &tree,
+        &profiles,
+        &no_plugins(),
+        None,
+        &solver,
+        &ids,
+        None,
+    );
+
+    assert!(
+        edges.iter().any(|edge| edge.1 == visit_id),
+        "the Ruby arrow call must select the indexed RBI contract; edges={edges:?}; unresolved={unresolved:?}"
+    );
+    assert!(
+        edges.iter().any(|edge| edge.1 == touch_id),
+        "the selected RBI positional proc must seed item before item.touch resolves; edges={edges:?}; unresolved={unresolved:?}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // FileLookup unit tests
 // ---------------------------------------------------------------------------

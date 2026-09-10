@@ -142,6 +142,58 @@ fn param_type_whitespace_is_normalized() {
 }
 
 #[test]
+fn explicit_rbi_callback_convention_is_part_of_the_key() {
+    let arena = TypeArena::new();
+    let callback = arena.intern(Type::Function {
+        params: vec![arena.class("Item")],
+        return_: arena.class("Result"),
+    });
+    let block = sym(
+        "Catalog::visit",
+        SymbolKind::Method,
+        vec![callback],
+        0,
+        Some("visit(&block: (Item) -> Result): Response"),
+    );
+    let positional = sym(
+        "Catalog::visit",
+        SymbolKind::Method,
+        vec![callback],
+        0,
+        Some("visit(^callback: (Item) -> Result): Response"),
+    );
+    let legacy = sym(
+        "Catalog::visit",
+        SymbolKind::Method,
+        vec![callback],
+        0,
+        Some("visit(callback: (Item) -> Result): Response"),
+    );
+
+    let block_key = symbol_key("rbi", &block, 1, &arena);
+    let positional_key = symbol_key("rbi", &positional, 1, &arena);
+    let legacy_key = symbol_key("rbi", &legacy, 1, &arena);
+    assert!(block_key.ends_with("#rbi-callback=block"), "{block_key}");
+    assert!(
+        positional_key.ends_with("#rbi-callback=positional"),
+        "{positional_key}"
+    );
+    assert_ne!(
+        block_key, positional_key,
+        "block and positional proc forms are distinct public contracts"
+    );
+    assert_ne!(
+        positional_key, legacy_key,
+        "an unmarked legacy formal is not positional-proc provenance"
+    );
+    assert_eq!(
+        symbol_key("ruby", &block, 1, &arena),
+        symbol_key("ruby", &positional, 1, &arena),
+        "the RBI-only marker must not expand ordinary Ruby method identity"
+    );
+}
+
+#[test]
 fn non_overloadable_kinds_omit_params() {
     let arena = TypeArena::new();
     let field = sym("M.x", SymbolKind::Field, vec![], 0, None);

@@ -139,6 +139,7 @@ fn call_yield(
         &patterns,
         &Default::default(),
         profile.delegate_wrappers,
+        true,
     );
     yielded.map(rewrite)
 }

@@ -363,6 +363,64 @@ fn param_change_replaces_symbol_and_reports_new_name() {
     assert_eq!(cnt, 1, "old M.foo vanished, exactly one remains");
 }
 
+/// An RBI callback convention change is a contract change even when the
+/// structural function type is unchanged. It must replace the provider row so
+/// callers with an edge into it enter the normal dependent re-resolution set.
+#[test]
+fn rbi_callback_convention_change_replaces_symbol_and_reports_dependents() {
+    use crate::type_checker::core::types::Type;
+
+    let db = Database::open_in_memory().unwrap();
+    let arena = TypeArena::new();
+    let callback = arena.intern(Type::Function {
+        params: vec![arena.class("Item")],
+        return_: arena.class("Result"),
+    });
+
+    let mut attached_block = esym(
+        "Catalog::visit",
+        SymbolKind::Method,
+        Some("visit(&block: (Item) -> Result): Response"),
+        1,
+    );
+    attached_block.param_types = vec![callback];
+    let consumer = esym("Consumer::run", SymbolKind::Method, None, 1);
+    let first = vec![
+        pfile("catalog.rbi", "rbi", vec![attached_block]),
+        pfile("consumer.rb", "ruby", vec![consumer]),
+    ];
+    write_parsed_files_incremental(&db, &first, Some(&arena)).unwrap();
+    let old_visit = sym_id(&db, "Catalog::visit").unwrap();
+    let consumer = sym_id(&db, "Consumer::run").unwrap();
+    insert_edge(&db, consumer, old_visit);
+
+    let mut positional_proc = esym(
+        "Catalog::visit",
+        SymbolKind::Method,
+        Some("visit(^callback: (Item) -> Result): Response"),
+        1,
+    );
+    positional_proc.param_types = vec![callback];
+    let second = pfile("catalog.rbi", "rbi", vec![positional_proc]);
+    let (_, _, report) =
+        write_parsed_files_incremental(&db, std::slice::from_ref(&second), Some(&arena)).unwrap();
+
+    let new_visit = sym_id(&db, "Catalog::visit").unwrap();
+    assert_ne!(
+        old_visit, new_visit,
+        "callback convention change must not retain the provider identity"
+    );
+    assert!(
+        report.new_symbol_names.contains("visit"),
+        "the positional contract must be reported as newly available"
+    );
+    assert!(
+        report.vanished_dependent_paths.contains("consumer.rb"),
+        "callers of the old convention must re-resolve: {:?}",
+        report.vanished_dependent_paths
+    );
+}
+
 /// A mergeable symbol (namespace) declared in two files is one logical row with
 /// two locations; dropping one declaration leaves the id and the other location.
 #[test]

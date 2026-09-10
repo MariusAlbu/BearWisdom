@@ -52,6 +52,7 @@ pub(super) fn call(
                 &selected.parameters,
                 &Default::default(),
                 profile.delegate_wrappers,
+                true,
             );
             Ok(SymbolInfo {
                 target_symbol_id: declaration.id,
@@ -268,6 +269,7 @@ pub(super) fn apply(
                 &patterns,
                 &Default::default(),
                 profile.delegate_wrappers,
+                true,
             );
             info.return_type_id.map(rewrite)
         });
