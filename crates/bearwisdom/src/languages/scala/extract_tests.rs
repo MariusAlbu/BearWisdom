@@ -365,3 +365,41 @@ fn import_produces_import_ref() {
         "missing ListBuffer: {targets:?}"
     );
 }
+
+#[test]
+fn direct_underscore_import_emits_canonical_wildcard_metadata() {
+    let r = extract::extract("import pkg.api._\n");
+    let wildcard: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Imports && r.target_name == "*")
+        .collect();
+    assert_eq!(
+        wildcard.len(),
+        1,
+        "expected one wildcard ref: {:#?}",
+        r.refs
+    );
+    assert_eq!(wildcard[0].module.as_deref(), Some("pkg.api"));
+    assert!(!wildcard[0].is_reexport);
+}
+
+#[test]
+fn noncanonical_scala_import_forms_do_not_emit_wildcard_metadata() {
+    for source in [
+        "import pkg.api.*",                // Scala 3 wildcard
+        "import pkg.api.{Thing, Other}",   // selector group
+        "import pkg.api.{Thing as Alias}", // rename
+        "import pkg.api.{Thing => _}",     // exclusion
+        "import pkg.api.given",            // given-only import
+    ] {
+        let r = extract::extract(source);
+        assert!(
+            !r.refs
+                .iter()
+                .any(|r| r.kind == EdgeKind::Imports && r.target_name == "*"),
+            "{source:?} must not become a wildcard import: {:#?}",
+            r.refs
+        );
+    }
+}

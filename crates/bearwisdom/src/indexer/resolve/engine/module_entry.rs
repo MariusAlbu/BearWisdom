@@ -5,7 +5,8 @@
 // consults to link a bare module specifier to the indexed file its lookups
 // start from. Two feeders per batch:
 //   * package entries derived from the shared `ext:<lang>:<pkg>/…` path
-//     convention (barrel-preferring, depth-tie-broken), and
+//     convention (barrel-preferring, depth-tie-broken),
+//   * exact Dart `package:<pkg>/<library>` aliases for indexed Pub files, and
 //   * ambient-module declarations carried on `ParsedFile::declared_modules`
 //     (`declare module 'virtual:x'`) — pure data consumption, so an internal
 //     shim file keys its declared specifiers exactly like a package entry.
@@ -37,6 +38,21 @@ pub(super) fn populate(
         let Some(pkg) = package_from_ext_path(path) else {
             continue;
         };
+
+        // Pub package exports retain their exact `package:<pkg>/<library>` URI.
+        // Index that URI beside the package's bare entry key so a generic
+        // re-export walk can cross from one hydrated Dart package into another
+        // without widening the lookup to every declaration in the package.
+        if path.starts_with("ext:dart:") {
+            if let Some(library) = path.strip_prefix("ext:dart:") {
+                if library.contains('/') {
+                    module_entry
+                        .entry(format!("package:{library}"))
+                        .or_insert_with(|| path.to_string());
+                }
+            }
+        }
+
         let has_reexports = reexport_map.get(path).is_some_and(|v| !v.is_empty());
         let depth = path.matches('/').count();
         let replace = match module_entry.get(pkg) {

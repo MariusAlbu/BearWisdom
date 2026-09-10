@@ -1,9 +1,18 @@
 use super::*;
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use crate::indexer::external_parse_payload::CachedParse;
+use crate::indexer::resolve::engine::compilation::Compilation;
 use crate::indexer::resolve::engine::contract::{ImportEntry, Symbol, SymbolLookup, SymbolSet};
 use crate::indexer::resolve::engine::testkit::{
     accept_any, call_ref, file_ctx, ref_ctx, source_symbol, sym, Lookup,
 };
+use crate::type_checker::core::types::TypeArena;
 use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
+use crate::types::{
+    EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, ParsedFile, SymbolKind, Visibility,
+};
 
 fn apply(lookup: &dyn SymbolLookup, target: &str, imports: Vec<ImportEntry>) -> Option<i64> {
     let r = call_ref(target);
@@ -22,6 +31,170 @@ fn apply(lookup: &dyn SymbolLookup, target: &str, imports: Vec<ImportEntry>) -> 
         LookupResult::Resolved(res) => Some(res.target_symbol_id),
         _ => None,
     }
+}
+
+fn dart_symbol(name: &str, qname: &str) -> ExtractedSymbol {
+    ExtractedSymbol {
+        name: name.to_string(),
+        qualified_name: qname.to_string(),
+        kind: SymbolKind::Function,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        byte_offset: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+        declared_type: None,
+        return_type: None,
+        param_types: Vec::new(),
+        generic_params: Vec::new(),
+    }
+}
+
+fn dart_star_reexport(source_symbol_index: usize, module: &str) -> ExtractedRef {
+    ExtractedRef {
+        is_include: false,
+        source_symbol_index,
+        target_name: "*".to_string(),
+        kind: EdgeKind::Imports,
+        line: 0,
+        col: 0,
+        module: Some(module.to_string()),
+        namespace_segments: Vec::new(),
+        chain: None,
+        byte_offset: 0,
+        call_args: Vec::new(),
+        is_import_binding: false,
+        is_reexport: true,
+    }
+}
+
+fn dart_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
+    ParsedFile {
+        path: path.to_string(),
+        language: "dart".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols,
+        refs,
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: FlowMeta::default(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+        plugin_flow_emissions: Vec::new(),
+        declared_modules: Vec::new(),
+    }
+}
+
+fn dart_chain_id_map() -> HashMap<(String, String), i64> {
+    HashMap::from([
+        (
+            (
+                "ext:dart:test/test.dart".to_string(),
+                "test.barrel".to_string(),
+            ),
+            101,
+        ),
+        (
+            (
+                "ext:dart:matcher/expect.dart".to_string(),
+                "matcher.barrel".to_string(),
+            ),
+            102,
+        ),
+        (
+            (
+                "ext:dart:matcher/src/expect/expect.dart".to_string(),
+                "matcher.expect".to_string(),
+            ),
+            700,
+        ),
+    ])
+}
+
+fn dart_export_chain_files() -> Vec<ParsedFile> {
+    vec![
+        dart_file(
+            "ext:dart:test/test.dart",
+            vec![dart_symbol("barrel", "test.barrel")],
+            vec![dart_star_reexport(0, "package:matcher/expect.dart")],
+        ),
+        dart_file(
+            "ext:dart:matcher/expect.dart",
+            vec![dart_symbol("barrel", "matcher.barrel")],
+            vec![dart_star_reexport(0, "src/expect/expect.dart")],
+        ),
+        dart_file(
+            "ext:dart:matcher/src/expect/expect.dart",
+            vec![dart_symbol("expect", "matcher.expect")],
+            Vec::new(),
+        ),
+    ]
+}
+
+fn resolve_dart_export_chain(files: &[ParsedFile], arena: Arc<TypeArena>) -> Option<i64> {
+    let tree = Compilation::build(files, &dart_chain_id_map().into(), arena);
+    apply(
+        &tree,
+        "expect",
+        vec![ImportEntry {
+            imported_name: "*".to_string(),
+            module_path: Some("test".to_string()),
+            alias: None,
+            is_wildcard: true,
+        }],
+    )
+}
+
+#[test]
+fn dart_wildcard_import_follows_package_and_relative_export_chain_hot_and_cold() {
+    let hot_arena = Arc::new(TypeArena::new());
+    let files = dart_export_chain_files();
+    assert_eq!(
+        resolve_dart_export_chain(&files, Arc::clone(&hot_arena)),
+        Some(700)
+    );
+
+    let payloads: Vec<CachedParse> = files
+        .iter()
+        .map(|file| {
+            let payload = CachedParse::from_parsed(file, &hot_arena);
+            serde_json::from_str(&serde_json::to_string(&payload).unwrap()).unwrap()
+        })
+        .collect();
+    let cold_arena = Arc::new(TypeArena::new());
+    let cold_files: Vec<ParsedFile> = payloads
+        .into_iter()
+        .zip(&files)
+        .map(|(payload, file)| {
+            payload.into_parsed(
+                &cold_arena,
+                &file.path,
+                &file.content_hash,
+                file.size,
+                file.mtime,
+            )
+        })
+        .collect();
+    assert_eq!(
+        resolve_dart_export_chain(&cold_files, Arc::clone(&cold_arena)),
+        Some(700),
+        "portable-cache restoration must retain Dart export modules and re-export tags"
+    );
 }
 
 /// Empty target — rule passes immediately.

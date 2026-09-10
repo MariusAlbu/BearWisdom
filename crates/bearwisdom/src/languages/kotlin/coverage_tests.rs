@@ -779,16 +779,22 @@ fn ref_explicit_delegation() {
 
 #[test]
 fn ref_wildcard_import() {
-    // `import kotlin.collections.*` — wildcard import emits an Imports edge.
+    // `import kotlin.collections.*` — the star is an unnamed grammar token,
+    // but must still become canonical wildcard metadata.
     let r = extract("import kotlin.collections.*");
-    assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
-        "expected Imports ref from wildcard import; got {:?}",
+    let wildcard: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "*")
+        .collect();
+    assert_eq!(
+        wildcard.len(),
+        1,
+        "expected wildcard import; got {:#?}",
         r.refs
-            .iter()
-            .map(|rf| (&rf.target_name, rf.kind))
-            .collect::<Vec<_>>()
     );
+    assert_eq!(wildcard[0].module.as_deref(), Some("kotlin.collections"));
+    assert!(!wildcard[0].is_reexport);
 }
 
 #[test]
@@ -802,6 +808,32 @@ fn ref_import_alias() {
             .iter()
             .map(|rf| (&rf.target_name, rf.kind))
             .collect::<Vec<_>>()
+    );
+    assert!(
+        !r.refs.iter().any(|rf| rf.target_name == "*"),
+        "an alias import must remain ordinary: {:#?}",
+        r.refs
+    );
+}
+
+#[test]
+fn ref_named_import_remains_ordinary() {
+    let r = extract("import kotlin.collections.ArrayList");
+    let imports: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Imports)
+        .collect();
+    assert_eq!(
+        imports.len(),
+        1,
+        "expected one named import; got {:#?}",
+        r.refs
+    );
+    assert_eq!(imports[0].target_name, "ArrayList");
+    assert_eq!(
+        imports[0].module.as_deref(),
+        Some("kotlin.collections.ArrayList")
     );
 }
 

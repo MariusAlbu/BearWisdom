@@ -5,10 +5,10 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use crate::indexer::resolve::engine::cause::CauseKind;
 use crate::indexer::resolve::engine::compilation::Compilation;
 use crate::indexer::resolve::engine::contract::{FileContext, ImportEntry, SymbolLookup};
 use crate::indexer::resolve::engine::root_import_discipline::{apply, RootImportOutcome};
-use crate::indexer::resolve::engine::cause::CauseKind;
 use crate::type_checker::core::types::TypeArena;
 use crate::types::{
     ChainSegment, ExtractedSymbol, FlowMeta, ParsedFile, SegmentKind, SymbolKind, Visibility,
@@ -41,9 +41,18 @@ fn make_parsed_file(
     symbols: Vec<ExtractedSymbol>,
     declared_modules: Vec<String>,
 ) -> ParsedFile {
+    make_parsed_file_for_language(path, "typescript", symbols, declared_modules)
+}
+
+fn make_parsed_file_for_language(
+    path: &str,
+    language: &str,
+    symbols: Vec<ExtractedSymbol>,
+    declared_modules: Vec<String>,
+) -> ParsedFile {
     ParsedFile {
         path: path.to_string(),
-        language: "typescript".to_string(),
+        language: language.to_string(),
         content_hash: String::new(),
         size: 0,
         line_count: 0,
@@ -67,17 +76,77 @@ fn make_parsed_file(
     }
 }
 
+#[test]
+fn dart_external_libraries_produce_exact_package_uri_keys() {
+    let arena = Arc::new(TypeArena::new());
+    let files = vec![
+        make_parsed_file_for_language(
+            "ext:dart:matcher/expect.dart",
+            "dart",
+            vec![make_symbol(
+                "barrel",
+                "matcher.barrel",
+                SymbolKind::Variable,
+            )],
+            vec![],
+        ),
+        make_parsed_file_for_language(
+            "ext:dart:matcher/src/expect/expect.dart",
+            "dart",
+            vec![make_symbol(
+                "expect",
+                "matcher.expect",
+                SymbolKind::Function,
+            )],
+            vec![],
+        ),
+        make_parsed_file_for_language(
+            "ext:dart:other/src/expect/expect.dart",
+            "dart",
+            vec![make_symbol("expect", "other.expect", SymbolKind::Function)],
+            vec![],
+        ),
+    ];
+    let tree = Compilation::build(&files, &HashMap::new().into(), Arc::clone(&arena));
+
+    assert_eq!(
+        tree.resolve_module_from("ext:dart:test/test.dart", "package:matcher/expect.dart"),
+        Some("ext:dart:matcher/expect.dart")
+    );
+    assert_eq!(
+        tree.resolve_module_from("ext:dart:matcher/expect.dart", "src/expect/expect.dart"),
+        Some("ext:dart:matcher/src/expect/expect.dart")
+    );
+    assert_eq!(
+        tree.resolve_module_from("ext:dart:matcher/expect.dart", "src/expect/missing.dart"),
+        None,
+        "a Dart URI must resolve only to its exact indexed library"
+    );
+    assert_eq!(
+        tree.resolve_module_from("ext:dart:matcher/expect.dart", "other"),
+        None,
+        "a missing bare Dart library URI must not fall through to an unrelated package entry"
+    );
+}
+
 /// A Compilation over one internal shim file declaring `virtual:pwa` (and a
 /// `*.css` wildcard pattern) with one class the module body exports.
 fn build_shim_compilation() -> (Compilation, Arc<TypeArena>) {
     let arena = Arc::new(TypeArena::new());
     let pf = make_parsed_file(
         "src/shims.d.ts",
-        vec![make_symbol("RegisterOptions", "RegisterOptions", SymbolKind::Class)],
+        vec![make_symbol(
+            "RegisterOptions",
+            "RegisterOptions",
+            SymbolKind::Class,
+        )],
         vec!["virtual:pwa".to_string(), "*.css".to_string()],
     );
     let mut id_map: HashMap<(String, String), i64> = HashMap::new();
-    id_map.insert(("src/shims.d.ts".to_string(), "RegisterOptions".to_string()), 11);
+    id_map.insert(
+        ("src/shims.d.ts".to_string(), "RegisterOptions".to_string()),
+        11,
+    );
     let tree = Compilation::build_with_context(
         &[pf],
         &id_map.clone().into(),

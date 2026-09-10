@@ -2378,12 +2378,42 @@ impl SymbolLookup for Compilation {
             .unwrap_or(&self.empty_pairs)
     }
 
-    fn resolve_module_from(&self, _source_file: &str, spec: &str) -> Option<&str> {
+    fn resolve_module_from(&self, source_file: &str, spec: &str) -> Option<&str> {
         // Bare package specifier → its indexed entry file. Relative specifiers are
         // resolved by the relative re-export path in `reexport_following`; returning
         // None here preserves that fallback.
         if super::support::is_relative_specifier(spec) {
             return None;
+        }
+
+        // A Dart export URI without a scheme is relative to the exporting
+        // library. External Pub files use `ext:dart:<pkg>/<library>` paths, and
+        // `module_entry` stores every exact library under its corresponding
+        // `package:<pkg>/<library>` URI. Rebuild that key from the current file
+        // so nested `export 'src/expect.dart'` hops stay exact and package-local.
+        if let Some(source) = source_file.strip_prefix("ext:dart:") {
+            if !spec.contains(':') {
+                if let Some((package, source_library)) = source.split_once('/') {
+                    let source_dir = source_library.rsplit_once('/').map_or("", |(dir, _)| dir);
+                    let joined = if source_dir.is_empty() {
+                        spec.to_string()
+                    } else {
+                        format!("{source_dir}/{spec}")
+                    };
+                    let mut normalized = Vec::new();
+                    for segment in joined.split('/') {
+                        match segment {
+                            "" | "." => {}
+                            ".." => {
+                                normalized.pop()?;
+                            }
+                            part => normalized.push(part),
+                        }
+                    }
+                    let key = format!("package:{package}/{}", normalized.join("/"));
+                    return self.module_entry.get(&key).map(String::as_str);
+                }
+            }
         }
         self.module_entry.get(spec).map(String::as_str)
     }

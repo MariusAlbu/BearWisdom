@@ -824,6 +824,42 @@ pub(super) fn push_import(
     current_symbol_count: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
+    // The current grammar exposes a direct `a.b._` as sibling identifier
+    // nodes followed by `namespace_wildcard`. Selector-group wildcards are
+    // nested below `namespace_selectors`, so this direct-child scan accepts
+    // only the canonical Scala 2 form and leaves `*`/`given` fenced.
+    let mut direct_path = Vec::new();
+    let mut direct_underscore = None;
+    let mut direct_cursor = node.walk();
+    for child in node.children(&mut direct_cursor) {
+        match child.kind() {
+            "identifier" => direct_path.push(node_text(child, src)),
+            "stable_id" => direct_path.push(node_text(child, src)),
+            "namespace_wildcard" if node_text(child, src) == "_" => direct_underscore = Some(child),
+            _ => {}
+        }
+    }
+    if let Some(wildcard) = direct_underscore {
+        if !direct_path.is_empty() {
+            refs.push(ExtractedRef {
+                is_include: false,
+                is_import_binding: false,
+                is_reexport: false,
+                source_symbol_index: current_symbol_count,
+                target_name: "*".to_string(),
+                kind: EdgeKind::Imports,
+                line: wildcard.start_position().row as u32,
+                col: 0,
+                module: Some(direct_path.join(".")),
+                chain: None,
+                byte_offset: wildcard.start_byte() as u32,
+                namespace_segments: Vec::new(),
+                call_args: Vec::new(),
+            });
+            return;
+        }
+    }
+
     // import_declaration children: `import`, stable_id, import_selectors?
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {

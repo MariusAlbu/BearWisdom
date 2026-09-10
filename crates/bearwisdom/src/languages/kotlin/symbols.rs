@@ -648,6 +648,16 @@ pub(super) fn emit_import(
     current_symbol_count: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
+    // Kotlin's grammar keeps the terminal `.*` as an unnamed token.  Accept
+    // only that exact header suffix; aliases and ordinary imports remain
+    // terminal-name imports.
+    let header_text = node_text(*node, src);
+    let header = header_text.trim();
+    let is_terminal_wildcard = header
+        .trim_end_matches(';')
+        .trim_end()
+        .strip_prefix("import")
+        .is_some_and(|path| path.trim().ends_with(".*"));
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
@@ -661,7 +671,11 @@ pub(super) fn emit_import(
                 }
                 if parts.is_empty() {
                     let full = node_text(child, src);
-                    let target = full.rsplit('.').next().unwrap_or(&full).to_string();
+                    let target = if is_terminal_wildcard {
+                        "*".to_string()
+                    } else {
+                        full.rsplit('.').next().unwrap_or(&full).to_string()
+                    };
                     refs.push(ExtractedRef {
                         is_include: false,
                         is_import_binding: false,
@@ -678,7 +692,11 @@ pub(super) fn emit_import(
                         call_args: Vec::new(),
                     });
                 } else {
-                    let target = parts.last().cloned().unwrap_or_default();
+                    let target = if is_terminal_wildcard {
+                        "*".to_string()
+                    } else {
+                        parts.last().cloned().unwrap_or_default()
+                    };
                     let full = parts.join(".");
                     refs.push(ExtractedRef {
                         is_include: false,
@@ -700,7 +718,11 @@ pub(super) fn emit_import(
             }
             "identifier" => {
                 let full = node_text(child, src);
-                let target = full.rsplit('.').next().unwrap_or(&full).to_string();
+                let target = if is_terminal_wildcard {
+                    "*".to_string()
+                } else {
+                    full.rsplit('.').next().unwrap_or(&full).to_string()
+                };
                 refs.push(ExtractedRef {
                     is_include: false,
                     is_import_binding: false,
