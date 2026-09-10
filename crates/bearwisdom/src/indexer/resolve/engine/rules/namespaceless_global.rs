@@ -4,8 +4,9 @@
 //
 // For a language with no import, namespace, or scope structure (SQL and other
 // namespaceless DDL/config languages), a bare `target` binds to the first
-// kind-compatible, project-internal symbol of the same name. External
-// candidates are excluded so a project symbol always wins.
+// kind-compatible project symbol of the same name. A supplied declaration is
+// eligible only when the lookup proves the source reaches its file through a
+// transitive C/C++ include chain.
 //
 // `NamespaceScope` gates and shapes the rung:
 //   - `Off`             — returns Pass immediately (every non-flat language).
@@ -58,6 +59,8 @@ impl LookupRule for NamespacelessGlobalRule {
         let dir_scoped = scope == NamespaceScope::DirectoryScoped;
         let src_dir = parent_dir(&ctx.file_ctx.file_path);
         for cand in candidates {
+            // Project declarations keep the historical first-match behavior
+            // and always take precedence over supplied headers.
             for sym in ctx.lookup.by_name(cand) {
                 if ctx.lookup.is_external_file(&sym.file_path) {
                     continue;
@@ -73,6 +76,29 @@ impl LookupRule for NamespacelessGlobalRule {
                     );
                 }
             }
+
+            // Header visibility is file-identity evidence. Require one unique
+            // compatible declaration; two reachable external declarations are
+            // ambiguous and leave the reference unresolved.
+            let mut included = ctx
+                .lookup
+                .by_name(cand)
+                .into_iter()
+                .filter(|sym| ctx.lookup.is_external_file(&sym.file_path))
+                .filter(|sym| {
+                    ctx.lookup
+                        .include_reaches(&ctx.file_ctx.file_path, &sym.file_path)
+                })
+                .filter(|sym| (ctx.kind)(edge_kind, &sym.kind));
+            let Some(first) = included.next() else {
+                continue;
+            };
+            if included.any(|sym| sym.id != first.id) {
+                continue;
+            }
+            return LookupResult::Resolved(
+                ctx.resolved(first.id, "include_reachable_namespaceless_global"),
+            );
         }
         LookupResult::Pass
     }

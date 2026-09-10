@@ -319,6 +319,17 @@ pub(super) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             "ALTER TABLE symbols ADD COLUMN containing_id INTEGER REFERENCES symbols(id) ON DELETE SET NULL"
         )?;
     }
+    // C/C++ header identity for incremental include-closure reconstruction.
+    // Historical C-family Imports rows with a module path came exclusively
+    // from preprocessor includes; C++ using declarations carry no module.
+    if !column_exists(conn, "imports", "is_include") {
+        conn.execute_batch(
+            "ALTER TABLE imports ADD COLUMN is_include INTEGER NOT NULL DEFAULT 0;
+             UPDATE imports SET is_include = 1
+             WHERE module_path IS NOT NULL
+               AND file_id IN (SELECT id FROM files WHERE language IN ('c', 'cpp'));",
+        )?;
+    }
     // Survivor-matching keys (Stage 2) — partial indexes on the NON-FK
     // symbol_key column are safe. The members index on `containing_id` is
     // deferred: an index on that self-referential FK column deadlocks the

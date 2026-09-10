@@ -57,6 +57,7 @@ pub mod generics;
 pub mod head_decl;
 pub mod implicit_root;
 pub mod import_qualify;
+mod include_closure;
 mod inference_prelude;
 mod inherited_bindings;
 mod instantiated_type;

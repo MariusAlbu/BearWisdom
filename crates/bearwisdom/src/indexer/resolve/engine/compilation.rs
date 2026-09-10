@@ -242,6 +242,8 @@ pub struct Compilation {
     /// Cross-language external-declaration visibility: which languages'
     /// EXTERNAL declarations a file of a given language may bind by name.
     pub(super) ext_langs: ExtLangVisibility,
+    /// Transitive C/C++ header visibility, derived from exact include refs.
+    include_closure: super::include_closure::IncludeClosure,
     /// Shared workspace type arena — the same one threaded through extractors.
     pub(super) arena: Arc<TypeArena>,
     /// Sentinel slices for Borrowed returns that must hand back a `&[…]`.
@@ -398,6 +400,7 @@ impl Compilation {
             ambient_scope: FxHashMap::default(),
             reexport_alias: FxHashMap::default(),
             ext_langs: ExtLangVisibility::default(),
+            include_closure: super::include_closure::IncludeClosure::default(),
             arena,
             empty: Vec::new(),
             empty_pairs: Vec::new(),
@@ -427,6 +430,11 @@ impl Compilation {
         symbol_id_map: &SymbolIds,
         ambient_qnames: &HashSet<String>,
     ) {
+        // Retain header edges before symbols are scanned. The store is grown in
+        // batches (project first, supplied headers later), so each ingest
+        // rebuilds reachability against the complete file set known so far.
+        self.include_closure.ingest_parsed(parsed);
+
         // -----------------------------------------------------------------------
         // Phase A — structural indexes (Passes 1–4) over all files.
         // -----------------------------------------------------------------------
@@ -2483,6 +2491,10 @@ impl SymbolLookup for Compilation {
         self.declared_deps.contains(package_id, spec)
     }
 
+    fn include_reaches(&self, source_file: &str, candidate_file: &str) -> bool {
+        self.include_closure.reaches(source_file, candidate_file)
+    }
+
     fn ambient_symbols(&self, name: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(
             self.ambient_scope
@@ -2804,6 +2816,39 @@ impl Compilation {
                 );
             }
         }
+
+        // Persisted include edges restore header visibility for incremental
+        // resolution. Load every C-family file, including symbol-free bridge
+        // headers, then attach only rows explicitly marked as preprocessor
+        // includes. Freshly parsed files remain authoritative in the closure.
+        let mut include_files = Vec::new();
+        if let Ok(mut files_stmt) =
+            conn.prepare("SELECT path FROM files WHERE language IN ('c', 'cpp')")
+        {
+            if let Ok(file_rows) = files_stmt.query_map([], |row| row.get::<_, String>(0)) {
+                include_files.extend(file_rows.flatten());
+            }
+        }
+        let mut include_specs: FxHashMap<String, Vec<String>> = include_files
+            .iter()
+            .cloned()
+            .map(|path| (path, Vec::new()))
+            .collect();
+        if let Ok(mut imports_stmt) = conn.prepare(
+            "SELECT f.path, COALESCE(i.module_path, i.imported_name) \
+             FROM imports i JOIN files f ON f.id = i.file_id \
+             WHERE f.language IN ('c', 'cpp') AND i.is_include = 1",
+        ) {
+            if let Ok(import_rows) = imports_stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            }) {
+                for (source, spec) in import_rows.flatten() {
+                    include_specs.entry(source).or_default().push(spec);
+                }
+            }
+        }
+        self.include_closure
+            .ingest_persisted(include_files, include_specs);
 
         // 2) Persisted type_info — restore TypeIds from the raw index columns.
         //    The arena was restored from its snapshot before this pass so raw

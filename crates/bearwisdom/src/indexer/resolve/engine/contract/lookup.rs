@@ -310,6 +310,13 @@ pub trait SymbolLookup: FlowCacheLookup {
         path.starts_with("ext:")
     }
 
+    /// Whether a C/C++ translation unit reaches `candidate_file` through its
+    /// transitive, uniquely-resolved `#include` graph. The default is closed so
+    /// other languages and synthetic stores never gain external visibility.
+    fn include_reaches(&self, _source_file: &str, _candidate_file: &str) -> bool {
+        false
+    }
+
     /// The symbols a package contributes to *ambient scope* under `name` —
     /// global declarations referenceable without an import.
     ///

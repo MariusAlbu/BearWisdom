@@ -248,6 +248,35 @@ fn sibling_directory_probe_resolves_when_same_directory_misses() {
     assert_eq!(parsed[1].symbols[0].qualified_name, "MyUnit.Helper");
 }
 
+#[test]
+fn cpp_header_identity_does_not_trigger_namespace_fragment_splicing() {
+    let db = Database::open_in_memory().expect("in-memory db");
+    let mut parsed = vec![
+        make_parsed_file(
+            "src/main.cpp",
+            "cpp",
+            vec![make_symbol("app", "app", SymbolKind::Namespace, None)],
+            vec![include_ref("api.h")],
+        ),
+        make_parsed_file(
+            "src/api.h",
+            "cpp",
+            vec![make_symbol(
+                "fprintf",
+                "fprintf",
+                SymbolKind::Function,
+                None,
+            )],
+            Vec::new(),
+        ),
+    ];
+    let mut ids = SymbolIds::default();
+
+    let changed = assemble_includes(&db, &mut parsed, &mut ids).expect("pass runs");
+    assert_eq!(changed, 0);
+    assert_eq!(parsed[1].symbols[0].qualified_name, "fprintf");
+}
+
 // ---------------------------------------------------------------------------
 // Cascade shape — a qualified lookup through the unit reaches the member
 // ---------------------------------------------------------------------------

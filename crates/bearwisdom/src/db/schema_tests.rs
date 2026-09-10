@@ -46,6 +46,24 @@ fn schema_creates_all_tables() {
 }
 
 #[test]
+fn imports_persist_include_identity_with_closed_default() {
+    let conn = make_db();
+    let columns: Vec<(String, i64, Option<String>)> = conn
+        .prepare("PRAGMA table_info(imports)")
+        .unwrap()
+        .query_map([], |row| Ok((row.get(1)?, row.get(3)?, row.get(4)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    let (_, not_null, default) = columns
+        .iter()
+        .find(|(name, _, _)| name == "is_include")
+        .expect("imports.is_include column");
+    assert_eq!(*not_null, 1);
+    assert_eq!(default.as_deref(), Some("0"));
+}
+
+#[test]
 fn packages_has_is_publishable_default_true() {
     let conn = make_db();
     conn.execute(

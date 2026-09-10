@@ -24,7 +24,7 @@ use tracing::{debug, warn};
 // cap on pathological generated code.
 const SYMBOL_COLS: usize = 16;
 const SYMBOL_BATCH_ROWS: usize = 128;
-const IMPORT_COLS: usize = 5;
+const IMPORT_COLS: usize = 6;
 const IMPORT_BATCH_ROWS: usize = 256;
 
 /// Maps relative_path → SQLite file row ID.
@@ -61,12 +61,14 @@ fn symbol_insert_sql(rows: usize) -> String {
 
 fn import_insert_sql(rows: usize) -> String {
     let mut sql = String::with_capacity(128 + rows * 24);
-    sql.push_str("INSERT INTO imports (file_id, imported_name, module_path, alias, line) VALUES ");
+    sql.push_str(
+        "INSERT INTO imports (file_id, imported_name, module_path, alias, line, is_include) VALUES ",
+    );
     for i in 0..rows {
         if i > 0 {
             sql.push(',');
         }
-        sql.push_str("(?,?,?,?,?)");
+        sql.push_str("(?,?,?,?,?,?)");
     }
     sql
 }
@@ -225,6 +227,7 @@ fn insert_imports_batched(
             });
             params.push(Value::Null); // alias — always null in extract
             params.push(Value::Integer(r.line as i64));
+            params.push(Value::Integer(i64::from(r.is_include)));
         }
 
         tx.prepare_cached(&sql)

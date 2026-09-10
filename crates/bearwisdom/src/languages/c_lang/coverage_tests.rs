@@ -257,14 +257,15 @@ fn cov_call_expression_emits_calls() {
 #[test]
 fn cov_preproc_include_emits_imports() {
     let r = extract::extract("#include <stdio.h>\n", "c");
-    let imports: Vec<&str> = r
+    let imports: Vec<_> = r
         .refs
         .iter()
         .filter(|r| r.kind == EdgeKind::Imports)
-        .map(|r| r.target_name.as_str())
         .collect();
     assert!(
-        imports.iter().any(|n| n.contains("stdio")),
+        imports.iter().any(|r| {
+            r.target_name == "stdio.h" && r.module.as_deref() == Some("stdio.h") && r.is_include
+        }),
         "expected Imports ref for stdio.h; got: {imports:?}"
     );
 }
@@ -756,6 +757,10 @@ fn cov_preproc_include_quoted_sets_module() {
             .unwrap_or(false),
         "expected module path to contain 'queue'; got: {:?}",
         imp.unwrap().module
+    );
+    assert!(
+        imp.unwrap().is_include,
+        "quoted include must retain include identity"
     );
 }
 

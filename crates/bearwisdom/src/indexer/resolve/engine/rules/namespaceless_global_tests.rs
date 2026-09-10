@@ -127,3 +127,96 @@ fn skips_external_candidates() {
         _ => panic!("expected Resolved to internal candidate"),
     }
 }
+
+#[test]
+fn resolves_unique_include_reachable_external_candidate() {
+    let header = "ext:idx:/sdk/include/stdio.h";
+    let lookup = Lookup::new()
+        .with(sym(50, "fprintf", "fprintf", "function", header))
+        .with_include_reach("src/main.c", header);
+    let r = call_ref("fprintf");
+    let s = source_symbol("main");
+    let mut fc = file_ctx(vec![], None);
+    fc.file_path = "src/main.c".into();
+    fc.language = "c".into();
+    let rc = ref_ctx(&r, &s, vec![]);
+    let kind = accept_any;
+    let mut p = DEFAULT_PROFILE;
+    p.namespaceless_global_type_lookup = NamespaceScope::Global;
+    let ctx = BinderContext {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind: &kind,
+        profile: &p,
+    };
+    match NamespacelessGlobalRule.apply(&ctx) {
+        LookupResult::Resolved(res) => {
+            assert_eq!(res.target_symbol_id, 50);
+            assert_eq!(res.strategy, "include_reachable_namespaceless_global");
+        }
+        _ => panic!("expected included external declaration to resolve"),
+    }
+}
+
+#[test]
+fn external_candidate_without_include_reach_stays_unresolved() {
+    let lookup = Lookup::new().with(sym(
+        60,
+        "fprintf",
+        "fprintf",
+        "function",
+        "ext:idx:/sdk/include/stdio.h",
+    ));
+    let r = call_ref("fprintf");
+    let s = source_symbol("main");
+    let mut fc = file_ctx(vec![], None);
+    fc.file_path = "src/main.c".into();
+    fc.language = "c".into();
+    let rc = ref_ctx(&r, &s, vec![]);
+    let kind = accept_any;
+    let mut p = DEFAULT_PROFILE;
+    p.namespaceless_global_type_lookup = NamespaceScope::Global;
+    let ctx = BinderContext {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind: &kind,
+        profile: &p,
+    };
+    assert!(matches!(
+        NamespacelessGlobalRule.apply(&ctx),
+        LookupResult::Pass
+    ));
+}
+
+#[test]
+fn ambiguous_include_reachable_external_candidates_stay_unresolved() {
+    let first = "ext:idx:/sdk-a/include/stdio.h";
+    let second = "ext:idx:/sdk-b/include/stdio.h";
+    let lookup = Lookup::new()
+        .with(sym(70, "fprintf", "fprintf", "function", first))
+        .with(sym(71, "fprintf", "fprintf", "function", second))
+        .with_include_reach("src/main.c", first)
+        .with_include_reach("src/main.c", second);
+    let r = call_ref("fprintf");
+    let s = source_symbol("main");
+    let mut fc = file_ctx(vec![], None);
+    fc.file_path = "src/main.c".into();
+    fc.language = "c".into();
+    let rc = ref_ctx(&r, &s, vec![]);
+    let kind = accept_any;
+    let mut p = DEFAULT_PROFILE;
+    p.namespaceless_global_type_lookup = NamespaceScope::Global;
+    let ctx = BinderContext {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind: &kind,
+        profile: &p,
+    };
+    assert!(matches!(
+        NamespacelessGlobalRule.apply(&ctx),
+        LookupResult::Pass
+    ));
+}

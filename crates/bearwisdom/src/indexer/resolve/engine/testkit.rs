@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::indexer::resolve::engine::contract::{Symbol, SymbolLookup, SymbolSet};
 
@@ -70,6 +70,7 @@ pub(crate) struct Lookup {
     /// Manifest-declared implicit namespace imports, backing
     /// `implicit_wildcard_namespaces` (workspace-wide only in tests).
     implicit_namespaces: Vec<String>,
+    include_reaches: FxHashMap<String, FxHashSet<String>>,
     /// Workspace arena the chain walker interns roots / yields into. Mirrors the
     /// real `Compilation`, which owns one; the chain walk declines without it.
     arena: TypeArena,
@@ -144,6 +145,11 @@ impl SymbolLookup for Lookup {
     }
     fn in_file(&self, _: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(&self.empty)
+    }
+    fn include_reaches(&self, source_file: &str, candidate_file: &str) -> bool {
+        self.include_reaches
+            .get(source_file)
+            .is_some_and(|paths| paths.contains(candidate_file))
     }
     fn field_type_name(&self, qname: &str) -> Option<&str> {
         self.field_types.get(qname).map(|s| s.as_str())

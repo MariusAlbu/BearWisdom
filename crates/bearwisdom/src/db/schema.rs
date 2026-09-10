@@ -355,7 +355,8 @@ CREATE TABLE IF NOT EXISTS imports (
     imported_name  TEXT    NOT NULL,
     module_path    TEXT,   -- 'System.Linq' | './catalog-api'
     alias          TEXT,   -- 'using Db = Microsoft.EntityFrameworkCore'
-    line           INTEGER
+    line           INTEGER,
+    is_include     INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_imports_file ON imports(file_id);

@@ -125,6 +125,170 @@ fn empty_parsed_returns_ok_with_zero_counts() {
 }
 
 #[test]
+fn c_transitive_includes_resolve_supplied_file_and_fprintf_hot_cold_and_db() {
+    use crate::types::{
+        EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta, ParsedFile, SymbolKind, Visibility,
+    };
+
+    fn symbol(name: &str, kind: SymbolKind) -> ExtractedSymbol {
+        ExtractedSymbol {
+            name: name.into(),
+            qualified_name: name.into(),
+            kind,
+            visibility: Some(Visibility::Public),
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
+            byte_offset: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: None,
+            parent_index: None,
+            declared_type: None,
+            return_type: None,
+            param_types: Vec::new(),
+            generic_params: Vec::new(),
+        }
+    }
+
+    fn reference(target: &str, kind: EdgeKind, module: Option<&str>) -> ExtractedRef {
+        ExtractedRef {
+            source_symbol_index: 0,
+            target_name: target.into(),
+            kind,
+            line: 1,
+            col: 0,
+            module: module.map(str::to_string),
+            namespace_segments: Vec::new(),
+            chain: None,
+            byte_offset: 1,
+            call_args: Vec::new(),
+            is_import_binding: false,
+            is_reexport: false,
+            is_include: kind == EdgeKind::Imports,
+        }
+    }
+
+    fn file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
+        ParsedFile {
+            path: path.into(),
+            language: "c".into(),
+            content_hash: String::new(),
+            size: 0,
+            line_count: 2,
+            mtime: None,
+            package_id: None,
+            symbols,
+            refs,
+            routes: Vec::new(),
+            db_sets: Vec::new(),
+            symbol_origin_languages: Vec::new(),
+            ref_origin_languages: Vec::new(),
+            symbol_from_snippet: Vec::new(),
+            content: None,
+            has_errors: false,
+            flow: FlowMeta::default(),
+            demand_contributions: Vec::new(),
+            alias_targets: Vec::new(),
+            component_selectors: Vec::new(),
+            plugin_flow_emissions: Vec::new(),
+            declared_modules: Vec::new(),
+        }
+    }
+
+    let files = vec![
+        file(
+            "src/main.c",
+            vec![symbol("main", SymbolKind::Function)],
+            vec![
+                reference("stdio.h", EdgeKind::Imports, Some("stdio.h")),
+                reference("FILE", EdgeKind::TypeRef, None),
+                reference("fprintf", EdgeKind::Calls, None),
+            ],
+        ),
+        file(
+            "ext:idx:/sdk/include/stdio.h",
+            vec![symbol("fprintf", SymbolKind::Function)],
+            vec![reference(
+                "types.h",
+                EdgeKind::Imports,
+                Some("bits/types.h"),
+            )],
+        ),
+        file(
+            "ext:idx:/sdk/include/bits/types.h",
+            vec![symbol("FILE", SymbolKind::TypeAlias)],
+            Vec::new(),
+        ),
+    ];
+    let mut id_map = HashMap::new();
+    id_map.insert((files[0].path.clone(), "main".into()), 1);
+    id_map.insert((files[1].path.clone(), "fprintf".into()), 2);
+    id_map.insert((files[2].path.clone(), "FILE".into()), 3);
+    let ids: crate::indexer::write::SymbolIds = id_map.clone().into();
+    let profiles = super::build_profiles();
+    let solver = super::SemanticModel::production();
+    let arena = Arc::new(TypeArena::new());
+
+    let assert_resolves = |tree: &crate::indexer::resolve::engine::compilation::Compilation,
+                           inputs: &[ParsedFile],
+                           ids: &crate::indexer::write::SymbolIds| {
+        let (edges, unresolved, _, _) = super::resolve_one_file(
+            &inputs[0],
+            tree,
+            &profiles,
+            &no_plugins(),
+            None,
+            &solver,
+            ids,
+            None,
+        );
+        for target in [2, 3] {
+            assert!(
+                edges.iter().any(|edge| edge.1 == target),
+                "included declaration {target} must resolve; edges={edges:?}; unresolved={unresolved:?}"
+            );
+        }
+        assert!(edges
+            .iter()
+            .filter(|edge| matches!(edge.1, 2 | 3))
+            .all(|edge| edge.5 == "include_reachable_namespaceless_global"));
+    };
+
+    let hot = crate::indexer::resolve::engine::compilation::Compilation::build(
+        &files,
+        &ids,
+        Arc::clone(&arena),
+    );
+    assert_resolves(&hot, &files, &ids);
+
+    let (cold_arena, cold_files) = cold_cache_files(&files, &arena);
+    let cold = crate::indexer::resolve::engine::compilation::Compilation::build(
+        &cold_files,
+        &ids,
+        cold_arena,
+    );
+    assert_resolves(&cold, &cold_files, &ids);
+
+    let db = crate::db::Database::open_in_memory().unwrap();
+    let (_, db_ids) = crate::indexer::write::write_parsed_files_with_origin(
+        &db,
+        &files,
+        "internal",
+        Some(&arena),
+    )
+    .unwrap();
+    let mut restored = crate::indexer::resolve::engine::compilation::Compilation::build(
+        &[],
+        &Default::default(),
+        Arc::clone(&arena),
+    );
+    restored.ingest_from_db(db.conn());
+    assert_resolves(&restored, &files, &db_ids);
+}
+
+#[test]
 fn engine_selects_an_rbs_contract_before_typing_a_ruby_trailing_block() {
     let dir = tempfile::tempdir().unwrap();
     let rbs_path = dir.path().join("catalog.rbs");

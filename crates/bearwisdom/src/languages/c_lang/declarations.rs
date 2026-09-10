@@ -707,7 +707,7 @@ pub(super) fn push_include(
                 let path = raw.trim_matches('"').trim_matches('<').trim_matches('>');
                 let target_name = path.rsplit('/').next().unwrap_or(path).to_string();
                 refs.push(ExtractedRef {
-                    is_include: false,
+                    is_include: true,
                     is_import_binding: false,
                     is_reexport: false,
                     source_symbol_index: current_symbol_count,

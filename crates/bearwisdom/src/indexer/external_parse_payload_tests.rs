@@ -332,3 +332,22 @@ fn ref_roundtrip_preserves_chain_and_call_args() {
     assert_eq!(type_arg_ids.len(), 1);
     assert_eq!(dst.get(type_arg_ids[0]), Type::Class("Document".into()));
 }
+
+#[test]
+fn c_include_identity_survives_portable_cache_roundtrip() {
+    let (mut pf, src) = sample();
+    pf.language = "c".into();
+    pf.refs[0].kind = EdgeKind::Imports;
+    pf.refs[0].target_name = "types.h".into();
+    pf.refs[0].module = Some("bits/types.h".into());
+    pf.refs[0].is_reexport = false;
+    pf.refs[0].is_include = true;
+
+    let dst = TypeArena::new();
+    let got = roundtrip(&pf, &src, &dst);
+    let include = &got.refs[0];
+    assert_eq!(include.kind, EdgeKind::Imports);
+    assert_eq!(include.target_name, "types.h");
+    assert_eq!(include.module.as_deref(), Some("bits/types.h"));
+    assert!(include.is_include);
+}

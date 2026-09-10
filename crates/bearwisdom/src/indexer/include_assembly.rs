@@ -96,7 +96,12 @@ fn plan_splices(parsed: &[ParsedFile]) -> Vec<Splice> {
         .iter()
         .enumerate()
         .filter(|(_, pf)| {
-            pf.refs.iter().any(|r| r.is_include) && namespace_qname(pf).is_some()
+            // C/C++ headers use the same durable include discriminator for
+            // visibility, but they are not namespace fragments to re-parent.
+            // Their non-mutating graph lives in engine::include_closure.
+            !matches!(pf.language.as_str(), "c" | "cpp")
+                && pf.refs.iter().any(|r| r.is_include)
+                && namespace_qname(pf).is_some()
         })
         .map(|(i, _)| i)
         .collect();

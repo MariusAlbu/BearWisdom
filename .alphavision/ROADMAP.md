@@ -76,7 +76,7 @@ ROOT-family rows.
 Genuinely bare names whose declaration IS in the index.
 
 - [x] wildcard-import re-export following (`import 'package:test/test.dart'` → `src/expect.dart`; scala `_`, kotlin `*`)
-- [ ] transitive `#include` closure + `NamespacelessGlobalRule` reaching supplied external declarations (C `FILE`/`fprintf`: found by name, no rung reaches it)
+- [x] transitive `#include` closure + `NamespacelessGlobalRule` reaching supplied external declarations (C `FILE`/`fprintf`: found by name, no rung reaches it)
 - [ ] TS import specifier normalization (`node:path` vs `path` — 63% of ts `import_unlinked` are present by qname)
 - [ ] PHP namespace `use` + qualified member (`Illuminate\Database\Eloquent` present, member unlinked)
 - [ ] inherited implicit-receiver members when the enclosing type's parent is external (pascal `Create`, `AddField`)

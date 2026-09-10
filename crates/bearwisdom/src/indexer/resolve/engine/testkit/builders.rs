@@ -28,6 +28,7 @@ impl Lookup {
             inherits_args: Default::default(),
             local_types: Default::default(),
             implicit_namespaces: Vec::new(),
+            include_reaches: FxHashMap::default(),
             local_callable_heads: Default::default(),
             enclosing: Default::default(),
             aliases: Default::default(),
@@ -191,6 +192,14 @@ impl Lookup {
     /// `<ImplicitUsings>` set), backing `implicit_wildcard_namespaces`.
     pub(crate) fn with_implicit_namespaces(mut self, namespaces: &[&str]) -> Self {
         self.implicit_namespaces = namespaces.iter().map(|s| s.to_string()).collect();
+        self
+    }
+
+    pub(crate) fn with_include_reach(mut self, source_file: &str, candidate_file: &str) -> Self {
+        self.include_reaches
+            .entry(source_file.to_string())
+            .or_default()
+            .insert(candidate_file.to_string());
         self
     }
 

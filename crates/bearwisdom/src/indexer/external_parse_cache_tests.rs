@@ -58,6 +58,17 @@ fn positional_rbi_proc_contracts_bypass_prior_cache_schema() {
 }
 
 #[test]
+fn c_include_identity_bypasses_prior_cache_schema() {
+    let path = Path::new("/sdk/include/stdio.h");
+    let hash = "unchanged";
+    assert_ne!(
+        cache_key(path, hash),
+        format!("84:{}:{hash}", normalize_path_key(path)),
+        "C headers cached before include identity was emitted must be reparsed"
+    );
+}
+
+#[test]
 fn pre_scoped_owner_payloads_cannot_match_current_cache_keys() {
     let current = cache_key(Path::new("/source/lib.rs"), "unchanged");
     assert!(EXTRACTOR_SCHEMA_VERSION >= 84);
