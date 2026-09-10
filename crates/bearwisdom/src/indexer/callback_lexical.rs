@@ -14,6 +14,10 @@ struct Callback {
     parameters: Vec<SourceSpan>,
     barriers: Vec<Barrier>,
     boundaries: Vec<SourceSpan>,
+    /// `None` permits an enclosing capture. PHP anonymous functions instead
+    /// retain only exact, by-value `use ($name)` spans; an empty list fences
+    /// every outer name. PHP arrows capture automatically and use `None`.
+    outer_captures: Option<Vec<SourceSpan>>,
 }
 
 #[derive(Clone)]
@@ -27,12 +31,13 @@ struct BoundCallback {
     parameters: Vec<(String, BindingId)>,
     barriers: Vec<(String, SourceSpan)>,
     boundaries: Vec<SourceSpan>,
+    outer_captures: Option<Vec<String>>,
 }
 
 pub(crate) fn supports(prefix: &str) -> bool {
     matches!(
         prefix,
-        "scala" | "java" | "csharp" | "kotlin" | "swift" | "dart" | "go" | "python"
+        "scala" | "java" | "csharp" | "kotlin" | "swift" | "dart" | "go" | "python" | "php"
     )
 }
 
@@ -72,15 +77,12 @@ pub(crate) fn capture(
         let scope = graph.add_scope(Some(parent), callback.body.start, callback.body.end, true);
         let mut parameters = Vec::new();
         for parameter in callback.parameters {
-            let Some(name) = text(source, parameter) else {
+            let Some(source_name) = text(source, parameter) else {
                 continue;
             };
-            // Dart and Go callback emitters deliberately leave wildcard / blank
-            // parameters as positional holes. Mirror that contract here rather
-            // than inventing a durable binding for `_`.
-            if matches!(prefix, "dart" | "go") && name == "_" {
+            let Some(name) = callback_binding_name(prefix, source_name) else {
                 continue;
-            }
+            };
             let name_id = graph.intern(name);
             let binding = graph.declare(scope, name_id, callback.body.start, None);
             graph.declarations.insert(parameter, binding);
@@ -90,7 +92,9 @@ pub(crate) fn capture(
             .barriers
             .into_iter()
             .filter_map(|barrier| {
-                text(source, barrier.name).map(|name| (name.to_owned(), barrier.range))
+                text(source, barrier.name)
+                    .and_then(|name| callback_binding_name(prefix, name))
+                    .map(|name| (name.to_owned(), barrier.range))
             })
             .collect();
         scopes.push((callback.body, scope));
@@ -99,6 +103,14 @@ pub(crate) fn capture(
             parameters,
             barriers,
             boundaries: callback.boundaries,
+            outer_captures: callback.outer_captures.map(|captures| {
+                captures
+                    .into_iter()
+                    .filter_map(|capture| text(source, capture))
+                    .filter_map(|name| callback_binding_name(prefix, name))
+                    .map(str::to_owned)
+                    .collect()
+            }),
         });
     }
 
@@ -115,42 +127,64 @@ pub(crate) fn capture(
             continue;
         };
         let byte = reference.byte_offset;
-        if let Some(callback) = bound
+        // Visit every containing callback from inner to outer. A callback
+        // without a matching declaration may capture its parent parameter;
+        // an unsupported matching declaration still fences that exact name.
+        // PHP anonymous functions permit only exact by-value `use (...)`
+        // names to capture outward; a zero-parameter PHP arrow remains
+        // transparent because PHP captures it automatically.
+        let mut containing: Vec<_> = bound
             .iter()
             .filter(|callback| contains(callback.body, byte))
-            // A nested callback that does not declare `x` must not hide an
-            // outer captured `x`. Select among declarations, not bodies.
-            .filter(|callback| callback.parameters.iter().any(|(parameter, _)| parameter == name))
-            .min_by_key(|callback| callback.body.end - callback.body.start)
-        {
-            // A callback parameter can be captured through a nested callback,
-            // but it is not visible through an ordinary callable or class
-            // boundary. Those bodies have their own parameter/local identity
-            // rules, which this intentionally callback-only graph does not
-            // model.
+            .collect();
+        containing.sort_by_key(|callback| callback.body.end - callback.body.start);
+        for callback in containing {
             if callback
                 .boundaries
                 .iter()
                 .any(|boundary| contains(*boundary, byte))
-            {
-                continue;
-            }
-            let shadowed = callback
-                .barriers
-                .iter()
-                .any(|(barrier, range)| barrier == name && contains(*range, byte));
-            if !shadowed {
-                if let Some((_, binding)) = callback
-                    .parameters
+                || callback
+                    .barriers
                     .iter()
-                    .find(|(parameter, _)| parameter == name)
-                {
-                    graph.references.insert(byte, *binding);
-                }
+                    .any(|(barrier, range)| barrier == name && contains(*range, byte))
+            {
+                break;
+            }
+            if let Some((_, binding)) = callback
+                .parameters
+                .iter()
+                .find(|(parameter, _)| parameter == name)
+            {
+                graph.references.insert(byte, *binding);
+                break;
+            }
+            if callback
+                .outer_captures
+                .as_ref()
+                .is_some_and(|captures| !captures.iter().any(|capture| capture == name))
+            {
+                break;
             }
         }
     }
     Some(graph)
+}
+
+/// PHP declaration tokens retain their `$` source spelling, while the PHP
+/// call extractor stores the matching chain root without it. Keep the exact
+/// span in `declarations`, but compare the shared bare variable name. Dart
+/// and Go deliberately leave `_` callback slots as signature holes.
+fn callback_binding_name<'a>(prefix: &str, source_name: &'a str) -> Option<&'a str> {
+    let name = if prefix == "php" {
+        source_name.strip_prefix('$').unwrap_or(source_name)
+    } else {
+        source_name
+    };
+    if name.is_empty() || matches!(prefix, "dart" | "go") && name == "_" {
+        None
+    } else {
+        Some(name)
+    }
 }
 
 fn collect_callbacks(node: Node, prefix: &str, callbacks: &mut Vec<Callback>) {
@@ -173,12 +207,17 @@ fn callback_kind(prefix: &str, kind: &str) -> bool {
         "dart" => kind == "function_expression",
         "go" => kind == "func_literal",
         "python" => kind == "lambda",
+        "php" => matches!(kind, "arrow_function" | "anonymous_function"),
         _ => false,
     }
 }
 
 fn callback(node: Node, prefix: &str) -> Option<Callback> {
-    if node.has_error() {
+    // PHP error recovery may wrap an unsupported parameter form while still
+    // retaining a real arrow/anonymous body. Keep that syntactic callback as
+    // a conservative fence instead of letting its reads leak to an outer
+    // callback identity.
+    if node.has_error() && prefix != "php" {
         return None;
     }
     match prefix {
@@ -187,6 +226,7 @@ fn callback(node: Node, prefix: &str) -> Option<Callback> {
         "dart" => dart_callback(node),
         "go" => go_callback(node),
         "python" => python_callback(node),
+        "php" => php_callback(node),
         _ => callback_with_fields(node, prefix),
     }
 }
@@ -213,6 +253,7 @@ fn callback_with_fields(node: Node, prefix: &str) -> Option<Callback> {
         parameters,
         barriers: collect_barriers(body, prefix, body_span),
         boundaries: collect_boundaries(body, prefix),
+        outer_captures: None,
     })
 }
 
@@ -310,6 +351,75 @@ fn python_callback(node: Node) -> Option<Callback> {
     callback_from_explicit_parameters(body, spans, "python")
 }
 
+/// PHP callback parameter names are `variable_name` tokens (for example
+/// `$item`) nested in `simple_parameter` nodes. Variadics are deliberate
+/// signature holes in the fixed-arity callback contract, so they cannot gain
+/// identity here. The declaration span stays exact; comparison normalization
+/// happens only when binding to the extractor's bare chain root (`item`).
+fn php_callback(node: Node) -> Option<Callback> {
+    let parameters = node.child_by_field_name("parameters")?;
+    let body = node.child_by_field_name("body")?;
+    let body_span = span(body);
+    let mut spans = Vec::new();
+    let mut barriers = collect_barriers(body, "php", body_span);
+    for parameter in named_children(parameters) {
+        if parameter.kind() == "simple_parameter" {
+            if let Some(name) = parameter
+                .child_by_field_name("name")
+                .filter(|name| name.kind() == "variable_name")
+            {
+                spans.push(span(name));
+            }
+        } else {
+            // Variadic and future unsupported parameter nodes have a real
+            // local name even though CallArg::LambdaAt carries a positional
+            // hole. Fence that exact name so it cannot fall through to an
+            // enclosing callback parameter.
+            for name in php_parameter_variable_names(parameter) {
+                barriers.push(Barrier {
+                    name: span(name),
+                    range: body_span,
+                });
+            }
+        }
+    }
+    Some(Callback {
+        body: body_span,
+        parameters: spans,
+        barriers,
+        boundaries: collect_boundaries(body, "php"),
+        outer_captures: (node.kind() == "anonymous_function")
+            .then(|| php_anonymous_capture_names(node)),
+    })
+}
+
+/// An anonymous PHP closure captures outer locals only when its `use` clause
+/// names them by value. The grammar represents `&$item` as a `by_ref` child;
+/// leave it out because mutation identity is not modeled by this graph.
+fn php_anonymous_capture_names(node: Node) -> Vec<SourceSpan> {
+    named_children(node)
+        .find(|child| child.kind() == "anonymous_function_use_clause")
+        .map(|clause| {
+            named_children(clause)
+                .filter(|capture| capture.kind() == "variable_name")
+                .map(span)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn php_parameter_variable_names(node: Node) -> Vec<Node> {
+    if node.kind() == "variable_name" {
+        return vec![node];
+    }
+    let mut names = Vec::new();
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        names.extend(php_parameter_variable_names(child));
+    }
+    names
+}
+
 fn callback_from_explicit_parameters(
     body: Node,
     parameters: Vec<SourceSpan>,
@@ -324,6 +434,7 @@ fn callback_from_explicit_parameters(
         parameters,
         barriers: collect_barriers(body, prefix, body_span),
         boundaries: collect_boundaries(body, prefix),
+        outer_captures: None,
     })
 }
 
@@ -426,6 +537,15 @@ fn ordinary_boundary_kind(prefix: &str, kind: &str) -> bool {
                 | "interface_type"
         ),
         "python" => matches!(kind, "function_definition" | "class_definition"),
+        "php" => matches!(
+            kind,
+            "function_definition"
+                | "class_declaration"
+                | "interface_declaration"
+                | "trait_declaration"
+                | "enum_declaration"
+                | "anonymous_class"
+        ),
         _ => false,
     }
 }
@@ -446,6 +566,16 @@ fn collect_barriers_inner(
     callback_body: SourceSpan,
     barriers: &mut Vec<Barrier>,
 ) {
+    // A PHP arrow has its own function scope, and an anonymous function has
+    // its own body plus explicit-capture rules. Its writes must not extend a
+    // barrier into the enclosing callback; the nested callback gets its own
+    // barrier pass when `php_callback` constructs it.
+    if node.start_byte() != callback_body.start as usize
+        && prefix == "php"
+        && callback_kind(prefix, node.kind())
+    {
+        return;
+    }
     match (prefix, node.kind()) {
         ("scala", "val_definition" | "var_definition") => {
             if let Some(name) = node
@@ -539,6 +669,39 @@ fn collect_barriers_inner(
                 }
             }
         }
+        ("php", "assignment_expression" | "augmented_assignment_expression") => {
+            if let Some(name) = node
+                .child_by_field_name("left")
+                .filter(|name| name.kind() == "variable_name")
+            {
+                barriers.push(Barrier {
+                    name: span(name),
+                    range: barrier_range(node, callback_body, prefix),
+                });
+            }
+        }
+        ("php", "foreach_statement") => {
+            if let Some(body) = node.child_by_field_name("body") {
+                for name in php_foreach_target_names(node, body) {
+                    barriers.push(Barrier {
+                        name: span(name),
+                        range: barrier_range(node, callback_body, prefix),
+                    });
+                }
+            }
+        }
+        ("php", "catch_clause") => {
+            if let (Some(name), Some(_body)) = (
+                node.child_by_field_name("name")
+                    .filter(|name| name.kind() == "variable_name"),
+                node.child_by_field_name("body"),
+            ) {
+                barriers.push(Barrier {
+                    name: span(name),
+                    range: barrier_range(node, callback_body, prefix),
+                });
+            }
+        }
         ("dart", "initialized_variable_definition") => {
             if let Some(name) = node
                 .child_by_field_name("name")
@@ -615,6 +778,42 @@ fn dart_assignment_name(node: Node) -> Option<Node> {
     None
 }
 
+/// `foreach` has no field for its targets in the PHP grammar. The target is
+/// everything after the `as` token and before the body; collect only direct
+/// variable/pattern leaves in that region, never the iterated expression.
+fn php_foreach_target_names<'tree>(node: Node<'tree>, body: Node<'tree>) -> Vec<Node<'tree>> {
+    let mut after_as = false;
+    let mut names = Vec::new();
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child == body {
+            break;
+        }
+        if child.kind() == "as" {
+            after_as = true;
+            continue;
+        }
+        if after_as {
+            php_binding_pattern_names(child, &mut names);
+        }
+    }
+    names
+}
+
+fn php_binding_pattern_names<'tree>(node: Node<'tree>, names: &mut Vec<Node<'tree>>) {
+    if node.kind() == "variable_name" {
+        names.push(node);
+        return;
+    }
+    if !matches!(node.kind(), "by_ref" | "pair" | "list_literal") {
+        return;
+    }
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        php_binding_pattern_names(child, names);
+    }
+}
+
 fn python_comprehension_scope(node: Node) -> Option<Node> {
     let mut current = node.parent();
     while let Some(parent) = current {
@@ -652,6 +851,15 @@ fn python_pattern_identifiers(node: Node) -> Vec<Node> {
 
 fn barrier_range(node: Node, callback_body: SourceSpan, prefix: &str) -> SourceSpan {
     let start = node.start_byte() as u32;
+    // PHP locals, foreach targets, and catch variables are function-scoped.
+    // A write inside a nested compound statement therefore fences the same
+    // name through the rest of the callback function, not only that block.
+    if prefix == "php" {
+        return SourceSpan {
+            start,
+            end: callback_body.end,
+        };
+    }
     let mut current = node.parent();
     while let Some(parent) = current {
         if lexical_scope_kind(prefix, parent.kind()) {

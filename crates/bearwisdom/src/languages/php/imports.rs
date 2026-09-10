@@ -254,7 +254,7 @@ fn apply_use_aliases(refs: &mut [ExtractedRef]) {
 pub(super) fn finalize_refs(refs: &mut Vec<ExtractedRef>) {
     apply_use_aliases(refs);
 
-    let mut seen: std::collections::HashSet<(usize, String, EdgeKind, u32, Option<String>)> =
+    let mut seen: std::collections::HashSet<(usize, String, EdgeKind, u32, u32, Option<String>)> =
         std::collections::HashSet::with_capacity(refs.len());
     refs.retain(|r| {
         seen.insert((
@@ -262,6 +262,7 @@ pub(super) fn finalize_refs(refs: &mut Vec<ExtractedRef>) {
             r.target_name.clone(),
             r.kind,
             r.line,
+            r.byte_offset,
             r.module.clone(),
         ))
     });

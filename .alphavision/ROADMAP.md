@@ -53,6 +53,8 @@ ROOT-family rows.
 
 - [x] audit: only java/python/ruby/swift emit parameter symbols; typed params surface as `Property` in ts/csharp/go; flow runner now synthesizes binding symbols and 11 languages' flow queries seed parameter + typed-local types (`132f2482`)
 - [ ] lambda / closure params typed from the callee's parameter types (call-site arg→param binding, generic)
+  - [x] exact scoped callback parameter seeding for Scala, Java, C#, Kotlin, Swift, Dart, Go, Python, and adjacent-PHPDoc PHP contracts
+  - [ ] Ruby prerequisite: ingest selected RBS/RBI callable block contracts and capture trailing-block, Proc, and lambda parameter declaration spans as positional call arguments; seed only exact scoped bindings after arity/selected-callee proof, preserving nested/shadowed blocks and fresh/cold reload
 - [x] `this` / `self` root fails enclosing-type lookup (scala `this.modify`) — trace, fix the id-keyed enclosing lookup
 - [x] pointer-sigil types (`*fiber.Ctx`) intern as the pointee (`922032c0`); go-fiber +7,067 edges once parameters seeded
 - [x] Go local seeded with the callee's QNAME as its type (`client → client.NewWithClient`) — return-type capture vs seed fallback, trace first

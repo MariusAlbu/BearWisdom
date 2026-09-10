@@ -1266,3 +1266,230 @@ fn python_lambda_at_span_seeds_its_exact_callback_root() {
         "def use(callback: typing.Callable[[Item], None]): ...",
     );
 }
+
+#[test]
+fn php_phpdoc_lambda_at_span_seeds_from_the_extracted_callback_contract() {
+    use crate::type_checker::core::types::Type;
+    use crate::types::CallArg;
+    use rustc_hash::FxHashMap;
+
+    let source = "<?php\nfinal class Result {}\nfinal class Item { public function touch(): Result { return new Result(); } }\n/** @param callable(Item): Result $callback */\nfunction visit($options, callable $callback): void {}\nfunction run(): void { visit([], fn (Item $item): Result => $item->touch()); }\n";
+    let dir = tempfile::tempdir().unwrap();
+    let relative_path = "callbacks.php";
+    let path = dir.path().join(relative_path);
+    std::fs::write(&path, source).unwrap();
+    let arena = Arc::new(TypeArena::new());
+    let parsed = crate::indexer::parse_file::parse_file_with_arena(
+        &crate::walker::WalkedFile {
+            relative_path: relative_path.into(),
+            absolute_path: path,
+            language: "php",
+        },
+        crate::languages::default_registry(),
+        &arena,
+    )
+    .unwrap();
+    let files = [parsed];
+
+    let visit = files[0]
+        .symbols
+        .iter()
+        .find(|symbol| symbol.name == "visit")
+        .expect("visit symbol");
+    let signature = visit.signature.clone().expect("enriched visit signature");
+    assert_eq!(
+        signature,
+        "function visit($options, (Item) -> Result $callback): void"
+    );
+    let Type::Function { params, return_ } = arena.get(visit.param_types[1]) else {
+        panic!("extracted PHPDoc callback slot must be a structural function type");
+    };
+    assert_eq!(params, vec![arena.class("Item")]);
+    assert_eq!(return_, arena.class("Result"));
+
+    let callback = files[0]
+        .refs
+        .iter()
+        .find(|reference| {
+            reference.target_name == "visit"
+                && reference
+                    .call_args
+                    .iter()
+                    .any(|arg| matches!(arg, CallArg::LambdaAt { .. }))
+        })
+        .expect("visit call with LambdaAt");
+    let call_args = callback.call_args.clone();
+    let parameter = call_args
+        .iter()
+        .find_map(|arg| match arg {
+            CallArg::LambdaAt { params } => params.first().copied().flatten(),
+            _ => None,
+        })
+        .expect("PHP callback parameter span");
+    assert_eq!(
+        &source[parameter.start as usize..parameter.end as usize],
+        "$item"
+    );
+    let root = files[0]
+        .refs
+        .iter()
+        .find(|reference| {
+            reference.target_name == "touch"
+                && reference
+                    .chain
+                    .as_ref()
+                    .and_then(|chain| chain.segments.first())
+                    .is_some_and(|segment| segment.name == "item")
+        })
+        .expect("$item->touch chain")
+        .byte_offset;
+    let graph = files[0]
+        .flow
+        .callback_lexical
+        .as_ref()
+        .expect("PHP callback identity graph");
+    assert!(graph.declarations.contains_key(&parameter));
+    assert!(graph.references.contains_key(&root));
+
+    let db = crate::Database::open_in_memory().unwrap();
+    let (_, ids) = crate::indexer::write::write_parsed_files_with_origin(
+        &db,
+        &files,
+        "internal",
+        Some(&arena),
+    )
+    .unwrap();
+    let tree = Compilation::build(&files, &ids, Arc::clone(&arena));
+    let lookup = FileLookup::for_file(&tree, &files[0], &ids);
+    lookup.set_cursor(root);
+    assert_eq!(lookup.local_type_id("item"), None);
+
+    let callee = crate::indexer::resolve::engine::testkit::sym_with_sig(
+        902,
+        "visit",
+        "visit",
+        "function",
+        relative_path,
+        &signature,
+    );
+    crate::indexer::resolve::engine::lambda_seed::seed_lambda_params(
+        &lookup,
+        &arena,
+        &callee,
+        &call_args,
+        arena.class("Runner"),
+        None,
+        &FxHashMap::default(),
+        &[],
+    );
+
+    lookup.set_cursor(root);
+    assert_eq!(lookup.local_type_id("item"), Some(arena.class("Item")));
+    assert_eq!(
+        lookup
+            .local_reference(root)
+            .and_then(|value| value.value_type),
+        Some(arena.class("Item")),
+        "the extracted PHPDoc contract must flow through the exact `$item` identity"
+    );
+}
+
+fn assert_php_callback_contract_does_not_seed(visit_declaration: &str) {
+    use crate::types::CallArg;
+    use rustc_hash::FxHashMap;
+
+    let source = format!(
+        "<?php\nfinal class Item {{ public function touch(): void {{}} }}\n{visit_declaration}\nfunction run(): void {{ visit(fn ($item) => $item->touch()); }}\n"
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let relative_path = "opaque_callbacks.php";
+    let path = dir.path().join(relative_path);
+    std::fs::write(&path, &source).unwrap();
+    let arena = Arc::new(TypeArena::new());
+    let parsed = crate::indexer::parse_file::parse_file_with_arena(
+        &crate::walker::WalkedFile {
+            relative_path: relative_path.into(),
+            absolute_path: path,
+            language: "php",
+        },
+        crate::languages::default_registry(),
+        &arena,
+    )
+    .unwrap();
+    let files = [parsed];
+    let signature = files[0]
+        .symbols
+        .iter()
+        .find(|symbol| symbol.name == "visit")
+        .and_then(|symbol| symbol.signature.clone())
+        .expect("visit signature");
+    assert!(
+        !signature.contains("->"),
+        "negative fixture must remain opaque: {signature}"
+    );
+    let callback = files[0]
+        .refs
+        .iter()
+        .find(|reference| {
+            reference.target_name == "visit"
+                && reference
+                    .call_args
+                    .iter()
+                    .any(|arg| matches!(arg, CallArg::LambdaAt { .. }))
+        })
+        .expect("visit call with LambdaAt");
+    let call_args = callback.call_args.clone();
+    let root = files[0]
+        .refs
+        .iter()
+        .find(|reference| reference.target_name == "touch")
+        .expect("$item->touch reference")
+        .byte_offset;
+
+    let db = crate::Database::open_in_memory().unwrap();
+    let (_, ids) = crate::indexer::write::write_parsed_files_with_origin(
+        &db,
+        &files,
+        "internal",
+        Some(&arena),
+    )
+    .unwrap();
+    let tree = Compilation::build(&files, &ids, Arc::clone(&arena));
+    let lookup = FileLookup::for_file(&tree, &files[0], &ids);
+    let callee = crate::indexer::resolve::engine::testkit::sym_with_sig(
+        903,
+        "visit",
+        "visit",
+        "function",
+        relative_path,
+        &signature,
+    );
+    crate::indexer::resolve::engine::lambda_seed::seed_lambda_params(
+        &lookup,
+        &arena,
+        &callee,
+        &call_args,
+        arena.class("Runner"),
+        None,
+        &FxHashMap::default(),
+        &[],
+    );
+    lookup.set_cursor(root);
+    assert_eq!(
+        lookup.local_type_id("item"),
+        None,
+        "opaque PHP callback contract must not seed: {signature}"
+    );
+}
+
+#[test]
+fn php_opaque_or_unattached_callback_contracts_do_not_seed() {
+    for declaration in [
+        "function visit(callable $callback): void {}",
+        "function visit(Closure $callback): void {}",
+        "/** @param callable(Item): void $other */\nfunction visit(callable $callback): void {}",
+        "/** @param callable(Item): void $callback */\n// intervening comment\nfunction visit(callable $callback): void {}",
+    ] {
+        assert_php_callback_contract_does_not_seed(declaration);
+    }
+}

@@ -10,6 +10,7 @@ fn capture_graph(language: &str, source: &str) -> (Option<LexicalBindings>, Vec<
         "dart" => crate::languages::dart::extract::extract(source).refs,
         "go" => crate::languages::go::extract::extract(source).refs,
         "python" => crate::languages::python::extract::extract(source).refs,
+        "php" => crate::languages::php::extract::extract(source).refs,
         _ => unreachable!(),
     };
     let plugin = crate::languages::default_registry().get(language);
@@ -58,6 +59,18 @@ fn declaration_at(
     graph.declarations[&SourceSpan {
         start,
         end: start + 1,
+    }]
+}
+
+fn declaration_span_at(
+    graph: &LexicalBindings,
+    source: &str,
+    marker: &str,
+) -> crate::indexer::lexical::BindingId {
+    let start = source.find(marker).expect("parameter marker") as u32;
+    graph.declarations[&SourceSpan {
+        start,
+        end: start + marker.len() as u32,
     }]
 }
 
@@ -649,4 +662,196 @@ fn python_bare_assignment_is_a_name_only_barrier() {
     assert_eq!(barriers.len(), 1);
     assert_eq!(text(source.as_bytes(), barriers[0].name), Some("x"));
     assert_eq!(barriers[0].range, span(root));
+}
+
+#[test]
+fn php_arrow_and_anonymous_parameters_keep_exact_dollar_spans() {
+    for (source, parameter, target) in [
+        (
+            "<?php $xs->map(fn (Item $item) => $item->touch());",
+            "$item",
+            "touch",
+        ),
+        (
+            "<?php $xs->map(function (Item $item) { $item->touch(); });",
+            "$item",
+            "touch",
+        ),
+    ] {
+        let (graph, refs) = capture_source("php", source);
+        let reference = reference_for(&refs, "item", target);
+        assert_eq!(
+            graph.references.get(&reference.byte_offset),
+            Some(&declaration_span_at(&graph, source, parameter)),
+            "PHP's bare extracted root must map to the exact `$` declaration span"
+        );
+        let start = source.find(parameter).unwrap() as u32;
+        assert!(graph.declarations.contains_key(&SourceSpan {
+            start,
+            end: start + parameter.len() as u32,
+        }));
+        assert!(
+            !graph.declarations.contains_key(&SourceSpan {
+                start: start + 1,
+                end: start + parameter.len() as u32,
+            }),
+            "the bare text is not the declaration identity; its source `$` is"
+        );
+    }
+
+    let source = "<?php $xs->map(fn (...$items) => $items->touch());";
+    let (graph, refs) = capture_source("php", source);
+    let variadic = reference_for(&refs, "items", "touch");
+    assert!(
+        !graph.references.contains_key(&variadic.byte_offset),
+        "a variadic PHP slot is an identity hole that fences its own name"
+    );
+}
+
+#[test]
+fn php_nested_callbacks_choose_the_innermost_declaration_or_capture_outer() {
+    let source =
+        "<?php $xs->map(fn ($item) => $ys->map(fn ($item) => $item->inner()) && $item->outer());";
+    let (graph, refs) = capture_source("php", source);
+    let inner = reference_for(&refs, "item", "inner");
+    let outer = reference_for(&refs, "item", "outer");
+    assert_ne!(
+        graph.references[&inner.byte_offset], graph.references[&outer.byte_offset],
+        "nested same-name PHP callback parameters need distinct bindings"
+    );
+
+    let source = "<?php $xs->map(fn ($item) => $ys->map(fn ($other) => $item->outer()));";
+    let (graph, refs) = capture_source("php", source);
+    let outer = reference_for(&refs, "item", "outer");
+    assert!(
+        graph.references.contains_key(&outer.byte_offset),
+        "a differently named nested PHP callback must preserve its outer capture"
+    );
+}
+
+#[test]
+fn php_function_scoped_writes_fence_later_reads_across_nested_blocks() {
+    let source = "<?php $xs->map(function ($item) use ($other) { $item->before(); if (true) { $item = $other; $item->shadow(); } $item->outer(); $item = $other; $item->after(); });";
+    let (graph, refs) = capture_source("php", source);
+    let before = reference_for(&refs, "item", "before");
+    let shadow = reference_for(&refs, "item", "shadow");
+    let outer = reference_for(&refs, "item", "outer");
+    let after = reference_for(&refs, "item", "after");
+    assert!(
+        graph.references.contains_key(&before.byte_offset),
+        "reads before a PHP reassignment retain their callback identity"
+    );
+    assert!(
+        !graph.references.contains_key(&shadow.byte_offset),
+        "the local/block write must fence the read in its block"
+    );
+    assert!(
+        !graph.references.contains_key(&outer.byte_offset),
+        "a PHP write in a nested block remains function-scoped after that block"
+    );
+    assert!(
+        !graph.references.contains_key(&after.byte_offset),
+        "a direct reassignment must fence later callback reads"
+    );
+}
+
+#[test]
+fn php_function_scoped_foreach_and_catch_bindings_fence_later_reads() {
+    let source = "<?php $xs->map(function ($item) use ($values) { $item->before(); foreach ($values as $item) { $item->looped(); } $item->afterForeach(); try { risky(); } catch (Exception $item) { $item->caught(); } $item->afterCatch(); });";
+    let (graph, refs) = capture_source("php", source);
+    let before = reference_for(&refs, "item", "before");
+    let looped = reference_for(&refs, "item", "looped");
+    let after_foreach = reference_for(&refs, "item", "afterForeach");
+    let caught = reference_for(&refs, "item", "caught");
+    let after_catch = reference_for(&refs, "item", "afterCatch");
+    assert!(
+        graph.references.contains_key(&before.byte_offset),
+        "the callback parameter remains eligible before a function-scoped binding"
+    );
+    assert!(
+        !graph.references.contains_key(&looped.byte_offset),
+        "a foreach target must fence reads in its loop body"
+    );
+    assert!(
+        !graph.references.contains_key(&caught.byte_offset),
+        "a catch variable must fence reads in its catch body"
+    );
+    assert!(
+        !graph.references.contains_key(&after_foreach.byte_offset),
+        "a foreach target remains bound after its compound body"
+    );
+    assert!(
+        !graph.references.contains_key(&after_catch.byte_offset),
+        "a catch variable remains bound after its compound body"
+    );
+}
+
+#[test]
+fn php_named_function_boundary_does_not_borrow_callback_identity() {
+    let source = "<?php $xs->map(function ($item) { function nested($item) { $item->inside(); } $item->outer(); });";
+    let (graph, refs) = capture_source("php", source);
+    let inside = reference_for(&refs, "item", "inside");
+    let outer = reference_for(&refs, "item", "outer");
+    assert!(
+        !graph.references.contains_key(&inside.byte_offset),
+        "a nested named function has its own unmodeled parameter identity"
+    );
+    assert!(
+        graph.references.contains_key(&outer.byte_offset),
+        "the enclosing PHP callback remains eligible after a nested function"
+    );
+}
+
+#[test]
+fn php_empty_arrows_and_exact_anonymous_use_capture_outer() {
+    for source in [
+        "<?php $xs->map(fn () => $other->standaloneArrow());",
+        "<?php $xs->map(function () { $other->standaloneAnonymous(); });",
+    ] {
+        assert!(
+            capture_graph("php", source).0.is_some(),
+            "every syntactic PHP callback must retain a scope even without a supported parameter"
+        );
+    }
+
+    let source = "<?php $xs->map(fn ($item) => $ys->map(fn () => $item->arrowCapture()));";
+    let (graph, refs) = capture_source("php", source);
+    let captured = reference_for(&refs, "item", "arrowCapture");
+    assert_eq!(
+        graph.references.get(&captured.byte_offset),
+        Some(&declaration_span_at(&graph, source, "$item")),
+        "a zero-parameter PHP arrow captures the enclosing callback variable"
+    );
+
+    let source = "<?php $xs->map(function ($item) { $ys->map(function () use ($item) { $item->anonymousUse(); }); });";
+    let (graph, refs) = capture_source("php", source);
+    let captured = reference_for(&refs, "item", "anonymousUse");
+    assert_eq!(
+        graph.references.get(&captured.byte_offset),
+        Some(&declaration_span_at(&graph, source, "$item")),
+        "an exact by-value PHP use capture must retain the enclosing declaration identity"
+    );
+
+    for source in [
+        "<?php $xs->map(function ($item) { $ys->map(function () { $item->anonymousNoUse(); }); });",
+        "<?php $xs->map(function ($item) { $ys->map(function () use ($other) { $item->anonymousUnlisted(); }); });",
+        "<?php $xs->map(function ($item) { $ys->map(function () use (&$item) { $item->anonymousByRef(); }); });",
+        "<?php $xs->map(fn ($item) => $ys->map(fn (...$item) => $item->variadic()));",
+    ] {
+        let (graph, refs) = capture_source("php", source);
+        let target = if source.contains("anonymousNoUse") {
+            "anonymousNoUse"
+        } else if source.contains("anonymousUnlisted") {
+            "anonymousUnlisted"
+        } else if source.contains("anonymousByRef") {
+            "anonymousByRef"
+        } else {
+            "variadic"
+        };
+        let reference = reference_for(&refs, "item", target);
+        assert!(
+            !graph.references.contains_key(&reference.byte_offset),
+            "an unmodeled PHP callback boundary must not fall through to the outer parameter: {source}"
+        );
+    }
 }

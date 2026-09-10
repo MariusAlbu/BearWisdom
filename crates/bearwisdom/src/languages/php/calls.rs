@@ -3,7 +3,9 @@
 // =============================================================================
 
 use super::helpers::node_text;
-use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
+use crate::types::{
+    CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind, SourceSpan,
+};
 use tree_sitter::Node;
 
 /// Maximum nesting depth for recursive `CallArg` construction. Expressions
@@ -173,36 +175,49 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
             }
         }
         // `fn($u) => $u->name`, `function($a, $b) { ... }` — capture the
-        // closure's own positional parameter names (without the `$` sigil) so
-        // the chain walker can type them from the higher-order method's
-        // callback-parameter signature.
-        "arrow_function" | "anonymous_function" => CallArg::Lambda {
-            params: php_lambda_param_names(node, src),
+        // closure's own positional declaration spans so contextual callback
+        // typing addresses the binding identity rather than a file-wide name.
+        "arrow_function" | "anonymous_function" => CallArg::LambdaAt {
+            params: php_lambda_param_spans(node),
         },
         _ => CallArg::Other,
     }
 }
 
-/// Collect the positional parameter names of a PHP arrow-function /
+/// Collect positional parameter declaration spans of a PHP arrow-function /
 /// anonymous-function argument. The `parameters` field is a `formal_parameters`
-/// list of `simple_parameter` nodes whose `name` field is a `variable_name`
-/// (`$u`); the leading `$` sigil is stripped. A parameter without a plain
-/// variable name yields an empty slot so positions stay aligned with the
-/// callback signature.
-fn php_lambda_param_names(node: &Node, src: &[u8]) -> Vec<String> {
+/// list whose `simple_parameter` entries carry a `variable_name` (`$u`). The
+/// full variable span, including `$`, is retained. Variadic parameters cannot
+/// be represented by the fixed-arity callback type and therefore occupy a
+/// `None` slot, as do missing or unsupported parameter forms, so later callback
+/// positions remain aligned without inventing a binding.
+fn php_lambda_param_spans(node: &Node) -> Vec<Option<SourceSpan>> {
     let Some(params) = node.child_by_field_name("parameters") else {
         return Vec::new();
     };
     let mut cursor = params.walk();
-    params
-        .named_children(&mut cursor)
-        .filter(|p| p.kind() == "simple_parameter" || p.kind() == "variadic_parameter")
-        .map(|p| {
-            p.child_by_field_name("name")
-                .map(|n| node_text(&n, src).trim_start_matches('$').to_string())
-                .unwrap_or_default()
-        })
-        .collect()
+    let mut out = Vec::new();
+    for parameter in params.named_children(&mut cursor) {
+        match parameter.kind() {
+            "simple_parameter" => {
+                out.push(
+                    parameter
+                        .child_by_field_name("name")
+                        .map(|name| SourceSpan {
+                            start: name.start_byte() as u32,
+                            end: name.end_byte() as u32,
+                        }),
+                );
+            }
+            "variadic_parameter" => out.push(None),
+            // Comments are named tree-sitter nodes but are not parameters.
+            "comment" => {}
+            // Keep an explicit hole for an error-recovery or future parameter
+            // form rather than shifting every following callback position.
+            _ => out.push(None),
+        }
+    }
+    out
 }
 
 /// Convert one `array_element_initializer` to a `CallArg`. A plain element
@@ -250,128 +265,25 @@ pub(super) fn extract_calls_from_body(
     for child in node.children(&mut cursor) {
         match child.kind() {
             "member_call_expression" | "nullsafe_member_call_expression" => {
-                if let Some(name_node) = child.child_by_field_name("name") {
-                    let callee = node_text(&name_node, src);
-                    let chain = build_chain(&child, src);
-                    let call_args = extract_call_args(&child, src);
-                    crate::languages::emit_chain_type_ref(
-                        &chain,
-                        source_symbol_index,
-                        &name_node,
-                        refs,
-                    );
-                    refs.push(ExtractedRef {
-                        is_include: false,
-                        is_import_binding: false,
-                        is_reexport: false,
-                        source_symbol_index,
-                        target_name: callee,
-                        kind: EdgeKind::Calls,
-                        line: name_node.start_position().row as u32,
-                        col: 0,
-                        module: None,
-                        chain,
-                        byte_offset: name_node.start_byte() as u32,
-                        namespace_segments: Vec::new(),
-                        call_args,
-                    });
-                }
+                emit_member_call(&child, src, source_symbol_index, refs);
                 // Recurse into the object expression and arguments to find nested calls.
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
                 continue;
             }
 
             "static_call_expression" | "scoped_call_expression" => {
-                if let Some(name_node) = child.child_by_field_name("name") {
-                    let callee = node_text(&name_node, src);
-                    let chain = build_chain(&child, src);
-                    let call_args = extract_call_args(&child, src);
-                    crate::languages::emit_chain_type_ref(
-                        &chain,
-                        source_symbol_index,
-                        &name_node,
-                        refs,
-                    );
-                    refs.push(ExtractedRef {
-                        is_include: false,
-                        is_import_binding: false,
-                        is_reexport: false,
-                        source_symbol_index,
-                        target_name: callee,
-                        kind: EdgeKind::Calls,
-                        line: name_node.start_position().row as u32,
-                        col: 0,
-                        module: None,
-                        chain,
-                        byte_offset: name_node.start_byte() as u32,
-                        namespace_segments: Vec::new(),
-                        call_args,
-                    });
-                }
+                emit_static_call(&child, src, source_symbol_index, refs);
                 // Recurse into arguments to find nested calls.
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
                 continue;
             }
 
             "object_creation_expression" => {
-                let cls_node_opt = if let Some(n) = child.child_by_field_name("class_type") {
-                    Some(n)
-                } else {
-                    let mut c = child.walk();
-                    let mut found = None;
-                    for n in child.children(&mut c) {
-                        if n.kind() == "name"
-                            || n.kind() == "qualified_name"
-                            || n.kind() == "identifier"
-                            || n.kind() == "variable_name"
-                        {
-                            found = Some(n);
-                            break;
-                        }
-                    }
-                    found
-                };
-                if let Some(cls_node) = cls_node_opt {
-                    let cls_name = node_text(&cls_node, src);
-                    refs.push(ExtractedRef {
-                        is_include: false,
-                        is_import_binding: false,
-                        is_reexport: false,
-                        source_symbol_index,
-                        target_name: cls_name,
-                        kind: EdgeKind::Instantiates,
-                        line: cls_node.start_position().row as u32,
-                        col: 0,
-                        module: None,
-                        chain: None,
-                        byte_offset: cls_node.start_byte() as u32,
-                        namespace_segments: Vec::new(),
-                        call_args: Vec::new(),
-                    });
-                }
+                emit_object_creation(&child, src, source_symbol_index, refs);
             }
 
             "function_call_expression" => {
-                if let Some(fn_node) = child.child_by_field_name("function") {
-                    let callee = node_text(&fn_node, src);
-                    let simple = callee.rsplit('\\').next().unwrap_or(&callee).to_string();
-                    let call_args = extract_call_args(&child, src);
-                    refs.push(ExtractedRef {
-                        is_include: false,
-                        is_import_binding: false,
-                        is_reexport: false,
-                        source_symbol_index,
-                        target_name: simple,
-                        kind: EdgeKind::Calls,
-                        line: fn_node.start_position().row as u32,
-                        col: 0,
-                        module: None,
-                        chain: None,
-                        byte_offset: fn_node.start_byte() as u32,
-                        namespace_segments: Vec::new(),
-                        call_args,
-                    });
-                }
+                emit_function_call(&child, src, source_symbol_index, refs);
             }
 
             // `match($x) { 1 => 'one', default => 'other' }` — recurse into arms.
@@ -383,16 +295,16 @@ pub(super) fn extract_calls_from_body(
             // `fn($x) => $x->name` — recurse into body.
             "arrow_function" => {
                 if let Some(body) = child.child_by_field_name("body") {
-                    extract_calls_from_body(&body, src, source_symbol_index, refs);
+                    extract_callback_body_calls(&body, src, source_symbol_index, refs);
                 }
                 continue;
             }
 
             // `function() use ($x) { ... }` — anonymous function.
             // Extract calls from the body; `use` clause variables are already in scope.
-            "anonymous_function_creation_expression" => {
+            "anonymous_function" | "anonymous_function_creation_expression" => {
                 if let Some(body) = child.child_by_field_name("body") {
-                    extract_calls_from_body(&body, src, source_symbol_index, refs);
+                    extract_callback_body_calls(&body, src, source_symbol_index, refs);
                 }
                 continue;
             }
@@ -415,6 +327,177 @@ pub(super) fn extract_calls_from_body(
         }
         extract_calls_from_body(&child, src, source_symbol_index, refs);
     }
+}
+
+/// Callback bodies can be a compound statement or a single expression. The
+/// normal body walker visits a node's children, so a direct expression body
+/// such as `fn ($item) => $item->touch()` would otherwise skip the call node
+/// itself. Walk callback expressions pre-order: every call root emits once,
+/// while nested callback bodies continue through the same path.
+fn extract_callback_body_calls(
+    body: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    match body.kind() {
+        "member_call_expression" | "nullsafe_member_call_expression" => {
+            emit_member_call(body, src, source_symbol_index, refs);
+        }
+        "static_call_expression" | "scoped_call_expression" => {
+            emit_static_call(body, src, source_symbol_index, refs);
+        }
+        "function_call_expression" => {
+            emit_function_call(body, src, source_symbol_index, refs);
+        }
+        "object_creation_expression" => {
+            emit_object_creation(body, src, source_symbol_index, refs);
+        }
+        "include_expression"
+        | "include_once_expression"
+        | "require_expression"
+        | "require_once_expression" => {
+            super::imports::extract_include_require(body, src, refs, source_symbol_index);
+        }
+        "arrow_function" | "anonymous_function" | "anonymous_function_creation_expression" => {
+            if let Some(nested_body) = body.child_by_field_name("body") {
+                extract_callback_body_calls(&nested_body, src, source_symbol_index, refs);
+            }
+            return;
+        }
+        _ => {}
+    }
+    let mut cursor = body.walk();
+    for child in body.children(&mut cursor) {
+        extract_callback_body_calls(&child, src, source_symbol_index, refs);
+    }
+}
+
+fn emit_object_creation(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let cls_node_opt = if let Some(node) = node.child_by_field_name("class_type") {
+        Some(node)
+    } else {
+        let mut cursor = node.walk();
+        let found = node.children(&mut cursor).find(|child| {
+            matches!(
+                child.kind(),
+                "name" | "qualified_name" | "identifier" | "variable_name"
+            )
+        });
+        found
+    };
+    if let Some(cls_node) = cls_node_opt {
+        let cls_name = node_text(&cls_node, src);
+        refs.push(ExtractedRef {
+            is_include: false,
+            is_import_binding: false,
+            is_reexport: false,
+            source_symbol_index,
+            target_name: cls_name,
+            kind: EdgeKind::Instantiates,
+            line: cls_node.start_position().row as u32,
+            col: 0,
+            module: None,
+            chain: None,
+            byte_offset: cls_node.start_byte() as u32,
+            namespace_segments: Vec::new(),
+            call_args: Vec::new(),
+        });
+    }
+}
+
+fn emit_member_call(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let Some(name_node) = node.child_by_field_name("name") else {
+        return;
+    };
+    let callee = node_text(&name_node, src);
+    let chain = build_chain(node, src);
+    let call_args = extract_call_args(node, src);
+    crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &name_node, refs);
+    refs.push(ExtractedRef {
+        is_include: false,
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index,
+        target_name: callee,
+        kind: EdgeKind::Calls,
+        line: name_node.start_position().row as u32,
+        col: 0,
+        module: None,
+        chain,
+        byte_offset: name_node.start_byte() as u32,
+        namespace_segments: Vec::new(),
+        call_args,
+    });
+}
+
+fn emit_static_call(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let Some(name_node) = node.child_by_field_name("name") else {
+        return;
+    };
+    let callee = node_text(&name_node, src);
+    let chain = build_chain(node, src);
+    let call_args = extract_call_args(node, src);
+    crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &name_node, refs);
+    refs.push(ExtractedRef {
+        is_include: false,
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index,
+        target_name: callee,
+        kind: EdgeKind::Calls,
+        line: name_node.start_position().row as u32,
+        col: 0,
+        module: None,
+        chain,
+        byte_offset: name_node.start_byte() as u32,
+        namespace_segments: Vec::new(),
+        call_args,
+    });
+}
+
+fn emit_function_call(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let Some(fn_node) = node.child_by_field_name("function") else {
+        return;
+    };
+    let callee = node_text(&fn_node, src);
+    let simple = callee.rsplit('\\').next().unwrap_or(&callee).to_string();
+    let call_args = extract_call_args(node, src);
+    refs.push(ExtractedRef {
+        is_include: false,
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index,
+        target_name: simple,
+        kind: EdgeKind::Calls,
+        line: fn_node.start_position().row as u32,
+        col: 0,
+        module: None,
+        chain: None,
+        byte_offset: fn_node.start_byte() as u32,
+        namespace_segments: Vec::new(),
+        call_args,
+    });
 }
 
 /// Extract calls from interpolated expressions inside a PHP double-quoted string.

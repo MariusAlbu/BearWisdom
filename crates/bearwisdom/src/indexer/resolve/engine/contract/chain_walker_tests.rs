@@ -63,6 +63,28 @@ fn dart_prefix_parameters_keep_a_function_typed_callback_intact() {
 }
 
 #[test]
+fn php_prefix_parameters_keep_an_enriched_callback_type_intact() {
+    assert_eq!(
+        parse_param_types_from_signature_for_lang(
+            "function use((Item, Context) -> Result $callback, int $limit): void",
+            "php",
+        ),
+        Some(vec![
+            "(Item, Context) -> Result".to_string(),
+            "int".to_string(),
+        ]),
+    );
+    assert_eq!(
+        parse_param_types_from_signature_for_lang(
+            "function use(callable $callback, Closure $fallback): void",
+            "php",
+        ),
+        Some(vec!["callable".to_string(), "Closure".to_string()]),
+        "native callable markers remain nominal until a supported PHPDoc contract enriches them",
+    );
+}
+
+#[test]
 fn go_callback_signature_preserves_its_full_function_type() {
     assert_eq!(
         parse_param_types_from_signature_for_lang("func Apply(cb func(a, b T) R) R", "go"),

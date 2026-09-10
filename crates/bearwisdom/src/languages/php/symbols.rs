@@ -4,8 +4,8 @@
 
 use super::calls::{extract_calls_from_body, extract_trait_use};
 use super::helpers::{
-    build_class_signature, build_method_signature, extract_visibility, node_text, qualify,
-    qualify_ns, scope_from_prefix,
+    adjacent_phpdoc, build_class_signature, build_method_signature, extract_visibility, node_text,
+    qualify, qualify_ns, scope_from_prefix,
 };
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::Node;
@@ -283,7 +283,8 @@ pub(super) fn extract_method(
         SymbolKind::Method
     };
 
-    let signature = build_method_signature(node, src, &name);
+    let doc_comment = adjacent_phpdoc(node, src);
+    let signature = build_method_signature(node, src, &name, doc_comment.as_deref());
 
     let idx = symbols.len();
     symbols.push(ExtractedSymbol {
@@ -296,7 +297,7 @@ pub(super) fn extract_method(
         start_col: node.start_position().column as u32,
         end_col: node.end_position().column as u32,
         signature,
-        doc_comment: None,
+        doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
         byte_offset: 0,
@@ -471,7 +472,8 @@ pub(super) fn extract_function(
     };
     let name = node_text(&name_node, src);
     let qualified_name = qualify(&name, qualified_prefix);
-    let signature = build_method_signature(node, src, &name);
+    let doc_comment = adjacent_phpdoc(node, src);
+    let signature = build_method_signature(node, src, &name, doc_comment.as_deref());
 
     let idx = symbols.len();
     symbols.push(ExtractedSymbol {
@@ -484,7 +486,7 @@ pub(super) fn extract_function(
         start_col: node.start_position().column as u32,
         end_col: node.end_position().column as u32,
         signature,
-        doc_comment: None,
+        doc_comment,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
         byte_offset: 0,

@@ -514,6 +514,11 @@ fn initializer_split(s: &str) -> usize {
                 i += 2;
                 continue;
             }
+            b'-' if i + 1 < bytes.len() && bytes[i + 1] == b'>' => {
+                // Kotlin/Swift/Rust/PHPDoc function-type arrow.
+                i += 2;
+                continue;
+            }
             b'=' if depth == 0 => return i,
             _ => {}
         }
@@ -619,6 +624,7 @@ pub(crate) fn parse_param_types_from_signature_for_lang(
     for (i, &b) in ibytes.iter().enumerate() {
         match b {
             b'<' | b'[' | b'(' | b'{' => depth += 1,
+            b'>' if i > 0 && matches!(ibytes[i - 1], b'-' | b'=') => {}
             b'>' | b']' | b')' | b'}' => depth -= 1,
             b',' if depth == 0 => {
                 parts.push(inner[start..i].to_string());
@@ -651,7 +657,9 @@ pub(crate) fn parse_param_types_from_signature_for_lang(
     // one parameter slot, after the comma split above.
     let extract = match lang_id {
         "go" => extract_param_type_postfix_no_colon,
-        "dart" | "c" | "c_lang" | "cpp" | "java" | "csharp" | "vbnet" => extract_param_type_prefix,
+        "dart" | "php" | "c" | "c_lang" | "cpp" | "java" | "csharp" | "vbnet" => {
+            extract_param_type_prefix
+        }
         _ => extract_param_type_colon_separated,
     };
     let types: Vec<String> = parts
@@ -767,13 +775,16 @@ fn extract_param_type_prefix(part: &str) -> String {
     }
     let mut depth: i32 = 0;
     let mut last_ws: Option<usize> = None;
+    let mut previous = '\0';
     for (i, ch) in trimmed.char_indices() {
         match ch {
             '<' | '[' | '(' | '{' => depth += 1,
+            '>' if matches!(previous, '-' | '=') => {}
             '>' | ']' | ')' | '}' => depth -= 1,
             c if c.is_whitespace() && depth == 0 => last_ws = Some(i),
             _ => {}
         }
+        previous = ch;
     }
     match last_ws {
         Some(ws) => trimmed[..ws].trim().to_string(),

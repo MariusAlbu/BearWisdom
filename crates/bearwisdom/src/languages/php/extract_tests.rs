@@ -169,6 +169,137 @@ fn handles_parse_errors_gracefully() {
     assert!(result.is_ok(), "extractor panicked on malformed input");
 }
 
+#[test]
+fn adjacent_phpdoc_callable_enriches_the_matching_function_signature_slot() {
+    let source = r#"<?php
+/**
+ * @param callable(Item, Other): Result $callback
+ */
+function visit(callable $callback, string $label): void {}
+"#;
+    let result = extract::extract(source);
+    let visit = result
+        .symbols
+        .iter()
+        .find(|symbol| symbol.name == "visit")
+        .expect("visit function");
+    assert_eq!(
+        visit.signature.as_deref(),
+        Some("function visit((Item, Other) -> Result $callback, string $label): void")
+    );
+    assert_eq!(
+        crate::indexer::resolve::engine::contract::chain_walker::parse_param_types_from_signature_for_lang(
+            visit.signature.as_deref().expect("signature"),
+            "php",
+        ),
+        Some(vec!["(Item, Other) -> Result".to_string(), "string".to_string()])
+    );
+    assert!(visit
+        .doc_comment
+        .as_deref()
+        .is_some_and(|doc| doc.contains("@param callable(Item, Other): Result $callback")));
+}
+
+#[test]
+fn adjacent_phpdoc_callable_enriches_the_matching_method_signature_slot() {
+    let source = r#"<?php
+class Visitor {
+    /** @param callable(Item): Result $callback */
+    public function visit(Closure $callback, int $attempts): void {}
+}
+"#;
+    let result = extract::extract(source);
+    let visit = result
+        .symbols
+        .iter()
+        .find(|symbol| symbol.qualified_name == "Visitor.visit")
+        .expect("visit method");
+    assert_eq!(
+        visit.signature.as_deref(),
+        Some("function visit((Item) -> Result $callback, int $attempts): void")
+    );
+}
+
+#[test]
+fn adjacent_phpdoc_callable_inserts_a_type_before_an_untyped_parameter() {
+    let source = r#"<?php
+/** @param callable(Item): Result $callback */
+function visit($callback, string $label): void {}
+"#;
+    let result = extract::extract(source);
+    let visit = result
+        .symbols
+        .iter()
+        .find(|symbol| symbol.name == "visit")
+        .expect("visit function");
+    assert_eq!(
+        visit.signature.as_deref(),
+        Some("function visit((Item) -> Result $callback, string $label): void")
+    );
+}
+
+#[test]
+fn phpdoc_callable_contracts_abstain_when_not_adjacent_or_unambiguous() {
+    for source in [
+        r#"<?php
+/** @param callable(Item): Result $callback */
+// intervening comment
+function visit(callable $callback): void {}
+"#,
+        r#"<?php
+/** @param callable(Item|Other): Result $callback */
+function visit(callable $callback): void {}
+"#,
+        r#"<?php
+/** @param callable(Item&Other): Result $callback */
+function visit(callable $callback): void {}
+"#,
+        r#"<?php
+/** @param callable(Item, ...Other): Result $callback */
+function visit(callable $callback): void {}
+"#,
+        r#"<?php
+/** @param callable(Item): $callback */
+function visit(callable $callback): void {}
+"#,
+        r#"<?php
+/** @param callable(Item): Result $other */
+function visit(callable $callback): void {}
+"#,
+        r#"<?php
+function visit(callable $callback, Closure $other): void {}
+"#,
+        r#"<?php
+/** @param callable(Item): Result $callback */
+function visit(int $callback): void {}
+"#,
+        r#"<?php
+/** @param callable(Item): Result $callback */
+function visit(callable &$callback): void {}
+"#,
+        r#"<?php
+/** @param callable(Item): Result $callback */
+function visit(callable $callback = null): void {}
+"#,
+        r#"<?php
+/** @param callable(Item): Result $callback */
+function visit(#[SensitiveParameter] callable $callback): void {}
+"#,
+    ] {
+        let result = extract::extract(source);
+        let visit = result
+            .symbols
+            .iter()
+            .find(|symbol| symbol.name == "visit")
+            .expect("visit function");
+        let signature = visit.signature.as_deref().expect("signature");
+        assert!(
+            !signature.contains("->"),
+            "unsupported PHPDoc must not create a function type: {signature}"
+        );
+    }
+}
+
 // -----------------------------------------------------------------------
 // Constructor promotion (PHP 8.0)
 // -----------------------------------------------------------------------
