@@ -1,10 +1,12 @@
 use super::*;
 
-fn capture_source(language: &str, source: &str) -> (LexicalBindings, Vec<ExtractedRef>) {
+fn capture_graph(language: &str, source: &str) -> (Option<LexicalBindings>, Vec<ExtractedRef>) {
     let refs = match language {
         "scala" => crate::languages::scala::extract::extract(source).refs,
         "java" => crate::languages::java::extract::extract(source).refs,
         "csharp" => crate::languages::csharp::extract::extract(source).refs,
+        "kotlin" => crate::languages::kotlin::extract::extract(source).refs,
+        "swift" => crate::languages::swift::extract::extract(source).refs,
         _ => unreachable!(),
     };
     let plugin = crate::languages::default_registry().get(language);
@@ -13,9 +15,14 @@ fn capture_source(language: &str, source: &str) -> (LexicalBindings, Vec<Extract
     parser.set_language(&grammar).unwrap();
     let tree = parser.parse(source, None).unwrap();
     (
-        capture(tree.root_node(), source.as_bytes(), language, &refs).expect("callback graph"),
+        capture(tree.root_node(), source.as_bytes(), language, &refs),
         refs,
     )
+}
+
+fn capture_source(language: &str, source: &str) -> (LexicalBindings, Vec<ExtractedRef>) {
+    let (graph, refs) = capture_graph(language, source);
+    (graph.expect("callback graph"), refs)
 }
 
 fn root_at(refs: &[ExtractedRef], source: &str, needle: &str) -> u32 {
@@ -242,4 +249,177 @@ fn java_anonymous_class_method_body_does_not_capture_outer_callback_parameter() 
         !graph.references.contains_key(&reference.byte_offset),
         "anonymous class method bodies must fence the outer callback parameter"
     );
+}
+
+#[test]
+fn kotlin_and_swift_explicit_callback_parameter_spans_and_refs_are_exact() {
+    for (language, source, marker, target) in [
+        (
+            "kotlin",
+            "fun f(xs: List<A>) { xs.map { x -> x.touch() } }",
+            "x ->",
+            "touch",
+        ),
+        (
+            "swift",
+            "func f(xs: [A]) { xs.map { x in x.touch() } }",
+            "x in",
+            "touch",
+        ),
+    ] {
+        let (graph, refs) = capture_source(language, source);
+        let reference = reference_for(&refs, "x", target);
+        assert_eq!(
+            graph.references.get(&reference.byte_offset),
+            Some(&declaration_at(&graph, source, marker)),
+            "{language}: callback ref must attest the exact explicit declaration"
+        );
+    }
+}
+
+#[test]
+fn kotlin_and_swift_nested_callback_identity_and_outer_capture_are_scoped() {
+    for (language, source, inner_target, outer_target) in [
+        (
+            "kotlin",
+            "fun f(xs: List<A>, ys: List<B>) { xs.map { x -> ys.map { x -> x.inner() }; x.outer() } }",
+            "inner",
+            "outer",
+        ),
+        (
+            "swift",
+            "func f(xs: [A], ys: [B]) { xs.map { x in ys.map { x in x.inner() }; x.outer() } }",
+            "inner",
+            "outer",
+        ),
+    ] {
+        let (graph, refs) = capture_source(language, source);
+        let inner = reference_for(&refs, "x", inner_target);
+        let outer = reference_for(&refs, "x", outer_target);
+        assert_ne!(
+            graph.references[&inner.byte_offset], graph.references[&outer.byte_offset],
+            "{language}: nested same-name declarations must remain distinct"
+        );
+    }
+
+    for (language, source, target) in [
+        (
+            "kotlin",
+            "fun f(xs: List<A>, ys: List<B>) { xs.map { x -> ys.map { y -> x.outer() } } }",
+            "outer",
+        ),
+        (
+            "swift",
+            "func f(xs: [A], ys: [B]) { xs.map { x in ys.map { y in x.outer() } } }",
+            "outer",
+        ),
+    ] {
+        let (graph, refs) = capture_source(language, source);
+        let reference = reference_for(&refs, "x", target);
+        assert!(
+            graph.references.contains_key(&reference.byte_offset),
+            "{language}: a differently named nested callback must preserve outer capture"
+        );
+    }
+}
+
+#[test]
+fn kotlin_and_swift_local_shadow_and_nested_callable_boundaries_abstain() {
+    for (language, source, blocked, preserved) in [
+        (
+            "kotlin",
+            "fun f(xs: List<A>, other: B) { xs.map { x -> if (true) { val x = other; x.shadow() }; x.outer() } }",
+            "shadow",
+            "outer",
+        ),
+        (
+            "swift",
+            "func f(xs: [A], other: B) { xs.map { x in if true { let x = other; x.shadow() }; x.outer() } }",
+            "shadow",
+            "outer",
+        ),
+    ] {
+        let (graph, refs) = capture_source(language, source);
+        let blocked = reference_for(&refs, "x", blocked);
+        let preserved = reference_for(&refs, "x", preserved);
+        assert!(
+            !graph.references.contains_key(&blocked.byte_offset),
+            "{language}: nested local shadow must abstain"
+        );
+        assert!(
+            graph.references.contains_key(&preserved.byte_offset),
+            "{language}: callback read outside the local scope must remain eligible"
+        );
+    }
+
+    for (language, source, blocked, preserved) in [
+        (
+            "kotlin",
+            "fun f(xs: List<A>) { xs.map { x -> fun nested(x: B) { x.inner() }; x.outer() } }",
+            "inner",
+            "outer",
+        ),
+        (
+            "swift",
+            "func f(xs: [A]) { xs.map { x in func nested(x: B) { x.inner() }; x.outer() } }",
+            "inner",
+            "outer",
+        ),
+    ] {
+        let (graph, refs) = capture_source(language, source);
+        let blocked = reference_for(&refs, "x", blocked);
+        let preserved = reference_for(&refs, "x", preserved);
+        assert!(
+            !graph.references.contains_key(&blocked.byte_offset),
+            "{language}: nested callable body must abstain"
+        );
+        assert!(
+            graph.references.contains_key(&preserved.byte_offset),
+            "{language}: direct callback read must remain eligible"
+        );
+    }
+}
+
+#[test]
+fn kotlin_it_and_swift_shorthand_closures_do_not_invent_declaration_identity() {
+    for (language, source) in [
+        ("kotlin", "fun f(xs: List<A>) { xs.map { it.touch() } }"),
+        ("swift", "func f(xs: [A]) { xs.map { $0.touch() } }"),
+    ] {
+        let (graph, _) = capture_graph(language, source);
+        assert!(
+            graph.is_none(),
+            "{language}: implicit callback parameters have no declaration span"
+        );
+    }
+}
+
+#[test]
+fn kotlin_and_swift_reassignment_fences_later_callback_reads() {
+    for (language, source, before, after) in [
+        (
+            "kotlin",
+            "fun f(xs: List<A>, other: A) { xs.map { x -> x.before(); x = other; x.after() } }",
+            "before",
+            "after",
+        ),
+        (
+            "swift",
+            "func f(xs: [A], other: A) { xs.map { x in x.before(); x = other; x.after() } }",
+            "before",
+            "after",
+        ),
+    ] {
+        let (graph, refs) = capture_source(language, source);
+        let before = reference_for(&refs, "x", before);
+        let after = reference_for(&refs, "x", after);
+        assert!(
+            graph.references.contains_key(&before.byte_offset),
+            "{language}: reads before the write retain callback identity"
+        );
+        assert!(
+            !graph.references.contains_key(&after.byte_offset),
+            "{language}: reads after reassignment must abstain"
+        );
+    }
 }

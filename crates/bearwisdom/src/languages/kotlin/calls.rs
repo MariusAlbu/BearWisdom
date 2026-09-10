@@ -4,7 +4,9 @@
 
 use super::decorators::extract_when_patterns;
 use super::helpers::{call_target_name, node_text};
-use crate::types::{CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
+use crate::types::{
+    CallArg, ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind, SourceSpan,
+};
 use tree_sitter::Node;
 
 #[cfg(test)]
@@ -68,11 +70,11 @@ pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
     }
     // A trailing lambda (`list.map { ... }`) carries no `value_arguments`, so it
     // is appended whether or not parenthesized args were present.
-    append_trailing_lambda(call_node, src, &mut out);
+    append_trailing_lambda(call_node, &mut out);
     out
 }
 
-/// Append a `CallArg::Lambda` for a Kotlin trailing lambda
+/// Append a `CallArg::LambdaAt` for a Kotlin trailing lambda
 /// (`list.map { x -> x.foo }`), whose `annotated_lambda` (or bare
 /// `lambda_literal`) is a sibling of the call's `value_arguments`, not a
 /// `value_argument` inside it. The trailing lambda is always the last
@@ -83,13 +85,13 @@ pub(super) fn extract_call_args(call_node: &Node, src: &[u8]) -> Vec<CallArg> {
 /// `obj.method`, the inner `navigation_expression` (the lambda is then a
 /// following sibling under the `call_expression` parent). Both shapes are
 /// handled so the lambda lands on the ref regardless of which node carries it.
-fn append_trailing_lambda(call_node: &Node, src: &[u8], out: &mut Vec<CallArg>) {
+fn append_trailing_lambda(call_node: &Node, out: &mut Vec<CallArg>) {
     // Case 1 — `call_node` is the `call_expression`: scan its own children.
     let mut cursor = call_node.walk();
     for child in call_node.children(&mut cursor) {
         if let Some(ll) = trailing_lambda_literal(&child) {
-            out.push(CallArg::Lambda {
-                params: lambda_literal_params(&ll, src),
+            out.push(CallArg::LambdaAt {
+                params: lambda_literal_param_spans(&ll),
             });
         }
     }
@@ -100,8 +102,8 @@ fn append_trailing_lambda(call_node: &Node, src: &[u8], out: &mut Vec<CallArg>) 
         let mut sib = call_node.next_named_sibling();
         while let Some(node) = sib {
             if let Some(ll) = trailing_lambda_literal(&node) {
-                out.push(CallArg::Lambda {
-                    params: lambda_literal_params(&ll, src),
+                out.push(CallArg::LambdaAt {
+                    params: lambda_literal_param_spans(&ll),
                 });
             }
             sib = node.next_named_sibling();
@@ -230,57 +232,53 @@ fn extract_arg(node: &Node, src: &[u8], depth: u32) -> CallArg {
         // argument (`list.map({ x -> ... })`). The trailing-lambda form
         // (`list.map { ... }`) is a sibling of the call and is appended in
         // `extract_call_args`. Capture the lambda's own positional parameter
-        // names so the chain walker can type them from the higher-order
+        // declaration spans so the chain walker can type them from the higher-order
         // method's callback-parameter signature.
-        "lambda_literal" => CallArg::Lambda {
-            params: lambda_literal_params(node, src),
+        "lambda_literal" => CallArg::LambdaAt {
+            params: lambda_literal_param_spans(node),
         },
 
         _ => CallArg::Other,
     }
 }
 
-/// Collect the positional parameter names of a Kotlin `lambda_literal`. Names
+/// Collect the positional parameter declaration spans of a Kotlin `lambda_literal`. Names
 /// live under a `lambda_parameters` child as `variable_declaration` (or
 /// `multi_variable_declaration`) nodes whose identifier is the parameter name.
 /// When `lambda_parameters` is absent, Kotlin's implicit single parameter `it`
-/// is synthesized — the grammar guarantees it, so seeding `it` is sound.
-fn lambda_literal_params(node: &Node, src: &[u8]) -> Vec<String> {
+/// has no declaration token, so it stays one positional `None` slot.
+fn lambda_literal_param_spans(node: &Node) -> Vec<Option<SourceSpan>> {
     let Some(params) = child_of_kind(node, "lambda_parameters") else {
-        // No declared parameters — Kotlin binds the single argument to `it`.
-        return vec!["it".to_string()];
+        return vec![None];
     };
     let mut out = Vec::new();
     let mut pc = params.walk();
     for param in params.named_children(&mut pc) {
         match param.kind() {
-            "variable_declaration" => out.push(variable_declaration_name(&param, src)),
-            "multi_variable_declaration" => {
-                let mut mc = param.walk();
-                for inner in param.named_children(&mut mc) {
-                    if inner.kind() == "variable_declaration" {
-                        out.push(variable_declaration_name(&inner, src));
-                    }
-                }
-            }
-            _ => {}
+            "variable_declaration" => out.push(variable_declaration_span(&param)),
+            // `(left, right)` is one destructured callback parameter, not two
+            // independently contextualized parameters.
+            "multi_variable_declaration" => out.push(None),
+            _ => out.push(None),
         }
     }
     out
 }
 
-/// The parameter name of a Kotlin `variable_declaration` — its first
-/// identifier child. A declaration without a plain identifier yields an empty
-/// string so positions stay aligned with the callback signature.
-fn variable_declaration_name(node: &Node, src: &[u8]) -> String {
+/// The declaration span of a plain Kotlin `variable_declaration`. Unsupported
+/// patterns stay an explicit positional `None` rather than a guessed name.
+fn variable_declaration_span(node: &Node) -> Option<SourceSpan> {
     let mut i = 0;
     while let Some(child) = node.named_child(i) {
         if child.kind() == "simple_identifier" || child.kind() == "identifier" {
-            return node_text(child, src);
+            return Some(SourceSpan {
+                start: child.start_byte() as u32,
+                end: child.end_byte() as u32,
+            });
         }
         i += 1;
     }
-    String::new()
+    None
 }
 
 /// First named child of `node` whose kind is `kind`, searched by index so the

@@ -14,6 +14,20 @@ fn parse_call_args(source: &str) -> Vec<CallArg> {
         .unwrap_or_default()
 }
 
+fn callback_parameters<'a>(source: &'a str, args: &[CallArg]) -> Vec<Vec<Option<&'a str>>> {
+    args.iter()
+        .filter_map(|arg| match arg {
+            CallArg::LambdaAt { params } => Some(
+                params
+                    .iter()
+                    .map(|span| span.map(|s| &source[s.start as usize..s.end as usize]))
+                    .collect(),
+            ),
+            _ => None,
+        })
+        .collect()
+}
+
 #[test]
 fn call_args_string_literal() {
     let src = r#"
@@ -125,26 +139,22 @@ fn call_args_trailing_lambda_named_param_captured() {
     let src = r#"
 fun caller(list: List<Int>) { list.map { x -> x.foo } }
 "#;
-    let args = parse_call_args(src);
-    assert!(
-        args.iter()
-            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["x"])),
-        "expected Lambda {{ params: [\"x\"] }}, got: {args:?}"
+    assert_eq!(
+        callback_parameters(src, &parse_call_args(src)),
+        vec![vec![Some("x")]]
     );
 }
 
 #[test]
-fn call_args_trailing_lambda_implicit_it_synthesized() {
-    // `list.map { it.foo }` — no `lambda_parameters`; the implicit single
-    // parameter `it` is synthesized so the seed key exists.
+fn call_args_trailing_lambda_implicit_it_has_no_declaration_span() {
+    // `it` is implicit: its callback position is retained, but there is no
+    // declaration token to address contextually.
     let src = r#"
 fun caller(list: List<Int>) { list.map { it.foo } }
 "#;
-    let args = parse_call_args(src);
-    assert!(
-        args.iter()
-            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["it"])),
-        "expected Lambda {{ params: [\"it\"] }}, got: {args:?}"
+    assert_eq!(
+        callback_parameters(src, &parse_call_args(src)),
+        vec![vec![None]]
     );
 }
 
@@ -154,10 +164,19 @@ fn call_args_parenthesized_lambda_param_captured() {
     let src = r#"
 fun caller(list: List<Int>) { list.map({ y -> y.foo }) }
 "#;
-    let args = parse_call_args(src);
-    assert!(
-        args.iter()
-            .any(|a| matches!(a, CallArg::Lambda { params } if params.as_slice() == ["y"])),
-        "expected Lambda {{ params: [\"y\"] }}, got: {args:?}"
+    assert_eq!(
+        callback_parameters(src, &parse_call_args(src)),
+        vec![vec![Some("y")]]
+    );
+}
+
+#[test]
+fn call_args_destructured_lambda_parameter_keeps_one_none_slot() {
+    let src = r#"
+fun caller(list: List<Pair<Int, Int>>) { list.map { (left, right) -> left + right } }
+"#;
+    assert_eq!(
+        callback_parameters(src, &parse_call_args(src)),
+        vec![vec![None]]
     );
 }

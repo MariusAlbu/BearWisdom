@@ -4,7 +4,7 @@
 
 use super::helpers::{call_target_name, node_text};
 use super::predicates;
-use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
+use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind, SourceSpan};
 use tree_sitter::Node;
 
 #[cfg(test)]
@@ -517,11 +517,11 @@ pub(super) fn extract_swift_call_args(call_node: &Node, src: &[u8]) -> Vec<crate
             "integer_literal" | "real_literal" => CallArg::Literal(node_text(inner, src)),
             "boolean_literal" | "nil_literal" | "nil" => CallArg::Literal(inner.kind().to_string()),
             // `{ x in x.foo }` — named closure parameter — or the anonymous-
-            // shorthand form `{ $0.foo }`. Capture the closure's parameter names
-            // (named, or synthetic `$0..$max`) so the chain walker can type them
-            // from the higher-order method's callback-parameter signature.
-            "lambda_literal" => CallArg::Lambda {
-                params: swift_closure_param_names(&inner, src),
+            // shorthand form `{ $0.foo }`. Capture only declaration spans: Swift's
+            // synthetic `$0..$max` names have uses but no declaration token, so
+            // their positional slots stay `None`.
+            "lambda_literal" => CallArg::LambdaAt {
+                params: swift_closure_param_spans(&inner, src),
             },
             _ => CallArg::Other,
         };
@@ -530,37 +530,43 @@ pub(super) fn extract_swift_call_args(call_node: &Node, src: &[u8]) -> Vec<crate
     out
 }
 
-/// Collect the positional parameter names of a Swift `lambda_literal`.
+/// Collect the positional parameter declaration spans of a Swift `lambda_literal`.
 ///
 /// Named parameters live under a `type` field as a `lambda_function_type`
 /// whose `lambda_function_type_parameters` hold `lambda_parameter` nodes with a
-/// `name` field (`{ x in x.foo }` → `["x"]`). When the closure declares no
+/// `name` field (`{ x in x.foo }` → `[Some(x)]`). When the closure declares no
 /// named parameters, the anonymous-shorthand form (`{ $0.foo }`, `{ $0 + $1 }`)
 /// is recognized: `\$[0-9]+` is a `simple_identifier` alternative in the Swift
 /// grammar, so each `$N` is a real token in the closure body. The dense list
-/// `["$0".."$max"]` is returned, where `max` is the highest index referenced.
-/// The seeding step then types each `$N` from the callback signature exactly as
-/// for a named param; an unreferenced dense slot is a harmless no-op seed.
-fn swift_closure_param_names(node: &Node, src: &[u8]) -> Vec<String> {
+/// of `None` slots has one entry per `$0..$max`. The tokens are references, not
+/// declarations, so contextual typing must not attribute them to a binding.
+fn swift_closure_param_spans(node: &Node, src: &[u8]) -> Vec<Option<SourceSpan>> {
     if let Some(ty) = node.child_by_field_name("type") {
         if let Some(params) = swift_named_child(&ty, "lambda_function_type_parameters") {
             let mut cursor = params.walk();
             return params
                 .named_children(&mut cursor)
                 .filter(|p| p.kind() == "lambda_parameter")
-                .map(|p| {
-                    p.child_by_field_name("name")
-                        .map(|n| node_text(n, src))
-                        .unwrap_or_default()
-                })
+                .map(|parameter| swift_lambda_parameter_span(parameter, src))
                 .collect();
         }
     }
     // No named parameter list — recognize the anonymous-shorthand form.
     match swift_max_shorthand_index(node, src) {
-        Some(max) => (0..=max).map(|i| format!("${i}")).collect(),
+        Some(max) => (0..=max).map(|_| None).collect(),
         None => Vec::new(),
     }
+}
+
+/// The declaration span of a plain named Swift closure parameter. A wildcard
+/// (`_`) has no durable local binding, so it deliberately remains a positional
+/// hole rather than borrowing a source token as identity evidence.
+fn swift_lambda_parameter_span(node: Node, src: &[u8]) -> Option<SourceSpan> {
+    let name = node.child_by_field_name("name")?;
+    (node_text(name, src) != "_").then(|| SourceSpan {
+        start: name.start_byte() as u32,
+        end: name.end_byte() as u32,
+    })
 }
 
 /// Highest `$N` index referenced in this closure's own body, or `None` when the

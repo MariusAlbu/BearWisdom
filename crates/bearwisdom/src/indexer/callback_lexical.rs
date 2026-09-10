@@ -30,7 +30,7 @@ struct BoundCallback {
 }
 
 pub(crate) fn supports(prefix: &str) -> bool {
-    matches!(prefix, "scala" | "java" | "csharp")
+    matches!(prefix, "scala" | "java" | "csharp" | "kotlin" | "swift")
 }
 
 /// Capture a graph whose only bindings are callback parameters. The returned
@@ -160,6 +160,7 @@ fn callback_kind(prefix: &str, kind: &str) -> bool {
     match prefix {
         "scala" | "java" => kind == "lambda_expression",
         "csharp" => matches!(kind, "lambda_expression" | "anonymous_method_expression"),
+        "kotlin" | "swift" => kind == "lambda_literal",
         _ => false,
     }
 }
@@ -168,6 +169,14 @@ fn callback(node: Node, prefix: &str) -> Option<Callback> {
     if node.has_error() {
         return None;
     }
+    match prefix {
+        "kotlin" => kotlin_callback(node),
+        "swift" => swift_callback(node),
+        _ => callback_with_fields(node, prefix),
+    }
+}
+
+fn callback_with_fields(node: Node, prefix: &str) -> Option<Callback> {
     let parameters_node = node.child_by_field_name("parameters").or_else(|| {
         let mut cursor = node.walk();
         let found = node
@@ -183,6 +192,67 @@ fn callback(node: Node, prefix: &str) -> Option<Callback> {
             .filter(|child| child.start_byte() >= parameters_node.end_byte())
             .last()
     })?;
+    let body_span = span(body);
+    Some(Callback {
+        body: body_span,
+        parameters,
+        barriers: collect_barriers(body, prefix, body_span),
+        boundaries: collect_boundaries(body, prefix),
+    })
+}
+
+/// Kotlin has no `body` field on `lambda_literal`: its direct children are the
+/// optional `lambda_parameters` followed by statements. The absence of the
+/// former means the implicit `it` binding, which has no declaration span and
+/// therefore cannot participate in this identity graph.
+fn kotlin_callback(node: Node) -> Option<Callback> {
+    let parameters = named_children(node)
+        .find(|child| child.kind() == "lambda_parameters")
+        .map(kotlin_parameter_spans)?;
+    callback_from_explicit_parameters(node, parameters, "kotlin")
+}
+
+fn kotlin_parameter_spans(parameters: Node) -> Vec<SourceSpan> {
+    named_children(parameters)
+        .flat_map(|parameter| match parameter.kind() {
+            "variable_declaration" => declaration_name(parameter).into_iter().collect(),
+            "multi_variable_declaration" => named_children(parameter)
+                .filter(|inner| inner.kind() == "variable_declaration")
+                .filter_map(declaration_name)
+                .collect(),
+            _ => Vec::new(),
+        })
+        .map(span)
+        .collect()
+}
+
+/// Swift's named closure parameters are declaration tokens under
+/// `lambda_literal.type → lambda_function_type_parameters`. Shorthand `$0` /
+/// `$1` parameters have no declaration nodes and are intentionally omitted.
+fn swift_callback(node: Node) -> Option<Callback> {
+    let ty = node.child_by_field_name("type")?;
+    let parameters =
+        named_children(ty).find(|child| child.kind() == "lambda_function_type_parameters")?;
+    let spans = named_children(parameters)
+        .filter(|parameter| parameter.kind() == "lambda_parameter")
+        .filter_map(|parameter| {
+            parameter
+                .child_by_field_name("name")
+                .filter(|name| name.kind() == "simple_identifier")
+        })
+        .map(span)
+        .collect();
+    callback_from_explicit_parameters(node, spans, "swift")
+}
+
+fn callback_from_explicit_parameters(
+    body: Node,
+    parameters: Vec<SourceSpan>,
+    prefix: &str,
+) -> Option<Callback> {
+    if parameters.is_empty() {
+        return None;
+    }
     let body_span = span(body);
     Some(Callback {
         body: body_span,
@@ -254,6 +324,24 @@ fn ordinary_boundary_kind(prefix: &str, kind: &str) -> bool {
                 | "record_declaration"
                 | "interface_declaration"
         ),
+        "kotlin" => matches!(
+            kind,
+            "function_declaration"
+                | "class_declaration"
+                | "object_declaration"
+                | "interface_declaration"
+                | "enum_class_body"
+        ),
+        "swift" => matches!(
+            kind,
+            "function_declaration"
+                | "init_declaration"
+                | "deinit_declaration"
+                | "class_declaration"
+                | "struct_declaration"
+                | "protocol_declaration"
+                | "enum_declaration"
+        ),
         _ => false,
     }
 }
@@ -282,7 +370,7 @@ fn collect_barriers_inner(
             {
                 barriers.push(Barrier {
                     name: span(name),
-                    range: barrier_range(node, callback_body),
+                    range: barrier_range(node, callback_body, prefix),
                 });
             }
         }
@@ -293,7 +381,35 @@ fn collect_barriers_inner(
             {
                 barriers.push(Barrier {
                     name: span(name),
-                    range: barrier_range(node, callback_body),
+                    range: barrier_range(node, callback_body, prefix),
+                });
+            }
+        }
+        ("kotlin", "property_declaration")
+        | ("swift", "property_declaration" | "variable_declaration") => {
+            if let Some(name) = declaration_name(node) {
+                barriers.push(Barrier {
+                    name: span(name),
+                    range: barrier_range(node, callback_body, prefix),
+                });
+            }
+        }
+        ("kotlin", "assignment") => {
+            if let Some(name) = node
+                .child_by_field_name("left")
+                .filter(|name| name.kind() == "identifier")
+            {
+                barriers.push(Barrier {
+                    name: span(name),
+                    range: barrier_range(node, callback_body, prefix),
+                });
+            }
+        }
+        ("swift", "assignment") => {
+            if let Some(name) = swift_assignment_name(node) {
+                barriers.push(Barrier {
+                    name: span(name),
+                    range: barrier_range(node, callback_body, prefix),
                 });
             }
         }
@@ -304,7 +420,7 @@ fn collect_barriers_inner(
             {
                 barriers.push(Barrier {
                     name: span(name),
-                    range: barrier_range(node, callback_body),
+                    range: barrier_range(node, callback_body, prefix),
                 });
             }
         }
@@ -316,11 +432,19 @@ fn collect_barriers_inner(
     }
 }
 
-fn barrier_range(node: Node, callback_body: SourceSpan) -> SourceSpan {
+fn swift_assignment_name(node: Node) -> Option<Node> {
+    let target = node.child_by_field_name("target")?;
+    if target.kind() == "simple_identifier" {
+        return Some(target);
+    }
+    named_children(target).find(|child| child.kind() == "simple_identifier")
+}
+
+fn barrier_range(node: Node, callback_body: SourceSpan, prefix: &str) -> SourceSpan {
     let start = node.start_byte() as u32;
     let mut current = node.parent();
     while let Some(parent) = current {
-        if parent.kind() == "block" {
+        if lexical_scope_kind(prefix, parent.kind()) {
             return SourceSpan {
                 start,
                 end: parent.end_byte() as u32,
@@ -336,6 +460,10 @@ fn barrier_range(node: Node, callback_body: SourceSpan) -> SourceSpan {
         start,
         end: callback_body.end,
     }
+}
+
+fn lexical_scope_kind(prefix: &str, kind: &str) -> bool {
+    kind == "block" || matches!(prefix, "swift") && kind == "statements"
 }
 
 fn parameter_spans(parameters: Node, prefix: &str) -> Vec<SourceSpan> {
@@ -376,6 +504,33 @@ fn parameter_spans(parameters: Node, prefix: &str) -> Vec<SourceSpan> {
         },
         _ => Vec::new(),
     }
+}
+
+/// The declaration identifier nested directly in a variable declaration or a
+/// wrapper such as Kotlin's `property_declaration` / Swift's
+/// `property_declaration`. Do not walk arbitrary descendants: a type or
+/// initializer identifier is not a declaration.
+fn declaration_name(node: Node) -> Option<Node> {
+    if node.kind() == "property_declaration" {
+        if let Some(pattern) = node.child_by_field_name("name") {
+            if matches!(pattern.kind(), "simple_identifier" | "identifier") {
+                return Some(pattern);
+            }
+            if let Some(name) = pattern.child_by_field_name("bound_identifier").or_else(|| {
+                named_children(pattern)
+                    .find(|child| matches!(child.kind(), "simple_identifier" | "identifier"))
+            }) {
+                return Some(name);
+            }
+        }
+    }
+    if node.kind() == "variable_declaration" {
+        return named_children(node)
+            .find(|child| matches!(child.kind(), "simple_identifier" | "identifier"));
+    }
+    named_children(node)
+        .find(|child| child.kind() == "variable_declaration")
+        .and_then(declaration_name)
 }
 
 fn named_children(node: Node) -> impl Iterator<Item = Node> {

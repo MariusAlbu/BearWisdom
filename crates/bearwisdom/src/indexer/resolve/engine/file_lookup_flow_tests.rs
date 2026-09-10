@@ -1099,3 +1099,140 @@ fn scala_lambda_at_span_seeds_its_exact_callback_root() {
         "the contextual span must be readable only through the exact callback root"
     );
 }
+
+fn assert_explicit_lambda_at_span_seeds_its_exact_callback_root(
+    language: &'static str,
+    extension: &str,
+    source: &str,
+    signature: &str,
+) {
+    use crate::types::CallArg;
+    use rustc_hash::FxHashMap;
+
+    let dir = tempfile::tempdir().unwrap();
+    let relative_path = format!("callbacks.{extension}");
+    let path = dir.path().join(&relative_path);
+    std::fs::write(&path, source).unwrap();
+    let arena = Arc::new(TypeArena::new());
+    let parsed = crate::indexer::parse_file::parse_file_with_arena(
+        &crate::walker::WalkedFile {
+            relative_path: relative_path.clone(),
+            absolute_path: path,
+            language,
+        },
+        crate::languages::default_registry(),
+        &arena,
+    )
+    .unwrap();
+    let files = [parsed];
+    let callback = files[0]
+        .refs
+        .iter()
+        .find(|reference| {
+            reference.target_name == "use"
+                && reference
+                    .call_args
+                    .iter()
+                    .any(|arg| matches!(arg, CallArg::LambdaAt { .. }))
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "{language} use call must retain its LambdaAt argument: {:#?}",
+                files[0].refs
+            )
+        });
+    let parameter = callback
+        .call_args
+        .iter()
+        .find_map(|arg| match arg {
+            CallArg::LambdaAt { params } => params.first().copied().flatten(),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("{language} callback parameter needs an exact source span"));
+    assert_eq!(
+        &source[parameter.start as usize..parameter.end as usize],
+        "item"
+    );
+    let root = files[0]
+        .refs
+        .iter()
+        .find(|reference| {
+            reference.target_name == "touch"
+                && reference
+                    .chain
+                    .as_ref()
+                    .and_then(|chain| chain.segments.first())
+                    .is_some_and(|segment| segment.name == "item")
+        })
+        .unwrap_or_else(|| panic!("{language} item.touch must retain item as its chain root"))
+        .byte_offset;
+    let graph = files[0]
+        .flow
+        .callback_lexical
+        .as_ref()
+        .unwrap_or_else(|| panic!("{language} LambdaAt must build callback-only identity"));
+    assert!(graph.declarations.contains_key(&parameter));
+    assert!(graph.references.contains_key(&root));
+
+    let db = crate::Database::open_in_memory().unwrap();
+    let (_, ids) = crate::indexer::write::write_parsed_files_with_origin(
+        &db,
+        &files,
+        "internal",
+        Some(&arena),
+    )
+    .unwrap();
+    let tree = Compilation::build(&files, &ids, Arc::clone(&arena));
+    let lookup = FileLookup::for_file(&tree, &files[0], &ids);
+    lookup.set_cursor(root);
+    assert_eq!(lookup.local_type_id("item"), None);
+
+    let callee = crate::indexer::resolve::engine::testkit::sym_with_sig(
+        901,
+        "use",
+        "Runner.use",
+        "method",
+        &relative_path,
+        signature,
+    );
+    crate::indexer::resolve::engine::lambda_seed::seed_lambda_params(
+        &lookup,
+        &arena,
+        &callee,
+        &callback.call_args,
+        arena.class("Runner"),
+        None,
+        &FxHashMap::default(),
+        &[],
+    );
+
+    lookup.set_cursor(root);
+    assert_eq!(lookup.local_type_id("item"), Some(arena.class("Item")));
+    assert_eq!(
+        lookup
+            .local_reference(root)
+            .and_then(|value| value.value_type),
+        Some(arena.class("Item")),
+        "the contextual span must flow through the exact {language} callback reference"
+    );
+}
+
+#[test]
+fn kotlin_lambda_at_span_seeds_its_exact_callback_root() {
+    assert_explicit_lambda_at_span_seeds_its_exact_callback_root(
+        "kotlin",
+        "kt",
+        "fun run(r: Runner) { r.use { item -> item.touch() } }\n",
+        "use(f: (Item) -> Unit): Unit",
+    );
+}
+
+#[test]
+fn swift_lambda_at_span_seeds_its_exact_callback_root() {
+    assert_explicit_lambda_at_span_seeds_its_exact_callback_root(
+        "swift",
+        "swift",
+        "class Item { func touch() {} }\nclass Runner { func use(_ f: (Item) -> Void) {} }\nfunc run(_ r: Runner) { r.use { item in item.touch() } }\n",
+        "use(f: (Item) -> Void): Void",
+    );
+}
