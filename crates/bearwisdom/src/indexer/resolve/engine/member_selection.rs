@@ -113,8 +113,12 @@ fn select_with_receiver(
                         Err(()) => return Selection::Incomplete,
                     }
                 }
-                declared = true;
+                // Only a member of an admitted kind declares the name at this
+                // level: a kind the hop cannot address (a property under a
+                // call in a language with separate member namespaces) neither
+                // competes nor hides an admitted member further up the climb.
                 if accept(&member.kind) {
+                    declared = true;
                     if !accessible(member.id) {
                         return Selection::Inaccessible;
                     }

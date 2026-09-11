@@ -161,3 +161,22 @@ fn same_name_property_and_method_select_the_method_for_a_call() {
     .unwrap();
     assert_eq!(walked.id, 72);
 }
+
+#[test]
+fn kind_rejected_child_member_does_not_hide_an_admitted_trait_member() {
+    use crate::type_checker::profile::chain_specs::kind_ok;
+    use crate::types::EdgeKind;
+
+    // `class User { use HasFactory; protected static $factory; }` then
+    // `User::factory()`: the property is not in the call namespace, so the
+    // climb must reach the trait's method.
+    let lookup = Lookup::new()
+        .with_parent_id(1, 2)
+        .with_member_id(1, sym(71, "factory", "User.factory", "property", "u.php"))
+        .with_member_id(2, sym(72, "factory", "HasFactory.factory", "method", "t.php"));
+    let name = lookup.member_index().unwrap().name("factory").unwrap();
+    let table = crate::languages::php::PHP_PROFILE.kind_compatible_table;
+    let calls = |kind: &str| kind_ok(table, EdgeKind::Calls, kind);
+    assert_eq!(select(&lookup, 1, name, &calls), Selection::Unique(72));
+    assert_eq!(select(&lookup, 1, name, &|_| true), Selection::Unique(71));
+}
