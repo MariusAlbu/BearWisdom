@@ -24,7 +24,10 @@ const PHP_KIND_TABLE: KindTable = &[
         EdgeKind::Inherits,
         &[SymbolKind::Class, SymbolKind::Interface],
     ),
-    (EdgeKind::Implements, &[SymbolKind::Interface]),
+    (
+        EdgeKind::Implements,
+        &[SymbolKind::Interface, SymbolKind::Trait],
+    ),
     (
         EdgeKind::TypeRef,
         &[

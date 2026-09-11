@@ -201,7 +201,7 @@ pub(super) fn extract_from_node(
                     parent_index,
                     &qp,
                     &np,
-                    SymbolKind::Class,
+                    SymbolKind::Trait,
                 );
                 if symbols.len() > class_idx {
                     decorators::extract_decorators(&child, src, class_idx, refs);

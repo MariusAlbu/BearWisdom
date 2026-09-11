@@ -767,3 +767,35 @@ class Stream {}
         ["Http.Client", "Http.Client.Curl", "Http.Encoding", "Http.Encoding.Stream"]
     );
 }
+
+#[test]
+fn trait_declaration_is_a_trait_symbol_and_class_use_is_an_implements_ref() {
+    let source = r#"<?php
+trait HasFactory {
+    public static function factory() {}
+}
+class User {
+    use HasFactory;
+}
+"#;
+    let extracted = extract::extract(source);
+    let trait_sym = extracted
+        .symbols
+        .iter()
+        .find(|s| s.name == "HasFactory")
+        .expect("trait symbol");
+    assert_eq!(trait_sym.kind, SymbolKind::Trait);
+    let method = extracted
+        .symbols
+        .iter()
+        .find(|s| s.name == "factory")
+        .expect("trait method");
+    assert_eq!(method.qualified_name, "HasFactory.factory");
+    assert!(
+        extracted
+            .refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::Implements && r.target_name == "HasFactory"),
+        "class `use Trait;` must emit an Implements ref"
+    );
+}

@@ -134,3 +134,14 @@ fn php_builtin_skip_declines_language_constructs_not_user_functions() {
     assert!(skip("die"));
     assert!(!skip("my_user_function"));
 }
+
+#[test]
+fn implements_admits_interfaces_and_traits_only() {
+    use crate::type_checker::profile::chain_specs::kind_ok;
+    use crate::types::EdgeKind;
+    let table = PHP_PROFILE.kind_compatible_table;
+    assert!(kind_ok(table, EdgeKind::Implements, "interface"));
+    assert!(kind_ok(table, EdgeKind::Implements, "trait"));
+    assert!(!kind_ok(table, EdgeKind::Implements, "class"));
+    assert!(!kind_ok(table, EdgeKind::Calls, "property"));
+}
