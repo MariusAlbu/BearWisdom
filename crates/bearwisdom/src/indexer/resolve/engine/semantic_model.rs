@@ -71,33 +71,8 @@ impl SemanticModel {
         profile: &LanguageProfile,
     ) -> SolveOutcome {
         let reference = ref_ctx.extracted_ref;
-        if matches!(reference.kind, EdgeKind::Calls | EdgeKind::Instantiates)
-            && reference
-                .chain
-                .as_ref()
-                .is_none_or(|c| c.segments.len() < 2)
-        {
-            if let Some(local) = lookup.local_reference(reference.byte_offset) {
-                let Some(target_symbol_id) = local.declaration else {
-                    // Known binding, missing/ambiguous persisted row: no global fallback.
-                    return SolveOutcome::Unresolved(None);
-                };
-                let resolved_yield_type = lookup.type_arena().and_then(|arena| {
-                    super::lexical_value::yield_type(
-                        &local,
-                        lookup,
-                        arena,
-                        reference.kind == EdgeKind::Instantiates,
-                    )
-                });
-                return SolveOutcome::Resolved(SymbolInfo {
-                    target_symbol_id,
-                    confidence: super::contract::RESOLVED_CONFIDENCE,
-                    strategy: "lexical_binding",
-                    resolved_yield_type,
-                    flow_emit: None,
-                });
-            }
+        if let Some(outcome) = lexical::bind_lexical_call(ref_ctx, file_ctx, lookup) {
+            return outcome;
         }
         // The walk's own diagnosis of a declined chain. When a namespace or
         // wildcard-import root sends the chain through the module-scoped ladder
@@ -438,6 +413,9 @@ fn kind_ok_table(table: KindTable, edge: EdgeKind, sym_kind: &str) -> bool {
 pub(super) fn kind_ok_table_for_test(table: KindTable, edge: EdgeKind, sym_kind: &str) -> bool {
     kind_ok_table(table, edge, sym_kind)
 }
+
+#[path = "semantic_model_lexical.rs"]
+mod lexical;
 
 #[cfg(test)]
 #[path = "semantic_model_tests.rs"]

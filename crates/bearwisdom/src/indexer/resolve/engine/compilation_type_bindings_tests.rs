@@ -686,7 +686,7 @@ fn imported_overload_groups_keep_all_rows_without_selecting_a_navigation_target(
             &lookup,
             &crate::languages::typescript::profile::TYPESCRIPT_PROFILE
         ),
-        SolveOutcome::Unresolved(None)
+        SolveOutcome::Unresolved(Some(_))
     ));
     tree.persist_type_info(db.conn()).unwrap();
     let mut cold = Compilation::build(&[], &SymbolIds::default(), arena);

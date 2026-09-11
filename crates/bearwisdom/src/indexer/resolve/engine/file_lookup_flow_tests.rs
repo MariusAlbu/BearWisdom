@@ -768,9 +768,11 @@ fn missing_lexical_row_blocks_the_ladder_and_target_spelling_is_not_identity() {
     let solver = SemanticModel::production();
     let profile = &crate::languages::typescript::profile::TYPESCRIPT_PROFILE;
     lookup.set_cursor(25);
+    // The missing row is a diagnosed miss carrying the unbound classification;
+    // the ladder never binds the spelling.
     assert!(matches!(
         solver.get_symbol_info(&context, &file, &lookup, profile),
-        SolveOutcome::Unresolved(None)
+        SolveOutcome::Unresolved(Some(_))
     ));
     let mut ids = SymbolIds::default();
     ids.set_rows("a.ts".into(), vec![10, 20]);
