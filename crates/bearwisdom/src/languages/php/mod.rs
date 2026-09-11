@@ -33,6 +33,10 @@ mod coverage_tests;
 #[path = "predicates_tests.rs"]
 mod predicates_tests;
 
+#[cfg(test)]
+#[path = "mod_tests.rs"]
+mod tests;
+
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::{EmbeddedRegion, ExtractionResult};
@@ -85,15 +89,11 @@ impl LanguagePlugin for PhpPlugin {
     }
 
     fn signature_return_type(&self, signature: &str) -> Option<String> {
-        crate::languages::prefix_return_type(signature)
+        helpers::signature_return_type(signature)
     }
 
     fn signature_parameter_types(&self, signature: &str) -> Option<Vec<String>> {
         helpers::signature_parameter_types(signature)
-    }
-
-    fn signature_declared_type(&self, signature: &str) -> Option<String> {
-        crate::languages::prefix_declared_type(signature)
     }
 
     /// E2: surface `<script>` and `<style>` blocks that live in the HTML

@@ -99,6 +99,17 @@ pub(super) fn signature_parameter_types(signature: &str) -> Option<Vec<String>> 
     )
 }
 
+/// Read the result type of a stored PHP callable signature: the `: T` that
+/// follows the parameter list's matching close paren. Parameter defaults and
+/// attributes may contain `:` and `=>`, so the paren match, not bracket
+/// depth counting, decides where the parameter list ends.
+pub(super) fn signature_return_type(signature: &str) -> Option<String> {
+    let open = signature.find('(')?;
+    let close = matching_paren(&signature[open..])? + open;
+    let result = signature[close + 1..].trim().strip_prefix(':')?.trim();
+    (!result.is_empty()).then(|| result.to_string())
+}
+
 fn matching_paren(text: &str) -> Option<usize> {
     let mut depth = 0usize;
     for (index, ch) in text.char_indices() {
