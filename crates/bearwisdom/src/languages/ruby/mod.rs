@@ -153,6 +153,15 @@ impl LanguagePlugin for RubyPlugin {
         Some(&profile::RUBY_PROFILE)
     }
 
+    fn discover_routes(
+        &self,
+        conn: &rusqlite::Connection,
+        project_root: &std::path::Path,
+        project_ctx: &crate::indexer::project_context::ProjectContext,
+    ) -> u32 {
+        connectors::discover_rails_routes(conn, project_root, project_ctx)
+    }
+
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::RUBY_FLOW_CONFIG)
     }

@@ -19,24 +19,11 @@ use crate::indexer::plugin_state_phase;
 use crate::indexer::ref_cache::RefCache;
 use crate::indexer::resolve;
 use crate::indexer::write;
-use crate::languages::{self, LanguageRegistry};
+use crate::languages;
 use crate::types::{IndexStats, ParsedFile};
 use crate::walker::WalkedFile;
-
-/// Closes the C/C++ macro-catalog indexing session when the index pass
-/// exits, including via early return / `?`. The session is opened at the
-/// top of `full_index` so per-file extractors can compose project-root
-/// + relative-path. Without the guard, an early failure would leave the
-/// catalog pinned to a stale project for the next run.
-struct MacroSessionGuard;
-impl Drop for MacroSessionGuard {
-    fn drop(&mut self) {
-        crate::languages::c_lang::macro_catalog::end_index_session();
-    }
-}
 use anyhow::{Context, Result};
 use rayon::prelude::*;
-use sha2::{Digest, Sha256};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -106,14 +93,6 @@ fn full_index_inner(
     let start = Instant::now();
     info!("Starting full index of {}", project_root.display());
     mem_probe::probe("00_start");
-
-    // C/C++ macro discovery needs to resolve relative file paths to
-    // on-disk header files. Open a session with the project root so
-    // language plugins can compose `<root>/<relative>` without each one
-    // re-discovering the root or the trait having to grow a parameter
-    // every plugin would ignore.
-    crate::languages::c_lang::macro_catalog::begin_index_session(project_root);
-    let _macro_session_guard = MacroSessionGuard;
 
     // --- Step 1: Change detection (FullScan) ---
     emit("scanning", 0.0, None);
@@ -199,6 +178,7 @@ fn full_index_inner(
 
     // --- Steps 2-3: Read + parse (parallel via Rayon) ---
     let registry = languages::default_registry();
+    let _index_session = registry.index_session(project_root);
     let files = cs.added; // FullScan puts everything in `added`
     emit("parsing", 0.0, Some(&format!("0/{} files", files.len())));
 
@@ -221,15 +201,6 @@ fn full_index_inner(
             if let Err(e) = changeset::set_meta(db, "workspace_kind", kind) {
                 warn!("Failed to store workspace_kind: {e}");
             }
-        }
-        let dockerfile_pairs =
-            crate::languages::dockerfile::connectors::detect_dockerfiles(db.conn(), project_root);
-        if !dockerfile_pairs.is_empty() {
-            mark_service_packages(db.conn(), &dockerfile_pairs);
-            info!(
-                "Marked {} package(s) as services (Dockerfile detected)",
-                dockerfile_pairs.len()
-            );
         }
         written
     } else {
@@ -792,74 +763,44 @@ fn full_index_inner(
         }
     }
 
-    // --- Step 4d.0.1: Robot-declared library externals pull ---
-    //
-    // A Robot suite reaches a pip-installed keyword library through
-    // `Library  SeleniumLibrary`, not a Python `import`, so the PyPI demand
-    // loop never surfaces it. Worse, DynamicCore packages spread their
-    // `@keyword` methods across `keywords/*.py` member modules reached by
-    // ABSOLUTE re-exports (`from SeleniumLibrary.keywords import ...`), which
-    // the relative-only reexport walker skips — `resolve_import` alone can't
-    // reach them. So when a robot suite declares a library whose package was
-    // discovered as a PyPI dep root, eagerly walk that whole root here. The
-    // declared library names are the project-driven demand signal; an
-    // undeclared package is never pulled.
-    let mut robot_external_parsed: Vec<ParsedFile> = Vec::new();
-    let mut robot_external_sources = crate::languages::robot::RobotExternalSources::default();
-    {
-        let declared_libs =
-            crate::languages::robot::library_map::collect_declared_library_names(&parsed);
-        // `{"BuiltIn"}` is the no-robot-files floor (always seeded); only pull
-        // when a project robot file declared something beyond it.
-        if declared_libs.len() > 1 {
-            let robot_roots = select_robot_library_roots(&declared_libs, &demand_driven_roots);
-            if !robot_roots.is_empty() {
-                let walked: Vec<crate::walker::WalkedFile> = robot_roots
-                    .iter()
-                    .copied()
-                    .flat_map(crate::ecosystem::pypi::walk_python_external_root)
-                    .collect();
-                for w in &walked {
-                    robot_external_sources
-                        .abs_by_virtual
-                        .insert(w.relative_path.clone(), w.absolute_path.clone());
-                }
-                for w in &walked {
-                    if let Ok(pf) = parse_file_with_arena_and_demand(
-                        w,
-                        registry,
-                        None,
-                        workspace_arena.as_ref(),
-                    ) {
-                        robot_external_parsed.push(pf);
-                    }
-                }
-                if !robot_external_parsed.is_empty() {
-                    info!(
-                        "Pulled {} Robot library external files across {} declared-library roots",
-                        robot_external_parsed.len(),
-                        robot_roots.len()
-                    );
-                    let (_rb_file_map, rb_symbol_map) = write::write_parsed_files_with_origin(
-                        db,
-                        &robot_external_parsed,
-                        "external",
-                        Some(workspace_arena.as_ref()),
-                    )
-                    .context("Failed to write Robot library external index")?;
-                    symbol_id_map.merge(rb_symbol_map);
-                    for pf in robot_external_parsed.iter_mut() {
-                        pf.slim_for_resolve();
-                    }
-                }
-            }
+    // --- Step 4d.0.1: Plugin lifecycle externals ---
+    // Plugins may contribute additional dependency files that ordinary import
+    // demand cannot surface. The registry owns dispatch and the opaque state
+    // carried into the post-external refresh; this pipeline only parses and
+    // persists the normalized walker inputs it receives.
+    let lifecycle_walked = registry.collect_lifecycle_external_files(
+        &mut project_ctx,
+        &parsed,
+        &demand_driven_roots,
+        project_root,
+    );
+    let mut lifecycle_external_parsed: Vec<ParsedFile> = lifecycle_walked
+        .iter()
+        .filter_map(|walked| {
+            parse_file_with_arena_and_demand(walked, registry, None, workspace_arena.as_ref()).ok()
+        })
+        .collect();
+    if !lifecycle_external_parsed.is_empty() {
+        info!(
+            "Parsed {} plugin lifecycle external files",
+            lifecycle_external_parsed.len()
+        );
+        let (_file_map, lifecycle_symbol_map) = write::write_parsed_files_with_origin(
+            db,
+            &lifecycle_external_parsed,
+            "external",
+            Some(workspace_arena.as_ref()),
+        )
+        .context("Failed to write plugin lifecycle external index")?;
+        symbol_id_map.merge(lifecycle_symbol_map);
+        for pf in lifecycle_external_parsed.iter_mut() {
+            pf.slim_for_resolve();
         }
     }
 
     // --- Step 4d.1: Demand-driven script-tag dep parse ---
     //
-    // Host-language extractors (HTML, Razor, cshtml, Vue, Svelte, Astro)
-    // emit `Imports` refs for every `<script src="…">` tag. This stage
+    // Host-language plugins emit `Imports` refs for external script tags. This stage
     // resolves those URLs against the discovered webroot (or the host
     // file's directory for relative paths) and parses the referenced
     // vendor files as `origin='external'`.
@@ -903,13 +844,13 @@ fn full_index_inner(
     // indexed as lookup targets.
     let total_cap = parsed.len()
         + external_parsed.len()
-        + robot_external_parsed.len()
+        + lifecycle_external_parsed.len()
         + script_tag_parsed.len()
         + vendored_parsed.len();
     let mut combined_parsed: Vec<ParsedFile> = Vec::with_capacity(total_cap);
     combined_parsed.extend(parsed);
     combined_parsed.extend(external_parsed);
-    combined_parsed.extend(robot_external_parsed);
+    combined_parsed.extend(lifecycle_external_parsed);
     combined_parsed.extend(script_tag_parsed);
     combined_parsed.extend(vendored_parsed);
     let mut parsed = combined_parsed;
@@ -918,13 +859,7 @@ fn full_index_inner(
 
     // --- Step 4d.2: Plugin-owned state rebuild over the full slice ---
     // See `indexer::plugin_state_phase` for why this rebuild exists.
-    plugin_state_phase::populate_post_externals(
-        registry,
-        &mut project_ctx,
-        &parsed,
-        project_root,
-        Some(robot_external_sources),
-    );
+    plugin_state_phase::populate_post_externals(registry, &mut project_ctx, &parsed, project_root);
 
     // `_` binds so compiler doesn't flag unused — these feed the Stage 2
     // loop below.
@@ -1083,74 +1018,18 @@ fn full_index_inner(
     // the matching Producers.
     emit("connectors", 0.0, Some("Running connectors"));
     let connector_start = Instant::now();
-    {
-        let conn = db.conn();
-        let n_elixir =
-            crate::languages::elixir::connectors::discover_phoenix_routes(conn, project_root);
-        let n_go =
-            crate::languages::go::connectors::discover_go_routes(conn, project_root, &project_ctx);
-        let n_java = crate::languages::java::connectors::discover_spring_routes(conn, project_root);
-        let n_php = crate::languages::php::connectors::discover_laravel_routes(
-            conn,
-            project_root,
-            &project_ctx,
+    let route_count = registry.discover_routes(db.conn(), project_root, &project_ctx);
+    if route_count > 0 {
+        info!(
+            "Discovered {route_count} routes in {:.2}s",
+            connector_start.elapsed().as_secs_f64()
         );
-        let n_django = crate::languages::python::connectors::discover_django_routes(
-            conn,
-            project_root,
-            &project_ctx,
-        );
-        let n_fastapi = crate::languages::python::connectors::discover_fastapi_routes(
-            conn,
-            project_root,
-            &project_ctx,
-        );
-        let n_rails = crate::languages::ruby::connectors::discover_rails_routes(
-            conn,
-            project_root,
-            &project_ctx,
-        );
-        let n_nestjs = crate::languages::typescript::connectors::discover_nestjs_routes(
-            conn,
-            project_root,
-            &project_ctx,
-        );
-        let n_nextjs = crate::languages::typescript::connectors::discover_nextjs_routes(
-            conn,
-            project_root,
-            &project_ctx,
-        );
-        let n_groovy = crate::languages::groovy::connectors::discover_groovy_routes(
-            conn,
-            project_root,
-            &project_ctx,
-        );
-        let total = n_elixir
-            + n_go
-            + n_java
-            + n_php
-            + n_django
-            + n_fastapi
-            + n_rails
-            + n_nestjs
-            + n_nextjs
-            + n_groovy;
-        if total > 0 {
-            info!(
-                "Route discovery: phoenix={n_elixir} go={n_go} spring={n_java} laravel={n_php} django={n_django} fastapi={n_fastapi} rails={n_rails} nestjs={n_nestjs} nextjs={n_nextjs} groovy={n_groovy} in {:.2}s",
-                connector_start.elapsed().as_secs_f64()
-            );
-        }
     }
     mem_probe::probe("14_connectors_done");
 
-    // Cross-language route → flow-edge adapter. Languages whose route
-    // detection is implemented as a project-wide `Connector` (Go chi/gin,
-    // Java Spring, Elixir Phoenix) populate the `routes` table during the
-    // connector phase above — too late for the per-file flow emitter in
-    // resolve. Materialise those rows now as Consumer NamedChannel
-    // HttpCall flow edges so they pair against TS/C# producer-side
-    // calls.
+    // Route discovery runs after per-file flow extraction. Materialize the
+    // resulting route rows as consumer emissions so they can pair with request
+    // producers through the generic flow pipeline.
     {
         let mut emissions: Vec<(
             String,
@@ -1234,7 +1113,7 @@ fn full_index_inner(
 // `stage_discover.rs`; these re-exports keep the call-site names short
 // inside `full_index`.
 pub(crate) use super::stage_discover::{
-    collect_package_dep_rows, detect_packages, log_language_breakdown, mark_service_packages,
+    collect_package_dep_rows, detect_packages, log_language_breakdown,
 };
 
 // Single-file parsing helpers live in `parse_file.rs`. Re-export the
@@ -1256,36 +1135,6 @@ use super::parse_file::panic_message;
 pub(crate) use super::stage_link::{
     make_walked_file, parse_external_sources, ExternalParsingResult,
 };
-
-/// Select the PyPI dep roots a Robot suite reaches through `Library  <name>`.
-///
-/// A declared library binds to a root when its name case-insensitively
-/// matches the root's `module_path` (`Library  SeleniumLibrary` →
-/// `SeleniumLibrary`). The `robot` framework package is additionally
-/// included whenever any library is declared: Robot's standard libraries
-/// (`BuiltIn`, `Collections`, `String`, ...) and the auto-imported `BuiltIn`
-/// all live under `robot/libraries/`, referenced by bare name, so the
-/// framework root must be walked for the suite to resolve them.
-///
-/// Only `"python"`-tagged (PyPI) roots are considered; an undeclared
-/// package never matches and is never pulled.
-fn select_robot_library_roots<'a>(
-    declared_libs: &std::collections::HashSet<String>,
-    demand_driven_roots: &'a [crate::ecosystem::externals::ExternalDepRoot],
-) -> Vec<&'a crate::ecosystem::externals::ExternalDepRoot> {
-    let declared_lower: std::collections::HashSet<String> =
-        declared_libs.iter().map(|n| n.to_lowercase()).collect();
-    demand_driven_roots
-        .iter()
-        .filter(|root| {
-            if root.ecosystem != "python" {
-                return false;
-            }
-            let module_lower = root.module_path.to_lowercase();
-            module_lower == "robot" || declared_lower.contains(&module_lower)
-        })
-        .collect()
-}
 
 // ---------------------------------------------------------------------------
 // Statistics

@@ -1,21 +1,21 @@
 // =============================================================================
 // indexer/embedded_regions.rs  —  embedded-region splicing
 //
-// Host extractors (Vue/Svelte/Astro/Razor/HTML/PHP/MDX) emit `EmbeddedRegion`s
-// for sub-language code blocks. This module sub-parses each region with the
-// declared language's plugin and splices the resulting symbols/refs back
-// into the host file's vectors with line/column offsets applied.
+// Host plugins emit `EmbeddedRegion`s for sub-language code blocks. This
+// module sub-parses each region with its declared language plugin and splices
+// the resulting symbols/refs back into the host file's vectors with
+// line/column offsets applied.
 // =============================================================================
 
-use crate::languages::LanguageRegistry;
+use crate::languages::{LanguagePlugin, LanguageRegistry};
 
 // ---------------------------------------------------------------------------
 // Embedded-region dispatch — splices sub-extracted symbols/refs back into the
 // host file's vectors with line/column offsets applied.
 // ---------------------------------------------------------------------------
 
-/// Dispatch each `EmbeddedRegion` returned by a host extractor (Vue/Svelte/
-/// Astro/Razor/HTML/PHP/MDX). For each region we:
+/// Dispatch each `EmbeddedRegion` returned by a host plugin. For each region
+/// we:
 ///
 /// 1. Punch out interpolation holes (only populated for Tier-3 string DSLs).
 /// 2. Call the sub-language plugin's `extract()` against the region text.
@@ -28,11 +28,12 @@ use crate::languages::LanguageRegistry;
 ///    in the parallel `origin_langs` vector so `write.rs` can populate the
 ///    `symbols.origin_language` column.
 ///
-/// S11 supports exactly one level of embedding. Nested embedding (e.g. a
-/// SQL string DSL inside a Razor `@{}` C# block) is deferred to S13+.
+/// This supports exactly one level of embedding. Nested regions are deferred
+/// to a later indexing pass.
 pub(super) fn dispatch_embedded_regions(
     file_path: &str,
     host_content: &str,
+    host_plugin: &dyn LanguagePlugin,
     registry: &LanguageRegistry,
     regions: Vec<crate::types::EmbeddedRegion>,
     r: &mut crate::types::ExtractionResult,
@@ -40,14 +41,7 @@ pub(super) fn dispatch_embedded_regions(
     from_snippet: &mut Vec<bool>,
     ref_origin_langs: &mut Vec<Option<String>>,
 ) {
-    use crate::types::EmbeddedOrigin;
     let line_starts = build_line_starts(host_content);
-    // A Svelte SFC's `<script>` is embedded TypeScript, but `$store` (auto-
-    // subscribe) is Svelte syntax the TS extractor emits verbatim. Desugar it
-    // to the underlying store identifier here, while the host is known to be
-    // Svelte — the TS sub-extraction can't tell it apart from a real `$`-named
-    // identifier in a plain `.ts` file.
-    let host_is_svelte = file_path.ends_with(".svelte");
     for region in regions {
         let region_host_byte = host_byte_for_position(
             &line_starts,
@@ -75,15 +69,14 @@ pub(super) fn dispatch_embedded_regions(
         let symbol_offset = r.symbols.len();
         let line_offset = region.line_offset;
         let col_offset = region.col_offset;
-        // E3: Markdown fenced code, Rust doctests, and Python doctests are
-        // snippet contexts — usually missing imports, so unresolved refs
-        // from their symbols should be excluded from aggregate resolution
-        // stats. Frontmatter (YAML/TOML/JSON) doesn't qualify.
-        let region_is_snippet = matches!(region.origin, EmbeddedOrigin::MarkdownFence);
+        // Host plugins identify regions whose symbols originate in snippets.
+        // Snippets are usually missing imports, so their unresolved refs are
+        // excluded from aggregate resolution statistics.
+        let region_is_snippet = host_plugin.embedded_region_is_snippet(&region);
 
         // Phase 1 — strip prefix and identify synthetic wrapper symbols.
         //
-        // A synthetic wrapper (e.g. `__RazorBody`) has its qualified_name
+        // A synthetic wrapper has its qualified_name
         // reduced to the empty string after prefix stripping because its name
         // IS the prefix. Such symbols are host-injected scaffolding that must
         // not appear in the final index.  We drop them and promote their direct
@@ -109,9 +102,8 @@ pub(super) fn dispatch_embedded_regions(
             if end_on_first {
                 sym.end_col = sym.end_col.saturating_add(col_offset);
             }
-            // E1: host-injected wrapper prefix (e.g. Razor's synthetic
-            // `__RazorBody` class) is stripped from qualified_name and
-            // scope_path so user-facing names don't carry the wrapper.
+            // A host-injected wrapper prefix is stripped from qualified_name
+            // and scope_path so user-facing names don't carry the wrapper.
             if let Some(prefix) = region.strip_scope_prefix.as_deref() {
                 strip_scope_prefix_in_place(&mut sym.qualified_name, prefix);
                 if let Some(sp) = sym.scope_path.as_mut() {
@@ -163,9 +155,7 @@ pub(super) fn dispatch_embedded_regions(
         }
 
         for mut rf in sub.refs {
-            if host_is_svelte {
-                crate::languages::svelte::predicates::desugar_store_ref_in_place(&mut rf);
-            }
+            host_plugin.normalize_embedded_ref(&region, &mut rf);
             // Remap source_symbol_index through the sub→final table.
             // If the owning symbol was a synthetic wrapper that was dropped,
             // fall back to the host file's root symbol (index 0).
@@ -197,13 +187,13 @@ pub(super) fn dispatch_embedded_regions(
     }
 }
 
-/// Strip a synthetic scope prefix (`"__RazorBody"`) from a dotted qualified
+/// Strip a synthetic scope prefix (`"__EmbeddedBody"`) from a dotted qualified
 /// name in place. Handles both exact match and leading-with-dot forms:
 ///
-///   * `"__RazorBody"`          → `""`   (empty — caller treats as no scope)
-///   * `"__RazorBody.Foo"`      → `"Foo"`
-///   * `"__RazorBody.Foo.Bar"`  → `"Foo.Bar"`
-///   * `"Other.__RazorBody.X"`  → unchanged (prefix only strips at start)
+///   * `"__EmbeddedBody"`          → `""`   (empty — caller treats as no scope)
+///   * `"__EmbeddedBody.Foo"`      → `"Foo"`
+///   * `"__EmbeddedBody.Foo.Bar"`  → `"Foo.Bar"`
+///   * `"Other.__EmbeddedBody.X"`  → unchanged (prefix only strips at start)
 fn strip_scope_prefix_in_place(name: &mut String, prefix: &str) {
     if prefix.is_empty() {
         return;

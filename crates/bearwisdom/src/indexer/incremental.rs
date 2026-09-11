@@ -27,7 +27,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 // Re-export watcher event types from changeset (public API).
 pub use crate::indexer::changeset::{ChangeKind, FileChangeEvent};
@@ -69,9 +69,6 @@ pub fn incremental_index(
         project_root.display()
     );
 
-    crate::languages::c_lang::macro_catalog::begin_index_session(project_root);
-    let _macro_session_guard = MacroSessionGuard;
-
     let cs = changeset::hash_diff(db, project_root)?;
     run_incremental_pipeline(db, project_root, cs, start, ref_cache)
 }
@@ -92,18 +89,8 @@ pub fn git_reindex(
         project_root.display()
     );
 
-    crate::languages::c_lang::macro_catalog::begin_index_session(project_root);
-    let _macro_session_guard = MacroSessionGuard;
-
     let cs = changeset::git_diff(db, project_root)?;
     run_incremental_pipeline(db, project_root, cs, start, ref_cache)
-}
-
-struct MacroSessionGuard;
-impl Drop for MacroSessionGuard {
-    fn drop(&mut self) {
-        crate::languages::c_lang::macro_catalog::end_index_session();
-    }
 }
 
 /// Re-index specific files from IDE/watcher events.
@@ -183,23 +170,10 @@ fn run_incremental_pipeline(
     // downstream `package_id` assignment, resolver `ProjectContext`, and
     // workspace graph queries all see the new layout. This is the same
     // detection pass `full_index` runs at step 3b.
-    const MANIFEST_NAMES: &[&str] = &[
-        "package.json",
-        "Cargo.toml",
-        "go.mod",
-        "pyproject.toml",
-        "pubspec.yaml",
-        "mix.exs",
-        "Package.swift",
-        "composer.json",
-    ];
-    let manifest_changed = changed_paths.iter().any(|p| {
-        std::path::Path::new(p)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .map(|n| MANIFEST_NAMES.contains(&n))
-            .unwrap_or(false)
-    });
+    let ecosystem_registry = crate::ecosystem::default_registry();
+    let manifest_changed = changed_paths
+        .iter()
+        .any(|path| ecosystem_registry.is_workspace_manifest_path(std::path::Path::new(path)));
 
     // Load packages once and reuse for `assign_package_ids` AND the resolver's
     // `ProjectContext::initialize`. The full pipeline detects packages first,
@@ -278,6 +252,7 @@ fn run_incremental_pipeline(
     // --- Step 5: Parse changed files (parallel) ---
     let files_to_parse: Vec<_> = cs.added.into_iter().chain(cs.modified).collect();
     let registry = languages::default_registry();
+    let _index_session = registry.index_session(project_root);
     // Workspace TypeArena shared across the parse phase and the resolve
     // pass so extractor-populated TypeIds remain valid through to
     // SymbolIndex::build_with_context_and_arena.
@@ -467,13 +442,12 @@ fn run_incremental_pipeline(
 
     // --- Step 11a: Plugin-owned cross-file state ---
     // Mirror the full-index Steps 4b/4d.2/4d.3 via the shared phase functions
-    // — closes the gap where Vue auto-imports, Robot library bindings, and
-    // Elixir `__using__` synthesis were silently absent on this path. No
-    // on-disk externals walk runs here, so `populate_post_externals` sees the
-    // same `parsed` as the pre-externals call; `robot_external_sources` is `None`.
+    // and keep state-derived imports and synthesized members consistent with
+    // the full path. No on-disk lifecycle-externals walk runs here, so the
+    // post-external hook sees the same parsed slice as the pre-external hook.
     use super::plugin_state_phase as psp;
     psp::populate_pre_externals(registry, &mut project_ctx, &parsed, project_root);
-    psp::populate_post_externals(registry, &mut project_ctx, &parsed, project_root, None);
+    psp::populate_post_externals(registry, &mut project_ctx, &parsed, project_root);
     psp::synthesize_and_persist(
         registry,
         &project_ctx,
@@ -502,71 +476,20 @@ fn run_incremental_pipeline(
     // state + plugin-emitted points from the changed-file slice only. The
     // registry's dedupe drops overlap with points already stored from prior
     // runs.
-    // One scan of the files table beats the previous N-query loop.
-    // On a 50k-file index that's ~50k driver round-trips collapsed into
-    // a single SELECT. The connector pass below needs the full map
-    // (cross-file matches), so scoping the query is not an option.
-    let file_id_map: std::collections::HashMap<String, i64> = {
-        let conn = db.conn();
-        let mut stmt = conn
-            .prepare("SELECT path, id FROM files")
-            .context("Failed to prepare files-id query")?;
-        let rows = stmt
-            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
-            .context("Failed to query files table")?;
-        let mut map = std::collections::HashMap::new();
-        for row in rows.flatten() {
-            map.insert(row.0, row.1);
+    // Route discovery is registry-dispatched so framework knowledge remains
+    // with its owning plugin. Re-scan the full route set, then materialize the
+    // generic route-consumer flow emissions just as the full path does.
+    let route_count = registry.discover_routes(db.conn(), project_root, &project_ctx);
+    if route_count > 0 {
+        info!("Discovered {route_count} routes during incremental indexing");
+    }
+    let mut route_emissions = Vec::new();
+    if let Err(e) = resolve::append_db_route_consumer_emissions(db.conn(), &mut route_emissions) {
+        warn!("DB-route flow adapter failed: {e}");
+    } else if !route_emissions.is_empty() {
+        if let Err(e) = resolve::flush_flow_emissions_public(db.conn(), &route_emissions) {
+            warn!("DB-route flow flush failed: {e}");
         }
-        map
-    };
-    let _ = file_id_map;
-    let _ = symbol_id_map;
-
-    // Route discovery: each language's discoverer writes to routes table.
-    // Incremental re-scans the full routes set since route files are small
-    // and discovery is cheap relative to the symbol scan.
-    {
-        let conn = db.conn();
-        let _ = crate::languages::elixir::connectors::discover_phoenix_routes(conn, project_root);
-        let _ =
-            crate::languages::go::connectors::discover_go_routes(conn, project_root, &project_ctx);
-        let _ = crate::languages::java::connectors::discover_spring_routes(conn, project_root);
-        let _ = crate::languages::php::connectors::discover_laravel_routes(
-            conn,
-            project_root,
-            &project_ctx,
-        );
-        let _ = crate::languages::python::connectors::discover_django_routes(
-            conn,
-            project_root,
-            &project_ctx,
-        );
-        let _ = crate::languages::python::connectors::discover_fastapi_routes(
-            conn,
-            project_root,
-            &project_ctx,
-        );
-        let _ = crate::languages::ruby::connectors::discover_rails_routes(
-            conn,
-            project_root,
-            &project_ctx,
-        );
-        let _ = crate::languages::typescript::connectors::discover_nestjs_routes(
-            conn,
-            project_root,
-            &project_ctx,
-        );
-        let _ = crate::languages::typescript::connectors::discover_nextjs_routes(
-            conn,
-            project_root,
-            &project_ctx,
-        );
-        let _ = crate::languages::groovy::connectors::discover_groovy_routes(
-            conn,
-            project_root,
-            &project_ctx,
-        );
     }
 
     for plugin in registry.all() {

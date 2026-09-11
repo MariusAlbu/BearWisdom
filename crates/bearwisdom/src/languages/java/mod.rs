@@ -157,6 +157,15 @@ impl LanguagePlugin for JavaPlugin {
         Some(&JAVA_PROFILE)
     }
 
+    fn discover_routes(
+        &self,
+        conn: &rusqlite::Connection,
+        project_root: &std::path::Path,
+        _project_ctx: &crate::indexer::project_context::ProjectContext,
+    ) -> u32 {
+        connectors::discover_spring_routes(conn, project_root)
+    }
+
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::JAVA_FLOW_CONFIG)
     }

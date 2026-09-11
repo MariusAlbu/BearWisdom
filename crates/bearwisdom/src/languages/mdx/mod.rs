@@ -64,6 +64,10 @@ impl LanguagePlugin for MdxPlugin {
         embedded::detect_regions(source)
     }
 
+    fn embedded_region_is_snippet(&self, region: &EmbeddedRegion) -> bool {
+        matches!(region.origin, crate::types::EmbeddedOrigin::MarkdownFence)
+    }
+
     fn symbol_node_kinds(&self) -> &[&str] {
         &[]
     }

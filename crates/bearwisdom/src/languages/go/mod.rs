@@ -150,12 +150,14 @@ impl LanguagePlugin for GoPlugin {
         Some(&GO_PROFILE)
     }
 
-    // TODO(routes-dispatch): wire `connectors::discover_go_routes` into the
-    // indexer route-population stage. The function now writes the `routes` table
-    // directly (returning the insert count) and the routes-table → FlowEmission
-    // bridge in resolve/mod.rs emits the Consumer flows. The
-    // `resolve_connection_points` override was removed because the ConnectionPoint
-    // Stop emission was redundant with that bridge.
+    fn discover_routes(
+        &self,
+        conn: &rusqlite::Connection,
+        project_root: &std::path::Path,
+        project_ctx: &crate::indexer::project_context::ProjectContext,
+    ) -> u32 {
+        connectors::discover_go_routes(conn, project_root, project_ctx)
+    }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::GO_FLOW_CONFIG)

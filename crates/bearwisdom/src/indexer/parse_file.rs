@@ -9,7 +9,7 @@
 // =============================================================================
 
 use crate::languages::LanguageRegistry;
-use crate::types::{ExtractedSymbol, ParsedFile};
+use crate::types::ParsedFile;
 use crate::walker::WalkedFile;
 use anyhow::{Context, Result};
 use once_cell::sync::Lazy;
@@ -310,16 +310,14 @@ fn parse_file_internal(
     // so the origin vector starts empty and grows only when we splice in
     // sub-extracted regions below.
     let mut symbol_origin_languages: Vec<Option<String>> = Vec::new();
-    // E3: parallel snippet flag — true for symbols spliced in from a
-    // MarkdownFence region (fenced code in Markdown, Rust doctests, Python
-    // docstring `>>>` lines). Used downstream to exclude these symbols'
-    // unresolved references from aggregate resolution stats.
+    // Parallel snippet flag supplied by the host plugin for spliced symbols.
+    // Used downstream to exclude snippet-origin unresolved references from
+    // aggregate resolution statistics.
     let mut symbol_from_snippet: Vec<bool> = Vec::new();
     let mut ref_origin_languages: Vec<Option<String>> = Vec::new();
 
-    // Dispatch embedded regions (Vue/Svelte/Astro/Razor/HTML/PHP/MDX) —
-    // each region is sub-parsed by the declared language's plugin and the
-    // results are spliced back with line/column offsets.
+    // Dispatch embedded regions. Each region is sub-parsed by its declared
+    // language plugin and spliced back with line/column offsets.
     let regions = plugin.embedded_regions(&content, &walked.relative_path, walked.language);
     if !regions.is_empty() {
         // Pad origin vecs so host symbols/refs are all None before embedded Some(..).
@@ -329,6 +327,7 @@ fn parse_file_internal(
         super::embedded_regions::dispatch_embedded_regions(
             &walked.relative_path,
             &content,
+            plugin,
             registry,
             regions,
             &mut r,

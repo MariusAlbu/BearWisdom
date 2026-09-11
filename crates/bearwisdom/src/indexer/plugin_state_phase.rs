@@ -31,8 +31,7 @@ use tracing::info;
 use crate::db::Database;
 use crate::indexer::plugin_state::PluginStateBag;
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::write::{self, SymbolIdMap};
-use crate::languages::robot::RobotExternalSources;
+use crate::indexer::write;
 use crate::languages::LanguageRegistry;
 use crate::type_checker::core::types::TypeArena;
 use crate::types::{ExtractedSymbol, ParsedFile};
@@ -61,31 +60,16 @@ pub fn populate_pre_externals(
 /// externals). Plugins whose binding maps must see externally-walked
 /// symbols override `populate_project_state_post_externals` to rebuild
 /// against the merged slice; the rest keep their pre-externals entry
-/// untouched. Robot is the first user: it re-resolves `Library
-/// SeleniumLibrary` to the site-packages package + its DynamicCore keyword
-/// methods now that those files are in `parsed`.
-///
-/// `robot_external_sources` is stashed in the bag first (when present) so the
-/// rebuild can read the `ext:` library files' on-disk source for the
-/// keyword-method scan — the hook reads it back from the same bag it writes
-/// into. `None` skips that slot untouched: a caller re-running this phase
-/// after a later materialization pass (e.g. a demand-pulled batch a plugin's
-/// cross-file state needs to see — `full_index`'s post-resolve refresh) has
-/// no fresh Robot sources to report and must not clobber the ones the first
-/// call already stored. The bag is then taken out so a hook can hold `&mut
-/// bag` while `project_ctx` is still borrowed immutably for the same call.
+/// untouched. The bag is taken out so a hook can hold `&mut bag` while
+/// `project_ctx` is still borrowed immutably for the same call. Any transport
+/// state needed by a plugin is populated through the registry's lifecycle
+/// hooks and remains opaque to this phase.
 pub fn populate_post_externals(
     registry: &LanguageRegistry,
     project_ctx: &mut ProjectContext,
     parsed: &[ParsedFile],
     project_root: &Path,
-    robot_external_sources: Option<RobotExternalSources>,
 ) {
-    if let Some(sources) = robot_external_sources {
-        project_ctx
-            .plugin_state
-            .set::<RobotExternalSources>(sources);
-    }
     let mut bag = std::mem::take(&mut project_ctx.plugin_state);
     for plugin in registry.all() {
         if !project_ctx.language_presence.contains(plugin.id()) {

@@ -2,7 +2,11 @@ use super::library_map::{
     build_robot_library_map, build_robot_resource_basename_map, collect_declared_library_names,
     package_member_modules, RobotPythonLibrary,
 };
+use super::select_robot_library_roots;
+use crate::ecosystem::externals::ExternalDepRoot;
 use crate::types::{EdgeKind, ExtractedRef, FlowMeta, ParsedFile};
+use std::collections::HashSet;
+use std::path::PathBuf;
 
 fn import_ref(target: &str) -> ExtractedRef {
     ExtractedRef {
@@ -466,4 +470,49 @@ fn collect_declared_library_names_ignores_external_files() {
     // Only the seeded BuiltIn; the ext: file's refs aren't project demand.
     assert_eq!(names.len(), 1);
     assert!(names.contains("BuiltIn"));
+}
+
+fn external_root(module_path: &str, ecosystem: &'static str) -> ExternalDepRoot {
+    ExternalDepRoot {
+        module_path: module_path.to_string(),
+        version: "1.0.0".to_string(),
+        root: PathBuf::from("/fixture").join(module_path),
+        ecosystem,
+        package_id: None,
+        requested_imports: Vec::new(),
+    }
+}
+
+#[test]
+fn robot_external_selection_includes_declared_libraries_and_framework() {
+    let declared = HashSet::from([
+        "BuiltIn".to_string(),
+        "SeleniumLibrary".to_string(),
+        "OtherLibrary".to_string(),
+    ]);
+    let roots = vec![
+        external_root("SeleniumLibrary", "python"),
+        external_root("robot", "python"),
+        external_root("OtherLibrary", "python"),
+        external_root("ignored", "python"),
+        external_root("SeleniumLibrary", "npm"),
+    ];
+
+    let selected = select_robot_library_roots(&declared, &roots);
+    let selected_names: HashSet<&str> = selected
+        .iter()
+        .map(|root| root.module_path.as_str())
+        .collect();
+    assert_eq!(
+        selected_names,
+        HashSet::from(["SeleniumLibrary", "OtherLibrary", "robot"])
+    );
+}
+
+#[test]
+fn robot_external_selection_does_not_pull_framework_for_builtin_only() {
+    let declared = HashSet::from(["BuiltIn".to_string()]);
+    let roots = vec![external_root("robot", "python")];
+
+    assert!(select_robot_library_roots(&declared, &roots).is_empty());
 }

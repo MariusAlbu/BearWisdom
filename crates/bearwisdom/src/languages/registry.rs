@@ -1,10 +1,28 @@
 use std::collections::HashSet;
+use std::path::Path;
 use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 
 use super::LanguagePlugin;
+use crate::ecosystem::externals::ExternalDepRoot;
+use crate::indexer::project_context::ProjectContext;
 use crate::types::ParsedFile;
+use crate::walker::WalkedFile;
+
+/// RAII guard for a registry-wide indexing session. Dropping the guard ends
+/// plugins in reverse registration order, matching nested resource setup.
+pub struct IndexSession<'a> {
+    registry: &'a LanguageRegistry,
+}
+
+impl Drop for IndexSession<'_> {
+    fn drop(&mut self) {
+        for plugin in self.registry.plugins.iter().rev() {
+            plugin.end_index_session();
+        }
+    }
+}
 
 /// Central registry mapping language IDs to their plugin implementations.
 ///
@@ -136,6 +154,60 @@ impl LanguageRegistry {
         &self.plugins
     }
 
+    /// Begin an indexing session for every registered plugin. The returned
+    /// guard closes the session in reverse registration order when dropped.
+    pub fn index_session(&self, project_root: &Path) -> IndexSession<'_> {
+        for plugin in &self.plugins {
+            plugin.begin_index_session(project_root);
+        }
+        IndexSession { registry: self }
+    }
+
+    /// Dispatch framework route discovery to every registered plugin and
+    /// return the total number of route rows it reports inserting.
+    pub fn discover_routes(
+        &self,
+        conn: &rusqlite::Connection,
+        project_root: &Path,
+        project_ctx: &ProjectContext,
+    ) -> u32 {
+        self.plugins
+            .iter()
+            .map(|plugin| plugin.discover_routes(conn, project_root, project_ctx))
+            .sum()
+    }
+
+    /// Ask active plugins to materialize lifecycle-owned external files while
+    /// preserving the opaque project-state bag they share with resolvers.
+    pub fn collect_lifecycle_external_files(
+        &self,
+        project_ctx: &mut ProjectContext,
+        parsed: &[ParsedFile],
+        external_roots: &[ExternalDepRoot],
+        project_root: &Path,
+    ) -> Vec<WalkedFile> {
+        let mut state = std::mem::take(&mut project_ctx.plugin_state);
+        let mut files = Vec::new();
+        for plugin in &self.plugins {
+            if !plugin
+                .language_ids()
+                .iter()
+                .any(|language| project_ctx.language_presence.contains(*language))
+            {
+                continue;
+            }
+            files.extend(plugin.lifecycle_external_files(
+                &mut state,
+                parsed,
+                external_roots,
+                project_root,
+                project_ctx,
+            ));
+        }
+        project_ctx.plugin_state = state;
+        files
+    }
+
     /// Get the tree-sitter grammar for a language ID.
     /// Checks the dedicated plugin first, then the generic fallback.
     pub fn grammar(&self, lang_id: &str) -> Option<tree_sitter::Language> {
@@ -224,6 +296,7 @@ impl LanguageRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
 
     fn blank_file(lang: &str, origins: Vec<Option<String>>) -> ParsedFile {
         ParsedFile {
@@ -337,6 +410,93 @@ mod tests {
         }
     }
 
+    struct RoutePlugin {
+        id: &'static str,
+        route_count: u32,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct LifecycleTrace(Vec<String>);
+
+    struct LifecyclePlugin {
+        id: &'static str,
+        events: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl LanguagePlugin for LifecyclePlugin {
+        fn id(&self) -> &str {
+            self.id
+        }
+        fn language_ids(&self) -> &[&str] {
+            match self.id {
+                "active" => &["active"],
+                "inactive" => &["inactive"],
+                _ => &[],
+            }
+        }
+        fn extensions(&self) -> &[&str] {
+            &[]
+        }
+        fn grammar(&self, _: &str) -> Option<tree_sitter::Language> {
+            None
+        }
+        fn scope_kinds(&self) -> &[crate::parser::scope_tree::ScopeKind] {
+            &[]
+        }
+        fn extract(&self, _: &str, _: &str, _: &str) -> crate::types::ExtractionResult {
+            crate::types::ExtractionResult::default()
+        }
+        fn begin_index_session(&self, _: &Path) {
+            self.events
+                .lock()
+                .unwrap()
+                .push(format!("begin:{}", self.id));
+        }
+        fn end_index_session(&self) {
+            self.events.lock().unwrap().push(format!("end:{}", self.id));
+        }
+        fn lifecycle_external_files(
+            &self,
+            state: &mut crate::indexer::plugin_state::PluginStateBag,
+            _: &[ParsedFile],
+            _: &[ExternalDepRoot],
+            _: &Path,
+            _: &ProjectContext,
+        ) -> Vec<WalkedFile> {
+            let mut trace = state
+                .get::<LifecycleTrace>()
+                .cloned()
+                .unwrap_or_else(|| LifecycleTrace(Vec::new()));
+            trace.0.push(self.id.to_string());
+            state.set(trace);
+            Vec::new()
+        }
+    }
+
+    impl LanguagePlugin for RoutePlugin {
+        fn id(&self) -> &str {
+            self.id
+        }
+        fn language_ids(&self) -> &[&str] {
+            &[]
+        }
+        fn extensions(&self) -> &[&str] {
+            &[]
+        }
+        fn grammar(&self, _: &str) -> Option<tree_sitter::Language> {
+            None
+        }
+        fn scope_kinds(&self) -> &[crate::parser::scope_tree::ScopeKind] {
+            &[]
+        }
+        fn extract(&self, _: &str, _: &str, _: &str) -> crate::types::ExtractionResult {
+            crate::types::ExtractionResult::default()
+        }
+        fn discover_routes(&self, _: &rusqlite::Connection, _: &Path, _: &ProjectContext) -> u32 {
+            self.route_count
+        }
+    }
+
     fn fake_generic() -> Arc<dyn LanguagePlugin> {
         Arc::new(FakePlugin {
             id: "generic",
@@ -344,6 +504,76 @@ mod tests {
             exts: &[],
             override_ext: None,
         })
+    }
+
+    #[test]
+    fn route_discovery_aggregates_every_registered_plugin() {
+        let mut reg = LanguageRegistry::new(fake_generic());
+        reg.register(Arc::new(RoutePlugin {
+            id: "first",
+            route_count: 2,
+        }));
+        reg.register(Arc::new(RoutePlugin {
+            id: "second",
+            route_count: 3,
+        }));
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+
+        assert_eq!(
+            reg.discover_routes(&conn, Path::new("."), &ProjectContext::default()),
+            5
+        );
+    }
+
+    #[test]
+    fn index_session_closes_plugins_in_reverse_order() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let mut reg = LanguageRegistry::new(fake_generic());
+        for id in ["first", "second"] {
+            reg.register(Arc::new(LifecyclePlugin {
+                id,
+                events: Arc::clone(&events),
+            }));
+        }
+
+        {
+            let _session = reg.index_session(Path::new("."));
+            assert_eq!(
+                events.lock().unwrap().clone(),
+                vec!["begin:first".to_string(), "begin:second".to_string()]
+            );
+        }
+        assert_eq!(
+            events.lock().unwrap().clone(),
+            vec![
+                "begin:first".to_string(),
+                "begin:second".to_string(),
+                "end:second".to_string(),
+                "end:first".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn lifecycle_external_dispatch_runs_only_active_plugins() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let mut reg = LanguageRegistry::new(fake_generic());
+        for id in ["active", "inactive"] {
+            reg.register(Arc::new(LifecyclePlugin {
+                id,
+                events: Arc::clone(&events),
+            }));
+        }
+        let mut ctx = ProjectContext::default();
+        ctx.language_presence.insert("active".to_string());
+
+        let files = reg.collect_lifecycle_external_files(&mut ctx, &[], &[], Path::new("."));
+
+        assert!(files.is_empty());
+        assert_eq!(
+            ctx.plugin_state.get::<LifecycleTrace>(),
+            Some(&LifecycleTrace(vec!["active".to_string()]))
+        );
     }
 
     static FLOW_OWNER_CONFIG: crate::indexer::flow::FlowConfig = crate::indexer::flow::FlowConfig {

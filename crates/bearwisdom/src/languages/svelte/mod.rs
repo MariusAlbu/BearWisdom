@@ -29,7 +29,7 @@ mod coverage_tests;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
-use crate::types::{EmbeddedRegion, ExtractionResult};
+use crate::types::{EmbeddedRegion, ExtractedRef, ExtractionResult};
 
 pub struct SveltePlugin;
 
@@ -69,6 +69,10 @@ impl LanguagePlugin for SveltePlugin {
         _lang_id: &str,
     ) -> Vec<EmbeddedRegion> {
         crate::languages::common::extract_html_script_style_regions(source)
+    }
+
+    fn normalize_embedded_ref(&self, _region: &EmbeddedRegion, reference: &mut ExtractedRef) {
+        predicates::desugar_store_ref_in_place(reference);
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {

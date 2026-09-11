@@ -351,13 +351,15 @@ impl LanguagePlugin for TypeScriptPlugin {
         connectors::extract_typescript_graphql(source)
     }
 
-    // TODO(routes-dispatch): wire `connectors::discover_nestjs_routes` and
-    // `connectors::discover_nextjs_routes` into the indexer route-population
-    // stage. Both functions now write the `routes` table directly (returning
-    // the insert count) and the routes-table → FlowEmission bridge in
-    // resolve/mod.rs emits the Consumer flows. The `resolve_connection_points`
-    // override was removed because the ConnectionPoint Stop emission was
-    // redundant with that bridge.
+    fn discover_routes(
+        &self,
+        conn: &rusqlite::Connection,
+        project_root: &std::path::Path,
+        project_ctx: &crate::indexer::project_context::ProjectContext,
+    ) -> u32 {
+        connectors::discover_nestjs_routes(conn, project_root, project_ctx)
+            + connectors::discover_nextjs_routes(conn, project_root, project_ctx)
+    }
 
     fn post_index(
         &self,

@@ -9,7 +9,6 @@
 //   * Per-package dep-row collection (`collect_package_dep_rows`)
 //   * Workspace / monorepo package detection
 //     (`detect_packages`, `scan_workspace_dirs`, registry package metadata)
-//   * Service marking based on Dockerfile presence (`mark_service_packages`)
 //
 // None of this logic touches tree-sitter or the symbol index — it's pure
 // filesystem + manifest inspection. Split out so the driver in `full.rs`
@@ -18,7 +17,7 @@
 
 use std::path::Path;
 
-use tracing::{debug, info, warn};
+use tracing::info;
 
 use crate::types::{PackageInfo, ParsedFile};
 
@@ -566,40 +565,6 @@ fn dir_name(rel_path: &str) -> String {
 
 fn find_manifest_path_abs(abs_dir: &Path, kind: &str) -> Option<String> {
     crate::ecosystem::default_registry().workspace_manifest_filename(abs_dir, kind)
-}
-
-// ---------------------------------------------------------------------------
-// Service package marking
-// ---------------------------------------------------------------------------
-
-/// Set `is_service = 1` on packages whose path matches a detected Dockerfile.
-///
-/// `pairs` is `(package_relative_path, dockerfile_relative_path)` as returned
-/// by `crate::languages::dockerfile::connectors::detect_dockerfiles`.
-pub(crate) fn mark_service_packages(conn: &rusqlite::Connection, pairs: &[(String, String)]) {
-    for (pkg_path, dockerfile_path) in pairs {
-        match conn.execute(
-            "UPDATE packages SET is_service = 1 WHERE path = ?1",
-            rusqlite::params![pkg_path],
-        ) {
-            Ok(n) if n > 0 => {
-                debug!(
-                    "Marked package '{}' as service ({})",
-                    pkg_path, dockerfile_path
-                );
-            }
-            Ok(_) => {
-                // Package path not found — may have been cleaned up; not an error.
-                debug!(
-                    "No package row for path '{}' — skipping is_service mark",
-                    pkg_path
-                );
-            }
-            Err(e) => {
-                warn!("Failed to mark package '{}' as service: {e}", pkg_path);
-            }
-        }
-    }
 }
 
 #[cfg(test)]

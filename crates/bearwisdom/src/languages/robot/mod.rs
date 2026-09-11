@@ -25,6 +25,7 @@ use crate::indexer::project_context::ProjectContext;
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::{ExtractionResult, ParsedFile};
+use crate::walker::WalkedFile;
 
 /// Cross-file Robot Framework state collected once per index pass.
 ///
@@ -129,6 +130,31 @@ impl LanguagePlugin for RobotPlugin {
             std::fs::read_to_string(root.join(path)).ok()
         }));
     }
+
+    fn lifecycle_external_files(
+        &self,
+        state: &mut PluginStateBag,
+        parsed: &[ParsedFile],
+        external_roots: &[crate::ecosystem::externals::ExternalDepRoot],
+        _project_root: &std::path::Path,
+        _project_ctx: &ProjectContext,
+    ) -> Vec<WalkedFile> {
+        let declared_libraries = library_map::collect_declared_library_names(parsed);
+        let roots = select_robot_library_roots(&declared_libraries, external_roots);
+        let walked: Vec<WalkedFile> = roots
+            .into_iter()
+            .flat_map(crate::ecosystem::pypi::walk_python_external_root)
+            .collect();
+
+        let mut sources = RobotExternalSources::default();
+        for file in &walked {
+            sources
+                .abs_by_virtual
+                .insert(file.relative_path.clone(), file.absolute_path.clone());
+        }
+        state.set(sources);
+        walked
+    }
 }
 
 /// Absolute-path index for robot-demanded external library files.
@@ -139,8 +165,37 @@ impl LanguagePlugin for RobotPlugin {
 /// post-externals state rebuild reads keyword-method source from disk, so it
 /// needs the virtual→absolute mapping the walk produced.
 #[derive(Default)]
-pub struct RobotExternalSources {
-    pub abs_by_virtual: std::collections::HashMap<String, std::path::PathBuf>,
+struct RobotExternalSources {
+    abs_by_virtual: std::collections::HashMap<String, std::path::PathBuf>,
+}
+
+/// Select the PyPI roots a Robot suite reaches through `Library <name>`.
+///
+/// The framework root is included whenever a suite names at least one
+/// non-builtin library so Robot's standard libraries remain available. The
+/// external lifecycle hook owns this policy; generic indexing only parses the
+/// returned walker inputs.
+fn select_robot_library_roots<'a>(
+    declared_libraries: &std::collections::HashSet<String>,
+    external_roots: &'a [crate::ecosystem::externals::ExternalDepRoot],
+) -> Vec<&'a crate::ecosystem::externals::ExternalDepRoot> {
+    // `BuiltIn` is seeded even for an otherwise Robot-free slice. Do not pull
+    // the framework package until a suite actually declares another library.
+    if declared_libraries.len() <= 1 {
+        return Vec::new();
+    }
+    let declared_lower: std::collections::HashSet<String> = declared_libraries
+        .iter()
+        .map(|name| name.to_lowercase())
+        .collect();
+    external_roots
+        .iter()
+        .filter(|root| {
+            root.ecosystem == "python"
+                && (root.module_path.eq_ignore_ascii_case("robot")
+                    || declared_lower.contains(&root.module_path.to_lowercase()))
+        })
+        .collect()
 }
 
 /// Build the cross-file Robot state from a parsed-file slice.

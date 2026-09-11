@@ -212,6 +212,7 @@ fn line_col_at(bytes: &[u8], byte_pos: usize) -> (u32, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::languages::LanguagePlugin;
 
     #[test]
     fn fenced_ts_becomes_region() {
@@ -220,6 +221,7 @@ mod tests {
         assert_eq!(regions.len(), 1);
         assert_eq!(regions[0].language_id, "typescript");
         assert_eq!(regions[0].origin, EmbeddedOrigin::MarkdownFence);
+        assert!(crate::languages::markdown::MarkdownPlugin.embedded_region_is_snippet(&regions[0]));
         assert!(regions[0].text.contains("export const x"));
     }
 
@@ -237,6 +239,7 @@ mod tests {
         assert_eq!(regions.len(), 1);
         assert_eq!(regions[0].language_id, "yaml");
         assert_eq!(regions[0].origin, EmbeddedOrigin::MarkdownFrontmatter);
+        assert!(!crate::languages::markdown::MarkdownPlugin.embedded_region_is_snippet(&regions[0]));
         assert!(regions[0].text.contains("title: Post"));
     }
 

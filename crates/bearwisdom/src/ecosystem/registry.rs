@@ -132,6 +132,25 @@ impl EcosystemRegistry {
         }
         None
     }
+
+    /// Whether a changed path names a workspace manifest owned by any
+    /// registered ecosystem. Exact filenames and adapter-declared manifest
+    /// extensions are both recognized; callers do not carry a package-manager
+    /// inventory of their own.
+    pub fn is_workspace_manifest_path(&self, path: &Path) -> bool {
+        let Some(filename) = path.file_name().and_then(|name| name.to_str()) else {
+            return false;
+        };
+        self.ecosystems.iter().any(|eco| {
+            eco.workspace_package_files()
+                .iter()
+                .any(|(candidate, _)| *candidate == filename)
+                || eco
+                    .workspace_package_extensions()
+                    .iter()
+                    .any(|(extension, _)| filename.ends_with(extension))
+        })
+    }
 }
 
 fn owns_workspace_kind(eco: &dyn Ecosystem, kind: &str) -> bool {

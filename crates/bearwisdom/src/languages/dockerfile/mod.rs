@@ -73,6 +73,7 @@ impl LanguagePlugin for DockerfilePlugin {
         project_root: &std::path::Path,
         _ctx: &crate::indexer::project_context::ProjectContext,
     ) {
+        connectors::mark_dockerfile_services(db, project_root);
         connectors::run_docker_compose(db, project_root);
     }
 

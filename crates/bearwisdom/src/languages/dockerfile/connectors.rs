@@ -28,6 +28,29 @@ pub fn run_docker_compose(db: &Database, project_root: &Path) {
     }
 }
 
+/// Detect Dockerfiles and mark their nearest workspace packages as services.
+/// Package classification belongs to this plugin because the file-name and
+/// directory grammar used by detection is Docker-specific.
+pub fn mark_dockerfile_services(db: &Database, project_root: &Path) {
+    for (package_path, dockerfile_path) in detect_dockerfiles(db.conn(), project_root) {
+        match db.conn().execute(
+            "UPDATE packages SET is_service = 1 WHERE path = ?1",
+            rusqlite::params![package_path],
+        ) {
+            Ok(n) if n > 0 => tracing::debug!(
+                "Marked package '{}' as service ({})",
+                package_path,
+                dockerfile_path
+            ),
+            Ok(_) => tracing::debug!(
+                "No package row for path '{}' — skipping is_service mark",
+                package_path
+            ),
+            Err(e) => warn!("Failed to mark package '{}' as service: {e}", package_path),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Docker Compose connector (inlined from connectors/docker_compose.rs)
 // ---------------------------------------------------------------------------

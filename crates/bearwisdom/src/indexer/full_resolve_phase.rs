@@ -85,13 +85,7 @@ pub fn resolve_with_plugin_refresh(
         // members do. Idempotent over the eager batch.
         let spliced =
             crate::indexer::include_assembly::assemble_includes(db, parsed, symbol_id_map)?;
-        plugin_state_phase::populate_post_externals(
-            registry,
-            project_ctx,
-            parsed,
-            project_root,
-            None,
-        );
+        plugin_state_phase::populate_post_externals(registry, project_ctx, parsed, project_root);
         let gained_members = plugin_state_phase::synthesize_and_persist(
             registry,
             project_ctx,

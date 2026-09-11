@@ -144,6 +144,14 @@ impl LanguagePlugin for CLangPlugin {
         false
     }
 
+    fn begin_index_session(&self, project_root: &std::path::Path) {
+        macro_catalog::begin_index_session(project_root);
+    }
+
+    fn end_index_session(&self) {
+        macro_catalog::end_index_session();
+    }
+
     fn resolve_include_target(
         &self,
         source_file: &str,

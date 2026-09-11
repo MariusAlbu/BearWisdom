@@ -6,8 +6,52 @@
 // ref_node_kinds:    element, self_closing_element, attribute
 // =============================================================================
 
-use super::extract;
-use crate::types::{EdgeKind, SymbolKind};
+use super::{extract, SveltePlugin};
+use crate::languages::LanguagePlugin;
+use crate::types::{EdgeKind, EmbeddedOrigin, EmbeddedRegion, ExtractedRef, SymbolKind};
+
+fn embedded_ref(name: &str) -> ExtractedRef {
+    ExtractedRef {
+        source_symbol_index: 0,
+        target_name: name.to_string(),
+        kind: EdgeKind::Calls,
+        line: 0,
+        col: 0,
+        module: None,
+        namespace_segments: Vec::new(),
+        chain: None,
+        byte_offset: 0,
+        call_args: Vec::new(),
+        is_import_binding: false,
+        is_reexport: false,
+        is_include: false,
+    }
+}
+
+fn script_region() -> EmbeddedRegion {
+    EmbeddedRegion {
+        language_id: "typescript".to_string(),
+        text: String::new(),
+        line_offset: 0,
+        col_offset: 0,
+        origin: EmbeddedOrigin::ScriptBlock,
+        holes: Vec::new(),
+        strip_scope_prefix: None,
+    }
+}
+
+#[test]
+fn embedded_ref_normalization_is_svelte_owned() {
+    let region = script_region();
+    let mut svelte_ref = embedded_ref("$store");
+    SveltePlugin.normalize_embedded_ref(&region, &mut svelte_ref);
+    assert_eq!(svelte_ref.target_name, "store");
+
+    let mut typescript_ref = embedded_ref("$store");
+    crate::languages::typescript::TypeScriptPlugin
+        .normalize_embedded_ref(&region, &mut typescript_ref);
+    assert_eq!(typescript_ref.target_name, "$store");
+}
 
 // ---------------------------------------------------------------------------
 // symbol_node_kinds: component Class symbol from filename

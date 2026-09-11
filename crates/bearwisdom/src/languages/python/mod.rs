@@ -94,6 +94,10 @@ impl LanguagePlugin for PythonPlugin {
         embedded::detect_regions(source)
     }
 
+    fn embedded_region_is_snippet(&self, region: &EmbeddedRegion) -> bool {
+        matches!(region.origin, crate::types::EmbeddedOrigin::MarkdownFence)
+    }
+
     fn symbol_node_kinds(&self) -> &[&str] {
         &[
             "class_definition",
@@ -149,13 +153,15 @@ impl LanguagePlugin for PythonPlugin {
         Some(&PYTHON_PROFILE)
     }
 
-    // TODO(routes-dispatch): wire `connectors::discover_django_routes` and
-    // `connectors::discover_fastapi_routes` into the indexer route-population
-    // stage. Both functions now write the `routes` table directly (returning
-    // the insert count) and the routes-table → FlowEmission bridge in
-    // resolve/mod.rs emits the Consumer flows. The `resolve_connection_points`
-    // override was removed because the ConnectionPoint Stop emission was
-    // redundant with that bridge.
+    fn discover_routes(
+        &self,
+        conn: &rusqlite::Connection,
+        project_root: &std::path::Path,
+        project_ctx: &crate::indexer::project_context::ProjectContext,
+    ) -> u32 {
+        connectors::discover_django_routes(conn, project_root, project_ctx)
+            + connectors::discover_fastapi_routes(conn, project_root, project_ctx)
+    }
 
     fn post_index(
         &self,

@@ -439,6 +439,17 @@ pub trait LanguagePlugin: Send + Sync + 'static {
         Vec::new()
     }
 
+    /// Normalize a reference extracted from one of this plugin's embedded
+    /// regions. Host-language plugins opt in when their embedded source needs
+    /// a host-owned name adjustment; leaf plugins leave the reference intact.
+    fn normalize_embedded_ref(&self, _region: &EmbeddedRegion, _reference: &mut ExtractedRef) {}
+
+    /// Whether an embedded region is an independently parsed snippet rather
+    /// than a source span that shares the host file's coordinate system.
+    fn embedded_region_is_snippet(&self, _region: &EmbeddedRegion) -> bool {
+        false
+    }
+
     /// Synthesize symbols that a code generator / annotation processor / macro
     /// would emit but which never appear in the parsed source text — Lombok
     /// `@Data` getters/setters, Rust `#[derive]` impls, C# source-generated
@@ -625,6 +636,26 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     ) {
     }
 
+    /// Discover framework routes after source rows are available. The plugin
+    /// owns framework detection and writes any route rows; the registry only
+    /// dispatches this neutral lifecycle hook. Returns routes inserted.
+    fn discover_routes(
+        &self,
+        _conn: &rusqlite::Connection,
+        _project_root: &std::path::Path,
+        _project_ctx: &crate::indexer::project_context::ProjectContext,
+    ) -> u32 {
+        0
+    }
+
+    /// Begin one indexing session. Plugins with per-session resources may
+    /// initialize them here; the default has no session state.
+    fn begin_index_session(&self, _project_root: &std::path::Path) {}
+
+    /// End one indexing session. The registry calls this in reverse begin
+    /// order through its RAII session guard.
+    fn end_index_session(&self) {}
+
     /// Contribute reachability entry-points for this language. Each row
     /// names a symbol that anchors the dead-code BFS — `main`, exported
     /// library APIs, Rust `[[bin]]` targets, Python `__main__` blocks,
@@ -796,6 +827,21 @@ pub trait LanguagePlugin: Send + Sync + 'static {
         _project_root: &std::path::Path,
         _project_ctx: &crate::indexer::project_context::ProjectContext,
     ) {
+    }
+
+    /// Materialize additional external source files after ordinary external
+    /// discovery. Plugins receive the opaque cross-file state bag and return
+    /// normalized walker input without exposing language-specific logic to the
+    /// indexer. The default contributes no files.
+    fn lifecycle_external_files(
+        &self,
+        _state: &mut crate::indexer::plugin_state::PluginStateBag,
+        _parsed: &[crate::types::ParsedFile],
+        _external_roots: &[crate::ecosystem::externals::ExternalDepRoot],
+        _project_root: &std::path::Path,
+        _project_ctx: &crate::indexer::project_context::ProjectContext,
+    ) -> Vec<crate::walker::WalkedFile> {
+        Vec::new()
     }
 
     /// Contribute synthetic wildcard imports derived from this plugin's own

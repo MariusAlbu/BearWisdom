@@ -96,12 +96,14 @@ impl LanguagePlugin for ElixirPlugin {
         keywords::KEYWORDS
     }
 
-    // TODO(routes-dispatch): wire `connectors::discover_phoenix_routes` into the
-    // indexer route-population stage. The function now writes the `routes` table
-    // directly (returning the insert count) and the routes-table → FlowEmission
-    // bridge in resolve/mod.rs emits the Consumer flows. The
-    // `resolve_connection_points` override was removed because the ConnectionPoint
-    // Stop emission was redundant with that bridge.
+    fn discover_routes(
+        &self,
+        conn: &rusqlite::Connection,
+        project_root: &std::path::Path,
+        _project_ctx: &crate::indexer::project_context::ProjectContext,
+    ) -> u32 {
+        connectors::discover_phoenix_routes(conn, project_root)
+    }
 
     fn profile(
         &self,

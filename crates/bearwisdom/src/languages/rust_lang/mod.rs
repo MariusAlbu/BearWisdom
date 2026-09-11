@@ -95,6 +95,10 @@ impl LanguagePlugin for RustLangPlugin {
         embedded::detect_regions(source)
     }
 
+    fn embedded_region_is_snippet(&self, region: &EmbeddedRegion) -> bool {
+        matches!(region.origin, crate::types::EmbeddedOrigin::MarkdownFence)
+    }
+
     fn synthesize_symbols(
         &self,
         source: &str,

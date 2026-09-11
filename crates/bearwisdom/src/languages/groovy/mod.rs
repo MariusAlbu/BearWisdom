@@ -103,6 +103,15 @@ impl LanguagePlugin for GroovyPlugin {
         Some(&profile::GROOVY_PROFILE)
     }
 
+    fn discover_routes(
+        &self,
+        conn: &rusqlite::Connection,
+        project_root: &std::path::Path,
+        project_ctx: &crate::indexer::project_context::ProjectContext,
+    ) -> u32 {
+        connectors::discover_groovy_routes(conn, project_root, project_ctx)
+    }
+
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::GROOVY_FLOW_CONFIG)
     }
