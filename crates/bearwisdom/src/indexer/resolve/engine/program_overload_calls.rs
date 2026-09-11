@@ -13,6 +13,9 @@ use crate::type_checker::core::types::TypeId;
 #[path = "program_overload_order.rs"]
 pub(super) mod ordering;
 
+#[path = "program_import_overloads.rs"]
+pub(in crate::indexer::resolve::engine) mod imports;
+
 pub(in crate::indexer::resolve::engine) fn select(
     lookup: &Lookup,
     receiver: TypeId,

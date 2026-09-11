@@ -6,6 +6,9 @@ use super::*;
 #[path = "file_lookup_flow_tests.rs"]
 mod tests;
 
+#[path = "file_lookup_calls.rs"]
+mod calls;
+
 impl FileLookup<'_> {
     /// A callback-only graph reserves its lexical binding even before a
     /// contextual type is available. Legacy name maps must not supply a type
@@ -136,34 +139,15 @@ impl<'a> FlowCacheLookup for FileLookup<'a> {
         actual: &[TypeId],
         explicit: &[TypeId],
     ) -> Option<Result<super::super::contract::flow_cache::OverloadCall, ()>> {
-        let program = self.program.as_ref()?;
-        if self.source_private_member(selector).is_some() {
-            return None;
-        }
-        let name = *self.method_names.get(&selector)?;
-        let callbacks = self
-            .lexical
-            .as_ref()
-            .and_then(|c| c.bindings.globals.as_ref())
-            .map(|g| &g.calls.callbacks);
-        super::super::program_view::overload_calls::contextual(
-            program,
-            receiver,
-            name,
-            actual,
-            explicit,
-            &|index| callbacks.is_some_and(|c| c.contains_key(&(selector, index))),
-            &|index, context| {
-                super::super::program_view::callback_bodies::infer(
-                    program,
-                    self,
-                    self.lexical.as_ref()?.bindings,
-                    callbacks?.get(&(selector, index))?,
-                    context,
-                )
-            },
-            false,
-        )
+        calls::overloaded_call(self, receiver, selector, actual, explicit)
+    }
+    fn overloaded_import_call(
+        &self,
+        site: u32,
+        actual: &[TypeId],
+        explicit: &[TypeId],
+    ) -> Option<Result<super::super::contract::flow_cache::OverloadCall, ()>> {
+        calls::overloaded_import_call(self, site, actual, explicit)
     }
     fn receiver_member_info(
         &self,

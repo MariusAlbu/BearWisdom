@@ -28,6 +28,9 @@ pub(super) fn bind_lexical_call(
     }
     let local = lookup.local_reference(reference.byte_offset)?;
     let Some(target_symbol_id) = local.declaration else {
+        if let Some(info) = bind_import_overload(reference, &local, lookup) {
+            return Some(SolveOutcome::Resolved(info));
+        }
         return Some(SolveOutcome::Unresolved(Some(
             super::super::unbound_cause::classify_unbound_root(
                 &reference.target_name,
@@ -53,4 +56,28 @@ pub(super) fn bind_lexical_call(
         resolved_yield_type,
         flow_emit: None,
     }))
+}
+
+/// A binding whose import names an overload group has no single declaration;
+/// the call's typed arguments select one signature, and that signature's row
+/// is the target. Anything short of a selection leaves the miss diagnosed.
+fn bind_import_overload(
+    reference: &crate::types::ExtractedRef,
+    local: &super::super::contract::flow_cache::LocalReference,
+    lookup: &dyn SymbolLookup,
+) -> Option<SymbolInfo> {
+    let arena = lookup.type_arena()?;
+    let args = super::super::arg_types::at(lookup, reference.byte_offset, &reference.call_args)?;
+    let actual = super::super::arg_types::resolve_arg_types(lookup, arena, args);
+    let call = lookup
+        .overloaded_import_call(reference.byte_offset, &actual, &local.type_args)?
+        .ok()?;
+    let origin = call.origins.get(call.selected)?;
+    Some(SymbolInfo {
+        target_symbol_id: origin.declaration?,
+        confidence: super::super::contract::RESOLVED_CONFIDENCE,
+        strategy: "lexical_overload",
+        resolved_yield_type: Some(call.return_type),
+        flow_emit: None,
+    })
 }

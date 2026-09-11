@@ -61,6 +61,10 @@ pub(super) fn collect(
         );
         external_policy::collect_relative_supertypes(&pf.language, abs, &pf.refs, seen, next);
     }
+    if let Some(profile) = profiles.get(pf.language.as_str()) {
+        let _t = phase_timer::scope("demand.reexports");
+        super::demand_reexports::collect(abs, &pf.language, profile, &pf.refs, seen, next);
+    }
     // Per-language source-derived demand records stay with the file's active
     // plugin. The resolver reads source once and forwards normalized results.
     if let Ok(content) = std::fs::read_to_string(abs) {

@@ -42,6 +42,7 @@ mod compilation_persist;
 pub mod composite_members;
 pub(crate) mod contract;
 mod demand_reachability;
+mod demand_reexports;
 pub mod demand_veto;
 mod elided_inputs;
 mod enclosing;

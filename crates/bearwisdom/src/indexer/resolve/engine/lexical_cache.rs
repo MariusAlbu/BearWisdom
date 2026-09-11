@@ -12,6 +12,9 @@ mod values;
 #[path = "lexical_initializers.rs"]
 mod initializers;
 
+#[path = "lexical_cache_imports.rs"]
+mod imports;
+
 pub(super) struct LexicalCache<'a> {
     pub(super) bindings: &'a LexicalBindings,
     cursor: Cell<u32>,
@@ -26,6 +29,7 @@ pub(super) struct LexicalCache<'a> {
     value_context: Option<values::Context<'a>>,
     import_kinds: HashMap<BindingId, crate::types::SymbolKind>,
     import_namespaces: std::collections::HashSet<BindingId>,
+    import_overloads: HashMap<BindingId, Vec<i64>>,
     arena: &'a TypeArena,
     language: &'a str,
     inferred_declarations: RefCell<HashMap<BindingId, TypeId>>,
@@ -61,6 +65,7 @@ impl<'a> LexicalCache<'a> {
             value_context: None,
             import_kinds: HashMap::new(),
             import_namespaces: Default::default(),
+            import_overloads: HashMap::new(),
             member_type_args: HashMap::new(),
             call_type_args: bindings
                 .call_type_args
@@ -301,58 +306,6 @@ impl<'a> LexicalCache<'a> {
 
     pub(super) fn member_type_arguments(&self, selector: u32) -> Option<&[TypeId]> {
         self.member_type_args.get(&selector).map(Vec::as_slice)
-    }
-
-    pub(super) fn install_initial_values(&mut self, lookup: &dyn super::contract::SymbolLookup) {
-        for (&binding, value) in &self.bindings.initial_values {
-            let Some(id) = self.declarations.get(value).copied().flatten() else {
-                continue;
-            };
-            match self.bindings.kinds.get(value) {
-                Some(crate::types::SymbolKind::Function) => {
-                    self.initial_callables.insert(binding, id);
-                }
-                Some(crate::types::SymbolKind::Class) => {
-                    if let Some(symbol) = lookup.symbol_by_id(id) {
-                        let instance = super::head_decl::nominal_head(lookup, self.arena, symbol);
-                        self.initial_types
-                            .insert(binding, self.arena.intern(Type::Constructor(instance)));
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    pub(super) fn install_imports(
-        &mut self,
-        path: &str,
-        lookup: &dyn super::contract::SymbolLookup,
-    ) {
-        for &binding in self.bindings.module.imports.keys() {
-            if lookup.bound_import_namespace(path, binding) {
-                self.import_namespaces.insert(binding);
-                self.import_kinds
-                    .insert(binding, crate::types::SymbolKind::Namespace);
-            }
-            let target = lookup.bound_import(path, binding, false);
-            self.declarations.insert(binding, target);
-            if target.is_none() {
-                if let Some(ty) =
-                    super::lexical_value::imported_overload_type(lookup, self.arena, path, binding)
-                {
-                    self.initial_types.insert(binding, ty);
-                }
-            }
-            if let Some(symbol) = target.and_then(|id| lookup.symbol_by_id(id)) {
-                if let Ok(kind) = symbol.kind.parse() {
-                    self.import_kinds.insert(binding, kind);
-                }
-                if let Some(ty) = lookup.field_type_id_of(symbol.id) {
-                    self.initial_types.insert(binding, ty);
-                }
-            }
-        }
     }
 
     /// Reset pass-local inference; syntax declarations belong to this snapshot.

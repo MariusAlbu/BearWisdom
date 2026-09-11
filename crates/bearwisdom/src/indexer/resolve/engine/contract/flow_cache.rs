@@ -90,6 +90,18 @@ pub trait FlowCacheLookup {
     ) -> Option<Result<OverloadCall, ()>> {
         None
     }
+    /// A chain-less call whose import binding names an overload group rather
+    /// than one declaration. None: the site is not such a binding, or the
+    /// group cannot be attested. Some(Err): attested group, no signature
+    /// accepts the call.
+    fn overloaded_import_call(
+        &self,
+        _site: u32,
+        _actual: &[TypeId],
+        _explicit: &[TypeId],
+    ) -> Option<Result<OverloadCall, ()>> {
+        None
+    }
     /// Proved receiver-owned signature, separate from shared navigation-row types.
     fn receiver_member_info(&self, _owner: i64, _member: i64) -> Option<&super::TypeInfo> {
         None
