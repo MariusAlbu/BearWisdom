@@ -99,6 +99,33 @@ pub(super) fn signature_parameter_types(signature: &str) -> Option<Vec<String>> 
     )
 }
 
+/// Rewrite every namespace-qualified name inside a type expression to its
+/// canonical index qname, leaving the surrounding type grammar (`?`, `|`,
+/// `[]`, `&`) untouched. A bare or already-canonical name is returned as is.
+pub(super) fn canonicalize_type_text(text: &str) -> String {
+    let profile = &super::profile::PHP_PROFILE;
+    let mut out = String::with_capacity(text.len());
+    let mut token = String::new();
+    let flush = |token: &mut String, out: &mut String| {
+        if token.contains('\\') {
+            out.push_str(&profile.index_qname_from_source(token));
+        } else {
+            out.push_str(token);
+        }
+        token.clear();
+    };
+    for ch in text.chars() {
+        if ch == '\\' || ch == '_' || ch.is_alphanumeric() {
+            token.push(ch);
+        } else {
+            flush(&mut token, &mut out);
+            out.push(ch);
+        }
+    }
+    flush(&mut token, &mut out);
+    out
+}
+
 /// Read the result type of a stored PHP callable signature: the `: T` that
 /// follows the parameter list's matching close paren. Parameter defaults and
 /// attributes may contain `:` and `=>`, so the paren match, not bracket

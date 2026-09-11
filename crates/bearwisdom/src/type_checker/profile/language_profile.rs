@@ -612,6 +612,13 @@ impl LanguageProfile {
     /// Source separators are profile data; the dot is only the index storage
     /// separator and must not be used to parse source text in engine rules.
     pub fn index_qname_from_source(&self, name: &str) -> String {
+        // A leading separator anchors the name at the root namespace (`\Foo`,
+        // `::foo`); the index has no root segment, so it contributes nothing.
+        let name = if self.qname_separator.is_empty() {
+            name
+        } else {
+            name.strip_prefix(self.qname_separator).unwrap_or(name)
+        };
         let qualified = if self.qname_separator.is_empty() || self.qname_separator == "." {
             name.to_string()
         } else {

@@ -41,3 +41,19 @@ fn global_and_static_variable_signatures_carry_no_declared_type() {
     assert_eq!(PhpPlugin.signature_declared_type("static $cache"), None);
     assert_eq!(PhpPlugin.signature_declared_type("global $config"), None);
 }
+
+#[test]
+fn qualified_type_text_interns_as_the_canonical_declaration_qname() {
+    let arena = crate::type_checker::core::types::TypeArena::new();
+    for (text, expected) in [
+        ("\\App\\Column", "App.Column"),
+        ("App\\Column", "App.Column"),
+        ("Column", "Column"),
+        ("?\\App\\Column", "App.Column?"),
+        ("\\App\\Column[]", "Array<App.Column>"),
+    ] {
+        let id = PhpPlugin.intern_type_text(&arena, text);
+        assert_eq!(arena.format_type(id), expected, "type text {text:?}");
+    }
+    assert_eq!(helpers::canonicalize_type_text("A\\B|\\C\\D|null"), "A.B|C.D|null");
+}

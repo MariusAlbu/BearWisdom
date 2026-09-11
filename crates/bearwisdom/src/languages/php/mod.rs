@@ -88,6 +88,18 @@ impl LanguagePlugin for PhpPlugin {
         }
     }
 
+    /// Namespace-qualified spellings inside a PHP type expression
+    /// (`\App\Column`, `?Foo\Bar`, `A\B|null`) intern as the canonical index
+    /// qname of the declaration they name.
+    fn intern_type_text(
+        &self,
+        arena: &crate::type_checker::core::types::TypeArena,
+        text: &str,
+    ) -> crate::type_checker::core::types::TypeId {
+        let canonical = helpers::canonicalize_type_text(text);
+        crate::languages::type_text::intern_type_text(arena, &canonical, self.type_text_policy())
+    }
+
     fn signature_return_type(&self, signature: &str) -> Option<String> {
         helpers::signature_return_type(signature)
     }
