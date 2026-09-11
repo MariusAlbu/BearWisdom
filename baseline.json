@@ -13131,7 +13131,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 67
+        "min_resolution_rate": 78
       },
       "code_chunks": 834,
       "files": 43,
@@ -13139,8 +13139,8 @@
         "http_call": 21
       },
       "flow_edges": 21,
-      "internal_edges": 734,
-      "internal_unresolved": 349,
+      "internal_edges": 848,
+      "internal_unresolved": 235,
       "languages": {
         "javascript": 1,
         "json": 6,
@@ -13149,22 +13149,22 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-nestjs-realworld",
       "perf": {
-        "end_ws_mb": 76,
-        "files_per_sec": 5,
-        "index_duration_ms": 9097
+        "end_ws_mb": 82,
+        "files_per_sec": 3,
+        "index_duration_ms": 13430
       },
       "project": "ts-nestjs-realworld",
       "rate_by_language": {
-        "typescript": 67.77
+        "typescript": 78.3
       },
-      "resolution_rate": 67.77,
+      "resolution_rate": 78.3,
       "routes": 21,
       "symbols": 473,
       "unresolved_by_lang_kind": {
-        "typescript.calls": 215,
-        "typescript.implements": 6,
-        "typescript.instantiates": 13,
-        "typescript.type_ref": 115
+        "typescript.calls": 117,
+        "typescript.implements": 1,
+        "typescript.instantiates": 11,
+        "typescript.type_ref": 106
       }
     },
     {
@@ -13179,8 +13179,8 @@
       },
       "flow_edges": 458,
       "generated_files_reclassified": 340,
-      "internal_edges": 409056,
-      "internal_unresolved": 246809,
+      "internal_edges": 409189,
+      "internal_unresolved": 246707,
       "languages": {
         "c": 1,
         "css": 644,
@@ -13206,16 +13206,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-nextjs",
       "perf": {
-        "end_ws_mb": 193,
-        "files_per_sec": 12,
-        "index_duration_ms": 2013770
+        "end_ws_mb": 187,
+        "files_per_sec": 11,
+        "index_duration_ms": 2176033
       },
       "project": "ts-nextjs",
       "rate_by_language": {
         "dockerfile": 73.53,
         "graphql": 84.85,
         "html": 0.0,
-        "javascript": 53.18,
+        "javascript": 53.19,
         "markdown": 82.82,
         "mdx": 42.86,
         "php": 100.0,
@@ -13224,9 +13224,9 @@
         "rust": 67.1,
         "scss": 2.5,
         "shell": 51.85,
-        "typescript": 60.87
+        "typescript": 60.9
       },
-      "resolution_rate": 62.37,
+      "resolution_rate": 62.39,
       "routes": 458,
       "symbols": 260026,
       "unresolved_by_lang_kind": {
@@ -13238,7 +13238,7 @@
         "javascript.calls": 16236,
         "javascript.imports": 6719,
         "javascript.inherits": 32,
-        "javascript.type_ref": 8892,
+        "javascript.type_ref": 8890,
         "markdown.calls": 116,
         "markdown.type_ref": 89,
         "mdx.calls": 456,
@@ -13255,12 +13255,12 @@
         "scss.imports": 99,
         "scss.inherits": 1,
         "shell.calls": 13,
-        "typescript.calls": 102874,
-        "typescript.implements": 13,
+        "typescript.calls": 102853,
+        "typescript.implements": 7,
         "typescript.imports": 1377,
         "typescript.inherits": 27,
-        "typescript.instantiates": 851,
-        "typescript.type_ref": 28871
+        "typescript.instantiates": 849,
+        "typescript.type_ref": 28800
       },
       "vendored_files_reclassified": 673
     },
