@@ -261,9 +261,19 @@ pub fn bind_member_access(
                 )
         };
         let member =
-            match bound_method::member(lookup, arena, current, seg, profile, &accept)
-                .map_err(|_| None)?
-            {
+            match bound_method::member(lookup, arena, current, seg, profile, &accept).map_err(
+                |denied| {
+                    crate::tracef!(
+                        "  MEMBER '{}' (is_call={}) on receiver={} (recv.id={:?}) -> DECLINED {:?}",
+                        seg.name,
+                        seg.is_call,
+                        arena.format_type(current.ty),
+                        current.id,
+                        denied
+                    );
+                    None
+                },
+            )? {
                 Some(m) => m,
                 None => {
                     // Container-Deref rehead: retry the miss with the head rewritten

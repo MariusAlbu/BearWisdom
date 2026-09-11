@@ -360,3 +360,40 @@ fn nested_callback_body_emits_instantiation_and_import_once() {
         .collect();
     assert_eq!(imports, vec!["nested"]);
 }
+
+#[test]
+fn called_segments_carry_is_call() {
+    let source = r#"<?php
+function f($v) {
+    $v->messages()->get('x');
+    Validator::make([])->fails();
+}
+"#;
+    let chains: Vec<Vec<(String, bool)>> = calls(source)
+        .into_iter()
+        .filter_map(|reference| reference.chain)
+        .map(|chain| {
+            chain
+                .segments
+                .iter()
+                .map(|segment| (segment.name.clone(), segment.is_call))
+                .collect()
+        })
+        .collect();
+    assert!(
+        chains.contains(&vec![
+            ("v".to_string(), false),
+            ("messages".to_string(), true),
+            ("get".to_string(), true),
+        ]),
+        "member calls must mark every called hop: {chains:?}"
+    );
+    assert!(
+        chains.contains(&vec![
+            ("Validator".to_string(), false),
+            ("make".to_string(), true),
+            ("fails".to_string(), true),
+        ]),
+        "static call roots stay uncalled, the method hops are calls: {chains:?}"
+    );
+}
