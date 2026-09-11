@@ -13178,8 +13178,8 @@
       },
       "flow_edges": 458,
       "generated_files_reclassified": 340,
-      "internal_edges": 409189,
-      "internal_unresolved": 246707,
+      "internal_edges": 410493,
+      "internal_unresolved": 245415,
       "languages": {
         "c": 1,
         "css": 644,
@@ -13205,9 +13205,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-nextjs",
       "perf": {
-        "end_ws_mb": 187,
-        "files_per_sec": 11,
-        "index_duration_ms": 2176033
+        "end_ws_mb": 191,
+        "files_per_sec": 12,
+        "index_duration_ms": 2034380
       },
       "project": "ts-nextjs",
       "rate_by_language": {
@@ -13223,9 +13223,9 @@
         "rust": 67.1,
         "scss": 2.5,
         "shell": 51.85,
-        "typescript": 60.9
+        "typescript": 61.28
       },
-      "resolution_rate": 62.39,
+      "resolution_rate": 62.58,
       "routes": 458,
       "symbols": 260026,
       "unresolved_by_lang_kind": {
@@ -13256,10 +13256,10 @@
         "shell.calls": 13,
         "typescript.calls": 102853,
         "typescript.implements": 7,
-        "typescript.imports": 1377,
-        "typescript.inherits": 27,
+        "typescript.imports": 1373,
+        "typescript.inherits": 26,
         "typescript.instantiates": 849,
-        "typescript.type_ref": 28800
+        "typescript.type_ref": 27513
       },
       "vendored_files_reclassified": 673
     },
