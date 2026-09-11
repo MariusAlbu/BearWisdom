@@ -6,6 +6,7 @@
 
 // Extraction sub-modules
 mod alias_classify;
+mod angular_module_reachables;
 pub(crate) mod alias_intrinsics;
 mod alias_type_text;
 mod alias_union;
@@ -27,6 +28,7 @@ mod helpers;
 mod imports;
 pub(crate) mod keywords;
 mod module_augmentations;
+pub(crate) mod module_policy;
 mod narrowing;
 mod params;
 mod qualify_members;
@@ -433,30 +435,14 @@ impl LanguagePlugin for TypeScriptPlugin {
         Some(&flow::TS_LEXICAL_SYNTAX)
     }
 
-    /// An Angular NgModule declaration `.d.ts` reaches the `.component`/`.directive`
-    /// `.d.ts` files it declares — components/directives are referenced only by
-    /// selector, so nothing demands them by name; descending the module's
-    /// declarations is the structural signal that materializes them (and their
-    /// `ɵcmp`/`ɵdir` selectors). Gated on the `ɵɵNgModuleDeclaration` marker, so
-    /// non-Angular `.d.ts` cost nothing.
     fn external_declaration_reachables(&self, file_path: &str, content: &str) -> Vec<String> {
-        if !file_path.ends_with(".module.d.ts") || !content.contains("ɵɵNgModuleDeclaration") {
-            return Vec::new();
-        }
-        let mut out = Vec::new();
-        for line in content.lines() {
-            let t = line.trim();
-            if !(t.starts_with("import ") || t.starts_with("export ")) {
-                continue;
-            }
-            let Some(spec) = crate::ecosystem::npm::extract_quoted_after(t, " from ") else {
-                continue;
-            };
-            if spec.starts_with('.') && (spec.contains(".component") || spec.contains(".directive"))
-            {
-                out.push(spec.to_string());
-            }
-        }
-        out
+        angular_module_reachables::reachables(file_path, content)
+    }
+
+    fn source_module_path_policy(
+        &self,
+        _specifier: &str,
+    ) -> crate::type_checker::profile::language_profile::SourceModulePathPolicy {
+        module_policy::SOURCE_MODULE_PATH_POLICY
     }
 }

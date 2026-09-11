@@ -43,6 +43,8 @@ mod scoped_merges;
 mod wrappers;
 #[path = "compilation_includes.rs"]
 mod includes;
+#[path = "compilation_module_resolution.rs"]
+mod module_resolution;
 
 // ---------------------------------------------------------------------------
 // PendingModuleValue — a deferred module-tagged value TypeRef
@@ -2427,13 +2429,7 @@ impl SymbolLookup for Compilation {
     }
 
     fn resolve_module_from(&self, source_file: &str, spec: &str) -> Option<&str> {
-        // Adapter-produced keys supply any source-file-sensitive lookup. The
-        // engine does not classify specifier spelling before consuming them.
-        if let Some(key) = crate::ecosystem::module_specifier::relative_entry_key(source_file, spec)
-        {
-            return self.module_entry.get(&key).map(String::as_str);
-        }
-        self.module_entry.get(spec).map(String::as_str)
+        self.resolve_module_path(source_file, spec)
     }
 
     fn resolve_module_via_language_resolver(

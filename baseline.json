@@ -13131,7 +13131,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 78
+        "min_resolution_rate": 82
       },
       "code_chunks": 834,
       "files": 43,
@@ -13139,8 +13139,8 @@
         "http_call": 21
       },
       "flow_edges": 21,
-      "internal_edges": 848,
-      "internal_unresolved": 235,
+      "internal_edges": 892,
+      "internal_unresolved": 191,
       "languages": {
         "javascript": 1,
         "json": 6,
@@ -13149,22 +13149,21 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-nestjs-realworld",
       "perf": {
-        "end_ws_mb": 82,
-        "files_per_sec": 3,
-        "index_duration_ms": 13430
+        "end_ws_mb": 73,
+        "files_per_sec": 4,
+        "index_duration_ms": 12270
       },
       "project": "ts-nestjs-realworld",
       "rate_by_language": {
-        "typescript": 78.3
+        "typescript": 82.36
       },
-      "resolution_rate": 78.3,
+      "resolution_rate": 82.36,
       "routes": 21,
       "symbols": 473,
       "unresolved_by_lang_kind": {
         "typescript.calls": 117,
-        "typescript.implements": 1,
         "typescript.instantiates": 11,
-        "typescript.type_ref": 106
+        "typescript.type_ref": 63
       }
     },
     {

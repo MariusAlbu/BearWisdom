@@ -285,3 +285,6 @@ impl ModuleGraph {
 #[cfg(test)]
 #[path = "module_access_tests.rs"]
 mod tests;
+
+#[path = "module_relative_resolution.rs"]
+mod relative;

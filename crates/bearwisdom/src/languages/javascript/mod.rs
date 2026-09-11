@@ -148,6 +148,13 @@ impl LanguagePlugin for JavascriptPlugin {
         head == "Array"
     }
 
+    fn source_module_path_policy(
+        &self,
+        _specifier: &str,
+    ) -> crate::type_checker::profile::language_profile::SourceModulePathPolicy {
+        crate::languages::typescript::module_policy::SOURCE_MODULE_PATH_POLICY
+    }
+
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
