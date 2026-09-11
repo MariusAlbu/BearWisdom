@@ -239,15 +239,15 @@ pub(super) fn extract_include_require(
 /// const` alias must never rewrite a `Calls` ref: a same-named function or
 /// constant unrelated to the aliased class could collide.
 fn apply_use_aliases(refs: &mut [ExtractedRef]) {
-    let aliases: std::collections::HashMap<String, String> = refs
+    let aliases: std::collections::HashMap<String, (String, Option<String>)> = refs
         .iter()
         .filter(|r| r.kind == EdgeKind::Imports)
         .filter_map(|r| {
             let seg = r.chain.as_ref()?.segments.first()?;
-            if seg.kind != SegmentKind::TypeAccess {
+            if seg.kind != SegmentKind::TypeAccess || seg.name == r.target_name {
                 return None;
             }
-            Some((r.target_name.clone(), seg.name.clone()))
+            Some((r.target_name.clone(), (seg.name.clone(), r.module.clone())))
         })
         .collect();
     if aliases.is_empty() {
@@ -260,8 +260,14 @@ fn apply_use_aliases(refs: &mut [ExtractedRef]) {
         ) {
             continue;
         }
-        if let Some(original) = aliases.get(&r.target_name) {
+        if let Some((original, module)) = aliases.get(&r.target_name) {
+            // The original name alone would re-resolve in the using file's own
+            // namespace (a class aliasing its namesake would extend itself);
+            // the import's namespace is the evidence that names the declaration.
             r.target_name = original.clone();
+            if r.module.is_none() {
+                r.module = module.clone();
+            }
         }
     }
 }

@@ -158,3 +158,19 @@ function make() {
         inst.target_name
     );
 }
+
+#[test]
+fn aliased_parent_rewrite_carries_the_import_namespace() {
+    let source = r#"<?php
+namespace App\Support;
+use Carbon\Carbon as BaseCarbon;
+class Carbon extends BaseCarbon {}
+"#;
+    let refs = crate::languages::php::extract::extract(source).refs;
+    let inherits = refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Inherits)
+        .expect("inherits ref");
+    assert_eq!(inherits.target_name, "Carbon");
+    assert_eq!(inherits.module.as_deref(), Some("Carbon"));
+}

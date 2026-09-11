@@ -275,3 +275,96 @@ fn external_parent_class_members_resolve_through_use_import() {
         .unwrap();
     assert_eq!(unresolved, 0, "no residue for the imported parent or its member");
 }
+
+/// A class aliasing its namesake through `use Vendor\Carbon as BaseCarbon;
+/// class Carbon extends BaseCarbon` must inherit the vendor class, never
+/// itself, and inherited static members must resolve through that edge.
+fn build_aliased_parent_project() -> TestProject {
+    let project = TestProject {
+        dir: tempfile::TempDir::new().unwrap(),
+    };
+    project.add_file(
+        "composer.json",
+        r#"{"require":{"nesbot/carbon":"^3.0"}}"#,
+    );
+    project.add_file(
+        "vendor/nesbot/carbon/composer.json",
+        r#"{"name":"nesbot/carbon","version":"3.0.0"}"#,
+    );
+    project.add_file(
+        "vendor/nesbot/carbon/src/Carbon/Carbon.php",
+        r#"<?php
+
+namespace Carbon;
+
+class Carbon
+{
+    public static function now(): static
+    {
+        return new static();
+    }
+}
+"#,
+    );
+    project.add_file(
+        "src/Support/Carbon.php",
+        r#"<?php
+
+namespace App\Support;
+
+use Carbon\Carbon as BaseCarbon;
+
+class Carbon extends BaseCarbon
+{
+}
+"#,
+    );
+    project.add_file(
+        "src/Clock.php",
+        r#"<?php
+
+namespace App;
+
+use App\Support\Carbon;
+
+class Clock
+{
+    public function tick()
+    {
+        return Carbon::now();
+    }
+}
+"#,
+    );
+    project
+}
+
+#[test]
+fn aliased_parent_binds_the_vendor_class_not_the_namesake_child() {
+    let project = build_aliased_parent_project();
+    let mut db = TestProject::in_memory_db();
+    full_index(&mut db, project.path(), None, None, None).unwrap();
+
+    let parent: Option<String> = db
+        .query_row(
+            "SELECT t.qualified_name FROM edges e
+             JOIN symbols s ON s.id = e.source_id
+             JOIN symbols t ON t.id = e.target_id
+             WHERE e.kind = 'inherits' AND s.qualified_name = 'App.Support.Carbon'",
+            [],
+            |r| r.get(0),
+        )
+        .ok();
+    assert_eq!(parent.as_deref(), Some("Carbon.Carbon"));
+
+    let now: Option<String> = db
+        .query_row(
+            "SELECT t.qualified_name FROM edges e
+             JOIN symbols t ON t.id = e.target_id
+             WHERE e.kind = 'calls' AND t.name = 'now'",
+            [],
+            |r| r.get(0),
+        )
+        .ok();
+    assert_eq!(now.as_deref(), Some("Carbon.Carbon.now"));
+}
