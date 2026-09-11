@@ -4,9 +4,7 @@ use crate::indexer::resolve::engine::testkit::{
     accept_any, call_ref, file_ctx, ref_ctx, source_symbol, sym, Lookup,
 };
 use crate::indexer::resolve::engine::{BinderContext, LookupResult};
-use crate::type_checker::profile::language_profile::{
-    NameTransform, SelectorResolution, DEFAULT_PROFILE,
-};
+use crate::type_checker::profile::language_profile::{SelectorResolution, DEFAULT_PROFILE};
 use crate::types::EdgeKind;
 
 // ---------------------------------------------------------------------------
@@ -91,11 +89,15 @@ impl SymbolLookup for SelectorLookup {
 
 use crate::type_checker::profile::language_profile::LanguageProfile;
 
+fn direct_selector_candidates(target: &str) -> Vec<String> {
+    vec![target.to_owned()]
+}
+
 static SELECTOR_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
     selector_resolution: Some(SelectorResolution {
         edge_kinds: &[EdgeKind::Calls],
-        name_transforms: &[],
+        selector_candidates: direct_selector_candidates,
     }),
     ..DEFAULT_PROFILE
 };
@@ -104,7 +106,7 @@ static SELECTOR_KEBAB_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
     selector_resolution: Some(SelectorResolution {
         edge_kinds: &[EdgeKind::Calls],
-        name_transforms: &[NameTransform::PascalToKebab],
+        selector_candidates: crate::languages::typescript::selectors::selector_lookup_candidates,
     }),
     ..DEFAULT_PROFILE
 };
@@ -287,17 +289,4 @@ fn passes_when_edge_kind_not_in_selector_resolution() {
         profile,
     };
     assert!(matches!(SelectorMapRule.apply(&ctx), LookupResult::Pass));
-}
-
-// ---------------------------------------------------------------------------
-// pascal_to_kebab unit tests (via the public rule module)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn pascal_to_kebab_converts_correctly() {
-    assert_eq!(pascal_to_kebab("AppUserCard").as_ref(), "app-user-card");
-    assert_eq!(pascal_to_kebab("MyComponent").as_ref(), "my-component");
-    assert_eq!(pascal_to_kebab("already-kebab").as_ref(), "already-kebab");
-    assert_eq!(pascal_to_kebab("lowercase").as_ref(), "lowercase");
-    assert_eq!(pascal_to_kebab("A").as_ref(), "a");
 }

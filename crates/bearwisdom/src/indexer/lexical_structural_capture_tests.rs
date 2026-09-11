@@ -15,6 +15,7 @@ fn unsupported_object_members_are_not_silently_empty_objects() {
         let graph = crate::indexer::lexical::capture(
             tree.root_node(),
             source.as_bytes(),
+            Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
             "ts",
             &mut vec![],
             &[],

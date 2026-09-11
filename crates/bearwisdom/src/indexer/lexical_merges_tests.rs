@@ -14,6 +14,7 @@ fn dual_type_bindings_are_distinct_from_values_in_both_declaration_orders() {
         let graph = super::super::capture(
             tree.root_node(),
             source.as_bytes(),
+            Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
             "ts",
             &mut vec![],
             &[],

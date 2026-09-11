@@ -179,4 +179,16 @@ impl LanguagePlugin for RustLangPlugin {
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::RUST_FLOW_CONFIG)
     }
+
+    fn flow_cfg_node_kinds(&self) -> Option<&'static crate::indexer::flow_cfg::CfgNodeKinds> {
+        Some(&flow::RUST_CFG_KINDS)
+    }
+
+    fn flow_return_query(&self) -> Option<&'static str> {
+        Some(flow::RUST_RETURN_QUERY)
+    }
+
+    fn namespace_forms(&self) -> Option<&'static crate::indexer::namespaces::Forms> {
+        Some(&namespaces::FORMS)
+    }
 }

@@ -217,6 +217,41 @@ fn members_by_parent_lists_included_symbols_under_unit_namespace() {
     );
 }
 
+#[test]
+fn pascal_fragment_implementation_gets_its_cross_file_type_scope() {
+    let db = Database::open_in_memory().expect("in-memory db");
+    let mut parsed = vec![
+        unit_file("src/myunit.pas", "MyUnit", &["types", "impls"]),
+        make_parsed_file(
+            "src/types.inc",
+            "pascal",
+            vec![make_symbol("TThing", "TThing", SymbolKind::Class, None)],
+            Vec::new(),
+        ),
+        make_parsed_file(
+            "src/impls.inc",
+            "pascal",
+            vec![make_symbol(
+                "TThing.Do",
+                "TThing.Do",
+                SymbolKind::Function,
+                None,
+            )],
+            Vec::new(),
+        ),
+    ];
+    let mut ids = SymbolIds::default();
+
+    assemble_includes(&db, &mut parsed, &mut ids).expect("pass runs");
+
+    assert_eq!(parsed[1].symbols[0].qualified_name, "MyUnit.TThing");
+    assert_eq!(parsed[2].symbols[0].qualified_name, "MyUnit.TThing.Do");
+    assert_eq!(
+        parsed[2].symbols[0].scope_path.as_deref(),
+        Some("MyUnit.TThing")
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Virtual-path join
 // ---------------------------------------------------------------------------
@@ -257,6 +292,41 @@ fn sibling_directory_probe_resolves_when_same_directory_misses() {
 
     assemble_includes(&db, &mut parsed, &mut id_map).expect("pass runs");
     assert_eq!(parsed[1].symbols[0].qualified_name, "MyUnit.Helper");
+}
+
+#[test]
+fn child_directory_probe_resolves_a_path_qualified_pascal_include() {
+    let db = Database::open_in_memory().expect("in-memory db");
+    let mut parsed = vec![
+        unit_file(
+            "src/x3d/x3dnodes.pas",
+            "X3DNodes",
+            &["x3dnodes_asciitext_1"],
+        ),
+        make_parsed_file(
+            "src/x3d/auto_generated_node_helpers/x3dnodes_asciitext_1.inc",
+            "pascal",
+            vec![make_symbol(
+                "TAsciiTextNode_1.CreateNode",
+                "TAsciiTextNode_1.CreateNode",
+                SymbolKind::Function,
+                None,
+            )],
+            Vec::new(),
+        ),
+    ];
+    let mut ids = SymbolIds::default();
+
+    assemble_includes(&db, &mut parsed, &mut ids).expect("pass runs");
+
+    assert_eq!(
+        parsed[1].symbols[0].qualified_name,
+        "X3DNodes.TAsciiTextNode_1.CreateNode"
+    );
+    assert_eq!(
+        parsed[1].symbols[0].scope_path.as_deref(),
+        Some("X3DNodes.TAsciiTextNode_1")
+    );
 }
 
 #[test]

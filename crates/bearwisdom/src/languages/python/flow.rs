@@ -58,3 +58,36 @@ pub static PY_FLOW_CONFIG: FlowConfig = FlowConfig {
     type_args_query: "",
     literal_type_kinds: &[],
 };
+
+pub const PYTHON_CFG_KINDS: crate::indexer::flow_cfg::CfgNodeKinds =
+    crate::indexer::flow_cfg::CfgNodeKinds {
+        function_kinds: &["function_definition", "lambda"],
+        block_kinds: &["block"],
+        if_kind: "if_statement",
+        if_consequence_field: "consequence",
+        if_consequence_body: None,
+        if_alternative_field: "alternative",
+        if_alternative_body: None,
+        if_condition_field: "condition",
+        assignment_kind: "assignment",
+        assignment_lhs_field: "left",
+        // Python has no separate declarator — assignment is the def.
+        declarator_kind: "__python_no_declarator__",
+        declarator_name_field: "name",
+        binding_name_kinds: &["identifier"],
+        definition_name_kinds: &["identifier"],
+        bare_return_name_kinds: &["identifier"],
+        function_name_fields: &["name"],
+        loop_kinds: &["while_statement", "for_statement"],
+        loop_body_field: "body",
+        loop_condition_field: Some("condition"),
+        // PEP 634 match — disabled by default; default `_` pattern subsumes else.
+        switch_kinds: &[],
+        switch_value_field: "subject",
+        switch_body_field: Some("body"),
+        switch_case_kinds: &["case_clause"],
+        switch_default_kinds: &[],
+        transparent_kinds: &[],
+        implicit_return_candidate: None,
+        condition_true_guard: None,
+    };

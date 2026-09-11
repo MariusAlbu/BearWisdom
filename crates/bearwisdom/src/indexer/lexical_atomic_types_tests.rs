@@ -27,6 +27,7 @@ fn compiler_labelled_atomic_types_are_captured_without_display_recovery() {
             let graph = crate::indexer::lexical::capture(
                 tree.root_node(),
                 source.as_bytes(),
+                Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
                 "ts",
                 &mut vec![],
                 &[],

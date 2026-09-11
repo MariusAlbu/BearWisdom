@@ -10,7 +10,7 @@ fn source(source: &str) -> (NamespaceData, Vec<ExtractedSymbol>) {
     let mut data = super::super::capture(
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &extracted.symbols,
         &extracted.refs,
     )
@@ -19,7 +19,7 @@ fn source(source: &str) -> (NamespaceData, Vec<ExtractedSymbol>) {
         &mut data,
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &mut extracted.symbols,
         &extracted.refs,
         crate::indexer::flow::BindingSymbols::Synthesize,

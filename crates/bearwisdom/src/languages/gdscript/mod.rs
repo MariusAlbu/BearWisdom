@@ -83,4 +83,12 @@ impl LanguagePlugin for GDScriptPlugin {
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::GDSCRIPT_FLOW_CONFIG)
     }
+
+    fn normalize_flow_guard_type(&self, raw: &str) -> Option<String> {
+        crate::languages::common::normalize_identifier_capture(raw)
+    }
+
+    fn flow_cfg_node_kinds(&self) -> Option<&'static crate::indexer::flow_cfg::CfgNodeKinds> {
+        Some(&flow::GDSCRIPT_CFG_KINDS)
+    }
 }

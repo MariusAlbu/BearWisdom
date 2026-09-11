@@ -12,9 +12,13 @@ pub(crate) struct Forms {
     pub predicate: &'static str,
     pub assertion: &'static str,
     pub identifier: &'static [&'static str],
+    /// Field names are grammar facts supplied by the active language adapter.
+    pub parameters: &'static str,
     pub pattern: &'static str,
+    pub return_type: &'static str,
     pub predicate_name: &'static str,
     pub predicate_type: &'static str,
+    pub assertion_target: for<'a> fn(Node<'a>) -> Option<Node<'a>>,
 }
 fn span(node: Node) -> SourceSpan {
     SourceSpan {
@@ -25,7 +29,7 @@ fn span(node: Node) -> SourceSpan {
 
 pub(super) fn intern(node: Node, source: &[u8], graph: &mut LexicalBindings, forms: &Forms) {
     let mut names = Vec::new();
-    if let Some(parameters) = node.child_by_field_name("parameters") {
+    if let Some(parameters) = node.child_by_field_name(forms.parameters) {
         let mut cursor = parameters.walk();
         names.extend(
             parameters
@@ -33,9 +37,9 @@ pub(super) fn intern(node: Node, source: &[u8], graph: &mut LexicalBindings, for
                 .filter_map(|p| p.child_by_field_name(forms.pattern)),
         );
     }
-    if let Some(result) = node.child_by_field_name("return_type") {
+    if let Some(result) = node.child_by_field_name(forms.return_type) {
         let target = if result.kind() == forms.assertion {
-            result.named_child(0)
+            (forms.assertion_target)(result)
         } else {
             Some(result)
         };
@@ -61,7 +65,7 @@ pub(super) fn capture(capture: &Capture, node: Node, forms: &Forms) -> TypeExpr 
     let Some(signature) = signatures::capture(capture, node) else {
         return TypeExpr::Unknown;
     };
-    let Some(parameters) = node.child_by_field_name("parameters") else {
+    let Some(parameters) = node.child_by_field_name(forms.parameters) else {
         return TypeExpr::Unknown;
     };
     let mut cursor = parameters.walk();
@@ -113,10 +117,10 @@ pub(super) fn capture(capture: &Capture, node: Node, forms: &Forms) -> TypeExpr 
         predicate: None,
         complete: !node.has_error() && nodes.len() == signature.syntax.parameters.len(),
     };
-    if let Some(result) = node.child_by_field_name("return_type") {
+    if let Some(result) = node.child_by_field_name(forms.return_type) {
         let asserts = result.kind() == forms.assertion;
         let target = if asserts {
-            result.named_child(0)
+            (forms.assertion_target)(result)
         } else {
             Some(result)
         };

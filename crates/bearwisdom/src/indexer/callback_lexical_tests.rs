@@ -1,26 +1,20 @@
 use super::*;
 
 fn capture_graph(language: &str, source: &str) -> (Option<LexicalBindings>, Vec<ExtractedRef>) {
-    let refs = match language {
-        "scala" => crate::languages::scala::extract::extract(source).refs,
-        "java" => crate::languages::java::extract::extract(source).refs,
-        "csharp" => crate::languages::csharp::extract::extract(source).refs,
-        "kotlin" => crate::languages::kotlin::extract::extract(source).refs,
-        "swift" => crate::languages::swift::extract::extract(source).refs,
-        "dart" => crate::languages::dart::extract::extract(source).refs,
-        "go" => crate::languages::go::extract::extract(source).refs,
-        "python" => crate::languages::python::extract::extract(source).refs,
-        "php" => crate::languages::php::extract::extract(source).refs,
-        "ruby" => crate::languages::ruby::extract::extract(source).refs,
-        _ => unreachable!(),
-    };
+    use crate::languages::LanguagePlugin;
     let plugin = crate::languages::default_registry().get(language);
+    let refs = plugin.extract(source, "callback.fixture", language).refs;
     let grammar = plugin.grammar(language).expect("grammar");
     let mut parser = tree_sitter::Parser::new();
     parser.set_language(&grammar).unwrap();
     let tree = parser.parse(source, None).unwrap();
     (
-        capture(tree.root_node(), source.as_bytes(), language, &refs),
+        capture(
+            tree.root_node(),
+            source.as_bytes(),
+            plugin.callback_lexical_adapter(),
+            &refs,
+        ),
         refs,
     )
 }
@@ -636,33 +630,6 @@ fn python_walrus_and_comprehension_targets_fence_only_their_scope() {
         graph.references.contains_key(&outer.byte_offset),
         "a comprehension target must not suppress a later outer lambda read"
     );
-}
-
-#[test]
-fn python_callable_and_class_boundaries_are_explicitly_fenced() {
-    // Python lambda bodies are expressions, so a statement-defined function
-    // or class cannot be nested syntactically inside one. Assert the boundary
-    // contract directly to guard the traversal configuration that applies
-    // whenever such a callable/class is encountered below a captured callback
-    // through another expression subtree.
-    assert!(ordinary_boundary_kind("python", "function_definition"));
-    assert!(ordinary_boundary_kind("python", "class_definition"));
-    assert!(!ordinary_boundary_kind("python", "lambda"));
-}
-
-#[test]
-fn python_bare_assignment_is_a_name_only_barrier() {
-    let source = "x = other\n";
-    let plugin = crate::languages::default_registry().get("python");
-    let grammar = plugin.grammar("python").expect("grammar");
-    let mut parser = tree_sitter::Parser::new();
-    parser.set_language(&grammar).unwrap();
-    let tree = parser.parse(source, None).unwrap();
-    let root = tree.root_node();
-    let barriers = collect_barriers(root, "python", span(root));
-    assert_eq!(barriers.len(), 1);
-    assert_eq!(text(source.as_bytes(), barriers[0].name), Some("x"));
-    assert_eq!(barriers[0].range, span(root));
 }
 
 #[test]

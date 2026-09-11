@@ -93,6 +93,7 @@ pub fn extract(source: &str) -> ExtractionResult {
     super::include_directives::extract_include_directives(src, &mut refs);
 
     super::qualify::qualify_top_level_qnames(&mut symbols);
+    super::implementation_owners::attach(&mut symbols, &mut refs);
 
     ExtractionResult::new(symbols, refs, has_errors)
 }

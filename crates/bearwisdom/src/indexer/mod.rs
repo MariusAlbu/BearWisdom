@@ -1,4 +1,4 @@
-pub(crate) mod callback_lexical;
+pub mod callback_lexical;
 pub mod canonical_form;
 pub mod changeset;
 mod contract_bindings;
@@ -11,7 +11,7 @@ pub mod external_parse_cache;
 pub(crate) mod external_parse_payload;
 pub(crate) mod external_parse_types;
 pub mod flow;
-mod flow_assignments;
+pub(crate) mod flow_assignments;
 pub(crate) mod flow_bindings;
 pub mod flow_cfg;
 #[cfg(test)]

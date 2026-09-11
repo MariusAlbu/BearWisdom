@@ -1,6 +1,18 @@
 use super::*;
 
 #[test]
+fn namespace_forms_are_plugin_owned_and_fail_closed() {
+    use crate::languages::LanguagePlugin;
+
+    let registry = crate::languages::default_registry();
+    assert!(std::ptr::eq(
+        registry.get("rust").namespace_forms().unwrap(),
+        &crate::languages::rust_lang::namespaces::FORMS,
+    ));
+    assert!(registry.get("typescript").namespace_forms().is_none());
+}
+
+#[test]
 fn same_spelling_is_scoped_and_namespace_domains_are_independent() {
     let mut data = NamespaceData::default();
     let root = data.graph.add_scope(None, 0, 100, true);

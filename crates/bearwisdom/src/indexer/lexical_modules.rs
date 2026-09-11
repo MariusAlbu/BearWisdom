@@ -7,8 +7,6 @@ use tree_sitter::Node;
 
 #[path = "lexical_module_aliases.rs"]
 mod aliases;
-#[path = "lexical_module_names.rs"]
-mod names;
 #[path = "lexical_module_scopes.rs"]
 pub(crate) mod scopes;
 
@@ -42,6 +40,23 @@ pub(crate) struct ModuleForms {
     pub substitutions: &'static [(&'static str, &'static [&'static str])],
     pub directory_entry: &'static str,
     pub wildcard_exclusions: &'static [&'static str],
+    pub source_field: &'static str,
+    pub type_token: &'static str,
+    pub export_declaration_field: &'static str,
+    pub export_value_field: &'static str,
+    pub export_specifier_name_field: &'static str,
+    pub export_specifier_alias_field: &'static str,
+    pub import_specifier_name_field: &'static str,
+    pub import_specifier_alias_field: &'static str,
+    pub wildcard_token: &'static str,
+    pub default_token: &'static str,
+    pub declaration_name_field: &'static str,
+    pub container_name_field: &'static str,
+    pub container_body_field: &'static str,
+    pub literal_kind: &'static str,
+    pub decode_literal: fn(&str) -> Option<String>,
+    pub first_named_child: for<'a> fn(Node<'a>) -> Option<Node<'a>>,
+    pub default_export_name: &'static str,
 }
 
 #[derive(Debug, Clone)]
@@ -163,16 +178,15 @@ fn capture_imports(
         .named_children(&mut cursor)
         .filter(|n| n.kind() == forms.import)
     {
-        if let Some(required) = node
-            .named_child(0)
-            .filter(|n| n.kind() == forms.import_require)
+        if let Some(required) =
+            (forms.first_named_child)(node).filter(|n| n.kind() == forms.import_require)
         {
-            complete &= aliases::required(node, required, owner, source, graph, result);
+            complete &= aliases::required(node, required, owner, source, forms, graph, result);
             continue;
         }
         let Some(module) = node
-            .child_by_field_name("source")
-            .and_then(|n| text(n, source))
+            .child_by_field_name(forms.source_field)
+            .and_then(|n| text(n, source, forms))
         else {
             complete = false;
             continue;
@@ -184,7 +198,7 @@ fn capture_imports(
             graph,
             result,
             &module,
-            token(node, "type"),
+            token(node, forms.type_token),
             owner,
         );
     }
@@ -208,9 +222,11 @@ fn capture_exports(
     // Export declarations/assignments disable ambient implicit exports; an
     // `export` modifier on a declaration does not. Compiler-checked behavior.
     let implicit = ambient
-        && !root
-            .named_children(&mut cursor)
-            .any(|n| n.kind() == forms.export && n.child_by_field_name("declaration").is_none());
+        && !root.named_children(&mut cursor).any(|n| {
+            n.kind() == forms.export
+                && n.child_by_field_name(forms.export_declaration_field)
+                    .is_none()
+        });
     if implicit {
         let mut cursor = root.walk();
         for node in root
@@ -227,8 +243,8 @@ fn capture_exports(
     {
         if token(node, forms.assignment_token) {
             let value = node
-                .child_by_field_name("value")
-                .or_else(|| node.named_child(0));
+                .child_by_field_name(forms.export_value_field)
+                .or_else(|| (forms.first_named_child)(node));
             let target = value.and_then(|value| aliases::target(value, source, forms, graph));
             result.complete &= target.is_some() && result.assignments.is_empty();
             result
@@ -236,13 +252,13 @@ fn capture_exports(
                 .push(target.unwrap_or(ExportTarget::Unknown));
             continue;
         }
-        let source_node = node.child_by_field_name("source");
-        let from = source_node.and_then(|n| text(n, source));
+        let source_node = node.child_by_field_name(forms.source_field);
+        let from = source_node.and_then(|n| text(n, source, forms));
         if source_node.is_some() && from.is_none() {
             result.complete = false;
             continue;
         }
-        let type_only = token(node, "type");
+        let type_only = token(node, forms.type_token);
         let mut children = node.walk();
         let clause = node
             .named_children(&mut children)
@@ -257,16 +273,18 @@ fn capture_exports(
                 .named_children(&mut specs)
                 .filter(|n| n.kind() == forms.export_specifier)
             {
-                let Some(name) = spec.child_by_field_name("name") else {
+                let Some(name) = spec.child_by_field_name(forms.export_specifier_name_field) else {
                     result.complete = false;
                     continue;
                 };
-                let Some(local) = text(name, source) else {
+                let Some(local) = text(name, source, forms) else {
                     result.complete = false;
                     continue;
                 };
-                let exported = if let Some(alias) = spec.child_by_field_name("alias") {
-                    let Some(name) = text(alias, source) else {
+                let exported = if let Some(alias) =
+                    spec.child_by_field_name(forms.export_specifier_alias_field)
+                {
+                    let Some(name) = text(alias, source, forms) else {
                         result.complete = false;
                         continue;
                     };
@@ -274,7 +292,7 @@ fn capture_exports(
                 } else {
                     local.clone()
                 };
-                let type_only = type_only || token(spec, "type");
+                let type_only = type_only || token(spec, forms.type_token);
                 let target = from
                     .as_ref()
                     .map(|module| {
@@ -297,7 +315,9 @@ fn capture_exports(
                 });
             }
         } else if let Some(namespace) = namespace {
-            if let Some(name) = namespace.named_child(0).and_then(|n| text(n, source)) {
+            if let Some(name) =
+                (forms.first_named_child)(namespace).and_then(|n| text(n, source, forms))
+            {
                 let target = from
                     .map(|module| {
                         ExportTarget::From(Import {
@@ -315,28 +335,28 @@ fn capture_exports(
             } else {
                 result.complete = false;
             }
-        } else if token(node, "*") {
+        } else if token(node, forms.wildcard_token) {
             if let Some(module) = from {
                 result.stars.push((module, type_only));
             } else {
                 result.complete = false;
             }
-        } else if let Some(declaration) = node.child_by_field_name("declaration") {
+        } else if let Some(declaration) = node.child_by_field_name(forms.export_declaration_field) {
             declaration_exports(
                 declaration,
                 source,
                 forms,
                 graph,
                 &mut result,
-                token(node, "default"),
+                token(node, forms.default_token),
                 type_only,
                 units,
             );
-        } else if token(node, "default") {
+        } else if token(node, forms.default_token) {
             let target = node
-                .child_by_field_name("value")
+                .child_by_field_name(forms.export_value_field)
                 .and_then(|value| {
-                    let name = text(value, source)?;
+                    let name = text(value, source, forms)?;
                     Some(local_target(
                         graph,
                         graph.name_id(&name),
@@ -345,7 +365,7 @@ fn capture_exports(
                 })
                 .unwrap_or(ExportTarget::Unknown);
             result.exports.push(Export {
-                name: "default".into(),
+                name: forms.default_export_name.into(),
                 target,
                 type_only,
             });
@@ -372,27 +392,31 @@ fn import_children(
         .find(|&&(kind, _)| kind == node.kind())
     {
         let (name, local) = match form {
-            ImportForm::Default => ("default".to_owned(), node),
+            ImportForm::Default => (forms.default_export_name.to_owned(), node),
             ImportForm::Namespace => {
-                let Some(local) = node.named_child(0) else {
+                let Some(local) = (forms.first_named_child)(node) else {
                     return false;
                 };
                 (String::new(), local)
             }
             ImportForm::Named => {
-                let Some(name) = node.child_by_field_name("name") else {
+                let Some(name) = node.child_by_field_name(forms.import_specifier_name_field) else {
                     return false;
                 };
-                let Some(imported) = text(name, source) else {
+                let Some(imported) = text(name, source, forms) else {
                     return false;
                 };
-                (imported, node.child_by_field_name("alias").unwrap_or(name))
+                (
+                    imported,
+                    node.child_by_field_name(forms.import_specifier_alias_field)
+                        .unwrap_or(name),
+                )
             }
         };
-        let Some(local_name) = text(local, source) else {
+        let Some(local_name) = text(local, source, forms) else {
             return false;
         };
-        let type_only = type_only || token(node, "type");
+        let type_only = type_only || token(node, forms.type_token);
         let id = graph.intern(&local_name);
         let binding = if type_only {
             graph.declare_type(owner.0, id)
@@ -442,7 +466,7 @@ fn import_children(
     let mut complete = true;
     for child in node
         .named_children(&mut cursor)
-        .filter(|n| !n.is_extra() && n.kind() != "string")
+        .filter(|n| !n.is_extra() && n.kind() != forms.literal_kind)
     {
         complete &= import_children(
             child, source, forms, graph, output, module, type_only, owner,
@@ -462,7 +486,7 @@ fn declaration_exports(
     units: &[(scopes::Unit, Node)],
 ) {
     if node.kind() == forms.import_alias {
-        if let Some(name) = node.named_child(0).and_then(|n| text(n, source)) {
+        if let Some(name) = (forms.first_named_child)(node).and_then(|n| text(n, source, forms)) {
             output.exports.push(Export {
                 target: local_target(graph, graph.name_id(&name), node.start_byte() as u32),
                 name,
@@ -481,9 +505,9 @@ fn declaration_exports(
     }) {
         if unit.kind == scopes::Kind::Namespace {
             if let Some(name) = node
-                .child_by_field_name("name")
+                .child_by_field_name(forms.declaration_name_field)
                 .filter(|n| forms.identifier_names.contains(&n.kind()))
-                .and_then(|n| text(n, source))
+                .and_then(|n| text(n, source, forms))
             {
                 output.exports.push(Export {
                     name,
@@ -513,11 +537,15 @@ fn declaration_exports(
         output.complete = false;
         return;
     }
-    if let Some(name) = node.child_by_field_name("name") {
-        if let Some(local) = text(name, source) {
+    if let Some(name) = node.child_by_field_name(forms.declaration_name_field) {
+        if let Some(local) = text(name, source, forms) {
             let target = local_target(graph, graph.name_id(&local), name.start_byte() as u32);
             output.exports.push(Export {
-                name: if default { "default".into() } else { local },
+                name: if default {
+                    forms.default_export_name.into()
+                } else {
+                    local
+                },
                 target,
                 type_only,
             });
@@ -527,7 +555,7 @@ fn declaration_exports(
     if !forms.declaration_lists.contains(&node.kind()) {
         if default {
             output.exports.push(Export {
-                name: "default".into(),
+                name: forms.default_export_name.into(),
                 target: ExportTarget::Unknown,
                 type_only,
             });
@@ -554,10 +582,10 @@ fn token(node: Node, kind: &str) -> bool {
     let found = node.children(&mut cursor).any(|child| child.kind() == kind);
     found
 }
-fn text(node: Node, source: &[u8]) -> Option<String> {
+fn text(node: Node, source: &[u8], forms: &ModuleForms) -> Option<String> {
     let raw = node.utf8_text(source).ok()?;
-    if node.kind() == "string" {
-        names::decode(raw)
+    if node.kind() == forms.literal_kind {
+        (forms.decode_literal)(raw)
     } else {
         Some(raw.to_owned())
     }

@@ -19,6 +19,9 @@ pub(crate) struct Forms {
     pub direct_patterns: &'static [&'static str],
     pub callable_wrappers: &'static [(&'static str, &'static str)],
     pub value_wrappers: &'static [&'static str],
+    /// Select the wrapped value for an adapter-owned expression wrapper.
+    /// Missing policy deliberately stops initializer attribution.
+    pub value_wrapper_inner: Option<fn(Node) -> Option<Node>>,
     pub closures: &'static [&'static str],
     pub barriers: &'static [&'static str],
 }
@@ -251,8 +254,8 @@ impl<'tree> Capture<'_, 'tree> {
         let mut cursor = node.walk();
         for child in node.named_children(&mut cursor) {
             // Constructor/type names in a pattern are not value declarations.
-            if node.child_by_field_name("type") == Some(child)
-                || node.child_by_field_name("name") == Some(child)
+            if node.child_by_field_name(self.forms.pattern_type) == Some(child)
+                || node.child_by_field_name(self.forms.module_name) == Some(child)
                 || node.child_by_field_name(self.forms.patterns.condition) == Some(child)
             {
                 continue;
@@ -327,7 +330,7 @@ impl<'tree> Capture<'_, 'tree> {
     ) {
         let forms = self.forms.locals;
         while forms.value_wrappers.contains(&rhs.kind()) {
-            let Some(child) = rhs.named_child(0) else {
+            let Some(child) = forms.value_wrapper_inner.and_then(|select| select(rhs)) else {
                 return;
             };
             rhs = child;

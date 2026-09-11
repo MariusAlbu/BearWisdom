@@ -395,3 +395,36 @@ fn first_named_child_of_kind<'a>(node: &Node<'a>, kind: &str) -> Option<Node<'a>
 #[cfg(test)]
 #[path = "flow_tests.rs"]
 mod tests;
+
+pub const GO_CFG_KINDS: crate::indexer::flow_cfg::CfgNodeKinds =
+    crate::indexer::flow_cfg::CfgNodeKinds {
+        function_kinds: &["function_declaration", "method_declaration", "func_literal"],
+        block_kinds: &["block"],
+        if_kind: "if_statement",
+        if_consequence_field: "consequence",
+        if_consequence_body: None,
+        if_alternative_field: "alternative",
+        if_alternative_body: None,
+        if_condition_field: "condition",
+        assignment_kind: "assignment_statement",
+        assignment_lhs_field: "left",
+        declarator_kind: "short_var_declaration",
+        declarator_name_field: "left",
+        binding_name_kinds: &["identifier"],
+        definition_name_kinds: &["identifier"],
+        bare_return_name_kinds: &["identifier"],
+        function_name_fields: &["name"],
+        loop_kinds: &["for_statement"],
+        loop_body_field: "body",
+        loop_condition_field: Some("condition"),
+        switch_kinds: &["expression_switch_statement", "type_switch_statement"],
+        switch_value_field: "value",
+        // Go's switch lists cases as direct children — no `body` wrapper.
+        switch_body_field: None,
+        switch_case_kinds: &["expression_case", "type_case"],
+        switch_default_kinds: &["default_case"],
+        // Go's block and case both wrap their statements in `statement_list`.
+        transparent_kinds: &["statement_list"],
+        implicit_return_candidate: None,
+        condition_true_guard: None,
+    };

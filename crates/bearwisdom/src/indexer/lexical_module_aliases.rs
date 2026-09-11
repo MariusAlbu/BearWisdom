@@ -49,12 +49,13 @@ fn install(
     node: Node,
     owner: (ScopeId, SourceModuleId),
     source: &[u8],
+    forms: &ModuleForms,
     graph: &mut LexicalBindings,
     output: &mut ModuleSyntax,
     target: ImportSource,
     type_only: bool,
 ) -> Option<BindingId> {
-    let name = text(node, source)?;
+    let name = text(node, source, forms)?;
     let name = graph.intern(&name);
     let binding = if type_only {
         graph.declare_type(owner.0, name)
@@ -93,12 +94,13 @@ pub(super) fn required(
     clause: Node,
     owner: (ScopeId, SourceModuleId),
     source: &[u8],
+    forms: &ModuleForms,
     graph: &mut LexicalBindings,
     output: &mut ModuleSyntax,
 ) -> bool {
     let Some(module) = clause
-        .child_by_field_name("source")
-        .and_then(|n| text(n, source))
+        .child_by_field_name(forms.source_field)
+        .and_then(|n| text(n, source, forms))
     else {
         return false;
     };
@@ -109,10 +111,11 @@ pub(super) fn required(
         local,
         owner,
         source,
+        forms,
         graph,
         output,
         ImportSource::Assignment(module),
-        token(node, "type"),
+        token(node, forms.type_token),
     )
     .is_some()
 }
@@ -132,7 +135,7 @@ pub(super) fn internal(
         let alias = if node.kind() == forms.import_alias {
             Some(node)
         } else if node.kind() == forms.export {
-            node.child_by_field_name("declaration")
+            node.child_by_field_name(forms.export_declaration_field)
                 .filter(|n| n.kind() == forms.import_alias)
         } else {
             None
@@ -145,10 +148,11 @@ pub(super) fn internal(
                 local,
                 owner,
                 source,
+                forms,
                 graph,
                 output,
                 ImportSource::Binding(None),
-                token(alias, "type"),
+                token(alias, forms.type_token),
             )
         });
         match (binding, alias.named_child(1)) {
@@ -182,13 +186,13 @@ pub(super) fn target(
     let mut selectors = Vec::new();
     while let Some(&(_, object, property, _)) = forms.selections.iter().find(|f| f.0 == node.kind())
     {
-        selectors.push(text(node.child_by_field_name(property)?, source)?);
+        selectors.push(text(node.child_by_field_name(property)?, source, forms)?);
         node = node.child_by_field_name(object)?;
     }
     if !forms.identifier_names.contains(&node.kind()) {
         return None;
     }
-    let name = text(node, source)?;
+    let name = text(node, source, forms)?;
     let binding = graph
         .name_id(&name)
         .and_then(|id| graph.reference_binding_at(node.start_byte() as u32, id));

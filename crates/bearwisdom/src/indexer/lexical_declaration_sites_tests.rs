@@ -14,7 +14,7 @@ fn modifier_spans_keep_cst_aliases_and_are_idempotent() {
         .unwrap()
         .named_child(0)
         .unwrap();
-    let syntax = super::super::syntax_for("ts").unwrap();
+    let syntax = &crate::languages::typescript::flow::TS_LEXICAL_SYNTAX;
     assert_eq!(start(function, syntax).column, 0);
     let mut graph = LexicalBindings::default();
     graph.type_parameters.insert(BindingId(1), (0, 8, 0));

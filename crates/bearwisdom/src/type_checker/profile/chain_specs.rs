@@ -71,26 +71,15 @@ pub enum SelfReceiverDiscovery {
     },
 }
 
-/// Component-selector resolution data for template refs (Angular). The engine
-/// applies each `name_transform` to the ref target in turn, probes
-/// `SymbolLookup::selector_qname` for a matching decorated class, and binds it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Component-selector resolution data for template refs. The owning language
+/// supplies the exact selector keys it accepts; the engine only probes those
+/// normalized keys against `SymbolLookup::selector_qname`.
+#[derive(Debug, Clone, Copy)]
 pub struct SelectorResolution {
     /// Edge kinds whose targets are candidate selectors.
     pub edge_kinds: &'static [EdgeKind],
-    /// Name transforms applied to the target, in order, each yielding one
-    /// selector-key candidate. The raw target is always tried first.
-    pub name_transforms: &'static [NameTransform],
-}
-
-/// A deterministic surface-form transform applied to a ref target to derive a
-/// selector-key candidate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NameTransform {
-    /// `AppUserCard` → `app-user-card`: insert `-` at each interior uppercase
-    /// boundary and lowercase. A single-segment lowercase/camelCase input with
-    /// no interior uppercase returns unchanged.
-    PascalToKebab,
+    /// Produces every exact selector-map key the source spelling can denote.
+    pub selector_candidates: fn(&str) -> Vec<String>,
 }
 
 /// A wildcard ambient-builtin family: an anchored target folds to one ambient

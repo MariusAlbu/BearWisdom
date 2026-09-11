@@ -71,4 +71,8 @@ impl LanguagePlugin for LuaPlugin {
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::LUA_FLOW_CONFIG)
     }
+
+    fn flow_cfg_node_kinds(&self) -> Option<&'static crate::indexer::flow_cfg::CfgNodeKinds> {
+        Some(&flow::LUA_CFG_KINDS)
+    }
 }

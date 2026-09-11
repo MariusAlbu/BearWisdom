@@ -18,7 +18,7 @@ fn pattern_syntax_preserves_constructor_fields_and_guard_boundary() {
     let mut data = crate::indexer::namespaces::capture(
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &symbols,
         &[],
     )
@@ -27,7 +27,7 @@ fn pattern_syntax_preserves_constructor_fields_and_guard_boundary() {
         &mut data,
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &mut symbols,
         &[],
         crate::indexer::flow::BindingSymbols::Synthesize,

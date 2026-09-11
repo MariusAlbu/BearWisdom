@@ -320,6 +320,31 @@ fn js_flow_discriminant_guard_narrows_receiver() {
 }
 
 #[test]
+fn js_flow_negated_discriminant_early_exit_narrows_after_block() {
+    let source =
+        "function draw(shape) { if (shape.kind !== \"circle\") { return; } shape.radius; }\n";
+    let meta = run_flow_queries(
+        source,
+        &js_grammar(),
+        &JS_FLOW_CONFIG,
+        &mut Vec::new(),
+        &mut [],
+        BindingSymbols::Synthesize,
+    );
+
+    let narrowing = meta
+        .discriminant_narrowings
+        .iter()
+        .find(|n| n.name == "shape" && n.prop == "kind" && n.negate)
+        .expect("negated guard with a block return must narrow after the guard; meta={meta:?}");
+    let radius = source.find("shape.radius").unwrap() as u32;
+    assert!(
+        narrowing.byte_start <= radius && radius < narrowing.byte_end,
+        "the post-exit narrowing must contain the following statement; narrowing={narrowing:?}"
+    );
+}
+
+#[test]
 fn js_flow_array_literal_seeds_wrapper_type() {
     let source = "const xs = [];\n";
     let mut symbols = vec![mk_sym("xs", SymbolKind::Variable, 0, 6)];

@@ -19,6 +19,31 @@ use tree_sitter::{Node, Parser};
 #[path = "selectors_tests.rs"]
 mod tests;
 
+/// Return the selector-map spellings accepted for a template component ref.
+///
+/// Template extraction represents element tags in PascalCase, while selector
+/// declarations use their source kebab spelling. Keep that conversion with the
+/// component-selector adapter rather than making generic resolution parse it.
+pub(crate) fn selector_lookup_candidates(name: &str) -> Vec<String> {
+    let mut candidates = vec![name.to_owned()];
+    let kebab = pascal_to_kebab(name);
+    if kebab != name {
+        candidates.push(kebab);
+    }
+    candidates
+}
+
+fn pascal_to_kebab(name: &str) -> String {
+    let mut out = String::with_capacity(name.len() + 4);
+    for (index, character) in name.chars().enumerate() {
+        if character.is_ascii_uppercase() && index > 0 {
+            out.push('-');
+        }
+        out.extend(character.to_lowercase());
+    }
+    out
+}
+
 /// Translate Angular's CSS-like selector syntax to the keys a template may
 /// reference. Attribute directives bind by attribute name; element selectors
 /// bind by their tag. This grammar is intentionally kept with the TypeScript

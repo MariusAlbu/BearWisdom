@@ -1,4 +1,5 @@
 //! dart language plugin.
+mod callback_lexical;
 
 mod calls;
 pub(crate) mod decorators;
@@ -47,6 +48,12 @@ impl LanguagePlugin for DartPlugin {
 
     fn scope_kinds(&self) -> &[ScopeKind] {
         &[]
+    }
+
+    fn callback_lexical_adapter(
+        &self,
+    ) -> Option<&'static crate::indexer::callback_lexical::CallbackLexicalAdapter> {
+        Some(&callback_lexical::ADAPTER)
     }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
@@ -122,6 +129,14 @@ impl LanguagePlugin for DartPlugin {
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::DART_FLOW_CONFIG)
+    }
+
+    fn normalize_flow_guard_type(&self, raw: &str) -> Option<String> {
+        crate::languages::common::normalize_identifier_capture(raw)
+    }
+
+    fn flow_cfg_node_kinds(&self) -> Option<&'static crate::indexer::flow_cfg::CfgNodeKinds> {
+        Some(&flow::DART_CFG_KINDS)
     }
 
     // DartRestConnector deleted — its routes-table re-read for Stop points

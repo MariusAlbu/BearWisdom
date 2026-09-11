@@ -4,6 +4,18 @@ use crate::indexer::namespaces::{
     Forms,
 };
 use crate::type_checker::core::types::GenericParamKind;
+use tree_sitter::Node;
+
+fn first_named_child(node: Node) -> Option<Node> {
+    node.named_child(0)
+}
+
+fn attribute_name(node: Node, source: &[u8]) -> Option<String> {
+    first_named_child(node)?
+        .utf8_text(source)
+        .ok()
+        .map(str::to_owned)
+}
 
 pub(crate) static FORMS: Forms = Forms {
     patterns: &crate::indexer::namespaces::types::patterns::Forms {
@@ -41,6 +53,12 @@ pub(crate) static FORMS: Forms = Forms {
     extension_constraints: &["where_clause"],
     module: "mod_item",
     body: "body",
+    call_arguments: "arguments",
+    attribute_value: "value",
+    module_name: "name",
+    declaration_name: "name",
+    pattern_type: "type",
+    pattern_name: "name",
     scopes: &[
         "function_item",
         "function_signature_item",
@@ -99,8 +117,10 @@ pub(crate) static FORMS: Forms = Forms {
     public: "pub",
     attributes: &["attribute_item"],
     attribute_body: "attribute",
+    attribute_name: Some(attribute_name),
     conditional_attributes: &["cfg", "cfg_attr"],
     path_attribute: "path",
+    visibility_path: Some(first_named_child),
     file_extension: ".rs",
     directory_entry: "mod.rs",
     self_path: "self",
@@ -167,6 +187,7 @@ static LOCALS: crate::indexer::namespaces::locals::Forms =
             "try_expression",
             "await_expression",
         ],
+        value_wrapper_inner: Some(first_named_child),
         closures: &["closure_expression"],
         barriers: &["function_item", "mod_item", "impl_item", "trait_item"],
     };

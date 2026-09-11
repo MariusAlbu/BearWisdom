@@ -16,15 +16,15 @@
 //     for the ref whose byte range contains @rhs's outermost chain/call node.
 //
 //   * `type_guard_query` — matches type-narrowing expressions (TS
-//     `instanceof`, `typeof x === "..."`, user-defined predicates; Python
-//     `isinstance`; Rust `if let`). Captures:
+//     language-provided runtime tests and user-defined predicates; other
+//     other language-owned predicate forms). Captures:
 //         @guard.local — the local being narrowed
 //         @guard.type  — the type it narrows to (literal text)
 //         @guard.body  — the node whose byte_range defines the narrowing scope
 //     Output: appends a `Narrowing` with the body's byte range.
 //
 //   * `type_args_query` — matches explicit call-site type arguments
-//     (TS `findOne<User>()`, Go `Do[User]()`). Captures:
+//     (a language-owned type-argument call form). Captures:
 //         @call.method   — the method node whose call site gets the args
 //         @call.type_arg — one capture per generic argument, in declaration order
 //     Output: sets `seg.type_args` on the matching MemberChain segment.
@@ -34,24 +34,20 @@
 // matches a query capture if `ref.byte_offset` falls inside the capture's
 // byte range and the ref's chain's final segment name matches the capture.
 //
-// Sprint 2 wires TypeScript. Sprint 3+ wires Python/Rust/etc.
+// Each participating language supplies its own flow facts.
 // =============================================================================
 
 use crate::types::{
-    ChainSegment, DiscriminantNarrowing, EdgeKind, ExtractedRef, ExtractedSymbol, FlowMeta,
-    Narrowing, SymbolKind,
+    ChainSegment, DiscriminantNarrowing, ExtractedRef, ExtractedSymbol, FlowMeta, Narrowing,
+    SymbolKind,
 };
 use std::sync::{Arc, Mutex, OnceLock};
 
+use super::flow_bindings::nested_function_ranges;
 pub use super::flow_bindings::BindingSymbols;
-use super::flow_bindings::{correlate_rhs_ref, nested_function_ranges};
 use tree_sitter::{Language, Node, Parser, Query, QueryCursor, StreamingIterator};
 
 pub(crate) const TUPLE_INDEX_KEY_PREFIX: &str = super::flow_assignments::TUPLE_INDEX_KEY_PREFIX;
-
-pub(crate) fn correlate_scala_rhs_ref(refs: &[ExtractedRef], rhs: &Node) -> Option<usize> {
-    correlate_rhs_ref(refs, rhs, "scala")
-}
 
 #[path = "flow_identity.rs"]
 pub(super) mod identity;
@@ -67,9 +63,9 @@ pub struct FlowConfig {
     /// Tree-sitter query matching type-guard expressions whose true-branch
     /// narrows a local. Captures `@guard.local`, `@guard.type`, `@guard.body`.
     pub type_guard_query: &'static str,
-    /// Tree-sitter query matching discriminated-union guards
-    /// (`if (x.kind === "circle") { ... }`) whose true-branch narrows `x` to the
-    /// union branch carrying that discriminant literal. Captures `@guard.local`
+    /// Tree-sitter query matching discriminated-union guards whose positive
+    /// branch narrows a local to the union branch carrying a discriminant
+    /// literal. Captures `@guard.local`
     /// (receiver), `@guard.prop` (discriminant property), `@guard.literal`
     /// (matched literal), and `@guard.body` (narrowed block). Empty = opt out.
     pub discriminant_guard_query: &'static str,
@@ -86,7 +82,7 @@ pub struct FlowConfig {
 
 /// Skip flow queries on files larger than this threshold. Huge files are
 /// dominated by generated bindings (`node_modules/**/*.d.ts`, machine-generated
-/// Go struct tables, etc.) where local-variable flow adds no value, and the
+/// declaration tables, etc.) where local-variable flow adds no value, and the
 /// tree-sitter query matcher can spend unbounded memory on deeply nested
 /// captures. 512 KiB catches every real hand-written source file in the
 /// quality baseline.
@@ -134,6 +130,25 @@ pub fn run_flow_queries(
     refs: &mut [ExtractedRef],
     bindings: BindingSymbols,
 ) -> FlowMeta {
+    let Some(plugin) = crate::languages::default_registry().flow_plugin(cfg.strategy_prefix) else {
+        return FlowMeta::default();
+    };
+    run_flow_queries_with_plugin(source, language, cfg, Some(plugin), symbols, refs, bindings)
+}
+
+/// Like [`run_flow_queries`], with language-owned identity syntax supplied by
+/// the active plugin. Production indexing supplies the plugin directly;
+/// callers with only a flow configuration recover it through its
+/// adapter-declared strategy alias.
+pub fn run_flow_queries_with_plugin(
+    source: &str,
+    language: &Language,
+    cfg: &FlowConfig,
+    plugin: Option<&dyn crate::languages::LanguagePlugin>,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut [ExtractedRef],
+    bindings: BindingSymbols,
+) -> FlowMeta {
     let mut parser = Parser::new();
     if parser.set_language(language).is_err() {
         return FlowMeta::default();
@@ -141,7 +156,15 @@ pub fn run_flow_queries(
     let Some(tree) = parser.parse(source, None) else {
         return FlowMeta::default();
     };
-    run_flow_queries_on_root(source, cfg, symbols, refs, tree.root_node(), bindings)
+    run_flow_queries_on_root(
+        source,
+        cfg,
+        plugin,
+        symbols,
+        refs,
+        tree.root_node(),
+        bindings,
+    )
 }
 
 /// Like `run_flow_queries`, but reuses a tree the caller already parsed for this
@@ -155,7 +178,32 @@ pub fn run_flow_queries_with_tree(
     tree: &tree_sitter::Tree,
     bindings: BindingSymbols,
 ) -> FlowMeta {
-    run_flow_queries_on_root(source, cfg, symbols, refs, tree.root_node(), bindings)
+    let Some(plugin) = crate::languages::default_registry().flow_plugin(cfg.strategy_prefix) else {
+        return FlowMeta::default();
+    };
+    run_flow_queries_with_tree_and_plugin(source, cfg, Some(plugin), symbols, refs, tree, bindings)
+}
+
+/// Like [`run_flow_queries_with_tree`], with language-owned identity syntax
+/// supplied by the active plugin.
+pub fn run_flow_queries_with_tree_and_plugin(
+    source: &str,
+    cfg: &FlowConfig,
+    plugin: Option<&dyn crate::languages::LanguagePlugin>,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut [ExtractedRef],
+    tree: &tree_sitter::Tree,
+    bindings: BindingSymbols,
+) -> FlowMeta {
+    run_flow_queries_on_root(
+        source,
+        cfg,
+        plugin,
+        symbols,
+        refs,
+        tree.root_node(),
+        bindings,
+    )
 }
 
 /// Run every flow query against an already-parsed root. Shared by the parsing
@@ -163,6 +211,7 @@ pub fn run_flow_queries_with_tree(
 fn run_flow_queries_on_root(
     source: &str,
     cfg: &FlowConfig,
+    plugin: Option<&dyn crate::languages::LanguagePlugin>,
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut [ExtractedRef],
     root: Node,
@@ -170,70 +219,51 @@ fn run_flow_queries_on_root(
 ) -> FlowMeta {
     let src_bytes = source.as_bytes();
 
-    let mut meta = identity::capture(source, cfg.strategy_prefix, symbols, refs, root, bindings);
+    let mut meta = identity::capture(
+        source,
+        plugin,
+        cfg.strategy_prefix,
+        symbols,
+        refs,
+        root,
+        bindings,
+    );
     if source.len() > MAX_FLOW_SOURCE_BYTES {
         return meta;
     }
-    run_assignment_query(&root, src_bytes, cfg, symbols, refs, &mut meta, bindings);
-    // Scala case arms lack the full lexical graph used by migrated languages.
-    // Its strict flat tuple patterns still support the same positional flow
-    // projection as `val (a, b) = rhs`, with reference-byte ownership keeping
-    // same-spelled bindings in sibling arms distinct.
-    if cfg.strategy_prefix == "scala" {
-        crate::languages::scala::flow::bind_match_tuple_cases(
-            &root, src_bytes, symbols, refs, &mut meta,
-        );
+    let cfg_kinds = plugin.and_then(|plugin| plugin.flow_cfg_node_kinds());
+    run_assignment_query(
+        &root, src_bytes, cfg, symbols, refs, &mut meta, bindings, plugin, cfg_kinds,
+    );
+    if let Some(plugin) = plugin {
+        plugin.augment_flow(root, src_bytes, symbols, refs, &mut meta);
     }
-    // Go table-driven anonymous-struct slices: type a `range` value variable as
-    // the slice's anonymous-struct element. The element's fields are indexed as
-    // members of the enclosing function, so the binding is a structural pass
-    // over the Go AST rather than a flow query, and runs only for Go.
-    if cfg.strategy_prefix == "go" {
-        crate::languages::go::flow::bind_range_element_locals(&root, src_bytes, symbols, &mut meta);
-    }
-    run_type_guard_query(&root, src_bytes, cfg, &mut meta);
-    run_discriminant_guard_query(&root, src_bytes, cfg, &mut meta);
+    run_type_guard_query(&root, src_bytes, cfg, plugin, &mut meta);
+    run_discriminant_guard_query(&root, src_bytes, cfg, plugin, &mut meta);
     run_type_args_query(&root, src_bytes, cfg, refs);
-    run_return_query(&root, src_bytes, cfg, symbols, refs, &mut meta);
+    let return_query = plugin.and_then(|plugin| plugin.flow_return_query());
+    run_return_query(
+        &root,
+        src_bytes,
+        return_query,
+        cfg_kinds,
+        plugin,
+        symbols,
+        refs,
+        &mut meta,
+    );
 
     let reassignments = collect_reassignment_sites(&root, src_bytes, cfg);
     kill_narrowings_at_reassignments(&mut meta, &reassignments);
 
-    // Per-function CFGs for the consumer's CFG-native lookup path. Dispatch
-    // by `strategy_prefix` because `FlowConfig` does not yet carry the kind
-    // table; the cleaner per-language plumbing (a `LanguagePlugin::cfg_node_kinds`
-    // method) lands when more languages get tables.
-    if let Some(kinds) = cfg_node_kinds_for(cfg.strategy_prefix) {
+    // Per-function CFGs use the active plugin's explicitly supplied node
+    // kinds. Missing ownership evidence fails closed.
+    if let Some(kinds) = cfg_kinds {
         meta.cfg =
             crate::indexer::flow_cfg::build_file_cfg(&root, src_bytes, kinds, &meta.narrowings);
     }
 
     meta
-}
-
-pub(super) fn cfg_node_kinds_for(
-    strategy_prefix: &str,
-) -> Option<&'static crate::indexer::flow_cfg::CfgNodeKinds> {
-    match strategy_prefix {
-        "ts" | "js" => Some(&crate::indexer::flow_cfg::TS_CFG_KINDS),
-        "java" => Some(&crate::indexer::flow_cfg::JAVA_CFG_KINDS),
-        "python" => Some(&crate::indexer::flow_cfg::PYTHON_CFG_KINDS),
-        "csharp" => Some(&crate::indexer::flow_cfg::CSHARP_CFG_KINDS),
-        "rust" => Some(&crate::indexer::flow_cfg::RUST_CFG_KINDS),
-        "go" => Some(&crate::indexer::flow_cfg::GO_CFG_KINDS),
-        "c" => Some(&crate::indexer::flow_cfg::C_CFG_KINDS),
-        "php" => Some(&crate::indexer::flow_cfg::PHP_CFG_KINDS),
-        "lua" => Some(&crate::indexer::flow_cfg::LUA_CFG_KINDS),
-        "groovy" => Some(&crate::indexer::flow_cfg::GROOVY_CFG_KINDS),
-        "scala" => Some(&crate::indexer::flow_cfg::SCALA_CFG_KINDS),
-        "kotlin" => Some(&crate::indexer::flow_cfg::KOTLIN_CFG_KINDS),
-        "ruby" => Some(&crate::indexer::flow_cfg::RUBY_CFG_KINDS),
-        "r" => Some(&crate::indexer::flow_cfg::R_CFG_KINDS),
-        "dart" => Some(&crate::indexer::flow_cfg::DART_CFG_KINDS),
-        "swift" => Some(&crate::indexer::flow_cfg::SWIFT_CFG_KINDS),
-        "gdscript" => Some(&crate::indexer::flow_cfg::GDSCRIPT_CFG_KINDS),
-        _ => None,
-    }
 }
 
 /// All assignment-LHS sites, as `(variable_name, byte_offset)`. Reuses the
@@ -298,26 +328,6 @@ fn kill_narrowings_at_reassignments(meta: &mut FlowMeta, reassignments: &[(Strin
 
 use super::flow_assignments::run_assignment_query;
 
-/// Return-expression query for a language, keyed by `strategy_prefix`. Mirrors
-/// `cfg_node_kinds_for`: a grammar opts into body-based return-type inference
-/// by supplying a query here rather than carrying it on every `FlowConfig`
-/// literal. An empty string opts out (no return capture).
-fn return_query_for(strategy_prefix: &str) -> &'static str {
-    match strategy_prefix {
-        "ts" | "js" => crate::languages::typescript::flow::TS_RETURN_QUERY,
-        "python" => crate::languages::python::flow::PY_RETURN_QUERY,
-        "go" => crate::languages::go::flow::GO_RETURN_QUERY,
-        "java" => crate::languages::java::flow::JAVA_RETURN_QUERY,
-        "rust" => crate::languages::rust_lang::flow::RUST_RETURN_QUERY,
-        "csharp" => crate::languages::csharp::flow::CSHARP_RETURN_QUERY,
-        "kotlin" => crate::languages::kotlin::flow::KOTLIN_RETURN_QUERY,
-        "php" => crate::languages::php::flow::PHP_RETURN_QUERY,
-        "scala" => crate::languages::scala::flow::SCALA_RETURN_QUERY,
-        "ruby" => crate::languages::ruby::flow::RUBY_RETURN_QUERY,
-        _ => "",
-    }
-}
-
 /// Capture each `return <expr>` (at arbitrary depth inside its function body)
 /// AND each concise expression-body (`() => expr`, `def f = expr`, `fun f() =
 /// expr`) as a candidate for its function's inferred return type.
@@ -349,25 +359,23 @@ fn return_query_for(strategy_prefix: &str) -> &'static str {
 /// covers both forms. An unnamed function with no naming wrapper yields no
 /// candidate (Unknown over a guess).
 ///
-/// Gated on `cfg_node_kinds_for(cfg.strategy_prefix)`: a language with no
+/// Gated on plugin-owned CFG node kinds: a language with no
 /// `CfgNodeKinds` table has no function-boundary set to walk, so no return
 /// query is honored for it. Populates `flow_return_lhs[ref_idx] =
 /// fn_symbol_idx`. No-op when the language supplies no return query.
 fn run_return_query(
     root: &Node,
     src: &[u8],
-    cfg: &FlowConfig,
+    query_src: Option<&'static str>,
+    kinds: Option<&'static crate::indexer::flow_cfg::CfgNodeKinds>,
+    plugin: Option<&dyn crate::languages::LanguagePlugin>,
     symbols: &[ExtractedSymbol],
     refs: &[ExtractedRef],
     meta: &mut FlowMeta,
 ) {
-    let query_src = return_query_for(cfg.strategy_prefix);
-    if query_src.is_empty() {
-        return;
-    }
     // The ancestor-walk that resolves function identity needs the
     // function-boundary node-kind set. Without it no return query is honored.
-    let Some(kinds) = cfg_node_kinds_for(cfg.strategy_prefix) else {
+    let (Some(query_src), Some(kinds)) = (query_src, kinds) else {
         return;
     };
     let Some(query) = cached_query(&root.language(), query_src) else {
@@ -397,10 +405,10 @@ fn run_return_query(
             }
         }
         let Some(expr) = expr_node else { continue };
-        attribute_return_expr(&expr, kinds, src, symbols, refs, meta);
+        attribute_return_expr(&expr, kinds, plugin, src, symbols, refs, meta);
     }
 
-    run_tail_block_return(root, src, kinds, symbols, refs, meta);
+    run_tail_block_return(root, src, kinds, plugin, symbols, refs, meta);
 }
 
 /// Attribute one return expression to its owning function and record the bind.
@@ -417,6 +425,7 @@ fn run_return_query(
 fn attribute_return_expr(
     expr: &Node,
     kinds: &crate::indexer::flow_cfg::CfgNodeKinds,
+    plugin: Option<&dyn crate::languages::LanguagePlugin>,
     src: &[u8],
     symbols: &[ExtractedSymbol],
     refs: &[ExtractedRef],
@@ -452,8 +461,7 @@ fn attribute_return_expr(
     // structural return type. Record its property names so a synthetic `{fn}$Ret`
     // type carrying those members is materialized, rather than mis-attributing the
     // return to the last property's ref below.
-    if expr.kind() == "object" {
-        let members = object_property_names(expr, src);
+    if let Some(members) = plugin.and_then(|plugin| plugin.flow_return_object_members(*expr, src)) {
         if !members.is_empty() {
             meta.flow_return_object.push((fn_idx, members));
         }
@@ -491,7 +499,7 @@ fn attribute_return_expr(
     // against the function's parameters / typed locals and harvest that as a
     // return-type candidate. Only a single bare identifier qualifies; a
     // compound expression with no ref carries no nameable type here.
-    if expr.kind() == "identifier" {
+    if kinds.bare_return_name_kinds.contains(&expr.kind()) {
         if let Ok(ident) = expr.utf8_text(src) {
             if !ident.is_empty() {
                 meta.flow_return_ident.push((fn_idx, ident.to_string()));
@@ -500,56 +508,18 @@ fn attribute_return_expr(
     }
 }
 
-/// The property names declared directly in an object literal — `info`, `error`
-/// from `{ info, error, warn }`. Covers shorthand (`info`), keyed pairs
-/// (`info: x`), and method shorthand (`info() {}`); skips spreads / computed keys.
-fn object_property_names(object_node: &Node, src: &[u8]) -> Vec<String> {
-    let mut names = Vec::new();
-    let mut cursor = object_node.walk();
-    for child in object_node.named_children(&mut cursor) {
-        let name = match child.kind() {
-            "shorthand_property_identifier" | "property_identifier" => {
-                child.utf8_text(src).ok().map(|s| s.to_string())
-            }
-            "pair" => child
-                .child_by_field_name("key")
-                .filter(|k| matches!(k.kind(), "property_identifier" | "identifier"))
-                .and_then(|k| k.utf8_text(src).ok())
-                .map(|s| s.to_string()),
-            "method_definition" => child
-                .child_by_field_name("name")
-                .and_then(|n| n.utf8_text(src).ok())
-                .map(|s| s.to_string()),
-            _ => None,
-        };
-        if let Some(n) = name {
-            if !n.is_empty() {
-                names.push(n);
-            }
-        }
-    }
-    names
-}
-
 /// Tail-of-block implicit return for expression-oriented grammars
-/// (`block_tail_returns`): `fn f() -> T { …; e }` / `def f = { …; e }` /
-/// Ruby method bodies return their block's FINAL expression with no `return`
+/// (`implicit_return_candidate`): `fn f() -> T { …; e }` /
+/// `def f = { …; e }` /
+/// Expression-oriented function bodies return their final expression with no `return`
 /// keyword. A tree-sitter query has no "last named child of a block" axis, so
 /// this is a structural pass — the inverse of `nearest_function_ancestor`:
 /// for every function node, find its body block and take the block's last
 /// named child as a return expression.
 ///
-/// Soundness (widening-only): the pass fires only when `block_tail_returns` is
-/// set — the languages where a bare trailing expression is genuinely the return
-/// value. The last named child is rejected when it is
-///   * a statement (`*_statement`) — a semicolon-terminated expression returns
-///     unit (Rust `build();`), not the call's type;
-///   * a binding (`*_declaration` / `*_definition`) — a block ending in a
-///     `let`/`val` binds and returns unit;
-///   * an explicit `return` node — already attributed by the `@return.expr` arm
-///     (avoids a double-fire);
-///   * a nested block (`block_kinds`) — its own tail is handled when the walk
-///     reaches its enclosing function, not here.
+/// Soundness (widening-only): statement-oriented languages provide no
+/// predicate. Expression-oriented adapters decide which of their concrete
+/// statement, binding, and explicit-return nodes are eligible.
 /// Otherwise the child is the tail expression and is attributed exactly like a
 /// `return` operand. The ref correlation only binds when the tail expression
 /// actually contains a ref, so a tail that is a literal/identifier is a no-op.
@@ -557,13 +527,14 @@ fn run_tail_block_return(
     root: &Node,
     src: &[u8],
     kinds: &crate::indexer::flow_cfg::CfgNodeKinds,
+    plugin: Option<&dyn crate::languages::LanguagePlugin>,
     symbols: &[ExtractedSymbol],
     refs: &[ExtractedRef],
     meta: &mut FlowMeta,
 ) {
-    if !kinds.block_tail_returns {
+    let Some(is_candidate) = kinds.implicit_return_candidate else {
         return;
-    }
+    };
     for fn_node in descendant_function_nodes(root, kinds) {
         let Some(body) = crate::indexer::flow_cfg::find_function_body(&fn_node, kinds) else {
             continue;
@@ -572,10 +543,10 @@ fn run_tail_block_return(
         let Some(last) = body.named_children(&mut c).last() else {
             continue;
         };
-        if is_non_return_tail(&last, kinds) {
+        if kinds.block_kinds.contains(&last.kind()) || !is_candidate(last) {
             continue;
         }
-        attribute_return_expr(&last, kinds, src, symbols, refs, meta);
+        attribute_return_expr(&last, kinds, plugin, src, symbols, refs, meta);
     }
 }
 
@@ -583,15 +554,6 @@ fn run_tail_block_return(
 /// a statement, a binding declaration/definition, an explicit `return` already
 /// caught by the `@return.expr` arm, or a nested block whose own tail is handled
 /// by its enclosing function.
-fn is_non_return_tail(node: &Node, kinds: &crate::indexer::flow_cfg::CfgNodeKinds) -> bool {
-    let k = node.kind();
-    k.ends_with("_statement")
-        || k.ends_with("_declaration")
-        || k.ends_with("_definition")
-        || k.contains("return")
-        || kinds.block_kinds.contains(&k)
-}
-
 /// Every `function_kinds` node in the tree, in document order. The structural
 /// counterpart to `nearest_function_ancestor` for the tail-of-block pass, which
 /// must visit each function rather than walk up from a query capture.
@@ -617,13 +579,6 @@ fn descendant_function_nodes<'a>(
 /// `kinds.function_kinds`. `None` when the node has no enclosing function (a
 /// top-level return, structurally absent in the grammars that have function
 /// boundaries).
-/// Whether a node kind names a bound identifier: any `*identifier` kind
-/// (`identifier` / `field_identifier` / `property_identifier` / `simple_identifier`)
-/// or the bare `name` kind some grammars use for declaration names.
-fn is_identifier_kind(kind: &str) -> bool {
-    kind.contains("identifier") || kind == "name"
-}
-
 fn nearest_function_ancestor<'a>(
     node: &Node<'a>,
     kinds: &crate::indexer::flow_cfg::CfgNodeKinds,
@@ -638,19 +593,16 @@ fn nearest_function_ancestor<'a>(
     None
 }
 
-/// The identifier node naming `fn_node`. A named function (declaration /
-/// method / def) carries a `name` field. An unnamed function (arrow / lambda /
-/// closure / func_literal) has none — its name is borrowed from an
-/// immediately-wrapping declarator: the nearest ancestor between the function
-/// and the next function boundary whose `declarator_name_field` (or `name`
-/// field) yields an identifier. `None` when no name can be resolved (an
-/// anonymous callback passed inline), which drops the return candidate.
+/// Find the source node that names a function. Both eligible fields and leaf
+/// node kinds are declared by the owning language's CFG descriptor.
 fn function_name_node<'a>(
     fn_node: &Node<'a>,
     kinds: &crate::indexer::flow_cfg::CfgNodeKinds,
 ) -> Option<Node<'a>> {
-    if let Some(name) = fn_node.child_by_field_name("name") {
-        return Some(name);
+    for field in kinds.function_name_fields {
+        if let Some(name) = binding_name_node(fn_node.child_by_field_name(field), kinds) {
+            return Some(name);
+        }
     }
     // Unnamed function: borrow the binding name from a wrapping declarator
     // (`const f = () => …`, `val f = { … }`). Stop at the next function
@@ -660,21 +612,9 @@ fn function_name_node<'a>(
         if kinds.function_kinds.contains(&n.kind()) {
             break;
         }
-        for field in [kinds.declarator_name_field, "name"] {
-            let Some(name) = n.child_by_field_name(field) else {
-                continue;
-            };
-            if is_identifier_kind(name.kind()) {
+        for field in kinds.function_name_fields {
+            if let Some(name) = binding_name_node(n.child_by_field_name(field), kinds) {
                 return Some(name);
-            }
-            // The name field may wrap the identifier (Kotlin
-            // `variable_declaration > identifier`); descend one level.
-            let mut c = name.walk();
-            let inner = name
-                .named_children(&mut c)
-                .find(|ch| is_identifier_kind(ch.kind()));
-            if let Some(inner) = inner {
-                return Some(inner);
             }
         }
         cur = n.parent();
@@ -682,7 +622,28 @@ fn function_name_node<'a>(
     None
 }
 
-fn run_type_guard_query(root: &Node, src: &[u8], cfg: &FlowConfig, meta: &mut FlowMeta) {
+fn binding_name_node<'a>(
+    node: Option<Node<'a>>,
+    kinds: &crate::indexer::flow_cfg::CfgNodeKinds,
+) -> Option<Node<'a>> {
+    let node = node?;
+    if kinds.binding_name_kinds.contains(&node.kind()) {
+        return Some(node);
+    }
+    let mut cursor = node.walk();
+    let found = node
+        .named_children(&mut cursor)
+        .find(|child| kinds.binding_name_kinds.contains(&child.kind()));
+    found
+}
+
+fn run_type_guard_query(
+    root: &Node,
+    src: &[u8],
+    cfg: &FlowConfig,
+    plugin: Option<&dyn crate::languages::LanguagePlugin>,
+    meta: &mut FlowMeta,
+) {
     if cfg.type_guard_query.trim().is_empty() {
         return;
     }
@@ -719,7 +680,9 @@ fn run_type_guard_query(root: &Node, src: &[u8], cfg: &FlowConfig, meta: &mut Fl
             Err(_) => continue,
         };
         let narrowed = match ty.utf8_text(src) {
-            Ok(t) => strip_type_literal(t),
+            Ok(t) => plugin
+                .and_then(|plugin| plugin.normalize_flow_guard_type(t))
+                .unwrap_or_default(),
             Err(_) => continue,
         };
         if name.is_empty() || narrowed.is_empty() {
@@ -734,7 +697,13 @@ fn run_type_guard_query(root: &Node, src: &[u8], cfg: &FlowConfig, meta: &mut Fl
     }
 }
 
-fn run_discriminant_guard_query(root: &Node, src: &[u8], cfg: &FlowConfig, meta: &mut FlowMeta) {
+fn run_discriminant_guard_query(
+    root: &Node,
+    src: &[u8],
+    cfg: &FlowConfig,
+    plugin: Option<&dyn crate::languages::LanguagePlugin>,
+    meta: &mut FlowMeta,
+) {
     if cfg.discriminant_guard_query.trim().is_empty() {
         return;
     }
@@ -747,10 +716,9 @@ fn run_discriminant_guard_query(root: &Node, src: &[u8], cfg: &FlowConfig, meta:
     let (Some(local_cap), Some(prop_cap), Some(lit_cap)) = (local_cap, prop_cap, lit_cap) else {
         return;
     };
-    // `@guard.body` scopes a positive guard (`if (x.kind === "lit") { ... }`);
-    // `@guard.early_exit` (the `if` node of `if (x.kind !== "lit") return;`)
-    // scopes a negated guard over the rest of the enclosing block. Either may
-    // be absent depending on which arms a language's query ships.
+    // `@guard.body` scopes a positive guard to its selected branch;
+    // `@guard.early_exit` scopes a negated guard after the guarded exit. Either
+    // may be absent depending on which captures a language's query supplies.
     let body_cap = query.capture_index_for_name("guard.body");
     let exit_cap = query.capture_index_for_name("guard.early_exit");
 
@@ -797,14 +765,11 @@ fn run_discriminant_guard_query(root: &Node, src: &[u8], cfg: &FlowConfig, meta:
         // Negated early-exit guard scopes AFTER the `if`, over the rest of the
         // enclosing block, and only when the consequence actually exits.
         let (byte_start, byte_end, negate) = if let Some(exit) = exit {
-            if !is_early_exit_consequence(&exit) {
+            let Some((start, end)) =
+                plugin.and_then(|plugin| plugin.flow_discriminant_early_exit_scope(exit))
+            else {
                 continue;
-            }
-            let start = exit.end_byte() as u32;
-            let end = exit.parent().map(|p| p.end_byte() as u32).unwrap_or(start);
-            if end <= start {
-                continue;
-            }
+            };
             (start, end, true)
         } else if let Some(body) = body {
             (body.start_byte() as u32, body.end_byte() as u32, false)
@@ -821,30 +786,6 @@ fn run_discriminant_guard_query(root: &Node, src: &[u8], cfg: &FlowConfig, meta:
             negate,
         });
     }
-}
-
-/// True when an `if` node's consequence is an early exit (`return` / `throw` /
-/// `break` / `continue`), bare or as the sole statement of a block. Gates the
-/// negated discriminant guard: only an exit makes the guard's negation hold for
-/// the rest of the enclosing block.
-fn is_early_exit_consequence(if_node: &Node) -> bool {
-    fn is_exit(kind: &str) -> bool {
-        matches!(
-            kind,
-            "return_statement" | "throw_statement" | "break_statement" | "continue_statement"
-        )
-    }
-    let Some(cons) = if_node.child_by_field_name("consequence") else {
-        return false;
-    };
-    if is_exit(cons.kind()) {
-        return true;
-    }
-    if cons.kind() == "statement_block" {
-        let mut c = cons.walk();
-        return cons.named_children(&mut c).any(|n| is_exit(n.kind()));
-    }
-    false
 }
 
 fn run_type_args_query(root: &Node, src: &[u8], cfg: &FlowConfig, refs: &mut [ExtractedRef]) {
@@ -920,18 +861,4 @@ fn run_type_args_query(root: &Node, src: &[u8], cfg: &FlowConfig, refs: &mut [Ex
         call_args: Vec::new(),
         type_arg_ids: Vec::new(),
     };
-}
-
-/// Strip surrounding quotes from a literal type string (used in
-/// `typeof x === "string"`) or leave a type_identifier untouched.
-fn strip_type_literal(s: &str) -> String {
-    let trimmed = s.trim();
-    let bytes = trimmed.as_bytes();
-    if bytes.len() >= 2
-        && ((bytes[0] == b'"' && bytes[bytes.len() - 1] == b'"')
-            || (bytes[0] == b'\'' && bytes[bytes.len() - 1] == b'\''))
-    {
-        return trimmed[1..trimmed.len() - 1].to_string();
-    }
-    trimmed.to_string()
 }

@@ -6,15 +6,30 @@ use crate::type_checker::core::types::{Intrinsic, LitValue};
 pub(crate) struct Forms {
     pub functions: &'static [&'static str],
     pub wrappers: &'static [&'static str],
+    /// Field names used to decode callback signatures and expressions.  These
+    /// are grammar facts supplied by the active language adapter.
+    pub type_parameters: &'static str,
+    pub parameters: &'static str,
+    pub parameter: &'static str,
+    pub pattern: &'static str,
+    pub value: &'static str,
+    pub body: &'static str,
     pub block: &'static str,
     pub return_: &'static str,
     pub forbidden_tokens: &'static [&'static str],
     pub forbidden_expressions: &'static [&'static str],
     pub binary: &'static str,
+    pub operator: &'static str,
+    pub left: &'static str,
+    pub right: &'static str,
+    pub argument: &'static str,
+    pub type_arguments: &'static str,
+    pub arguments: &'static str,
     pub equality: &'static [(&'static str, bool)],
     pub typeof_: (&'static str, &'static str),
-    pub boolean_not: (&'static str, &'static str, &'static str),
+    pub boolean_not: (&'static str, &'static str),
     pub type_names: &'static [(&'static str, Intrinsic)],
+    pub return_value: for<'a> fn(Node<'a>) -> Option<Node<'a>>,
 }
 
 #[derive(Debug, Clone)]
@@ -108,34 +123,36 @@ pub(super) fn capture(node: Node, source: &[u8], syntax: &LexicalSyntax) -> Opti
     };
     let mut cursor = node.walk();
     if node.has_error()
-        || node.child_by_field_name("type_parameters").is_some()
+        || node.child_by_field_name(forms.type_parameters).is_some()
         || node
             .children(&mut cursor)
             .any(|n| forms.forbidden_tokens.contains(&n.kind()))
     {
         return Some(result);
     }
-    let parameters = if let Some(params) = node.child_by_field_name("parameters") {
+    let parameters = if let Some(params) = node.child_by_field_name(forms.parameters) {
         let mut cursor = params.walk();
         params
             .named_children(&mut cursor)
             .filter(|n| !n.is_extra())
             .collect::<Vec<_>>()
     } else {
-        node.child_by_field_name("parameter").into_iter().collect()
+        node.child_by_field_name(forms.parameter)
+            .into_iter()
+            .collect()
     };
     for parameter in parameters {
         let name = parameter
-            .child_by_field_name("pattern")
+            .child_by_field_name(forms.pattern)
             .unwrap_or(parameter);
         if !syntax.call_identifiers.contains(&name.kind())
-            || parameter.child_by_field_name("value").is_some()
+            || parameter.child_by_field_name(forms.value).is_some()
         {
             return Some(result);
         }
         result.parameters.push(span(name));
     }
-    let Some(mut body) = node.child_by_field_name("body") else {
+    let Some(mut body) = node.child_by_field_name(forms.body) else {
         return Some(result);
     };
     if body.kind() == forms.block {
@@ -150,7 +167,7 @@ pub(super) fn capture(node: Node, source: &[u8], syntax: &LexicalSyntax) -> Opti
         if statement.kind() != forms.return_ {
             return Some(result);
         }
-        let Some(value) = statement.named_child(0) else {
+        let Some(value) = (forms.return_value)(*statement) else {
             return Some(result);
         };
         body = value;
@@ -175,12 +192,12 @@ fn expression(node: Node, source: &[u8], syntax: &LexicalSyntax, depth: usize) -
     let child = |node| expression(node, source, syntax, depth + 1);
     if node.kind() == forms.boolean_not.0
         && node
-            .child_by_field_name("operator")
+            .child_by_field_name(forms.operator)
             .and_then(|n| n.utf8_text(source).ok())
             == Some(forms.boolean_not.1)
     {
         return Some(Expr::Not(Box::new(child(
-            node.child_by_field_name(forms.boolean_not.2)?,
+            node.child_by_field_name(forms.argument)?,
         )?)));
     }
     if syntax.call_identifiers.contains(&node.kind()) {
@@ -195,16 +212,16 @@ fn expression(node: Node, source: &[u8], syntax: &LexicalSyntax, depth: usize) -
     }
     if node.kind() == forms.binary {
         let operator = node
-            .child_by_field_name("operator")?
+            .child_by_field_name(forms.operator)?
             .utf8_text(source)
             .ok()?;
         let &(_, negated) = forms.equality.iter().find(|&&(op, _)| op == operator)?;
-        let left = unwrap(node.child_by_field_name("left")?, forms)?;
-        let right = unwrap(node.child_by_field_name("right")?, forms)?;
+        let left = unwrap(node.child_by_field_name(forms.left)?, forms)?;
+        let right = unwrap(node.child_by_field_name(forms.right)?, forms)?;
         for (test, value) in [(left, right), (right, left)] {
             if test.kind() != forms.typeof_.0
                 || test
-                    .child_by_field_name("operator")
+                    .child_by_field_name(forms.operator)
                     .and_then(|n| n.utf8_text(source).ok())
                     != Some(forms.typeof_.1)
             {
@@ -217,7 +234,7 @@ fn expression(node: Node, source: &[u8], syntax: &LexicalSyntax, depth: usize) -
             };
             let &(_, kind) = forms.type_names.iter().find(|&&(word, _)| word == value)?;
             return Some(Expr::TypeTest {
-                operand: Box::new(child(test.child_by_field_name("argument")?)?),
+                operand: Box::new(child(test.child_by_field_name(forms.argument)?)?),
                 kind,
                 negated,
             });
@@ -243,13 +260,13 @@ fn expression(node: Node, source: &[u8], syntax: &LexicalSyntax, depth: usize) -
         .iter()
         .find(|&&(kind, _)| kind == node.kind())
     {
-        if node.child_by_field_name("type_arguments").is_some() {
+        if node.child_by_field_name(forms.type_arguments).is_some() {
             return None;
         }
         let Expr::Member { receiver, selector } = child(node.child_by_field_name(field)?)? else {
             return None;
         };
-        let args = node.child_by_field_name("arguments")?;
+        let args = node.child_by_field_name(forms.arguments)?;
         let mut cursor = args.walk();
         let arguments = args
             .named_children(&mut cursor)

@@ -12,7 +12,7 @@ fn receiver_values_have_distinct_binding_ids_and_physical_signature_slots() {
     let mut data = crate::indexer::namespaces::capture(
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &parsed.symbols,
         &parsed.refs,
     )
@@ -21,7 +21,7 @@ fn receiver_values_have_distinct_binding_ids_and_physical_signature_slots() {
         &mut data,
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &mut parsed.symbols,
         &parsed.refs,
         crate::indexer::flow::BindingSymbols::Synthesize,
@@ -46,7 +46,7 @@ fn receiver_output_reuses_named_or_placeholder_region_without_counting_self_argu
         let mut data = crate::indexer::namespaces::capture(
             tree.root_node(),
             source.as_bytes(),
-            "rust",
+            Some(&crate::languages::rust_lang::namespaces::FORMS),
             &parsed.symbols,
             &parsed.refs,
         )
@@ -55,7 +55,7 @@ fn receiver_output_reuses_named_or_placeholder_region_without_counting_self_argu
             &mut data,
             tree.root_node(),
             source.as_bytes(),
-            "rust",
+            Some(&crate::languages::rust_lang::namespaces::FORMS),
             &mut parsed.symbols,
             &parsed.refs,
             crate::indexer::flow::BindingSymbols::Synthesize,

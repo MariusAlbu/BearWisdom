@@ -14,6 +14,7 @@ fn capture(source: &str) -> crate::indexer::lexical::LexicalBindings {
     crate::indexer::lexical::capture(
         tree.root_node(),
         source.as_bytes(),
+        Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
         "ts",
         &mut vec![],
         &[],
@@ -244,6 +245,7 @@ fn compiler_labelled_operator_shapes_keep_exact_operand_generic_owners() {
             let graph = crate::indexer::lexical::capture(
                 tree.root_node(),
                 source.as_bytes(),
+                Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
                 "ts",
                 &mut vec![],
                 &[],

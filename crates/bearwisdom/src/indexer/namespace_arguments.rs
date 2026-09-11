@@ -52,7 +52,7 @@ pub(super) fn capture(node: Node, source: &[u8], forms: &Forms, table: &mut Tabl
     let byte = selector.unwrap_or(callee).start_byte() as u32;
     let arguments = (supported
         && !node.has_error()
-        && node.child_by_field_name("arguments").is_some())
+        && node.child_by_field_name(forms.call_arguments).is_some())
     .then(|| {
         crate::languages::common::call_args::extract_call_args_with_places(
             &node,

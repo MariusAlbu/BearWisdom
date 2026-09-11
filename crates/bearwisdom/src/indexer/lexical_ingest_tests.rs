@@ -14,6 +14,7 @@ fn ambient_graph(source: &str) -> LexicalBindings {
     capture(
         tree.root_node(),
         source.as_bytes(),
+        Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
         "ts",
         &mut vec![],
         &[],
@@ -66,13 +67,31 @@ fn ambient_module_imports_bind_in_their_own_scope_before_type_uses() {
 
 #[test]
 fn syntax_selection_lets_contract_restoration_skip_unmigrated_grammars() {
-    assert!(syntax_for("ts").is_some());
+    let registry = crate::languages::default_registry();
+    assert!(registry.get("typescript").lexical_syntax().is_some());
     assert!(std::ptr::eq(
-        syntax_for("ts").unwrap(),
-        syntax_for("js").unwrap()
+        registry.get("typescript").lexical_syntax().unwrap(),
+        registry
+            .flow_plugin("ts")
+            .unwrap()
+            .lexical_syntax()
+            .unwrap()
     ));
-    for prefix in ["rs", "py", "cs", "java", ""] {
-        assert!(syntax_for(prefix).is_none());
+    assert!(std::ptr::eq(
+        registry.get("typescript").lexical_syntax().unwrap(),
+        registry.get("javascript").lexical_syntax().unwrap()
+    ));
+    assert!(std::ptr::eq(
+        registry.get("javascript").lexical_syntax().unwrap(),
+        registry
+            .flow_plugin("js")
+            .unwrap()
+            .lexical_syntax()
+            .unwrap()
+    ));
+    assert!(registry.get_dedicated("ts").is_none());
+    for language in ["rust", "python", "csharp", "java", ""] {
+        assert!(registry.get(language).lexical_syntax().is_none());
     }
 }
 
@@ -87,6 +106,7 @@ fn reference_roots_decode_source_tokens_and_type_only_values_are_fenced() {
     let graph = capture(
         tree.root_node(),
         source.as_bytes(),
+        Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
         "ts",
         &mut vec![],
         &[],
@@ -121,6 +141,7 @@ fn expression_self_environment_is_private_and_outside_parameter_and_var_scopes()
     let graph = capture(
         tree.root_node(),
         source.as_bytes(),
+        Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
         "ts",
         &mut vec![],
         &[],
@@ -164,6 +185,7 @@ fn root_type_arguments_use_expression_anchors_without_capturing_member_arguments
     let graph = capture(
         tree.root_node(),
         source.as_bytes(),
+        Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
         "ts",
         &mut vec![],
         &[],
@@ -203,13 +225,23 @@ fn destructuring_binds_values_not_property_keys_and_unknown_profiles_stay_legacy
     assert!(capture(
         root,
         source.as_bytes(),
+        None,
         "unmigrated",
         &mut symbols,
         &[],
         policy
     )
     .is_none());
-    let graph = capture(root, source.as_bytes(), "ts", &mut symbols, &[], policy).unwrap();
+    let graph = capture(
+        root,
+        source.as_bytes(),
+        Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
+        "ts",
+        &mut symbols,
+        &[],
+        policy,
+    )
+    .unwrap();
     assert_eq!(graph.name_id("key"), None);
     let cursor = source.find("local;").unwrap() as u32;
     for name in ["local", "shorthand", "rest"] {

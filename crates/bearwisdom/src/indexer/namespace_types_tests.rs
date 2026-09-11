@@ -13,7 +13,7 @@ fn elision_sites_are_input_only_and_repeated_capture_uses_the_same_source_anchor
     let mut data = super::super::capture(
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &extracted.symbols,
         &extracted.refs,
     )
@@ -22,7 +22,7 @@ fn elision_sites_are_input_only_and_repeated_capture_uses_the_same_source_anchor
         &mut data,
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &mut extracted.symbols,
         &extracted.refs,
         crate::indexer::flow::BindingSymbols::Synthesize,
@@ -109,7 +109,7 @@ fn output_elision_separates_implicit_and_explicit_receiver_binders() {
         let mut data = super::super::capture(
             tree.root_node(),
             source.as_bytes(),
-            "rust",
+            Some(&crate::languages::rust_lang::namespaces::FORMS),
             &extracted.symbols,
             &extracted.refs,
         )
@@ -118,7 +118,7 @@ fn output_elision_separates_implicit_and_explicit_receiver_binders() {
             &mut data,
             tree.root_node(),
             source.as_bytes(),
-            "rust",
+            Some(&crate::languages::rust_lang::namespaces::FORMS),
             &mut extracted.symbols,
             &extracted.refs,
             crate::indexer::flow::BindingSymbols::Synthesize,
@@ -187,7 +187,7 @@ fn generic_parameter_kinds_preserve_all_positions_and_region_uses_keep_their_own
     let mut data = super::super::capture(
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &extracted.symbols,
         &extracted.refs,
     )
@@ -196,7 +196,7 @@ fn generic_parameter_kinds_preserve_all_positions_and_region_uses_keep_their_own
         &mut data,
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &mut extracted.symbols,
         &extracted.refs,
         crate::indexer::flow::BindingSymbols::Synthesize,
@@ -262,7 +262,7 @@ fn exact_arguments_preserve_indirection_and_unattested_lifetimes_never_become_st
     let mut data = super::super::capture(
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &extracted.symbols,
         &extracted.refs,
     )
@@ -271,7 +271,7 @@ fn exact_arguments_preserve_indirection_and_unattested_lifetimes_never_become_st
         &mut data,
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &mut extracted.symbols,
         &extracted.refs,
         crate::indexer::flow::BindingSymbols::Synthesize,
@@ -328,7 +328,7 @@ fn root_annotation_field_return_and_parameter_recipes_retain_reference_structure
     let mut data = super::super::capture(
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &extracted.symbols,
         &extracted.refs,
     )
@@ -337,7 +337,7 @@ fn root_annotation_field_return_and_parameter_recipes_retain_reference_structure
         &mut data,
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &mut extracted.symbols,
         &extracted.refs,
         crate::indexer::flow::BindingSymbols::Synthesize,
@@ -386,7 +386,7 @@ fn function_types_keep_naked_type_arguments_and_method_parameters_exclude_the_re
     let mut data = super::super::capture(
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &extracted.symbols,
         &extracted.refs,
     )
@@ -395,7 +395,7 @@ fn function_types_keep_naked_type_arguments_and_method_parameters_exclude_the_re
         &mut data,
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &mut extracted.symbols,
         &extracted.refs,
         crate::indexer::flow::BindingSymbols::Synthesize,
@@ -445,7 +445,7 @@ fn type_parameters_and_nominal_arguments_use_separate_identity_arenas() {
     let mut data = super::super::capture(
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &extracted.symbols,
         &extracted.refs,
     )
@@ -454,7 +454,7 @@ fn type_parameters_and_nominal_arguments_use_separate_identity_arenas() {
         &mut data,
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &mut extracted.symbols,
         &extracted.refs,
         crate::indexer::flow::BindingSymbols::Synthesize,

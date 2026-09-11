@@ -938,6 +938,68 @@ end.
         .find(|s| s.name == "TFoo.Bar")
         .expect("TFoo.Bar impl symbol");
     assert_eq!(dotted.qualified_name, "TFoo.Bar");
+    let owner = dotted
+        .parent_index
+        .and_then(|index| result.symbols.get(index))
+        .expect("TFoo.Bar declaring type");
+    assert_eq!(owner.name, "TFoo");
+    assert_eq!(dotted.scope_path.as_deref(), Some("MyUnit.TFoo"));
+}
+
+#[test]
+fn out_of_class_body_refs_are_attributed_to_the_declaring_type() {
+    let src = r#"unit MyUnit;
+interface
+type
+  TChild = class(TExternalParent)
+    procedure Work;
+  end;
+implementation
+procedure TChild.Work;
+begin
+  Create();
+  AddField();
+end;
+end.
+"#;
+    let result = extract(src);
+    let implementation = result
+        .symbols
+        .iter()
+        .position(|symbol| symbol.name == "TChild.Work")
+        .expect("TChild.Work implementation");
+    let owner = result.symbols[implementation]
+        .parent_index
+        .and_then(|index| result.symbols.get(index))
+        .expect("TChild.Work declaring type");
+    assert_eq!(owner.name, "TChild");
+    assert!(result.refs.iter().any(|reference| {
+        reference.source_symbol_index == implementation && reference.target_name == "Create"
+    }));
+    assert!(result.refs.iter().any(|reference| {
+        reference.source_symbol_index == implementation && reference.target_name == "AddField"
+    }));
+}
+
+#[test]
+fn fragment_body_refs_follow_the_promoted_qualified_implementation() {
+    let result = extract(
+        r#"procedure TChild.Work;
+begin
+  AddField();
+end;
+"#,
+    );
+    let implementation = result
+        .symbols
+        .iter()
+        .position(|symbol| symbol.name == "TChild.Work")
+        .expect("TChild.Work implementation");
+    assert_eq!(result.symbols[implementation].parent_index, None);
+    assert_eq!(result.symbols[implementation].scope_path, None);
+    assert!(result.refs.iter().any(|reference| {
+        reference.source_symbol_index == implementation && reference.target_name == "AddField"
+    }));
 }
 
 #[test]

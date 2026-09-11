@@ -13,6 +13,10 @@ use crate::types::ParsedFile;
 pub struct LanguageRegistry {
     plugins: Vec<Arc<dyn LanguagePlugin>>,
     by_lang_id: FxHashMap<String, usize>,
+    /// Flow configuration strategy key → owning plugin. This deliberately
+    /// remains separate from parser language IDs: compact flow keys need not
+    /// be accepted by `grammar()`.
+    by_flow_strategy: FxHashMap<String, usize>,
     /// File-extension → language_id. Built from every plugin's
     /// `extensions()` + `language_id_for_extension()` during `register()`.
     /// Keys are stored lowercase-with-leading-dot; values are interned
@@ -31,6 +35,7 @@ impl LanguageRegistry {
         Self {
             plugins: Vec::new(),
             by_lang_id: FxHashMap::default(),
+            by_flow_strategy: FxHashMap::default(),
             by_extension: FxHashMap::default(),
             ext_lookup_order: Vec::new(),
             generic,
@@ -45,6 +50,16 @@ impl LanguageRegistry {
         let idx = self.plugins.len();
         for &lang_id in plugin.language_ids() {
             self.by_lang_id.insert(lang_id.to_string(), idx);
+        }
+        if let Some(config) = plugin.flow_config() {
+            self.by_flow_strategy
+                .entry(config.strategy_prefix.to_string())
+                .or_insert(idx);
+        }
+        for &strategy_key in plugin.flow_strategy_aliases() {
+            self.by_flow_strategy
+                .entry(strategy_key.to_string())
+                .or_insert(idx);
         }
         for &ext in plugin.extensions() {
             let key = ext.to_ascii_lowercase();
@@ -84,6 +99,16 @@ impl LanguageRegistry {
     pub fn get_dedicated(&self, lang_id: &str) -> Option<&dyn LanguagePlugin> {
         self.by_lang_id
             .get(lang_id)
+            .map(|&idx| self.plugins[idx].as_ref())
+    }
+
+    /// Get the plugin that owns a flow configuration strategy. Flow strategy
+    /// keys are intentionally independent of parser language IDs, so callers
+    /// cannot accidentally ask a plugin to parse a compact strategy spelling.
+    /// Conflicting registrations are resolved first-wins during `register()`.
+    pub fn flow_plugin(&self, strategy_key: &str) -> Option<&dyn LanguagePlugin> {
+        self.by_flow_strategy
+            .get(strategy_key)
             .map(|&idx| self.plugins[idx].as_ref())
     }
 
@@ -300,6 +325,65 @@ mod tests {
             exts: &[],
             override_ext: None,
         })
+    }
+
+    static FLOW_OWNER_CONFIG: crate::indexer::flow::FlowConfig = crate::indexer::flow::FlowConfig {
+        strategy_prefix: "shared-flow",
+        assignment_query: "",
+        type_guard_query: "",
+        discriminant_guard_query: "",
+        type_args_query: "",
+        literal_type_kinds: &[],
+    };
+
+    struct FlowOwnerPlugin {
+        id: &'static str,
+        aliases: &'static [&'static str],
+    }
+
+    impl LanguagePlugin for FlowOwnerPlugin {
+        fn id(&self) -> &str {
+            self.id
+        }
+        fn language_ids(&self) -> &[&str] {
+            &[]
+        }
+        fn extensions(&self) -> &[&str] {
+            &[]
+        }
+        fn grammar(&self, _: &str) -> Option<tree_sitter::Language> {
+            None
+        }
+        fn scope_kinds(&self) -> &[crate::parser::scope_tree::ScopeKind] {
+            &[]
+        }
+        fn extract(&self, _: &str, _: &str, _: &str) -> crate::types::ExtractionResult {
+            crate::types::ExtractionResult::default()
+        }
+        fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
+            Some(&FLOW_OWNER_CONFIG)
+        }
+        fn flow_strategy_aliases(&self) -> &'static [&'static str] {
+            self.aliases
+        }
+    }
+
+    #[test]
+    fn flow_strategies_are_separate_and_first_registered_owner_wins() {
+        let mut reg = LanguageRegistry::new(fake_generic());
+        reg.register(Arc::new(FlowOwnerPlugin {
+            id: "first",
+            aliases: &["shared-alias"],
+        }));
+        reg.register(Arc::new(FlowOwnerPlugin {
+            id: "second",
+            aliases: &["shared-flow", "shared-alias"],
+        }));
+
+        assert_eq!(reg.flow_plugin("shared-flow").unwrap().id(), "first");
+        assert_eq!(reg.flow_plugin("shared-alias").unwrap().id(), "first");
+        assert!(reg.get_dedicated("shared-flow").is_none());
+        assert!(!reg.has_dedicated("shared-flow"));
     }
 
     #[test]

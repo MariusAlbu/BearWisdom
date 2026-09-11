@@ -45,27 +45,65 @@ pub(crate) struct LexicalSyntax {
     pub blocks: &'static [&'static str],
     pub variables: &'static [&'static str],
     pub assignments: &'static [&'static str],
+    /// Source grammar facts used only while turning declarations into neutral
+    /// lexical bindings.  An absent/empty form deliberately recognizes
+    /// nothing, so a plugin cannot accidentally inherit another language's
+    /// binding grammar.
+    pub bindings: BindingForms,
     pub function_scoped_declaration: &'static str,
     pub literal_types: &'static [(&'static str, &'static str)],
     pub preserve_non_union_type: bool,
 }
 
-pub(crate) fn syntax_for(prefix: &str) -> Option<&'static LexicalSyntax> {
-    match prefix {
-        "ts" | "js" => Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
-        _ => None,
-    }
+/// Language-owned AST forms for lexical binding ingestion.
+///
+/// The generic walker only follows the declared relationships; node-kind and
+/// field spelling belong to the language adapter that provides this value.
+pub(crate) struct BindingForms {
+    pub name_field: &'static str,
+    pub function_parameters_field: Option<&'static str>,
+    pub function_parameter_field: Option<&'static str>,
+    pub variable_value_field: &'static str,
+    pub binding_name_kinds: &'static [&'static str],
+    pub assignment_left_field: &'static str,
+    pub assignment_right_field: &'static str,
+    pub catch_parameter: Option<(&'static str, &'static str)>,
+    pub call_type_arguments_field: &'static str,
+    pub call_callee_kinds: &'static [&'static str],
+    pub type_parameters_field: &'static str,
+    pub annotation_field: &'static str,
+    /// Decode an annotation wrapper's type text using adapter-owned structure.
+    /// Absent decoding keeps the binding unannotated.
+    pub annotation_value: Option<fn(Node, &[u8]) -> Option<String>>,
+    pub direct_patterns: &'static [&'static str],
+    pub pattern_fields: &'static [(&'static str, &'static str)],
+    pub pattern_children: &'static [&'static str],
 }
 
 pub(crate) fn capture(
     root: Node,
     source: &[u8],
-    prefix: &str,
+    syntax: Option<&'static LexicalSyntax>,
+    _strategy_prefix: &str,
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &[ExtractedRef],
     policy: crate::indexer::flow_bindings::BindingSymbols,
 ) -> Option<LexicalBindings> {
-    let syntax = syntax_for(prefix)?;
+    capture_with_cfg(root, source, syntax, symbols, refs, policy, None)
+}
+
+/// Production flow ingestion supplies its already-selected CFG facts. The
+/// compatibility entry point above has no owner evidence and fails closed.
+pub(crate) fn capture_with_cfg(
+    root: Node,
+    source: &[u8],
+    syntax: Option<&'static LexicalSyntax>,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &[ExtractedRef],
+    policy: crate::indexer::flow_bindings::BindingSymbols,
+    cfg_kinds: Option<&crate::indexer::flow_cfg::CfgNodeKinds>,
+) -> Option<LexicalBindings> {
+    let syntax = syntax?;
     let mut builder = Builder {
         graph: LexicalBindings::default(),
         source,
@@ -89,16 +127,18 @@ pub(crate) fn capture(
             .ok()
             .and_then(|name| builder.graph.name_id(name))
             .and_then(|id| builder.graph.binding_at(name.start_byte() as u32, id));
-        let value = expression.child_by_field_name("name").and_then(|name| {
-            builder
-                .graph
-                .declarations
-                .get(&crate::types::SourceSpan {
-                    start: name.start_byte() as u32,
-                    end: name.end_byte() as u32,
-                })
-                .copied()
-        });
+        let value = expression
+            .child_by_field_name(syntax.bindings.name_field)
+            .and_then(|name| {
+                builder
+                    .graph
+                    .declarations
+                    .get(&crate::types::SourceSpan {
+                        start: name.start_byte() as u32,
+                        end: name.end_byte() as u32,
+                    })
+                    .copied()
+            });
         if let (Some(variable), Some(value)) = (variable, value) {
             builder.graph.initial_values.insert(variable, value);
         }
@@ -129,7 +169,7 @@ pub(crate) fn capture(
             }
             if let (Some(binding), Some(reference)) = (
                 binding,
-                crate::indexer::flow_bindings::correlate_rhs_ref(refs, rhs, prefix),
+                crate::indexer::flow_bindings::correlate_rhs_ref(refs, rhs, cfg_kinds),
             ) {
                 builder.graph.writes.insert(reference, binding);
                 if *initializer {
@@ -262,7 +302,10 @@ impl<'a, 'tree> Builder<'a, 'tree> {
         self.call_type_args(node);
         let inherited = if let Some(&(_, kind)) =
             self.syntax.named_expressions.iter().find(|&&(syntax, _)| {
-                syntax == node.kind() && node.child_by_field_name("name").is_some()
+                syntax == node.kind()
+                    && node
+                        .child_by_field_name(self.syntax.bindings.name_field)
+                        .is_some()
             }) {
             // The self-name's environment is outside the parameter environment.
             let private = self.graph.add_scope(
@@ -303,18 +346,33 @@ impl<'a, 'tree> Builder<'a, 'tree> {
         );
         self.type_parameters(node, scope);
         if function {
-            if let Some(params) = node.child_by_field_name("parameters") {
+            if let Some(params) = self
+                .syntax
+                .bindings
+                .function_parameters_field
+                .and_then(|field| node.child_by_field_name(field))
+            {
                 let mut cursor = params.walk();
                 for param in params.named_children(&mut cursor) {
                     self.pattern(
                         param,
                         scope,
                         param.end_byte() as u32,
-                        annotation(param, self.source),
+                        annotation(
+                            param,
+                            self.source,
+                            self.syntax.bindings.annotation_field,
+                            self.syntax.bindings.annotation_value,
+                        ),
                         SymbolKind::Parameter,
                     );
                 }
-            } else if let Some(param) = node.child_by_field_name("parameter") {
+            } else if let Some(param) = self
+                .syntax
+                .bindings
+                .function_parameter_field
+                .and_then(|field| node.child_by_field_name(field))
+            {
                 self.pattern(
                     param,
                     scope,
@@ -325,7 +383,7 @@ impl<'a, 'tree> Builder<'a, 'tree> {
             }
         }
         if self.syntax.variables.contains(&node.kind()) {
-            if let Some(name) = node.child_by_field_name("name") {
+            if let Some(name) = node.child_by_field_name(self.syntax.bindings.name_field) {
                 let owner = if node
                     .parent()
                     .is_some_and(|p| p.kind() == self.syntax.function_scoped_declaration)
@@ -334,8 +392,15 @@ impl<'a, 'tree> Builder<'a, 'tree> {
                 } else {
                     scope
                 };
-                let ty = annotation(node, self.source).or_else(|| {
-                    let value = node.child_by_field_name("value")?;
+                let ty = annotation(
+                    node,
+                    self.source,
+                    self.syntax.bindings.annotation_field,
+                    self.syntax.bindings.annotation_value,
+                )
+                .or_else(|| {
+                    let value =
+                        node.child_by_field_name(self.syntax.bindings.variable_value_field)?;
                     self.syntax
                         .literal_types
                         .iter()
@@ -349,8 +414,15 @@ impl<'a, 'tree> Builder<'a, 'tree> {
                     ty,
                     SymbolKind::Variable,
                 );
-                if let Some(value) = node.child_by_field_name("value") {
-                    if name.kind() == "identifier" {
+                if let Some(value) =
+                    node.child_by_field_name(self.syntax.bindings.variable_value_field)
+                {
+                    if self
+                        .syntax
+                        .bindings
+                        .binding_name_kinds
+                        .contains(&name.kind())
+                    {
                         if self
                             .syntax
                             .named_expressions
@@ -367,23 +439,30 @@ impl<'a, 'tree> Builder<'a, 'tree> {
         }
         if self.syntax.assignments.contains(&node.kind()) {
             if let (Some(lhs), Some(rhs)) = (
-                node.child_by_field_name("left"),
-                node.child_by_field_name("right"),
+                node.child_by_field_name(self.syntax.bindings.assignment_left_field),
+                node.child_by_field_name(self.syntax.bindings.assignment_right_field),
             ) {
-                if lhs.kind() == "identifier" {
+                if self
+                    .syntax
+                    .bindings
+                    .binding_name_kinds
+                    .contains(&lhs.kind())
+                {
                     self.assignments.push((lhs, rhs, false));
                 }
             }
         }
-        if node.kind() == "catch_clause" {
-            if let Some(param) = node.child_by_field_name("parameter") {
-                self.pattern(
-                    param,
-                    scope,
-                    param.end_byte() as u32,
-                    None,
-                    SymbolKind::Variable,
-                );
+        if let Some((catch_kind, parameter_field)) = self.syntax.bindings.catch_parameter {
+            if node.kind() == catch_kind {
+                if let Some(param) = node.child_by_field_name(parameter_field) {
+                    self.pattern(
+                        param,
+                        scope,
+                        param.end_byte() as u32,
+                        None,
+                        SymbolKind::Variable,
+                    );
+                }
             }
         }
         let mut cursor = node.walk();
@@ -413,10 +492,16 @@ impl<'a, 'tree> Builder<'a, 'tree> {
             return;
         };
         // Member calls belong to their own segment, not to the lexical root.
-        if !matches!(callee.kind(), "identifier" | "type_identifier") {
+        if !self
+            .syntax
+            .bindings
+            .call_callee_kinds
+            .contains(&callee.kind())
+        {
             return;
         }
-        let Some(args) = node.child_by_field_name("type_arguments") else {
+        let Some(args) = node.child_by_field_name(self.syntax.bindings.call_type_arguments_field)
+        else {
             return;
         };
         let mut cursor = args.walk();
@@ -449,7 +534,7 @@ impl<'a, 'tree> Builder<'a, 'tree> {
         scope: ScopeId,
         kind: SymbolKind,
     ) -> Option<BindingId> {
-        let name_node = node.child_by_field_name("name")?;
+        let name_node = node.child_by_field_name(self.syntax.bindings.name_field)?;
         let name = name_node.utf8_text(self.source).ok()?;
         let name = self.graph.intern(name);
         // Identity exists throughout the declaring scope, even when runtime
@@ -486,7 +571,8 @@ impl<'a, 'tree> Builder<'a, 'tree> {
     }
 
     fn type_parameters(&mut self, node: Node<'tree>, scope: ScopeId) {
-        let Some(parameters) = node.child_by_field_name("type_parameters") else {
+        let Some(parameters) = node.child_by_field_name(self.syntax.bindings.type_parameters_field)
+        else {
             return;
         };
         let owner = node.start_position();
@@ -496,7 +582,7 @@ impl<'a, 'tree> Builder<'a, 'tree> {
             .filter(|n| !n.is_extra())
             .enumerate()
         {
-            let Some(name) = parameter.child_by_field_name("name") else {
+            let Some(name) = parameter.child_by_field_name(self.syntax.bindings.name_field) else {
                 continue;
             };
             let Ok(name) = name.utf8_text(self.source) else {
@@ -525,50 +611,50 @@ impl<'a, 'tree> Builder<'a, 'tree> {
         ty: Option<String>,
         kind: SymbolKind,
     ) {
-        match node.kind() {
-            "identifier" | "shorthand_property_identifier_pattern" => {
-                let Ok(name) = node.utf8_text(self.source) else {
-                    return;
-                };
-                let name = self.graph.intern(name);
-                let id = self.graph.declare(scope, name, available_from, ty);
-                self.graph.kinds.entry(id).or_insert(kind);
-                self.graph.declarations.insert(
-                    crate::types::SourceSpan {
-                        start: node.start_byte() as u32,
-                        end: node.end_byte() as u32,
-                    },
-                    id,
-                );
-                self.declarations.push((node, id, kind));
+        if self.syntax.bindings.direct_patterns.contains(&node.kind()) {
+            let Ok(name) = node.utf8_text(self.source) else {
+                return;
+            };
+            let name = self.graph.intern(name);
+            let id = self.graph.declare(scope, name, available_from, ty);
+            self.graph.kinds.entry(id).or_insert(kind);
+            self.graph.declarations.insert(
+                crate::types::SourceSpan {
+                    start: node.start_byte() as u32,
+                    end: node.end_byte() as u32,
+                },
+                id,
+            );
+            self.declarations.push((node, id, kind));
+            return;
+        }
+        if let Some(&(_, field)) = self
+            .syntax
+            .bindings
+            .pattern_fields
+            .iter()
+            .find(|&&(pattern, _)| pattern == node.kind())
+        {
+            if let Some(child) = node.child_by_field_name(field) {
+                self.pattern(child, scope, available_from, ty, kind);
             }
-            "required_parameter" | "optional_parameter" => {
-                if let Some(pattern) = node.child_by_field_name("pattern") {
-                    self.pattern(pattern, scope, available_from, ty, kind);
-                }
+            return;
+        }
+        if self.syntax.bindings.pattern_children.contains(&node.kind()) {
+            let mut cursor = node.walk();
+            for child in node.named_children(&mut cursor) {
+                self.pattern(child, scope, available_from, None, kind);
             }
-            "assignment_pattern" | "object_assignment_pattern" => {
-                if let Some(left) = node.child_by_field_name("left") {
-                    self.pattern(left, scope, available_from, ty, kind);
-                }
-            }
-            "pair_pattern" => {
-                if let Some(value) = node.child_by_field_name("value") {
-                    self.pattern(value, scope, available_from, None, kind);
-                }
-            }
-            "rest_pattern" | "object_pattern" | "array_pattern" => {
-                let mut cursor = node.walk();
-                for child in node.named_children(&mut cursor) {
-                    self.pattern(child, scope, available_from, None, kind);
-                }
-            }
-            _ => {}
         }
     }
 }
 
-fn annotation(node: Node, source: &[u8]) -> Option<String> {
-    let ty = node.child_by_field_name("type")?;
-    ty.named_child(0)?.utf8_text(source).ok().map(str::to_owned)
+fn annotation(
+    node: Node,
+    source: &[u8],
+    field: &str,
+    decode: Option<fn(Node, &[u8]) -> Option<String>>,
+) -> Option<String> {
+    let ty = node.child_by_field_name(field)?;
+    decode?(ty, source)
 }

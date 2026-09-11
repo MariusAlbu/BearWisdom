@@ -68,3 +68,43 @@ pub static RUST_FLOW_CONFIG: FlowConfig = FlowConfig {
     "#,
     literal_type_kinds: &[],
 };
+
+pub const RUST_CFG_KINDS: crate::indexer::flow_cfg::CfgNodeKinds =
+    crate::indexer::flow_cfg::CfgNodeKinds {
+        function_kinds: &["function_item", "closure_expression"],
+        block_kinds: &["block"],
+        if_kind: "if_expression",
+        if_consequence_field: "consequence",
+        if_consequence_body: None,
+        if_alternative_field: "alternative",
+        if_alternative_body: None,
+        if_condition_field: "condition",
+        assignment_kind: "assignment_expression",
+        assignment_lhs_field: "left",
+        declarator_kind: "let_declaration",
+        declarator_name_field: "pattern",
+        binding_name_kinds: &["identifier"],
+        definition_name_kinds: &["identifier"],
+        bare_return_name_kinds: &["identifier"],
+        function_name_fields: &["name", "pattern"],
+        loop_kinds: &["while_expression", "loop_expression", "for_expression"],
+        loop_body_field: "body",
+        loop_condition_field: Some("condition"),
+        switch_kinds: &["match_expression"],
+        switch_value_field: "value",
+        switch_body_field: Some("body"),
+        switch_case_kinds: &["match_arm"],
+        switch_default_kinds: &[],
+        transparent_kinds: &[],
+        // `fn f() -> T { e }` returns its tail expression with no `return`.
+        implicit_return_candidate: Some(implicit_return_candidate),
+        condition_true_guard: None,
+    };
+fn implicit_return_candidate(node: tree_sitter::Node) -> bool {
+    let kind = node.kind();
+    !(kind.ends_with("_statement")
+        || kind.ends_with("_declaration")
+        || kind.ends_with("_definition")
+        || kind.contains("return")
+        || kind == "block")
+}

@@ -164,13 +164,11 @@ impl Compilation {
         for info in self.type_info_by_id.values_mut() {
             info.base_type_id = None;
         }
-        let captured: FxHashSet<_> = bases.iter().map(|(id, _)| *id).collect();
-        self.inherits_by_id.retain(|id, _| !captured.contains(id));
-        self.inherits_args_by_pair
-            .retain(|(id, _), _| !captured.contains(id));
         for (id, ty) in bases {
             self.type_info_by_id.entry(id).or_default().base_type_id = Some(ty);
             if let Some(parent) = super::super::head_decl::head_decl_id(&self.arena, ty) {
+                self.inherits_args_by_pair
+                    .retain(|(child, _), _| *child != id);
                 self.inherits_by_id.insert(id, vec![parent]);
                 if let Type::Apply { args, .. } = self.arena.get(ty) {
                     self.inherits_args_by_pair.insert((id, parent), args);

@@ -12,6 +12,7 @@ fn infer_binder_has_true_branch_scope_but_does_not_shadow_false_branch() {
     let graph = crate::indexer::lexical::capture(
         tree.root_node(),
         source.as_bytes(),
+        Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
         "ts",
         &mut vec![],
         &[],
@@ -79,6 +80,7 @@ fn constrained_and_nested_infer_owners_are_source_distinct() {
         let graph = crate::indexer::lexical::capture(
             tree.root_node(),
             source.as_bytes(),
+            Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
             "ts",
             &mut vec![],
             &[],

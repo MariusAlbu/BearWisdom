@@ -361,6 +361,49 @@ impl LanguagePlugin for TypeScriptPlugin {
         Some(&flow::TS_FLOW_CONFIG)
     }
 
+    fn flow_strategy_aliases(&self) -> &'static [&'static str] {
+        &["ts"]
+    }
+
+    fn flow_cfg_node_kinds(&self) -> Option<&'static crate::indexer::flow_cfg::CfgNodeKinds> {
+        Some(&flow::TS_CFG_KINDS)
+    }
+
+    fn flow_return_query(&self) -> Option<&'static str> {
+        Some(flow::TS_RETURN_QUERY)
+    }
+
+    fn flow_return_object_members(
+        &self,
+        node: tree_sitter::Node,
+        source: &[u8],
+    ) -> Option<Vec<String>> {
+        flow::return_object_members(node, source)
+    }
+
+    fn flow_destructure_shape(
+        &self,
+        binding: tree_sitter::Node,
+    ) -> crate::indexer::flow_assignments::DestructureShape {
+        flow::destructure_shape(binding)
+    }
+
+    fn flow_is_await_rhs(&self, node: tree_sitter::Node) -> bool {
+        flow::is_await_rhs(node)
+    }
+
+    fn normalize_flow_guard_type(&self, raw: &str) -> Option<String> {
+        flow::normalize_guard_type(raw)
+    }
+
+    fn flow_discriminant_early_exit_scope(&self, node: tree_sitter::Node) -> Option<(u32, u32)> {
+        flow::discriminant_early_exit_scope(node)
+    }
+
+    fn lexical_syntax(&self) -> Option<&'static crate::indexer::lexical::LexicalSyntax> {
+        Some(&flow::TS_LEXICAL_SYNTAX)
+    }
+
     /// An Angular NgModule declaration `.d.ts` reaches the `.component`/`.directive`
     /// `.d.ts` files it declares — components/directives are referenced only by
     /// selector, so nothing demands them by name; descending the module's

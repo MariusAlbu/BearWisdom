@@ -1,7 +1,10 @@
 //! Tests for the Angular selector extractor and the web-component
 //! `customElements.define()` selector harvester.
 
-use super::{extract_component_selectors, extract_custom_element_defines, selector_binding_keys};
+use super::{
+    extract_component_selectors, extract_custom_element_defines, selector_binding_keys,
+    selector_lookup_candidates,
+};
 use crate::types::{ExtractedSymbol, SymbolKind, Visibility};
 
 fn fake_class(name: &str, qname: &str) -> ExtractedSymbol {
@@ -36,6 +39,19 @@ fn selector_binding_keys_own_angular_attribute_selector_spelling() {
         selector_binding_keys("ngx-legend-chart"),
         ["ngx-legend-chart"]
     );
+}
+
+#[test]
+fn selector_lookup_candidates_own_template_spelling_normalization() {
+    assert_eq!(
+        selector_lookup_candidates("AppUserCard"),
+        ["AppUserCard", "app-user-card"]
+    );
+    assert_eq!(
+        selector_lookup_candidates("already-kebab"),
+        ["already-kebab"]
+    );
+    assert_eq!(selector_lookup_candidates("A"), ["A", "a"]);
 }
 
 #[test]

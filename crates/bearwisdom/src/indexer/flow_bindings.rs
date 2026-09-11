@@ -142,14 +142,14 @@ fn enclosing_symbol(line: u32, symbols: &[ExtractedSymbol]) -> Option<usize> {
 ///      the field's type, not the call's return.
 ///   3. value-producing kind — a bare call emits both a `Calls`/`Instantiates` ref
 ///      AND a co-located equal-length `TypeRef`; the value ref wins.
-pub(super) fn correlate_rhs_ref(
+pub(crate) fn correlate_rhs_ref(
     refs: &[ExtractedRef],
     rhs: &Node,
-    strategy_prefix: &str,
+    cfg_kinds: Option<&crate::indexer::flow_cfg::CfgNodeKinds>,
 ) -> Option<usize> {
     let r_start = rhs.start_byte() as u32;
     let r_end = rhs.end_byte() as u32;
-    let nested_fn_ranges = super::flow::cfg_node_kinds_for(strategy_prefix)
+    let nested_fn_ranges = cfg_kinds
         .map(|kinds| nested_function_ranges(rhs, kinds))
         .unwrap_or_default();
     let value_rank = |k: EdgeKind| -> u8 {

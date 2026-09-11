@@ -1,22 +1,18 @@
 // =============================================================================
-// engine/rules/selector_map — CSS/Angular selector → class qname lookup
+// engine/rules/selector_map — selector key → class qname lookup
 //
 // Gated on `ctx.profile.selector_resolution` (None → Pass). When present, the
-// ref's target and each name-transformed form of it are probed against the
-// index's selector→qname map. The raw target is always tried first; the
-// `name_transforms` list (e.g. PascalToKebab for Angular) produces additional
-// candidates in declaration order.
+// owning language produces normalized selector candidates for the ref target;
+// this rule probes them against the index's selector→qname map.
 //
 // After a selector-map hit the class symbol is located either by direct qname
 // lookup or by a by-name scan pinning the exact qname — the export-wrapper
 // shape means the qname-keyed map may not hold the same value as `by_qualified_name`.
 // =============================================================================
 
-use std::borrow::Cow;
-
 use crate::indexer::resolve::engine::support::index_qname_leaf;
 use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
-use crate::type_checker::profile::language_profile::{NameTransform, SelectorResolution};
+use crate::type_checker::profile::language_profile::SelectorResolution;
 
 pub struct SelectorMapRule;
 
@@ -42,12 +38,8 @@ fn apply_selector_map(ctx: &BinderContext<'_>, cfg: &SelectorResolution) -> Look
     if target.is_empty() {
         return LookupResult::Pass;
     }
-    let mut candidates: Vec<Cow<'_, str>> = vec![Cow::Borrowed(target)];
-    for transform in cfg.name_transforms {
-        candidates.push(apply_name_transform(*transform, target));
-    }
-    for candidate in &candidates {
-        let Some(class_qname) = ctx.lookup.selector_qname(candidate) else {
+    for candidate in (cfg.selector_candidates)(target) {
+        let Some(class_qname) = ctx.lookup.selector_qname(&candidate) else {
             continue;
         };
         let class_qname = class_qname.to_string();
@@ -66,33 +58,6 @@ fn apply_selector_map(ctx: &BinderContext<'_>, cfg: &SelectorResolution) -> Look
         }
     }
     LookupResult::Pass
-}
-
-/// Apply a `NameTransform` to a ref target, yielding one selector-key candidate.
-fn apply_name_transform(transform: NameTransform, name: &str) -> Cow<'_, str> {
-    match transform {
-        NameTransform::PascalToKebab => pascal_to_kebab(name),
-    }
-}
-
-/// `AppUserCard` → `app-user-card`: insert `-` at each interior uppercase
-/// boundary and lowercase. A single-segment input with no interior uppercase
-/// boundary is returned borrowed unchanged.
-fn pascal_to_kebab(name: &str) -> Cow<'_, str> {
-    let needs_split = name
-        .char_indices()
-        .any(|(i, c)| i > 0 && c.is_ascii_uppercase());
-    if !needs_split && name.chars().all(|c| !c.is_ascii_uppercase()) {
-        return Cow::Borrowed(name);
-    }
-    let mut out = String::with_capacity(name.len() + 4);
-    for (i, ch) in name.chars().enumerate() {
-        if ch.is_ascii_uppercase() && i > 0 {
-            out.push('-');
-        }
-        out.extend(ch.to_lowercase());
-    }
-    Cow::Owned(out)
 }
 
 #[cfg(test)]

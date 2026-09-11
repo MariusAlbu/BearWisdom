@@ -351,19 +351,21 @@ fn parse_file_internal(
     let mut flow_meta = match plugin.flow_config() {
         Some(flow_cfg) => {
             if let Some(tree) = shared_tree.as_ref() {
-                crate::indexer::flow::run_flow_queries_with_tree(
+                crate::indexer::flow::run_flow_queries_with_tree_and_plugin(
                     &content,
                     flow_cfg,
+                    Some(plugin),
                     &mut r.symbols,
                     &mut r.refs,
                     tree,
                     bindings,
                 )
             } else if let Some(grammar) = shared_grammar.as_ref() {
-                crate::indexer::flow::run_flow_queries(
+                crate::indexer::flow::run_flow_queries_with_plugin(
                     &content,
                     grammar,
                     flow_cfg,
+                    Some(plugin),
                     &mut r.symbols,
                     &mut r.refs,
                     bindings,

@@ -295,8 +295,10 @@ mod ingest;
 mod merges;
 #[path = "lexical_symbols.rs"]
 pub(crate) mod symbol_rows;
+pub(crate) use ingest::capture;
+pub(crate) use ingest::capture_with_cfg;
+pub(crate) use ingest::BindingForms;
 pub(crate) use ingest::LexicalSyntax;
-pub(crate) use ingest::{capture, syntax_for};
 
 #[cfg(test)]
 #[path = "lexical_tests.rs"]

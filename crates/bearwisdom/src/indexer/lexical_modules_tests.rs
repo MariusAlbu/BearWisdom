@@ -11,6 +11,7 @@ fn ambient_exports_keep_named_declarations_and_annotations() {
     let graph = super::super::capture(
         tree.root_node(),
         source.as_bytes(),
+        Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
         "ts",
         &mut vec![],
         &[],
@@ -48,6 +49,7 @@ fn namespace_export_is_an_explicit_module_object_not_a_wildcard() {
     let graph = super::super::capture(
         tree.root_node(),
         source.as_bytes(),
+        Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
         "ts",
         &mut vec![],
         &[],
@@ -73,6 +75,7 @@ fn imports_bind_aliases_before_export_aliases_and_preserve_type_space() {
     let graph = super::super::capture(
         tree.root_node(),
         source.as_bytes(),
+        Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
         "ts",
         &mut vec![],
         &[],
@@ -99,4 +102,32 @@ fn imports_bind_aliases_before_export_aliases_and_preserve_type_space() {
         matches!(&graph.module.exports[1].target, ExportTarget::From(import) if matches!(&import.source, ImportSource::Named {module, name} if name == "Model" && module == "./other"))
     );
     assert_eq!(graph.module.stars, [("./star".to_owned(), false)]);
+}
+
+#[test]
+fn default_exports_use_the_adapter_owned_public_name() {
+    let source = "export default function create() {}";
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into())
+        .unwrap();
+    let tree = parser.parse(source, None).unwrap();
+    let graph = super::super::capture(
+        tree.root_node(),
+        source.as_bytes(),
+        Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
+        "ts",
+        &mut vec![],
+        &[],
+        crate::indexer::flow_bindings::BindingSymbols::CorrelateOnly,
+    )
+    .unwrap();
+
+    assert_eq!(graph.module.exports.len(), 1);
+    assert_eq!(
+        graph.module.exports[0].name,
+        crate::languages::typescript::flow::TS_LEXICAL_SYNTAX
+            .modules
+            .default_export_name
+    );
 }

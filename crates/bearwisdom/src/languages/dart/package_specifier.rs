@@ -58,6 +58,14 @@ pub(crate) fn external_package_key_from_path(path: &str) -> Option<String> {
     root(package_path)
 }
 
+pub(crate) fn external_package_matches_import(
+    language: &str,
+    path: &str,
+    import_root: &str,
+) -> Option<bool> {
+    owns(language).then(|| external_package_key_from_path(path).as_deref() == Some(import_root))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{external_package_key, package_root};

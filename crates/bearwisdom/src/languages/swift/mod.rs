@@ -1,4 +1,5 @@
 //! swift language plugin.
+mod callback_lexical;
 
 mod calls;
 pub(crate) mod decorators;
@@ -51,6 +52,12 @@ impl LanguagePlugin for SwiftPlugin {
 
     fn scope_kinds(&self) -> &[ScopeKind] {
         extract::SWIFT_SCOPE_KINDS
+    }
+
+    fn callback_lexical_adapter(
+        &self,
+    ) -> Option<&'static crate::indexer::callback_lexical::CallbackLexicalAdapter> {
+        Some(&callback_lexical::ADAPTER)
     }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
@@ -132,6 +139,14 @@ impl LanguagePlugin for SwiftPlugin {
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::SWIFT_FLOW_CONFIG)
+    }
+
+    fn normalize_flow_guard_type(&self, raw: &str) -> Option<String> {
+        crate::languages::common::normalize_identifier_capture(raw)
+    }
+
+    fn flow_cfg_node_kinds(&self) -> Option<&'static crate::indexer::flow_cfg::CfgNodeKinds> {
+        Some(&flow::SWIFT_CFG_KINDS)
     }
 
     // resolve_connection_points removed — SwiftRestConnector's only role was

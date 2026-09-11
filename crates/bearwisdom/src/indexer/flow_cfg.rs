@@ -117,7 +117,7 @@ pub struct BasicBlock {
 }
 
 /// A control-flow edge. `guard` is the fact-map implied by *taking* this edge
-/// (e.g., `instanceof Derived` on the true branch sets `x: Single("Derived")`
+/// (for example, a language-provided type test may set `x: Single("Derived")`
 /// on that edge only). An empty guard means "no narrowing fact on this edge."
 #[derive(Debug, Clone)]
 pub struct Edge {
@@ -253,7 +253,7 @@ impl FileCfg {
 }
 
 /// Per-language node-kind table. Different grammars name the same construct
-/// differently (`if_statement` in TS/JS/Python; `if_expression` in Rust).
+/// differently across grammars.
 /// Languages plug their kinds in via this struct; the CFG algorithm itself
 /// stays generic.
 #[derive(Debug, Clone, Copy)]
@@ -262,7 +262,7 @@ pub struct CfgNodeKinds {
     pub function_kinds: &'static [&'static str],
     /// Statement-block node kinds (the body of a function, then-branch, etc.).
     /// A slice because some grammars use different node kinds for different
-    /// block contexts — Ruby's method body is `body_statement` while the if
+    /// block contexts. A language may use distinct body nodes for conditional and
     /// then-branch is `then` and the while body is `do`; R uses
     /// `braced_expression` instead of `block`. The first kind in the slice
     /// is treated as the canonical block kind in error / fallback paths;
@@ -272,8 +272,13 @@ pub struct CfgNodeKinds {
     pub if_kind: &'static str,
     /// Field name on `if_kind` for the consequence (then) branch.
     pub if_consequence_field: &'static str,
+    /// Select the consequence body when the grammar exposes no named field.
+    pub if_consequence_body: Option<for<'a> fn(Node<'a>) -> Option<Node<'a>>>,
     /// Field name on `if_kind` for the alternative (else) branch.
     pub if_alternative_field: &'static str,
+    /// Select the executable alternative body from the grammar's alternative
+    /// node. `None` means the alternative node is already the body.
+    pub if_alternative_body: Option<for<'a> fn(Node<'a>) -> Option<Node<'a>>>,
     /// Field name on `if_kind` for the condition expression.
     pub if_condition_field: &'static str,
     /// Assignment node kinds (anything that *defines* a name).
@@ -283,17 +288,25 @@ pub struct CfgNodeKinds {
     /// Variable-declarator node kind (`let x = ...`).
     pub declarator_kind: &'static str,
     pub declarator_name_field: &'static str,
-    /// Loop node kinds (while/for/do). The CFG models each as
+    /// Node kinds whose source text is a single function/declaration name.
+    pub binding_name_kinds: &'static [&'static str],
+    /// Name kinds admitted as CFG definition kills.
+    pub definition_name_kinds: &'static [&'static str],
+    /// Name kinds admitted as a bare return expression.
+    pub bare_return_name_kinds: &'static [&'static str],
+    /// Fields that may carry the source name of a function or of the
+    /// declaration that immediately owns an anonymous function expression.
+    pub function_name_fields: &'static [&'static str],
+    /// Loop node kinds. The CFG models each as
     /// `pred → header → body → header (back-edge)` and `header → exit`.
     pub loop_kinds: &'static [&'static str],
-    /// Field on a loop node holding the body statement (typically `"body"`).
+    /// Field on a loop node holding the body statement.
     pub loop_body_field: &'static str,
-    /// Field on a loop node holding the loop condition, when one exists
-    /// (`while`/`for`). `None` for `for_in`/`for_of`-style loops that
-    /// iterate without a boolean test.
+    /// Field on a loop node holding the loop condition, when one exists.
+    /// `None` denotes an iterator-style loop without a boolean test.
     pub loop_condition_field: Option<&'static str>,
     /// Switch-statement node kinds (some grammars split expression-switch /
-    /// type-switch / pattern-match into separate kinds — Go in particular has
+    /// type-switch / pattern-match into separate kinds.
     /// `expression_switch_statement` and `type_switch_statement` as siblings).
     /// An empty slice disables the switch path for that language.
     pub switch_kinds: &'static [&'static str],
@@ -301,575 +314,38 @@ pub struct CfgNodeKinds {
     pub switch_value_field: &'static str,
     /// Field on the switch holding the body (the wrapper of case clauses).
     /// `None` for grammars whose switch lists cases as direct children of
-    /// the switch node (Go).
+    /// the switch node.
     pub switch_body_field: Option<&'static str>,
     /// Case-clause node kinds inside the switch body. Multiple entries for
-    /// languages whose switch flavors emit distinct case kinds (Go:
+    /// languages whose switch flavors emit distinct case kinds.
     /// `expression_case` + `type_case`).
     pub switch_case_kinds: &'static [&'static str],
     /// Default-clause node kinds inside the switch body. Empty when the
-    /// language has no separate default node (e.g., Python `_` patterns
+    /// language has no separate default node (for example, wildcard patterns
     /// are subsumed by the case kind itself).
     pub switch_default_kinds: &'static [&'static str],
     /// Pass-through container kinds. When iterating a block's or case's
     /// statements, a child whose kind matches one of these is treated as
     /// transparent — the walker recurses into its named_children instead
-    /// of dispatching it as a single statement. Go wraps top-level stmts
+    /// of dispatching it as a single statement. Some grammars wrap top-level statements
     /// in `statement_list`; other grammars may have analogous wrappers.
     pub transparent_kinds: &'static [&'static str],
     /// Whether the grammar treats a block body's final *expression* as the
     /// block's (and thus the function's) implicit return value. True for the
     /// expression-oriented languages where `fn f() -> T { e }` / `def f = { e }`
-    /// returns `e` with no `return` keyword (Rust, Scala, Ruby); false where a
-    /// bare trailing expression is a statement that returns no value (TS, Java,
-    /// C#, Go, …). Drives the tail-of-block return-inference pass: the last
+    /// returns `e` with no `return` keyword; false where a
+    /// bare trailing expression is a statement that returns no value.
+    /// Drives the tail-of-block return-inference pass: the last
     /// named child of the body block is taken as a return expression, excluding
     /// `*_statement` (semicolon-terminated, returns unit) and binding nodes
     /// (`*_declaration` / `*_definition`).
-    pub block_tail_returns: bool,
+    /// Language-owned admission for a block's final named child as an implicit
+    /// return. `None` disables tail returns for statement-oriented grammars.
+    pub implicit_return_candidate: Option<fn(Node) -> bool>,
+    /// Optional language-owned parser for extra condition facts not already
+    /// emitted by the configured guard query.
+    pub condition_true_guard: Option<fn(Node, &[u8]) -> FactMap>,
 }
-
-/// TypeScript / JavaScript node-kind table. The first wire-up; other
-/// languages plug in their own table the same way.
-pub const TS_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
-    function_kinds: &[
-        "function_declaration",
-        "function_expression",
-        "method_definition",
-        "arrow_function",
-    ],
-    block_kinds: &["statement_block"],
-    if_kind: "if_statement",
-    if_consequence_field: "consequence",
-    if_alternative_field: "alternative",
-    if_condition_field: "condition",
-    assignment_kind: "assignment_expression",
-    assignment_lhs_field: "left",
-    declarator_kind: "variable_declarator",
-    declarator_name_field: "name",
-    loop_kinds: &[
-        "while_statement",
-        "for_statement",
-        "for_in_statement",
-        "do_statement",
-    ],
-    loop_body_field: "body",
-    loop_condition_field: Some("condition"),
-    switch_kinds: &["switch_statement"],
-    switch_value_field: "value",
-    switch_body_field: Some("body"),
-    switch_case_kinds: &["switch_case"],
-    switch_default_kinds: &["switch_default"],
-    transparent_kinds: &[],
-    block_tail_returns: false,
-};
-
-/// Java node-kind table. Java's switch uses a `switch_block` body whose
-/// case structure differs from TS — switch is left disabled here (empty
-/// switch_kinds matches nothing); the if / loop / def CFG still applies.
-pub const JAVA_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
-    function_kinds: &[
-        "method_declaration",
-        "constructor_declaration",
-        "compact_constructor_declaration",
-        "lambda_expression",
-    ],
-    block_kinds: &["block"],
-    if_kind: "if_statement",
-    if_consequence_field: "consequence",
-    if_alternative_field: "alternative",
-    if_condition_field: "condition",
-    assignment_kind: "assignment_expression",
-    assignment_lhs_field: "left",
-    declarator_kind: "variable_declarator",
-    declarator_name_field: "name",
-    loop_kinds: &[
-        "while_statement",
-        "for_statement",
-        "enhanced_for_statement",
-        "do_statement",
-    ],
-    loop_body_field: "body",
-    loop_condition_field: Some("condition"),
-    switch_kinds: &[],
-    switch_value_field: "condition",
-    switch_body_field: Some("body"),
-    switch_case_kinds: &["switch_block_statement_group"],
-    switch_default_kinds: &["switch_label"],
-    transparent_kinds: &[],
-    block_tail_returns: false,
-};
-
-/// Python node-kind table.
-pub const PYTHON_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
-    function_kinds: &["function_definition", "lambda"],
-    block_kinds: &["block"],
-    if_kind: "if_statement",
-    if_consequence_field: "consequence",
-    if_alternative_field: "alternative",
-    if_condition_field: "condition",
-    assignment_kind: "assignment",
-    assignment_lhs_field: "left",
-    // Python has no separate declarator — assignment is the def.
-    declarator_kind: "__python_no_declarator__",
-    declarator_name_field: "name",
-    loop_kinds: &["while_statement", "for_statement"],
-    loop_body_field: "body",
-    loop_condition_field: Some("condition"),
-    // PEP 634 match — disabled by default; default `_` pattern subsumes else.
-    switch_kinds: &[],
-    switch_value_field: "subject",
-    switch_body_field: Some("body"),
-    switch_case_kinds: &["case_clause"],
-    switch_default_kinds: &[],
-    transparent_kinds: &[],
-    block_tail_returns: false,
-};
-
-/// C# node-kind table. C#'s switch_section + switch_label split is enough
-/// like TS's case structure that the basic switch routing works; richer
-/// pattern matching falls back to the interval path.
-pub const CSHARP_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
-    function_kinds: &[
-        "method_declaration",
-        "constructor_declaration",
-        "local_function_statement",
-        "lambda_expression",
-    ],
-    block_kinds: &["block"],
-    if_kind: "if_statement",
-    if_consequence_field: "consequence",
-    if_alternative_field: "alternative",
-    if_condition_field: "condition",
-    assignment_kind: "assignment_expression",
-    assignment_lhs_field: "left",
-    declarator_kind: "variable_declarator",
-    declarator_name_field: "name",
-    loop_kinds: &[
-        "while_statement",
-        "for_statement",
-        "for_each_statement",
-        "do_statement",
-    ],
-    loop_body_field: "body",
-    loop_condition_field: Some("condition"),
-    switch_kinds: &["switch_statement"],
-    switch_value_field: "value",
-    switch_body_field: Some("body"),
-    switch_case_kinds: &["switch_section"],
-    switch_default_kinds: &[],
-    transparent_kinds: &[],
-    block_tail_returns: false,
-};
-
-/// Rust node-kind table. Control-flow constructs are *expressions* in Rust
-/// (`if_expression` / `match_expression` / etc.) but their structure mirrors
-/// the statement forms in TS / Java. `let_declaration`'s LHS is a pattern
-/// rather than a bare identifier — the def-collector only registers simple
-/// `identifier` patterns; destructured/`mut`/`ref` bindings are missed
-/// (acceptable for narrowing — narrowings come from `if let` / `match` via
-/// the type_guard_query, not from let-bindings).
-pub const RUST_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
-    function_kinds: &["function_item", "closure_expression"],
-    block_kinds: &["block"],
-    if_kind: "if_expression",
-    if_consequence_field: "consequence",
-    if_alternative_field: "alternative",
-    if_condition_field: "condition",
-    assignment_kind: "assignment_expression",
-    assignment_lhs_field: "left",
-    declarator_kind: "let_declaration",
-    declarator_name_field: "pattern",
-    loop_kinds: &["while_expression", "loop_expression", "for_expression"],
-    loop_body_field: "body",
-    loop_condition_field: Some("condition"),
-    switch_kinds: &["match_expression"],
-    switch_value_field: "value",
-    switch_body_field: Some("body"),
-    switch_case_kinds: &["match_arm"],
-    switch_default_kinds: &[],
-    transparent_kinds: &[],
-    // `fn f() -> T { e }` returns its tail expression with no `return`.
-    block_tail_returns: true,
-};
-
-/// Go node-kind table. Go's `for` covers all loop forms (with optional
-/// condition); switch has two variants — both are routed through the same
-/// case/default kinds (`expression_case` / `default_case`) so the generic
-/// switch builder handles them uniformly. Type-switch is Go's dominant
-/// narrowing source (`switch v := x.(type) { case *T: ... }`).
-pub const GO_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
-    function_kinds: &["function_declaration", "method_declaration", "func_literal"],
-    block_kinds: &["block"],
-    if_kind: "if_statement",
-    if_consequence_field: "consequence",
-    if_alternative_field: "alternative",
-    if_condition_field: "condition",
-    assignment_kind: "assignment_statement",
-    assignment_lhs_field: "left",
-    declarator_kind: "short_var_declaration",
-    declarator_name_field: "left",
-    loop_kinds: &["for_statement"],
-    loop_body_field: "body",
-    loop_condition_field: Some("condition"),
-    switch_kinds: &["expression_switch_statement", "type_switch_statement"],
-    switch_value_field: "value",
-    // Go's switch lists cases as direct children — no `body` wrapper.
-    switch_body_field: None,
-    switch_case_kinds: &["expression_case", "type_case"],
-    switch_default_kinds: &["default_case"],
-    // Go's block and case both wrap their statements in `statement_list`.
-    transparent_kinds: &["statement_list"],
-    block_tail_returns: false,
-};
-
-/// C node-kind table. Switch shares a single `case_statement` kind for both
-/// labeled cases and `default:` — the case_kinds slice carries it once and
-/// the generic builder routes both paths through the same case-block.
-pub const C_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
-    function_kinds: &["function_definition"],
-    block_kinds: &["compound_statement"],
-    if_kind: "if_statement",
-    if_consequence_field: "consequence",
-    if_alternative_field: "alternative",
-    if_condition_field: "condition",
-    assignment_kind: "assignment_expression",
-    assignment_lhs_field: "left",
-    declarator_kind: "init_declarator",
-    declarator_name_field: "declarator",
-    loop_kinds: &["while_statement", "for_statement", "do_statement"],
-    loop_body_field: "body",
-    loop_condition_field: Some("condition"),
-    switch_kinds: &["switch_statement"],
-    switch_value_field: "condition",
-    // C's switch puts case_statement children directly in the compound_statement
-    // body wrapper (no separate switch_body field shape).
-    switch_body_field: Some("body"),
-    switch_case_kinds: &["case_statement"],
-    switch_default_kinds: &[],
-    transparent_kinds: &[],
-    block_tail_returns: false,
-};
-
-/// PHP node-kind table. PHP's switch wraps cases in a `switch_block` and
-/// distinguishes `case_statement` / `default_statement`.
-pub const PHP_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
-    function_kinds: &[
-        "function_definition",
-        "method_declaration",
-        "anonymous_function",
-        "arrow_function",
-        "anonymous_function_creation_expression",
-    ],
-    block_kinds: &["compound_statement"],
-    if_kind: "if_statement",
-    if_consequence_field: "body",
-    if_alternative_field: "alternative",
-    if_condition_field: "condition",
-    assignment_kind: "assignment_expression",
-    assignment_lhs_field: "left",
-    declarator_kind: "__php_no_declarator__",
-    declarator_name_field: "name",
-    loop_kinds: &[
-        "while_statement",
-        "for_statement",
-        "foreach_statement",
-        "do_statement",
-    ],
-    loop_body_field: "body",
-    loop_condition_field: Some("condition"),
-    switch_kinds: &["switch_statement"],
-    switch_value_field: "condition",
-    switch_body_field: Some("body"),
-    switch_case_kinds: &["case_statement"],
-    switch_default_kinds: &["default_statement"],
-    transparent_kinds: &[],
-    block_tail_returns: false,
-};
-
-/// Lua node-kind table. Lua has no switch construct. `variable_declaration`
-/// wraps an `assignment_statement` for `local x = …`, so the latter handles
-/// both bare assignment and declaration.
-pub const LUA_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
-    function_kinds: &[
-        "function_declaration",
-        "local_function",
-        "function_definition",
-    ],
-    block_kinds: &["block"],
-    if_kind: "if_statement",
-    if_consequence_field: "consequence",
-    if_alternative_field: "alternative",
-    if_condition_field: "condition",
-    assignment_kind: "assignment_statement",
-    assignment_lhs_field: "left",
-    declarator_kind: "__lua_no_declarator__",
-    declarator_name_field: "name",
-    loop_kinds: &[
-        "while_statement",
-        "for_statement",
-        "for_numeric_statement",
-        "for_generic_statement",
-        "repeat_statement",
-    ],
-    loop_body_field: "body",
-    loop_condition_field: Some("condition"),
-    switch_kinds: &[],
-    switch_value_field: "value",
-    switch_body_field: None,
-    switch_case_kinds: &[],
-    switch_default_kinds: &[],
-    // `variable_declaration` is a thin wrapper over `assignment_statement`
-    // for `local x = …`; recursing through it puts the assignment into the
-    // current block where collect_defs_in sees it.
-    transparent_kinds: &["variable_declaration"],
-    block_tail_returns: false,
-};
-
-/// Groovy node-kind table. Groovy's grammar is Java-flavored — `if_statement`,
-/// `while_statement`, `local_variable_declaration` + `variable_declarator` —
-/// but switch is `switch_expression` with `switch_block` cases.
-pub const GROOVY_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
-    function_kinds: &["method_declaration", "constructor_declaration"],
-    block_kinds: &["block"],
-    if_kind: "if_statement",
-    if_consequence_field: "consequence",
-    if_alternative_field: "alternative",
-    if_condition_field: "condition",
-    assignment_kind: "assignment_expression",
-    assignment_lhs_field: "left",
-    declarator_kind: "variable_declarator",
-    declarator_name_field: "name",
-    loop_kinds: &["while_statement", "for_statement", "do_statement"],
-    loop_body_field: "body",
-    loop_condition_field: Some("condition"),
-    switch_kinds: &["switch_expression", "switch_statement"],
-    switch_value_field: "condition",
-    switch_body_field: Some("body"),
-    switch_case_kinds: &["switch_block_statement_group"],
-    switch_default_kinds: &[],
-    transparent_kinds: &[],
-    block_tail_returns: false,
-};
-
-/// Scala node-kind table. Control-flow constructs are *expressions* in Scala
-/// (`if_expression` / `while_expression` / `match_expression`); the match
-/// expression wraps clauses in a `case_block`.
-pub const SCALA_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
-    function_kinds: &["function_definition", "lambda_expression"],
-    block_kinds: &["block"],
-    if_kind: "if_expression",
-    if_consequence_field: "consequence",
-    if_alternative_field: "alternative",
-    if_condition_field: "condition",
-    assignment_kind: "assignment_expression",
-    assignment_lhs_field: "left",
-    declarator_kind: "var_definition",
-    declarator_name_field: "pattern",
-    loop_kinds: &["while_expression", "for_expression"],
-    loop_body_field: "body",
-    loop_condition_field: Some("condition"),
-    switch_kinds: &["match_expression"],
-    switch_value_field: "value",
-    switch_body_field: Some("body"),
-    switch_case_kinds: &["case_clause"],
-    switch_default_kinds: &[],
-    transparent_kinds: &[],
-    // `def f = { …; e }` returns its block's final expression with no `return`.
-    block_tail_returns: true,
-};
-
-/// Kotlin node-kind table (tree-sitter-kotlin-ng). Function bodies are
-/// wrapped in `function_body` which itself contains a `block` — listing
-/// `function_body` in `transparent_kinds` lets `find_function_body`
-/// descend through it to the real block. Control-flow constructs are
-/// expressions (`if_expression`, `when_expression`); the latter uses
-/// `when_entry` for cases.
-pub const KOTLIN_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
-    function_kinds: &["function_declaration", "lambda_literal", "function_literal"],
-    block_kinds: &["block"],
-    if_kind: "if_expression",
-    if_consequence_field: "consequence",
-    if_alternative_field: "alternative",
-    if_condition_field: "condition",
-    assignment_kind: "assignment",
-    assignment_lhs_field: "left",
-    declarator_kind: "property_declaration",
-    declarator_name_field: "name",
-    loop_kinds: &["while_statement", "for_statement", "do_while_statement"],
-    loop_body_field: "body",
-    loop_condition_field: Some("condition"),
-    switch_kinds: &["when_expression"],
-    switch_value_field: "value",
-    switch_body_field: None,
-    switch_case_kinds: &["when_entry"],
-    switch_default_kinds: &[],
-    transparent_kinds: &["function_body"],
-    // A Kotlin block body returns only via an explicit `return`; a bare
-    // trailing expression is a statement. The concise `= expr` body (implicit
-    // return) is already covered by the `@return.tail` query arm.
-    block_tail_returns: false,
-};
-
-/// Ruby node-kind table. Ruby uses three different block-like containers
-/// depending on context: method bodies are `body_statement`, if then-bodies
-/// are `then`, while/until bodies are `do`. All three count as block_kinds
-/// so the generic walker recurses into each.
-pub const RUBY_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
-    function_kinds: &["method", "singleton_method", "block", "do_block"],
-    block_kinds: &["body_statement", "then", "do"],
-    if_kind: "if",
-    if_consequence_field: "consequence",
-    if_alternative_field: "alternative",
-    if_condition_field: "condition",
-    assignment_kind: "assignment",
-    assignment_lhs_field: "left",
-    declarator_kind: "__ruby_no_declarator__",
-    declarator_name_field: "name",
-    loop_kinds: &["while", "until", "while_modifier", "until_modifier"],
-    loop_body_field: "body",
-    loop_condition_field: Some("condition"),
-    switch_kinds: &["case"],
-    switch_value_field: "value",
-    switch_body_field: None,
-    switch_case_kinds: &["when"],
-    switch_default_kinds: &["else"],
-    transparent_kinds: &[],
-    // A Ruby method returns its body's final expression with no `return`.
-    block_tail_returns: true,
-};
-
-/// R node-kind table. R has no switch statement — `switch()` is a regular
-/// function call, not a control-flow construct. The function body is a
-/// `braced_expression`. Assignments use `<-` which parses as a
-/// `binary_operator` rather than a dedicated assignment kind, so the
-/// declarator/assignment fields are sentinel — local def discovery falls
-/// back to whatever `collect_defs_in` finds.
-pub const R_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
-    function_kinds: &["function_definition"],
-    block_kinds: &["braced_expression"],
-    if_kind: "if_statement",
-    if_consequence_field: "consequence",
-    if_alternative_field: "alternative",
-    if_condition_field: "condition",
-    assignment_kind: "__r_no_assignment__",
-    assignment_lhs_field: "left",
-    declarator_kind: "__r_no_declarator__",
-    declarator_name_field: "name",
-    loop_kinds: &["while_statement", "for_statement", "repeat_statement"],
-    loop_body_field: "body",
-    loop_condition_field: Some("condition"),
-    switch_kinds: &[],
-    switch_value_field: "value",
-    switch_body_field: None,
-    switch_case_kinds: &[],
-    switch_default_kinds: &[],
-    transparent_kinds: &[],
-    // R is expression-oriented (a function's last expression is its value), but
-    // R has no return query wired, so the tail pass has nothing to attribute.
-    block_tail_returns: false,
-};
-
-/// Dart node-kind table. Dart has no single function-wrapper node — a top-level
-/// `function_signature` and its `function_body` are siblings, and a method's
-/// body is likewise a sibling `function_body`. So `function_body` itself is the
-/// function kind the CFG roots on (its child `block` is the body block). The
-/// if-statement carries `consequence`/`alternative` fields but NO condition
-/// field — the `type_test_expression` (`x is Foo`) is a positional child, and
-/// the narrowing it implies arrives through the per-language `type_guard_query`
-/// as a `Narrowing`, not the syntactic `condition_to_true_guard` path.
-pub const DART_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
-    function_kinds: &["function_body", "function_expression_body"],
-    block_kinds: &["block"],
-    if_kind: "if_statement",
-    if_consequence_field: "consequence",
-    if_alternative_field: "alternative",
-    // No condition field on Dart's if_statement; the type-test narrowing rides
-    // the type_guard_query, so an empty field name disables the syntactic path.
-    if_condition_field: "",
-    assignment_kind: "assignment_expression",
-    assignment_lhs_field: "left",
-    declarator_kind: "initialized_variable_definition",
-    declarator_name_field: "name",
-    loop_kinds: &["while_statement", "for_statement", "do_statement"],
-    loop_body_field: "body",
-    loop_condition_field: Some("condition"),
-    switch_kinds: &["switch_statement"],
-    switch_value_field: "condition",
-    switch_body_field: Some("body"),
-    switch_case_kinds: &["switch_statement_case"],
-    switch_default_kinds: &["switch_statement_default"],
-    transparent_kinds: &[],
-    block_tail_returns: false,
-};
-
-/// Swift node-kind table (tree-sitter-swift 0.7). `function_declaration` carries
-/// a `body` field whose value is a `function_body` wrapping a `statements`
-/// block — `function_body` is listed in `transparent_kinds` so
-/// `find_function_body` descends through it to the `statements` block. The
-/// if-statement lists its condition and branches POSITIONALLY with no
-/// consequence/alternative field (only `condition`/`name`/`bound_identifier`
-/// fields exist), so `if_consequence_field` is empty and `if_consequence_node`
-/// finds the then-block by the first `statements` child. The narrowing from
-/// `x is T` / `if let y = x as? T` arrives through the `type_guard_query`; the
-/// guard attaches to the then-block by byte range, so the field-less if-diamond
-/// degrades gracefully (else-branch precision is reduced — a dropped narrowing
-/// at worst, never a false bind).
-pub const SWIFT_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
-    function_kinds: &["function_declaration", "init_declaration", "lambda_literal"],
-    block_kinds: &["statements"],
-    if_kind: "if_statement",
-    if_consequence_field: "",
-    if_alternative_field: "",
-    if_condition_field: "condition",
-    assignment_kind: "assignment",
-    assignment_lhs_field: "target",
-    declarator_kind: "property_declaration",
-    declarator_name_field: "name",
-    loop_kinds: &["while_statement", "for_statement", "repeat_while_statement"],
-    loop_body_field: "body",
-    loop_condition_field: Some("condition"),
-    switch_kinds: &["switch_statement"],
-    switch_value_field: "expr",
-    switch_body_field: None,
-    switch_case_kinds: &["switch_entry"],
-    switch_default_kinds: &[],
-    // `function_body` wraps the `statements` block; descend through it.
-    transparent_kinds: &["function_body"],
-    block_tail_returns: false,
-};
-
-/// GDScript node-kind table (tree-sitter-gdscript 6.1). Python-shaped: the
-/// then/else branch and every loop body is a `body` block; the if-statement
-/// carries `condition`/`body`/`alternative` fields. The `is T` narrowing
-/// arrives through the `type_guard_query` (a `binary_operator` with the `is`
-/// op inside the condition). `match` lists `pattern_section` clauses inside a
-/// `match_body`; there is no separate default node — the `_` pattern is a
-/// pattern_section like any other, so a post-match join drops a narrowing the
-/// same way Python's `case _` does. A bare trailing expression in a `body` is a
-/// statement, not a return, so `block_tail_returns` is false.
-pub const GDSCRIPT_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
-    function_kinds: &["function_definition", "lambda"],
-    block_kinds: &["body"],
-    if_kind: "if_statement",
-    if_consequence_field: "body",
-    if_alternative_field: "alternative",
-    if_condition_field: "condition",
-    assignment_kind: "assignment",
-    assignment_lhs_field: "left",
-    declarator_kind: "variable_statement",
-    declarator_name_field: "name",
-    loop_kinds: &["while_statement", "for_statement"],
-    loop_body_field: "body",
-    loop_condition_field: Some("condition"),
-    switch_kinds: &["match_statement"],
-    switch_value_field: "value",
-    switch_body_field: Some("body"),
-    switch_case_kinds: &["pattern_section"],
-    switch_default_kinds: &[],
-    transparent_kinds: &[],
-    block_tail_returns: false,
-};
 
 /// Build CFGs for every function in `root`. The returned `FileCfg`'s functions
 /// are independent — each is its own dataflow.
@@ -878,9 +354,8 @@ pub const GDSCRIPT_CFG_KINDS: CfgNodeKinds = CfgNodeKinds {
 /// `flow` runner. They feed into edge guards on body-containing edges
 /// (if-then, loop body, switch case) — any `Narrowing` whose byte range
 /// fits inside a body becomes a `Single`-fact edge guard. This is the
-/// generic, language-agnostic source of narrowing facts; the TS-specific
-/// `condition_to_true_guard` adds shortcuts for patterns the query may not
-/// have captured (e.g., `||` disjunctions yielding a `Union` fact).
+/// generic, language-agnostic source of narrowing facts. A language adapter may
+/// also contribute normalized facts through `condition_true_guard`.
 pub fn build_file_cfg(
     root: &Node,
     src: &[u8],
@@ -963,7 +438,7 @@ pub(crate) fn find_function_body<'a>(fn_node: &Node<'a>, kinds: &CfgNodeKinds) -
             return Some(ch);
         }
     }
-    // Descend one level through a transparent wrapper — Kotlin's
+    // Descend one level through a transparent wrapper — a language's
     // `function_declaration > function_body > block`, where `function_body`
     // is registered in `transparent_kinds`.
     let mut c = fn_node.walk();
@@ -1006,7 +481,7 @@ fn add_edge(cfg: &mut Cfg, from: BlockId, to: BlockId, guard: FactMap) {
 /// Returns the BlockId of the *current* open block at the end of the walk
 /// (which the caller closes at the enclosing scope's end).
 ///
-/// Children whose kind is in `kinds.transparent_kinds` (Go's `statement_list`)
+/// Children whose kind is in `kinds.transparent_kinds` (a transparent statement wrapper)
 /// are flattened — the walker recurses into their named_children so the real
 /// if/loop/switch statements are visible to the dispatcher.
 fn build_block_sequence(
@@ -1064,25 +539,13 @@ fn process_block_child(
 ///
 /// where the guard fact (if recognizable) rides the true-edge. Returns the
 /// `join` block as the new current block.
-/// The consequence (then) body of an if-statement. Tries the language's
-/// `if_consequence_field` first; when that field does not exist on the grammar
-/// (Swift's `if_statement` lists its branches positionally with no field), falls
-/// back to the FIRST `block_kinds` named child. The positional fallback is
-/// approximate for `if … else` — the first block is the consequence, the else
-/// block is reached through the alternative path or, absent a field, missed —
-/// but the guard still attaches by byte range, so the then-block narrowing is
-/// sound. Returns `None` only when neither the field nor any block child exists.
 fn if_consequence_node<'a>(if_node: &Node<'a>, kinds: &CfgNodeKinds) -> Option<Node<'a>> {
-    if !kinds.if_consequence_field.is_empty() {
-        if let Some(n) = if_node.child_by_field_name(kinds.if_consequence_field) {
-            return Some(n);
-        }
+    if let Some(select) = kinds.if_consequence_body {
+        return select(*if_node);
     }
-    let mut c = if_node.walk();
-    let found = if_node
-        .named_children(&mut c)
-        .find(|ch| kinds.block_kinds.contains(&ch.kind()));
-    found
+    (!kinds.if_consequence_field.is_empty())
+        .then(|| if_node.child_by_field_name(kinds.if_consequence_field))
+        .flatten()
 }
 
 fn build_if(
@@ -1100,14 +563,17 @@ fn build_if(
     // Read the condition's implied true-edge fact. Two sources combined:
     //   * the per-language `type_guard_query` results (`narrowings`) whose
     //     byte range fits inside the then-body — generic, all languages.
-    //   * the TS-specific syntactic recognizer for patterns the query may
-    //     not capture (e.g., `||` disjunctions yielding a Union fact).
+    //   * an optional language-owned syntactic recognizer for patterns the
+    //     query may not capture.
     let then_range = if_consequence_node(if_node, kinds)
         .map(|n| (n.start_byte() as u32, n.end_byte() as u32))
         .unwrap_or((if_node.end_byte() as u32, if_node.end_byte() as u32));
     let mut true_guard = guards_for_range(narrowings, then_range.0, then_range.1);
     if let Some(c) = if_node.child_by_field_name(kinds.if_condition_field) {
-        let syntactic = condition_to_true_guard(&c, src);
+        let syntactic = kinds
+            .condition_true_guard
+            .map(|guard| guard(c, src))
+            .unwrap_or_default();
         for (name, fact) in &syntactic.0 {
             true_guard.insert(name.clone(), fact.clone());
         }
@@ -1136,16 +602,11 @@ fn build_if(
         None => then_block,
     };
 
-    // ELSE branch (may be absent). Tree-sitter wraps `else <body>` in an
-    // `else_clause` node — peel it so the match below sees the real body.
     let else_node = if_node
         .child_by_field_name(kinds.if_alternative_field)
-        .map(|n| {
-            if n.kind() == "else_clause" {
-                n.named_child(0).unwrap_or(n)
-            } else {
-                n
-            }
+        .and_then(|node| match kinds.if_alternative_body {
+            Some(select) => select(node),
+            None => Some(node),
         });
     let else_block;
     let else_tail;
@@ -1224,7 +685,10 @@ fn build_loop(
         .loop_condition_field
         .and_then(|f| loop_node.child_by_field_name(f))
     {
-        let syntactic = condition_to_true_guard(&c, src);
+        let syntactic = kinds
+            .condition_true_guard
+            .map(|guard| guard(c, src))
+            .unwrap_or_default();
         for (name, fact) in &syntactic.0 {
             true_guard.insert(name.clone(), fact.clone());
         }
@@ -1277,8 +741,8 @@ fn build_switch(
 
     let exit = new_block(cfg, switch_node.end_byte() as u32);
 
-    // Some grammars wrap cases in a `body` node (TS/Java/C#/Python/Rust),
-    // others list them as direct children of the switch (Go). Pick the right
+    // Some grammars wrap cases in a `body` node (some grammars),
+    // others list them as direct children of the switch. Pick the right
     // iteration root based on the language's `switch_body_field`.
     let case_root = match kinds.switch_body_field {
         Some(f) => switch_node.child_by_field_name(f),
@@ -1311,7 +775,7 @@ fn build_switch(
 /// Walk the statements inside a switch case clause. Same dispatch rule as
 /// `build_block_sequence` (if/loop/switch routed to their builders, other
 /// nodes treated as opaque defs) but rooted at the clause node, recursing
-/// through any `transparent_kinds` wrapper (Go's `statement_list`).
+/// through any `transparent_kinds` wrapper (a transparent statement wrapper).
 fn walk_case_statements(
     clause: &Node,
     src: &[u8],
@@ -1348,7 +812,7 @@ fn collect_defs_in(node: &Node, src: &[u8], kinds: &CfgNodeKinds, cfg: &mut Cfg,
         }
         if k == kinds.assignment_kind {
             if let Some(lhs) = n.child_by_field_name(kinds.assignment_lhs_field) {
-                if lhs.kind() == "identifier" {
+                if kinds.definition_name_kinds.contains(&lhs.kind()) {
                     if let Ok(name) = lhs.utf8_text(src) {
                         cfg.blocks[block as usize]
                             .defs
@@ -1358,7 +822,7 @@ fn collect_defs_in(node: &Node, src: &[u8], kinds: &CfgNodeKinds, cfg: &mut Cfg,
             }
         } else if k == kinds.declarator_kind {
             if let Some(name_node) = n.child_by_field_name(kinds.declarator_name_field) {
-                if name_node.kind() == "identifier" {
+                if kinds.definition_name_kinds.contains(&name_node.kind()) {
                     if let Ok(name) = name_node.utf8_text(src) {
                         cfg.blocks[block as usize]
                             .defs
@@ -1373,114 +837,6 @@ fn collect_defs_in(node: &Node, src: &[u8], kinds: &CfgNodeKinds, cfg: &mut Cfg,
         }
     }
     cfg.blocks[block as usize].defs.sort_by_key(|(_, b)| *b);
-}
-
-/// Read a type-guard fact off a condition expression. Recognized patterns:
-///
-///   * `x instanceof T`     → `x: Single("T")`
-///   * `typeof x === "T"`   → `x: Single("T")`  (string-literal RHS)
-///   * `(<inner>)`          → recurse on `inner` (parenthesized condition)
-///
-/// Empty FactMap when the condition is unrecognized — the true-edge then
-/// carries no narrowing (the CFG still represents the branch shape).
-fn condition_to_true_guard(cond: &Node, src: &[u8]) -> FactMap {
-    let mut out = FactMap::default();
-    let n = unwrap_parens(*cond);
-    let k = n.kind();
-    if k == "binary_expression" {
-        let op = n
-            .child_by_field_name("operator")
-            .and_then(|o| o.utf8_text(src).ok())
-            .unwrap_or("");
-        let left = n.child_by_field_name("left");
-        let right = n.child_by_field_name("right");
-        // Short-circuit operators compose true-edge facts:
-        //   a && b: both sides must hold ⇒ insert L pointwise then R (R wins
-        //     on the same name; in practice they narrow disjoint names).
-        //   a || b: either side may hold ⇒ pointwise union via FactMap.join.
-        if op == "&&" {
-            if let (Some(l), Some(r)) = (left, right) {
-                let lg = condition_to_true_guard(&l, src);
-                let rg = condition_to_true_guard(&r, src);
-                for (name, fact) in &lg.0 {
-                    out.insert(name.clone(), fact.clone());
-                }
-                for (name, fact) in &rg.0 {
-                    out.insert(name.clone(), fact.clone());
-                }
-                return out;
-            }
-        }
-        if op == "||" {
-            if let (Some(l), Some(r)) = (left, right) {
-                let mut lg = condition_to_true_guard(&l, src);
-                let rg = condition_to_true_guard(&r, src);
-                lg.join(&rg);
-                return lg;
-            }
-        }
-        if op == "instanceof" {
-            if let (Some(l), Some(r)) = (left, right) {
-                if l.kind() == "identifier" && r.kind() == "identifier" {
-                    if let (Ok(lname), Ok(rty)) = (l.utf8_text(src), r.utf8_text(src)) {
-                        out.insert(lname.to_string(), Fact::Single(rty.to_string()));
-                    }
-                }
-            }
-        } else if op == "===" || op == "==" {
-            // typeof x === "T"
-            if let (Some(l), Some(r)) = (left, right) {
-                let l = unwrap_parens(l);
-                if l.kind() == "unary_expression" {
-                    let opnode = l.child_by_field_name("operator");
-                    let arg = l.child_by_field_name("argument");
-                    let is_typeof = opnode
-                        .and_then(|o| o.utf8_text(src).ok())
-                        .map(|s| s == "typeof")
-                        .unwrap_or(false);
-                    if is_typeof {
-                        if let Some(arg) = arg {
-                            if arg.kind() == "identifier" && r.kind() == "string" {
-                                if let (Ok(name), Ok(lit)) = (arg.utf8_text(src), r.utf8_text(src))
-                                {
-                                    let ty = strip_quotes(lit);
-                                    if !ty.is_empty() {
-                                        out.insert(name.to_string(), Fact::Single(ty));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    out
-}
-
-fn unwrap_parens(mut n: Node) -> Node {
-    while n.kind() == "parenthesized_expression" {
-        let mut c = n.walk();
-        let inner = n.named_children(&mut c).next();
-        if let Some(i) = inner {
-            n = i;
-        } else {
-            break;
-        }
-    }
-    n
-}
-
-fn strip_quotes(s: &str) -> String {
-    let s = s.trim();
-    let b = s.as_bytes();
-    if b.len() >= 2
-        && ((b[0] == b'"' && b[b.len() - 1] == b'"') || (b[0] == b'\'' && b[b.len() - 1] == b'\''))
-    {
-        s[1..s.len() - 1].to_string()
-    } else {
-        s.to_string()
-    }
 }
 
 /// Forward dataflow: each block's in-fact is the join of predecessors'
@@ -1557,21 +913,6 @@ fn compute_in_fact(cfg: &Cfg, bid: BlockId, preds: &[Vec<usize>], visited: &[boo
         });
     }
     acc.unwrap_or_default()
-}
-
-#[cfg(test)]
-pub(super) fn _test_build_for_ts(src: &str) -> FileCfg {
-    use crate::languages::LanguagePlugin;
-    use tree_sitter::Parser;
-    let mut p = Parser::new();
-    let lang = crate::languages::typescript::TypeScriptPlugin
-        .grammar("typescript")
-        .expect("ts grammar");
-    p.set_language(&lang).expect("set lang");
-    let tree = p.parse(src, None).expect("parse");
-    // Tests rely on the TS syntactic recognizer (typeof / instanceof / &&·||);
-    // no pre-extracted narrowings are needed.
-    build_file_cfg(&tree.root_node(), src.as_bytes(), &TS_CFG_KINDS, &[])
 }
 
 #[cfg(test)]

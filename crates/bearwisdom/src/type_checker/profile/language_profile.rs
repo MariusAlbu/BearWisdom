@@ -319,9 +319,8 @@ pub struct LanguageProfile {
     /// Component-selector resolution for template refs. `None` (the default)
     /// leaves it inert. `Some` binds a `Calls` ref whose target names a
     /// component/directive selector to the decorated class via
-    /// `SymbolLookup::selector_qname`, applying the configured name transforms
-    /// (e.g. `PascalToKebab` for `<app-user-card>` → `app-user-card`). See
-    /// `SelectorResolution`.
+    /// `SymbolLookup::selector_qname`. The configured adapter owns the exact
+    /// source-spelling normalization. See `SelectorResolution`.
     pub selector_resolution: Option<SelectorResolution>,
     /// Multi-candidate disambiguation by ranking. `false` (the default) leaves
     /// the rung inert — when several same-name, kind-compatible candidates

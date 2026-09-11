@@ -12,6 +12,14 @@ use crate::type_checker::core::types::TypeArena;
 use crate::types::{EmbeddedOrigin, EmbeddedRegion, ExtractionResult, SymbolKind};
 use tree_sitter::{Node, Parser};
 
+/// Accept a guard-query capture that is already a normalized identifier or
+/// qualified type spelling. Language adapters opt into this only when their
+/// query guarantees that it did not capture a source literal or expression.
+pub fn normalize_identifier_capture(raw: &str) -> Option<String> {
+    let normalized = raw.trim();
+    (!normalized.is_empty()).then(|| normalized.to_owned())
+}
+
 // ---------------------------------------------------------------------------
 // Shared TypeId population — used by `extract_with_arena_and_demand` overrides
 // ---------------------------------------------------------------------------

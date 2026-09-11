@@ -75,4 +75,8 @@ impl LanguagePlugin for RLangPlugin {
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::R_FLOW_CONFIG)
     }
+
+    fn flow_cfg_node_kinds(&self) -> Option<&'static crate::indexer::flow_cfg::CfgNodeKinds> {
+        Some(&flow::R_CFG_KINDS)
+    }
 }

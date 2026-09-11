@@ -1,4 +1,5 @@
 //! scala language plugin.
+mod callback_lexical;
 
 mod calls;
 pub(crate) mod decorators;
@@ -49,6 +50,12 @@ impl LanguagePlugin for ScalaPlugin {
 
     fn scope_kinds(&self) -> &[ScopeKind] {
         extract::SCALA_SCOPE_KINDS
+    }
+
+    fn callback_lexical_adapter(
+        &self,
+    ) -> Option<&'static crate::indexer::callback_lexical::CallbackLexicalAdapter> {
+        Some(&callback_lexical::ADAPTER)
     }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
@@ -121,5 +128,35 @@ impl LanguagePlugin for ScalaPlugin {
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::SCALA_FLOW_CONFIG)
+    }
+
+    fn flow_cfg_node_kinds(&self) -> Option<&'static crate::indexer::flow_cfg::CfgNodeKinds> {
+        Some(&flow::SCALA_CFG_KINDS)
+    }
+
+    fn flow_return_query(&self) -> Option<&'static str> {
+        Some(flow::SCALA_RETURN_QUERY)
+    }
+
+    fn flow_destructure_shape(
+        &self,
+        binding: tree_sitter::Node,
+    ) -> crate::indexer::flow_assignments::DestructureShape {
+        flow::destructure_shape(binding)
+    }
+
+    fn requires_correlated_flow_rebuild(&self) -> bool {
+        true
+    }
+
+    fn augment_flow(
+        &self,
+        root: tree_sitter::Node,
+        source: &[u8],
+        symbols: &[crate::types::ExtractedSymbol],
+        refs: &[crate::types::ExtractedRef],
+        meta: &mut crate::types::FlowMeta,
+    ) {
+        flow::bind_match_tuple_cases(&root, source, symbols, refs, meta);
     }
 }

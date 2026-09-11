@@ -10,6 +10,7 @@ fn unique_annotations_retain_exact_owner_spans_without_any_navigation_rows() {
     let graph = crate::indexer::lexical::capture(
         tree.root_node(),
         source.as_bytes(),
+        Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
         "ts",
         &mut vec![],
         &[],
@@ -55,6 +56,7 @@ fn compiler_labelled_unique_symbol_owners_match_both_dialects() {
             let graph = crate::indexer::lexical::capture(
                 tree.root_node(),
                 source.as_bytes(),
+                Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
                 "ts",
                 &mut vec![],
                 &[],

@@ -1,4 +1,5 @@
 //! go language plugin.
+mod callback_lexical;
 
 mod call_sites;
 mod calls;
@@ -61,6 +62,12 @@ impl LanguagePlugin for GoPlugin {
 
     fn scope_kinds(&self) -> &[ScopeKind] {
         &[]
+    }
+
+    fn callback_lexical_adapter(
+        &self,
+    ) -> Option<&'static crate::indexer::callback_lexical::CallbackLexicalAdapter> {
+        Some(&callback_lexical::ADAPTER)
     }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
@@ -143,5 +150,28 @@ impl LanguagePlugin for GoPlugin {
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::GO_FLOW_CONFIG)
+    }
+
+    fn normalize_flow_guard_type(&self, raw: &str) -> Option<String> {
+        crate::languages::common::normalize_identifier_capture(raw)
+    }
+
+    fn flow_cfg_node_kinds(&self) -> Option<&'static crate::indexer::flow_cfg::CfgNodeKinds> {
+        Some(&flow::GO_CFG_KINDS)
+    }
+
+    fn flow_return_query(&self) -> Option<&'static str> {
+        Some(flow::GO_RETURN_QUERY)
+    }
+
+    fn augment_flow(
+        &self,
+        root: tree_sitter::Node,
+        source: &[u8],
+        symbols: &[crate::types::ExtractedSymbol],
+        _refs: &[crate::types::ExtractedRef],
+        meta: &mut crate::types::FlowMeta,
+    ) {
+        flow::bind_range_element_locals(&root, source, symbols, meta);
     }
 }

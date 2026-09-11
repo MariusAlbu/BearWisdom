@@ -5,6 +5,15 @@ use crate::indexer::resolve::engine::testkit::{
 use crate::type_checker::profile::language_profile::DEFAULT_PROFILE;
 
 fn resolve(lookup: &Lookup, target: &str, scope_chain: Vec<String>) -> Option<i64> {
+    resolve_with_profile(lookup, target, scope_chain, &DEFAULT_PROFILE)
+}
+
+fn resolve_with_profile(
+    lookup: &Lookup,
+    target: &str,
+    scope_chain: Vec<String>,
+    profile: &'static crate::type_checker::profile::language_profile::LanguageProfile,
+) -> Option<i64> {
     let r = call_ref(target);
     let s = source_symbol("method");
     let fc = file_ctx(vec![], None);
@@ -15,12 +24,126 @@ fn resolve(lookup: &Lookup, target: &str, scope_chain: Vec<String>) -> Option<i6
         ref_ctx: &rc,
         lookup,
         kind: &kind,
-        profile: &DEFAULT_PROFILE,
+        profile,
     };
     match EnclosingMemberRule.apply(&ctx) {
         LookupResult::Resolved(res) => Some(res.target_symbol_id),
         _ => None,
     }
+}
+
+#[test]
+fn binds_members_of_an_external_parent_by_linked_identity() {
+    let lookup = Lookup::new()
+        .with(sym(1, "TChild", "App.TChild", "class", "src/child.pas"))
+        .with(sym(
+            20,
+            "TExternalParent",
+            "RTL.TExternalParent",
+            "class",
+            "ext:pascal:rtl/classes.pp",
+        ))
+        .with_parent_id(1, 20)
+        .with_member_id(
+            20,
+            sym(
+                21,
+                "Create",
+                "RTL.TExternalParent.Create",
+                "constructor",
+                "ext:pascal:rtl/classes.pp",
+            ),
+        )
+        .with_member_id(
+            20,
+            sym(
+                22,
+                "AddField",
+                "RTL.TExternalParent.AddField",
+                "method",
+                "ext:pascal:rtl/classes.pp",
+            ),
+        );
+
+    assert_eq!(
+        resolve_with_profile(
+            &lookup,
+            "create",
+            vec!["App.TChild".to_string()],
+            &crate::languages::pascal::PASCAL_PROFILE,
+        ),
+        Some(21),
+        "profile-owned case folding must apply to inherited member names",
+    );
+    assert_eq!(
+        resolve_with_profile(
+            &lookup,
+            "AddField",
+            vec!["App.TChild".to_string()],
+            &crate::languages::pascal::PASCAL_PROFILE,
+        ),
+        Some(22),
+    );
+}
+
+#[test]
+fn linked_external_parent_beats_a_same_qname_decoy() {
+    let lookup = Lookup::new()
+        .with(sym(1, "TChild", "App.TChild", "class", "src/child.pas"))
+        .with(sym(
+            10,
+            "TParent",
+            "RTL.TParent",
+            "class",
+            "ext:pascal:wrong/classes.pp",
+        ))
+        .with(sym(
+            20,
+            "TParent",
+            "RTL.TParent",
+            "class",
+            "ext:pascal:right/classes.pp",
+        ))
+        .with_parent_id(1, 20)
+        .with_member_id(
+            10,
+            sym(11, "AddField", "RTL.TParent.AddField", "method", "wrong"),
+        )
+        .with_member_id(
+            20,
+            sym(21, "AddField", "RTL.TParent.AddField", "method", "right"),
+        );
+
+    assert_eq!(
+        resolve_with_profile(
+            &lookup,
+            "AddField",
+            vec!["App.TChild".to_string()],
+            &crate::languages::pascal::PASCAL_PROFILE,
+        ),
+        Some(21),
+    );
+}
+
+#[test]
+fn unrelated_same_named_member_is_not_an_implicit_receiver_candidate() {
+    let lookup = Lookup::new()
+        .with(sym(1, "TChild", "App.TChild", "class", "src/child.pas"))
+        .with(sym(30, "TOther", "Else.TOther", "class", "src/other.pas"))
+        .with_member_id(
+            30,
+            sym(31, "AddField", "Else.TOther.AddField", "method", "other"),
+        );
+
+    assert_eq!(
+        resolve_with_profile(
+            &lookup,
+            "AddField",
+            vec!["App.TChild".to_string()],
+            &crate::languages::pascal::PASCAL_PROFILE,
+        ),
+        None,
+    );
 }
 
 #[test]

@@ -1,4 +1,5 @@
 //! java language plugin.
+mod callback_lexical;
 
 mod calls;
 pub(crate) mod connectors;
@@ -60,6 +61,12 @@ impl LanguagePlugin for JavaPlugin {
 
     fn scope_kinds(&self) -> &[ScopeKind] {
         extract::JAVA_SCOPE_KINDS
+    }
+
+    fn callback_lexical_adapter(
+        &self,
+    ) -> Option<&'static crate::indexer::callback_lexical::CallbackLexicalAdapter> {
+        Some(&callback_lexical::ADAPTER)
     }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
@@ -152,5 +159,17 @@ impl LanguagePlugin for JavaPlugin {
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::JAVA_FLOW_CONFIG)
+    }
+
+    fn normalize_flow_guard_type(&self, raw: &str) -> Option<String> {
+        crate::languages::common::normalize_identifier_capture(raw)
+    }
+
+    fn flow_cfg_node_kinds(&self) -> Option<&'static crate::indexer::flow_cfg::CfgNodeKinds> {
+        Some(&flow::JAVA_CFG_KINDS)
+    }
+
+    fn flow_return_query(&self) -> Option<&'static str> {
+        Some(flow::JAVA_RETURN_QUERY)
     }
 }

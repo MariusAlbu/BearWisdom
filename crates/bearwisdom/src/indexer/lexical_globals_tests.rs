@@ -14,6 +14,7 @@ fn capture_source(source: &str) -> (LexicalBindings, Capture) {
     let graph = super::super::capture(
         tree.root_node(),
         source.as_bytes(),
+        Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
         "ts",
         &mut vec![],
         &[],

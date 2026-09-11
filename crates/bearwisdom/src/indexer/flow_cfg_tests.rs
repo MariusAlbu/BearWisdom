@@ -8,6 +8,22 @@
 use super::*;
 use crate::indexer::flow::BindingSymbols;
 
+fn _test_build_for_ts(src: &str) -> FileCfg {
+    use crate::languages::LanguagePlugin;
+    let mut parser = tree_sitter::Parser::new();
+    let language = crate::languages::typescript::TypeScriptPlugin
+        .grammar("typescript")
+        .expect("grammar");
+    parser.set_language(&language).expect("set language");
+    let tree = parser.parse(src, None).expect("parse");
+    build_file_cfg(
+        &tree.root_node(),
+        src.as_bytes(),
+        &crate::languages::typescript::flow::TS_CFG_KINDS,
+        &[],
+    )
+}
+
 // ---------- foundation: fact-merge math --------------------------------------
 
 #[test]
@@ -400,7 +416,12 @@ fn cfg_go_type_switch_statement_recognized_as_switch_kind() {
         byte_start: case_start,
         byte_end: case_end,
     }];
-    let fc = super::_test_build_with_narrowings(src, &GO_CFG_KINDS, &lang, &narrowings);
+    let fc = super::_test_build_with_narrowings(
+        src,
+        &crate::languages::go::flow::GO_CFG_KINDS,
+        &lang,
+        &narrowings,
+    );
     assert!(!fc.is_empty(), "go CFG should be built");
     let probe = src.find("v.bar()").unwrap() as u32;
     assert_eq!(

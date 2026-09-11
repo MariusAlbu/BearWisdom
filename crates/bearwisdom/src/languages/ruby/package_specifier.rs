@@ -47,6 +47,25 @@ pub(crate) fn external_package_key_from_path(path: &str) -> Option<String> {
     root(path.strip_prefix("ext:ruby:")?)
 }
 
+/// Ruby's `require "aws/..."` family admits gems whose package name begins
+/// with that require root followed by a hyphen (`aws-sdk-s3`). The boundary is
+/// RubyGems policy, kept here with the package and virtual-path spelling.
+pub(crate) fn external_package_matches_import(
+    language: &str,
+    path: &str,
+    import_root: &str,
+) -> Option<bool> {
+    if !owns(language) {
+        return None;
+    }
+    Some(external_package_key_from_path(path).is_some_and(|package| {
+        package == import_root
+            || package
+                .strip_prefix(import_root)
+                .is_some_and(|suffix| suffix.starts_with('-'))
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{external_package_key, external_package_key_from_path, package_root};

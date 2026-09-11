@@ -79,7 +79,7 @@ Genuinely bare names whose declaration IS in the index.
 - [x] transitive `#include` closure + `NamespacelessGlobalRule` reaching supplied external declarations (C `FILE`/`fprintf`: found by name, no rung reaches it)
 - [x] TS import specifier normalization (`node:path` vs `path` — 63% of ts `import_unlinked` are present by qname)
 - [x] PHP namespace `use` + qualified member (`Illuminate\Database\Eloquent` present, member unlinked)
-- [ ] inherited implicit-receiver members when the enclosing type's parent is external (pascal `Create`, `AddField`)
+- [x] inherited implicit-receiver members when the enclosing type's parent is external (pascal `Create`, `AddField`)
 - [ ] targeted recapture: dart-serverpod, make-curl, ts-nextjs, php-laravel, pascal-castle-fresh; cascade gate
 
 ## M4 — Supply (locators and install state; no engine code)
@@ -97,7 +97,7 @@ fortran 0, powershell 11, fsharp 124.
 
 ## M5 — Extractor attribution gaps (per-language extractor data, no resolver code)
 
-- [ ] pascal: implementation-section bodies attributed to their declaring class (55,467 residue rows have the file-level `unknown` symbol as source)
+- [x] pascal: implementation-section bodies attributed to their declaring class (55,467 residue rows have the file-level `unknown` symbol as source)
 - [ ] ruby (and any extractor that leaves symbol-less files): emit a file-scope symbol so the file's refs enter the pipeline — today `pipeline.rs:334` skips every ref of a file with no symbols (puppet-core spec files hide ~160k refs, ~32k of them resolvable); binding synthesis deliberately stays under enclosing declarations (`5c893f20`) until this lands
 - [ ] python / ruby: `self.x` / `@x` instance attributes assigned in method bodies are contract (paperless −3.9, chatwoot −3.8)
 - [ ] pascal visible-refs artifact (castle −1.7, heidisql −3.3): confirm by cause census, document
@@ -326,7 +326,7 @@ must carry declaration/binding/type IDs, not re-find declarations by spelling.
 - [x] Move Dart URI/module-entry aliases and TypeScript augmentation policy into language adapters.
 - [x] Move C/C++ include admission and SQL handling out of generic compilation.
 - [x] Move npm, Cargo, and NuGet manifest/package grammar out of the generic resolver.
-- [ ] Move callback lexical syntax, specialized flow passes, namespace forms, and lexical language-family switches out of the generic indexer.
+- [x] Move callback lexical syntax, specialized flow passes, namespace forms, and lexical language-family switches out of the generic indexer.
 - [ ] Move external virtual-path layouts, secondary package scans, stage-link language policies, builtin dispatch, and discovery inventories into language/ecosystem adapters.
 - [ ] Replace concrete plugin lifecycle state and route/embedded-region branches in full and incremental indexing with registry-owned hooks and opaque state.
 - [ ] Move source-language type-text parsing and formatting out of the generic TypeArena/core; keep only normalized semantic types and canonical serialization in core.

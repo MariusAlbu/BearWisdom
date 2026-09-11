@@ -66,3 +66,37 @@ pub static KOTLIN_FLOW_CONFIG: FlowConfig = FlowConfig {
     type_args_query: "",
     literal_type_kinds: &[],
 };
+
+pub const KOTLIN_CFG_KINDS: crate::indexer::flow_cfg::CfgNodeKinds =
+    crate::indexer::flow_cfg::CfgNodeKinds {
+        function_kinds: &["function_declaration", "lambda_literal", "function_literal"],
+        block_kinds: &["block"],
+        if_kind: "if_expression",
+        if_consequence_field: "consequence",
+        if_consequence_body: None,
+        if_alternative_field: "alternative",
+        if_alternative_body: None,
+        if_condition_field: "condition",
+        assignment_kind: "assignment",
+        assignment_lhs_field: "left",
+        declarator_kind: "property_declaration",
+        declarator_name_field: "name",
+        binding_name_kinds: &["simple_identifier", "identifier"],
+        definition_name_kinds: &["identifier"],
+        bare_return_name_kinds: &["identifier"],
+        function_name_fields: &["name"],
+        loop_kinds: &["while_statement", "for_statement", "do_while_statement"],
+        loop_body_field: "body",
+        loop_condition_field: Some("condition"),
+        switch_kinds: &["when_expression"],
+        switch_value_field: "value",
+        switch_body_field: None,
+        switch_case_kinds: &["when_entry"],
+        switch_default_kinds: &[],
+        transparent_kinds: &["function_body"],
+        // A Kotlin block body returns only via an explicit `return`; a bare
+        // trailing expression is a statement. The concise `= expr` body (implicit
+        // return) is already covered by the `@return.tail` query arm.
+        implicit_return_candidate: None,
+        condition_true_guard: None,
+    };

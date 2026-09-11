@@ -165,9 +165,9 @@ fn collect_anchors(
 /// containing `-` — or a PascalCase tag (some component templating preserves
 /// case). Standard HTML tags (`div`, `span`) are all lowercase and hyphen-free
 /// and so never match. Kebab tags are normalized to PascalCase (`user-card` →
-/// `UserCard`); the resolver's `PascalToKebab` transform inverts it back to the
-/// `customElements.define()` map key. A tag with no registered selector
-/// declines at resolution — emitting the ref is harmless.
+/// `UserCard`); the component selector adapter supplies the matching map keys.
+/// A tag with no registered selector declines at resolution — emitting the ref
+/// is harmless.
 fn collect_component_tags(
     node: &Node,
     source: &str,

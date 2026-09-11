@@ -28,6 +28,8 @@ fn incomplete_assignment_query_cannot_mutate_existing_flow_metadata() {
         &[],
         &mut meta,
         BindingSymbols::Synthesize,
+        None,
+        None,
     );
     assert!(symbols.is_empty());
     assert_eq!(meta.flow_binding_lhs.len(), 1);
@@ -48,13 +50,15 @@ fn flat_array_binding_index_preserves_elisions() {
     let mut positions = Vec::new();
     while let Some(m) = bindings.next() {
         for capture in m.captures {
-            positions.push(positional_pattern(capture.node));
+            positions.push(crate::languages::typescript::flow::destructure_shape(
+                capture.node,
+            ));
         }
     }
 
     assert_eq!(
         positions,
-        vec![PositionalPattern::Slot(1), PositionalPattern::Slot(2)]
+        vec![DestructureShape::Slot(1), DestructureShape::Slot(2)]
     );
 }
 
@@ -75,10 +79,12 @@ fn non_direct_array_elements_fence_every_positional_binding() {
         let mut positions = Vec::new();
         while let Some(m) = bindings.next() {
             for capture in m.captures {
-                positions.push(positional_pattern(capture.node));
+                positions.push(crate::languages::typescript::flow::destructure_shape(
+                    capture.node,
+                ));
             }
         }
-        assert_eq!(positions, vec![PositionalPattern::Unsupported], "{source}");
+        assert_eq!(positions, vec![DestructureShape::Unsupported], "{source}");
     }
 }
 
@@ -95,13 +101,15 @@ fn flat_tuple_binding_index_projects_direct_scala_positions_only() {
     let mut positions = Vec::new();
     while let Some(m) = bindings.next() {
         for capture in m.captures {
-            positions.push(positional_pattern(capture.node));
+            positions.push(crate::languages::scala::flow::destructure_shape(
+                capture.node,
+            ));
         }
     }
 
     assert_eq!(
         positions,
-        vec![PositionalPattern::Slot(0), PositionalPattern::Slot(1)]
+        vec![DestructureShape::Slot(0), DestructureShape::Slot(1)]
     );
 }
 
@@ -120,16 +128,16 @@ fn non_flat_tuple_patterns_fence_every_positional_binding() {
         for capture in m.captures {
             positions.push((
                 capture.node.utf8_text(source.as_bytes()).unwrap(),
-                positional_pattern(capture.node),
+                crate::languages::scala::flow::destructure_shape(capture.node),
             ));
         }
     }
     assert_eq!(
         positions,
         vec![
-            ("key", PositionalPattern::Unsupported),
-            ("input", PositionalPattern::Unsupported),
-            ("rest", PositionalPattern::Unsupported),
+            ("key", DestructureShape::Unsupported),
+            ("input", DestructureShape::Unsupported),
+            ("rest", DestructureShape::Unsupported),
         ],
         "any nested direct element makes the complete tuple pattern unsupported"
     );
@@ -187,6 +195,8 @@ fn unsupported_tuple_bindings_do_not_fall_back_to_object_keys() {
         &refs,
         &mut meta,
         BindingSymbols::Synthesize,
+        Some(&crate::languages::scala::ScalaPlugin),
+        Some(&crate::languages::scala::flow::SCALA_CFG_KINDS),
     );
 
     assert!(

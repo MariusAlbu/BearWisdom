@@ -45,6 +45,24 @@ pub(crate) struct Forms {
     pub unique_type: &'static [&'static str],
     pub erased_containers: &'static [&'static str],
     pub erased_modifiers: &'static [&'static str],
+    pub owner_body_field: &'static str,
+    pub member_name_field: &'static str,
+    pub signature_return_fields: &'static [&'static str],
+    pub signature_body_field: &'static str,
+    pub signature_initializer_field: &'static str,
+    pub type_parameters_field: &'static str,
+    pub parameters_field: &'static str,
+    pub single_parameter_field: &'static str,
+    pub parameter_type_field: &'static str,
+    pub parameter_initializer_field: &'static str,
+    pub parameter_pattern_field: &'static str,
+    pub index_name_field: &'static str,
+    pub index_type_field: &'static str,
+    pub type_parameter_name_field: &'static str,
+    pub type_parameter_parts: &'static [&'static str],
+    pub type_annotation_inner: for<'a> fn(Node<'a>) -> Option<Node<'a>>,
+    /// Returns the source expression used by a computed member key.
+    pub computed_key_expression: for<'a> fn(Node<'a>) -> Option<Node<'a>>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -140,7 +158,7 @@ pub(super) fn capture(
     if !matches!(owner, Some(SymbolKind::Class | SymbolKind::Interface)) {
         return None;
     }
-    let body = node.child_by_field_name("body")?;
+    let body = node.child_by_field_name(syntax.globals.surface.owner_body_field)?;
     let mut cursor = body.walk();
     Some(
         body.named_children(&mut cursor)
@@ -181,7 +199,7 @@ fn member_input(
         .find(|&&(form, _)| form == node.kind())
         .map(|&(_, kind)| kind)
         .unwrap_or(Kind::Unknown);
-    let name = node.child_by_field_name("name");
+    let name = node.child_by_field_name(forms.member_name_field);
     let mut cursor = node.walk();
     let tokens: Vec<_> = node
         .children(&mut cursor)
@@ -286,8 +304,7 @@ pub(crate) fn key(
     if node.kind() != syntax.globals.surface.computed {
         return Key::Unknown;
     }
-    let mut cursor = node.walk();
-    let Some(expression) = node.named_children(&mut cursor).find(|n| !n.is_extra()) else {
+    let Some(expression) = (syntax.globals.surface.computed_key_expression)(node) else {
         return Key::Unknown;
     };
     let (root, selectors) =
@@ -381,24 +398,29 @@ pub(crate) fn path(
 
 fn type_node<'a>(node: Node<'a>, forms: &Forms) -> Node<'a> {
     if forms.type_annotations.contains(&node.kind()) {
-        node.named_child(0).unwrap_or(node)
+        (forms.type_annotation_inner)(node).unwrap_or(node)
     } else {
         node
     }
 }
 
 pub(crate) fn signature(node: Node, kind: Kind, forms: &Forms) -> Signature {
-    let result = node
-        .child_by_field_name("return_type")
-        .or_else(|| node.child_by_field_name("type"))
+    let result = forms
+        .signature_return_fields
+        .iter()
+        .find_map(|field| node.child_by_field_name(field))
         .map(|n| type_node(n, forms));
     let mut signature = Signature {
-        body: node.child_by_field_name("body").map(span),
+        body: node
+            .child_by_field_name(forms.signature_body_field)
+            .map(span),
         result: result.map(span),
-        initializer: node.child_by_field_name("value").map(span),
+        initializer: node
+            .child_by_field_name(forms.signature_initializer_field)
+            .map(span),
         ..Default::default()
     };
-    signature.type_parameters_complete = complete_type_parameters(node);
+    signature.type_parameters_complete = complete_type_parameters(node, forms);
     signature.ordering = node.parent().map(|parent| SignatureOrder {
         group: span(parent),
         policy: forms.overload_order,
@@ -413,7 +435,7 @@ pub(crate) fn signature(node: Node, kind: Kind, forms: &Forms) -> Signature {
             .collect();
         signature.unique_symbol = tokens == forms.unique_type;
     }
-    if let Some(parameters) = node.child_by_field_name("type_parameters") {
+    if let Some(parameters) = node.child_by_field_name(forms.type_parameters_field) {
         let mut cursor = parameters.walk();
         signature.type_parameters = parameters
             .named_children(&mut cursor)
@@ -421,18 +443,19 @@ pub(crate) fn signature(node: Node, kind: Kind, forms: &Forms) -> Signature {
             .map(span)
             .collect();
     }
-    if let Some(parameters) = node.child_by_field_name("parameters") {
+    if let Some(parameters) = node.child_by_field_name(forms.parameters_field) {
         let mut cursor = parameters.walk();
         if let Some(ordering) = &mut signature.ordering {
             ordering.specialized = parameters
                 .named_children(&mut cursor)
                 .filter(|p| !p.is_extra())
                 .any(|p| {
-                    p.child_by_field_name("type").is_some_and(|n| {
-                        forms
-                            .specialized_parameter_types
-                            .contains(&type_node(n, forms).kind())
-                    })
+                    p.child_by_field_name(forms.parameter_type_field)
+                        .is_some_and(|n| {
+                            forms
+                                .specialized_parameter_types
+                                .contains(&type_node(n, forms).kind())
+                        })
                 });
         }
         signature.parameters = parameters
@@ -444,16 +467,17 @@ pub(crate) fn signature(node: Node, kind: Kind, forms: &Forms) -> Signature {
                     .is_some_and(|n| n.kind() == forms.receiver_parameter.1),
                 span: span(p),
                 type_span: p
-                    .child_by_field_name("type")
+                    .child_by_field_name(forms.parameter_type_field)
                     .map(|n| span(type_node(n, forms))),
                 optional: p.kind() == forms.optional_parameter
-                    || p.child_by_field_name("value").is_some(),
+                    || p.child_by_field_name(forms.parameter_initializer_field)
+                        .is_some(),
                 rest: p
-                    .child_by_field_name("pattern")
+                    .child_by_field_name(forms.parameter_pattern_field)
                     .is_some_and(|n| n.kind() == forms.rest_pattern),
             })
             .collect();
-    } else if let Some(parameter) = node.child_by_field_name("parameter") {
+    } else if let Some(parameter) = node.child_by_field_name(forms.single_parameter_field) {
         signature.parameters.push(Parameter {
             span: span(parameter),
             type_span: None,
@@ -463,8 +487,8 @@ pub(crate) fn signature(node: Node, kind: Kind, forms: &Forms) -> Signature {
         });
     } else if kind == Kind::Index {
         if let (Some(name), Some(ty)) = (
-            node.child_by_field_name("name"),
-            node.child_by_field_name("index_type"),
+            node.child_by_field_name(forms.index_name_field),
+            node.child_by_field_name(forms.index_type_field),
         ) {
             signature.parameters.push(Parameter {
                 span: SourceSpan {
@@ -481,8 +505,8 @@ pub(crate) fn signature(node: Node, kind: Kind, forms: &Forms) -> Signature {
     signature
 }
 
-fn complete_type_parameters(node: Node) -> bool {
-    let Some(parameters) = node.child_by_field_name("type_parameters") else {
+fn complete_type_parameters(node: Node, forms: &Forms) -> bool {
+    let Some(parameters) = node.child_by_field_name(forms.type_parameters_field) else {
         return true;
     };
     if parameters.has_error() {
@@ -493,17 +517,18 @@ fn complete_type_parameters(node: Node) -> bool {
         .named_children(&mut cursor)
         .filter(|p| !p.is_extra())
         .all(|parameter| {
-            let fields = [
-                parameter.child_by_field_name("name"),
-                parameter.child_by_field_name("constraint"),
-                parameter.child_by_field_name("value"),
-            ];
+            let name = parameter.child_by_field_name(forms.type_parameter_name_field);
+            let fields: Vec<_> = forms
+                .type_parameter_parts
+                .iter()
+                .filter_map(|field| parameter.child_by_field_name(field))
+                .collect();
             let mut cursor = parameter.walk();
-            let complete = fields[0].is_some()
+            let complete = name.is_some()
                 && parameter
                     .children(&mut cursor)
                     .filter(|n| !n.is_extra())
-                    .all(|child| fields.contains(&Some(child)));
+                    .all(|child| fields.contains(&child));
             complete
         });
     complete

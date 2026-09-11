@@ -446,6 +446,69 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.structural().parent_class_ids(child_id)
     }
 
+    fn inheritance_parent_ids(&self, child_id: i64) -> Vec<i64> {
+        let mut parents = self.structural().inheritance_parent_ids(child_id);
+        if self.program.is_none() {
+            return parents;
+        }
+        let globally_external_owner = self
+            .tree
+            .symbol_by_id(child_id)
+            .filter(|symbol| self.tree.is_external_file(&symbol.file_path))
+            .is_some_and(|symbol| {
+                self.tree
+                    .filter_ext_langs(SymbolSet::Owned(vec![symbol]), self.allowed_ext_langs)
+                    .into_iter()
+                    .next()
+                    .is_some()
+            });
+        if self.structural().symbol_by_id(child_id).is_none() && !globally_external_owner {
+            return parents;
+        }
+        for parent_id in self.tree.parent_class_ids(child_id) {
+            let Some(parent) = self.tree.symbol_by_id(parent_id) else {
+                continue;
+            };
+            if !self.tree.is_external_file(&parent.file_path) {
+                continue;
+            }
+            let admitted = self
+                .tree
+                .filter_ext_langs(SymbolSet::Owned(vec![parent]), self.allowed_ext_langs)
+                .into_iter()
+                .next()
+                .is_some();
+            if admitted && !parents.contains(&parent_id) {
+                parents.push(parent_id);
+            }
+        }
+        parents
+    }
+
+    fn inheritance_members_of_id(&self, parent_id: i64) -> SymbolSet<'_> {
+        let selected = self.structural().inheritance_members_of_id(parent_id);
+        if self.program.is_none() {
+            return selected;
+        }
+        let Some(parent) = self.tree.symbol_by_id(parent_id) else {
+            return selected;
+        };
+        if !self.tree.is_external_file(&parent.file_path) {
+            return selected;
+        }
+        let mut members: Vec<&Symbol> = selected.into_iter().collect();
+        for member in self
+            .tree
+            .filter_ext_langs(self.tree.members_of_id(parent_id), self.allowed_ext_langs)
+            .into_iter()
+        {
+            if !members.iter().any(|present| present.id == member.id) {
+                members.push(member);
+            }
+        }
+        SymbolSet::Owned(members)
+    }
+
     fn parent_class_args(&self, child_head: &str, parent_head: &str) -> &[String] {
         self.tree.parent_class_args(child_head, parent_head)
     }

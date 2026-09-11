@@ -7,6 +7,9 @@ pub(super) fn path_attribute(
     source: &[u8],
     forms: &Forms,
 ) -> Result<Option<String>, ()> {
+    let Some(attribute_name) = forms.attribute_name else {
+        return Ok(None);
+    };
     let mut previous = node.prev_named_sibling();
     let mut result = None;
     while let Some(attribute) = previous {
@@ -22,16 +25,14 @@ pub(super) fn path_attribute(
             .named_children(&mut cursor)
             .filter(|n| n.kind() == forms.attribute_body)
         {
-            if body.named_child(0).and_then(|n| n.utf8_text(source).ok())
-                != Some(forms.path_attribute)
-            {
+            if attribute_name(body, source).as_deref() != Some(forms.path_attribute) {
                 continue;
             }
             if result.is_some() {
                 return Err(());
             }
             let value = body
-                .child_by_field_name("value")
+                .child_by_field_name(forms.attribute_value)
                 .ok_or(())?
                 .utf8_text(source)
                 .map_err(|_| ())?;

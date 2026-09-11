@@ -14,6 +14,7 @@ fn type_query_selectors_belong_to_their_direct_syntax_owner_in_both_dialects() {
         let graph = crate::indexer::lexical::capture(
             tree.root_node(),
             source.as_bytes(),
+            Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
             "ts",
             &mut vec![],
             &[],
@@ -52,6 +53,7 @@ fn selectors_keep_type_space_and_value_shadows_separate() {
     let graph = crate::indexer::lexical::capture(
         tree.root_node(),
         source.as_bytes(),
+        Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
         "ts",
         &mut vec![],
         &[],

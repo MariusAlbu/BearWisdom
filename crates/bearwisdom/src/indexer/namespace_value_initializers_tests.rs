@@ -12,7 +12,7 @@ fn borrow_initializers_use_exact_source_owners_and_shadowed_reads_not_display_na
     let mut data = super::super::super::capture(
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &extracted.symbols,
         &extracted.refs,
     )
@@ -21,7 +21,7 @@ fn borrow_initializers_use_exact_source_owners_and_shadowed_reads_not_display_na
         &mut data,
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &mut extracted.symbols,
         &extracted.refs,
         crate::indexer::flow::BindingSymbols::Synthesize,
@@ -77,7 +77,7 @@ fn place_recipes_bind_field_names_and_operand_positions_before_semantic_evaluati
     let mut data = super::super::super::capture(
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &extracted.symbols,
         &extracted.refs,
     )
@@ -86,7 +86,7 @@ fn place_recipes_bind_field_names_and_operand_positions_before_semantic_evaluati
         &mut data,
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &mut extracted.symbols,
         &extracted.refs,
         crate::indexer::flow::BindingSymbols::Synthesize,

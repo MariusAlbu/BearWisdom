@@ -11,6 +11,7 @@ fn rowless_call_and_construct_type_parameters_have_distinct_scopes() {
     let graph = crate::indexer::lexical::capture(
         tree.root_node(),
         source.as_bytes(),
+        Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
         "ts",
         &mut vec![],
         &[],

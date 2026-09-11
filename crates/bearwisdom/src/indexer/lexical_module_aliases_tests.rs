@@ -12,6 +12,7 @@ fn assignments_and_alias_bases_have_separate_source_id_recipes() {
     let graph = crate::indexer::lexical::capture(
         tree.root_node(),
         source.as_bytes(),
+        Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
         "ts",
         &mut vec![],
         &[],

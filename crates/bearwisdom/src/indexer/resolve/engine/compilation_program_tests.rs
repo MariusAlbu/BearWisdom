@@ -800,6 +800,107 @@ fn inherited_touch_target(tree: &Compilation, caller: &ParsedFile, ids: &SymbolI
 }
 
 #[test]
+fn configured_source_implicit_receiver_reaches_attested_external_parent_members() {
+    use super::super::{file_lookup::FileLookup, rules::enclosing_member::EnclosingMemberRule};
+    use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
+
+    let arena = Arc::new(TypeArena::new());
+    let mut files = parse(
+        &arena,
+        &[
+            (
+                "main.ts",
+                "export class Child extends Parent { run(): void {} }",
+            ),
+            (
+                "provider.d.ts",
+                "declare class Grandparent { AddField(): void; } declare class Parent extends Grandparent { Create(): void; } declare class Decoy { AddField(): void; }",
+            ),
+        ],
+    );
+    files[1].path = "ext:contract:provider.d.ts".into();
+    let db = crate::Database::open_in_memory().unwrap();
+    let (_, ids) = crate::indexer::write::write_parsed_files_with_origin(
+        &db,
+        &files,
+        "internal",
+        Some(&arena),
+    )
+    .unwrap();
+    let context = ProjectContext {
+        programs: Some(vec![program("only", &[&files[0]])]),
+        ..Default::default()
+    };
+    let tree = Compilation::build_with_context(
+        &files,
+        &ids,
+        Arc::clone(&arena),
+        Some(&context),
+        &HashSet::new(),
+    );
+    let slot = |file: usize, name: &str| {
+        files[file]
+            .symbols
+            .iter()
+            .position(|symbol| symbol.name == name)
+            .unwrap_or_else(|| panic!("missing {name} in {:?}", files[file].symbols))
+    };
+    let child = ids.row_id(&files[0].path, slot(0, "Child")).unwrap();
+    let run = slot(0, "run");
+    let parent = ids.row_id(&files[1].path, slot(1, "Parent")).unwrap();
+    let grandparent = ids.row_id(&files[1].path, slot(1, "Grandparent")).unwrap();
+    let create = ids.row_id(&files[1].path, slot(1, "Create")).unwrap();
+    let add_field = ids.row_id(&files[1].path, slot(1, "AddField")).unwrap();
+
+    assert!(files[0].refs.iter().any(|reference| {
+        reference.kind == EdgeKind::Inherits
+            && reference.source_symbol_index == slot(0, "Child")
+            && reference.target_name == "Parent"
+    }));
+    assert_eq!(
+        tree.by_name("Parent")
+            .iter()
+            .map(|symbol| symbol.id)
+            .collect::<Vec<_>>(),
+        vec![parent]
+    );
+    assert!(!tree.members_of_id(parent).is_empty());
+    assert_eq!(tree.by_qualified_name("Child").unwrap().id, child);
+    assert_eq!(tree.canonical_decl_id(child), child);
+    assert_eq!(tree.parent_class_ids(child), vec![parent]);
+
+    let selected = tree.program_lookup(&files[0].path).unwrap();
+    assert!(
+        selected.parent_class_ids(child).is_empty(),
+        "the configured source view deliberately excludes its supplied parent",
+    );
+    let lookup = FileLookup::for_file(&tree, &files[0], &ids);
+    assert_eq!(lookup.inheritance_parent_ids(child), vec![parent]);
+    assert_eq!(lookup.inheritance_parent_ids(parent), vec![grandparent]);
+
+    for (target, expected) in [("create", create), ("addfield", add_field)] {
+        let reference = super::super::testkit::call_ref(target);
+        let mut ref_ctx =
+            super::super::testkit::ref_ctx(&reference, &files[0].symbols[run], Vec::new());
+        ref_ctx.source_symbol_id = ids.row_id(&files[0].path, run);
+        let file_ctx = super::super::testkit::file_ctx(Vec::new(), None);
+        let kind = super::super::testkit::accept_any;
+        let binder = BinderContext {
+            file_ctx: &file_ctx,
+            ref_ctx: &ref_ctx,
+            lookup: &lookup,
+            kind: &kind,
+            profile: &crate::languages::pascal::PASCAL_PROFILE,
+        };
+
+        assert!(matches!(
+            EnclosingMemberRule.apply(&binder),
+            LookupResult::Resolved(result) if result.target_symbol_id == expected
+        ));
+    }
+}
+
+#[test]
 fn configured_base_applications_retarget_after_barrel_edits_and_provider_deletion() {
     let arena = Arc::new(TypeArena::new());
     let files = parse(&arena, &[

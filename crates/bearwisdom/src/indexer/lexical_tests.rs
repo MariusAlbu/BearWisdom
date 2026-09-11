@@ -8,6 +8,7 @@ fn graph(source: &str) -> LexicalBindings {
     capture(
         tree.root_node(),
         source.as_bytes(),
+        Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
         "ts",
         &mut Vec::new(),
         &[],

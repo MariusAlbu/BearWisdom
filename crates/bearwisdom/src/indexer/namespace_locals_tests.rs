@@ -7,13 +7,19 @@ fn parse(source: &str) -> LexicalBindings {
         .unwrap();
     let tree = parser.parse(source, None).unwrap();
     let mut symbols = Vec::new();
-    let mut data =
-        super::super::capture(tree.root_node(), source.as_bytes(), "rust", &symbols, &[]).unwrap();
+    let mut data = super::super::capture(
+        tree.root_node(),
+        source.as_bytes(),
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
+        &symbols,
+        &[],
+    )
+    .unwrap();
     super::super::capture_locals(
         &mut data,
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &mut symbols,
         &[],
         crate::indexer::flow::BindingSymbols::Synthesize,
@@ -83,7 +89,7 @@ fn extracted_closure_parameter_value_rows_are_adopted_by_source_address() {
     let mut data = super::super::capture(
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &extracted.symbols,
         &extracted.refs,
     )
@@ -92,7 +98,7 @@ fn extracted_closure_parameter_value_rows_are_adopted_by_source_address() {
         &mut data,
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &mut extracted.symbols,
         &extracted.refs,
         crate::indexer::flow::BindingSymbols::Synthesize,

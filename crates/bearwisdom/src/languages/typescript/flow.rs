@@ -13,6 +13,210 @@
 // =============================================================================
 
 use crate::indexer::flow::FlowConfig;
+use crate::indexer::flow_assignments::DestructureShape;
+use crate::indexer::flow_cfg::{Fact, FactMap};
+use tree_sitter::Node;
+
+pub(crate) fn condition_true_guard(condition: Node, source: &[u8]) -> FactMap {
+    let mut facts = FactMap::default();
+    let node = unwrap_parentheses(condition);
+    if node.kind() != "binary_expression" {
+        return facts;
+    }
+    let operator = node
+        .child_by_field_name("operator")
+        .and_then(|operator| operator.utf8_text(source).ok())
+        .unwrap_or("");
+    let left = node.child_by_field_name("left");
+    let right = node.child_by_field_name("right");
+    if operator == "&&" {
+        if let (Some(left), Some(right)) = (left, right) {
+            let left = condition_true_guard(left, source);
+            let right = condition_true_guard(right, source);
+            for (name, fact) in left.0 {
+                facts.insert(name, fact);
+            }
+            for (name, fact) in right.0 {
+                facts.insert(name, fact);
+            }
+        }
+        return facts;
+    }
+    if operator == "||" {
+        if let (Some(left), Some(right)) = (left, right) {
+            let mut left = condition_true_guard(left, source);
+            left.join(&condition_true_guard(right, source));
+            return left;
+        }
+        return facts;
+    }
+    if operator == "instanceof" {
+        if let (Some(left), Some(right)) = (left, right) {
+            if left.kind() == "identifier" && right.kind() == "identifier" {
+                if let (Ok(name), Ok(ty)) = (left.utf8_text(source), right.utf8_text(source)) {
+                    facts.insert(name.to_owned(), Fact::Single(ty.to_owned()));
+                }
+            }
+        }
+        return facts;
+    }
+    if !matches!(operator, "===" | "==") {
+        return facts;
+    }
+    let (Some(left), Some(right)) = (left, right) else {
+        return facts;
+    };
+    let left = unwrap_parentheses(left);
+    if left.kind() != "unary_expression" {
+        return facts;
+    }
+    let is_typeof = left
+        .child_by_field_name("operator")
+        .and_then(|operator| operator.utf8_text(source).ok())
+        .is_some_and(|operator| operator == "typeof");
+    let Some(argument) = left.child_by_field_name("argument") else {
+        return facts;
+    };
+    if is_typeof && argument.kind() == "identifier" && right.kind() == "string" {
+        if let (Ok(name), Ok(raw_type)) = (argument.utf8_text(source), right.utf8_text(source)) {
+            if let Some(ty) = normalize_guard_type(raw_type) {
+                facts.insert(name.to_owned(), Fact::Single(ty));
+            }
+        }
+    }
+    facts
+}
+
+fn unwrap_parentheses(mut node: Node) -> Node {
+    while node.kind() == "parenthesized_expression" {
+        let mut cursor = node.walk();
+        let Some(inner) = node.named_children(&mut cursor).next() else {
+            break;
+        };
+        node = inner;
+    }
+    node
+}
+
+pub(crate) fn normalize_guard_type(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    let bytes = trimmed.as_bytes();
+    let normalized = if bytes.len() >= 2
+        && ((bytes[0] == b'"' && bytes[bytes.len() - 1] == b'"')
+            || (bytes[0] == b'\'' && bytes[bytes.len() - 1] == b'\''))
+    {
+        &trimmed[1..trimmed.len() - 1]
+    } else {
+        trimmed
+    };
+    (!normalized.is_empty()).then(|| normalized.to_owned())
+}
+
+pub(crate) fn discriminant_early_exit_scope(if_node: Node) -> Option<(u32, u32)> {
+    const EXIT_KINDS: &[&str] = &[
+        "return_statement",
+        "throw_statement",
+        "break_statement",
+        "continue_statement",
+    ];
+    let consequence = if_node.child_by_field_name("consequence")?;
+    let block_exits = if consequence.kind() == "statement_block" {
+        let mut cursor = consequence.walk();
+        let found = consequence
+            .named_children(&mut cursor)
+            .any(|child| EXIT_KINDS.contains(&child.kind()));
+        found
+    } else {
+        false
+    };
+    let exits = EXIT_KINDS.contains(&consequence.kind()) || block_exits;
+    if !exits {
+        return None;
+    }
+    let start = if_node.end_byte() as u32;
+    let end = if_node.parent()?.end_byte() as u32;
+    (end > start).then_some((start, end))
+}
+
+pub(crate) fn return_object_members(node: Node, source: &[u8]) -> Option<Vec<String>> {
+    if node.kind() != "object" {
+        return None;
+    }
+    let mut members = Vec::new();
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        let name = match child.kind() {
+            "shorthand_property_identifier" | "property_identifier" => child.utf8_text(source).ok(),
+            "pair" => child
+                .child_by_field_name("key")
+                .filter(|key| matches!(key.kind(), "property_identifier" | "identifier"))
+                .and_then(|key| key.utf8_text(source).ok()),
+            "method_definition" => child
+                .child_by_field_name("name")
+                .and_then(|name| name.utf8_text(source).ok()),
+            _ => None,
+        };
+        if let Some(name) = name.filter(|name| !name.is_empty()) {
+            members.push(name.to_owned());
+        }
+    }
+    Some(members)
+}
+
+pub(crate) fn destructure_shape(binding: Node) -> DestructureShape {
+    positional_shape(binding, "array_pattern", false)
+}
+
+pub(crate) fn is_await_rhs(node: Node) -> bool {
+    node.kind() == "await_expression"
+}
+
+fn positional_shape(
+    binding: Node,
+    pattern_kind: &str,
+    requires_multiple_bindings: bool,
+) -> DestructureShape {
+    let Some(pattern) = binding.parent() else {
+        return DestructureShape::NotPositional;
+    };
+    if pattern.kind() != pattern_kind {
+        let mut ancestor = Some(pattern);
+        while let Some(parent) = ancestor {
+            if parent.kind() == pattern_kind {
+                return DestructureShape::Unsupported;
+            }
+            ancestor = parent.parent();
+        }
+        return DestructureShape::NotPositional;
+    }
+    let mut cursor = pattern.walk();
+    let direct = pattern.named_children(&mut cursor).collect::<Vec<_>>();
+    if direct.iter().any(|child| child.kind() != "identifier")
+        || (requires_multiple_bindings && direct.len() < 2)
+    {
+        return DestructureShape::Unsupported;
+    }
+    let mut ancestor = pattern.parent();
+    while let Some(parent) = ancestor {
+        if parent.kind() == pattern_kind {
+            return DestructureShape::Unsupported;
+        }
+        ancestor = parent.parent();
+    }
+    let mut separators = 0;
+    for index in 0..pattern.child_count() {
+        let Some(child) = pattern.child(index) else {
+            return DestructureShape::Unsupported;
+        };
+        if child.id() == binding.id() {
+            return DestructureShape::Slot(separators);
+        }
+        if child.kind() == "," {
+            separators += 1;
+        }
+    }
+    DestructureShape::Unsupported
+}
 
 /// Return-expression query for body-based return-type inference (INFER-3).
 /// Captures the returned expression of every `return <expr>`, plus an
@@ -269,6 +473,23 @@ pub(crate) static TS_LEXICAL_SYNTAX: crate::indexer::lexical::LexicalSyntax =
             ],
             directory_entry: "index",
             wildcard_exclusions: &["default"],
+            source_field: "source",
+            type_token: "type",
+            export_declaration_field: "declaration",
+            export_value_field: "value",
+            export_specifier_name_field: "name",
+            export_specifier_alias_field: "alias",
+            import_specifier_name_field: "name",
+            import_specifier_alias_field: "alias",
+            wildcard_token: "*",
+            default_token: "default",
+            declaration_name_field: "name",
+            container_name_field: "name",
+            container_body_field: "body",
+            literal_kind: "string",
+            decode_literal: decode_module_literal,
+            first_named_child,
+            default_export_name: "default",
         },
         functions: &[
             "function_declaration",
@@ -500,6 +721,30 @@ pub(crate) static TS_LEXICAL_SYNTAX: crate::indexer::lexical::LexicalSyntax =
         ],
         variables: &["variable_declarator"],
         assignments: &["assignment_expression"],
+        bindings: crate::indexer::lexical::BindingForms {
+            name_field: "name",
+            function_parameters_field: Some("parameters"),
+            function_parameter_field: Some("parameter"),
+            variable_value_field: "value",
+            binding_name_kinds: &["identifier"],
+            assignment_left_field: "left",
+            assignment_right_field: "right",
+            catch_parameter: Some(("catch_clause", "parameter")),
+            call_type_arguments_field: "type_arguments",
+            call_callee_kinds: &["identifier", "type_identifier"],
+            type_parameters_field: "type_parameters",
+            annotation_field: "type",
+            annotation_value: Some(annotation_value),
+            direct_patterns: &["identifier", "shorthand_property_identifier_pattern"],
+            pattern_fields: &[
+                ("required_parameter", "pattern"),
+                ("optional_parameter", "pattern"),
+                ("assignment_pattern", "left"),
+                ("object_assignment_pattern", "left"),
+                ("pair_pattern", "value"),
+            ],
+            pattern_children: &["rest_pattern", "object_pattern", "array_pattern"],
+        },
         function_scoped_declaration: "variable_declaration",
         literal_types: TS_LITERAL_TYPE_KINDS,
         preserve_non_union_type: true,
@@ -511,18 +756,118 @@ use crate::indexer::lexical::globals::member_surface::{
 use crate::indexer::lexical::type_syntax::atoms::{Forms as AtomicForms, LiteralKind};
 use crate::type_checker::core::types::Intrinsic;
 
+pub(crate) fn first_named_child(node: tree_sitter::Node) -> Option<tree_sitter::Node> {
+    node.named_child(0)
+}
+
+fn first_non_extra_named_child<'a>(node: tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>> {
+    let mut cursor = node.walk();
+    let child = node
+        .named_children(&mut cursor)
+        .find(|child| !child.is_extra());
+    child
+}
+
+fn annotation_value(node: tree_sitter::Node, source: &[u8]) -> Option<String> {
+    first_named_child(node)?
+        .utf8_text(source)
+        .ok()
+        .map(str::to_owned)
+}
+
+/// Decode a TypeScript module-specifier literal at the language boundary.
+/// Generic lexical module capture receives the already-normalized string.
+fn decode_module_literal(raw: &str) -> Option<String> {
+    let quote = raw.chars().next()?;
+    if !matches!(quote, '\'' | '"') || !raw.ends_with(quote) || raw.len() < 2 {
+        return None;
+    }
+    let mut chars = raw[1..raw.len() - 1].chars().peekable();
+    let mut units = Vec::new();
+    while let Some(ch) = chars.next() {
+        if ch == quote || matches!(ch, '\n' | '\r') {
+            return None;
+        }
+        let ch = if ch == '\\' {
+            match chars.next()? {
+                '\n' => continue,
+                '\r' => {
+                    if chars.peek() == Some(&'\n') {
+                        chars.next();
+                    }
+                    continue;
+                }
+                'n' => '\n',
+                'r' => '\r',
+                't' => '\t',
+                'b' => '\u{8}',
+                'f' => '\u{c}',
+                'v' => '\u{b}',
+                '0' if !chars.peek().is_some_and(|c| c.is_ascii_digit()) => '\0',
+                '0'..='9' => return None,
+                'x' => char::from_u32(module_literal_hex(&mut chars, 2)?)?,
+                'u' => {
+                    if chars.peek() == Some(&'{') {
+                        chars.next();
+                        let mut value = 0u32;
+                        let mut count = 0;
+                        loop {
+                            let digit = chars.next()?;
+                            if digit == '}' {
+                                break;
+                            }
+                            value = value.checked_mul(16)?.checked_add(digit.to_digit(16)?)?;
+                            count += 1;
+                        }
+                        if count == 0 {
+                            return None;
+                        }
+                        char::from_u32(value)?
+                    } else {
+                        units.push(module_literal_hex(&mut chars, 4)? as u16);
+                        continue;
+                    }
+                }
+                escaped => escaped,
+            }
+        } else {
+            ch
+        };
+        units.extend_from_slice(ch.encode_utf16(&mut [0; 2]));
+    }
+    String::from_utf16(&units).ok()
+}
+
+fn module_literal_hex(chars: &mut impl Iterator<Item = char>, count: usize) -> Option<u32> {
+    (0..count).try_fold(0u32, |value, _| {
+        Some(value * 16 + chars.next()?.to_digit(16)?)
+    })
+}
+
 static CALLBACK_BODIES: crate::indexer::lexical::globals::call_arguments::callbacks::Forms =
     crate::indexer::lexical::globals::call_arguments::callbacks::Forms {
         functions: &["arrow_function", "function_expression"],
         wrappers: &["parenthesized_expression"],
+        type_parameters: "type_parameters",
+        parameters: "parameters",
+        parameter: "parameter",
+        pattern: "pattern",
+        value: "value",
+        body: "body",
         block: "statement_block",
         return_: "return_statement",
         forbidden_tokens: &["async", "*"],
         forbidden_expressions: &["optional_chain"],
         binary: "binary_expression",
+        operator: "operator",
+        left: "left",
+        right: "right",
+        argument: "argument",
+        type_arguments: "type_arguments",
+        arguments: "arguments",
         equality: &[("===", false), ("==", false), ("!==", true), ("!=", true)],
         typeof_: ("unary_expression", "typeof"),
-        boolean_not: ("unary_expression", "!", "argument"),
+        boolean_not: ("unary_expression", "!"),
         type_names: &[
             ("string", Intrinsic::String),
             ("number", Intrinsic::Number),
@@ -531,6 +876,7 @@ static CALLBACK_BODIES: crate::indexer::lexical::globals::call_arguments::callba
             ("symbol", Intrinsic::Symbol),
             ("undefined", Intrinsic::Undefined),
         ],
+        return_value: first_named_child,
     };
 
 pub(crate) static ATOMIC_TYPES: AtomicForms = AtomicForms {
@@ -596,9 +942,12 @@ static CALLABLE_TYPES: crate::indexer::lexical::type_syntax::callables::Forms =
         predicate: "type_predicate",
         assertion: "asserts",
         identifier: &["identifier", "this"],
+        parameters: "parameters",
         pattern: "pattern",
+        return_type: "return_type",
         predicate_name: "name",
         predicate_type: "type",
+        assertion_target: first_named_child,
     };
 
 static STRUCTURAL_TYPES: crate::indexer::lexical::type_syntax::structural::Forms =
@@ -694,4 +1043,62 @@ static MEMBER_SURFACE: MemberForms = MemberForms {
     unique_type: &["unique symbol", "unique symbol"],
     erased_containers: &["interface_body", "object_type"],
     erased_modifiers: &["abstract", "declare"],
+    owner_body_field: "body",
+    member_name_field: "name",
+    signature_return_fields: &["return_type", "type"],
+    signature_body_field: "body",
+    signature_initializer_field: "value",
+    type_parameters_field: "type_parameters",
+    parameters_field: "parameters",
+    single_parameter_field: "parameter",
+    parameter_type_field: "type",
+    parameter_initializer_field: "value",
+    parameter_pattern_field: "pattern",
+    index_name_field: "name",
+    index_type_field: "index_type",
+    type_parameter_name_field: "name",
+    type_parameter_parts: &["name", "constraint", "value"],
+    type_annotation_inner: first_named_child,
+    computed_key_expression: first_non_extra_named_child,
 };
+
+pub const TS_CFG_KINDS: crate::indexer::flow_cfg::CfgNodeKinds =
+    crate::indexer::flow_cfg::CfgNodeKinds {
+        function_kinds: &[
+            "function_declaration",
+            "function_expression",
+            "method_definition",
+            "arrow_function",
+        ],
+        block_kinds: &["statement_block"],
+        if_kind: "if_statement",
+        if_consequence_field: "consequence",
+        if_consequence_body: None,
+        if_alternative_field: "alternative",
+        if_alternative_body: Some(first_named_child),
+        if_condition_field: "condition",
+        assignment_kind: "assignment_expression",
+        assignment_lhs_field: "left",
+        declarator_kind: "variable_declarator",
+        declarator_name_field: "name",
+        binding_name_kinds: &["identifier"],
+        definition_name_kinds: &["identifier"],
+        bare_return_name_kinds: &["identifier"],
+        function_name_fields: &["name"],
+        loop_kinds: &[
+            "while_statement",
+            "for_statement",
+            "for_in_statement",
+            "do_statement",
+        ],
+        loop_body_field: "body",
+        loop_condition_field: Some("condition"),
+        switch_kinds: &["switch_statement"],
+        switch_value_field: "value",
+        switch_body_field: Some("body"),
+        switch_case_kinds: &["switch_case"],
+        switch_default_kinds: &["switch_default"],
+        transparent_kinds: &[],
+        implicit_return_candidate: None,
+        condition_true_guard: Some(condition_true_guard),
+    };

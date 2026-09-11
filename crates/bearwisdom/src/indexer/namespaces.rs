@@ -3,6 +3,7 @@ use super::lexical::{BindingId, LexicalBindings, NameId, ScopeId};
 use crate::types::{ExtractedRef, ExtractedSymbol};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tree_sitter::Node;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) enum ExportDomain {
@@ -25,6 +26,7 @@ impl From<bool> for ExportDomain {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct SourceModuleId(pub u32);
 
+#[derive(Clone, Copy)]
 pub(crate) struct Forms {
     pub patterns: &'static types::patterns::Forms,
     pub places: &'static crate::languages::common::call_args::PlaceSyntax,
@@ -37,6 +39,12 @@ pub(crate) struct Forms {
     pub extension_constraints: &'static [&'static str],
     pub module: &'static str,
     pub body: &'static str,
+    pub call_arguments: &'static str,
+    pub attribute_value: &'static str,
+    pub module_name: &'static str,
+    pub declaration_name: &'static str,
+    pub pattern_type: &'static str,
+    pub pattern_name: &'static str,
     pub scopes: &'static [&'static str],
     pub declarations: &'static [(&'static str, &'static [ExportDomain])],
     pub access_items: &'static [&'static str],
@@ -51,8 +59,15 @@ pub(crate) struct Forms {
     pub public: &'static str,
     pub attributes: &'static [&'static str],
     pub attribute_body: &'static str,
+    /// Decode an attribute's semantic name from one adapter-owned body node.
+    /// Without this callback, attributes do not contribute source-file or
+    /// conditional policy.
+    pub attribute_name: Option<fn(Node, &[u8]) -> Option<String>>,
     pub conditional_attributes: &'static [&'static str],
     pub path_attribute: &'static str,
+    /// Select the path that restricts a non-public visibility declaration.
+    /// An absent selector conservatively leaves that declaration inaccessible.
+    pub visibility_path: Option<fn(Node) -> Option<Node>>,
     pub file_extension: &'static str,
     pub directory_entry: &'static str,
     pub self_path: &'static str,
@@ -247,36 +262,23 @@ impl NamespaceData {
     }
 }
 
-pub(crate) fn syntax_for(prefix: &str) -> Option<&'static Forms> {
-    match prefix {
-        "rust" => Some(&crate::languages::rust_lang::namespaces::FORMS),
-        _ => None,
-    }
-}
-
 pub(crate) fn capture(
     root: tree_sitter::Node,
     source: &[u8],
-    prefix: &str,
+    forms: Option<&'static Forms>,
     symbols: &[ExtractedSymbol],
     refs: &[ExtractedRef],
 ) -> Option<NamespaceData> {
-    Some(ingest::capture(
-        root,
-        source,
-        syntax_for(prefix)?,
-        symbols,
-        refs,
-    ))
+    Some(ingest::capture(root, source, forms?, symbols, refs))
 }
 
 pub(crate) fn stamp_calls(
     root: tree_sitter::Node,
     source: &[u8],
-    prefix: &str,
+    forms: Option<&'static Forms>,
     refs: &mut [ExtractedRef],
 ) {
-    if let Some(forms) = syntax_for(prefix) {
+    if let Some(forms) = forms {
         occurrences::stamp(root, source, forms, refs);
     }
 }
@@ -287,16 +289,23 @@ pub(crate) fn capture_locals(
     data: &mut NamespaceData,
     root: tree_sitter::Node,
     source: &[u8],
-    prefix: &str,
+    forms: Option<&'static Forms>,
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &[ExtractedRef],
     policy: super::flow::BindingSymbols,
 ) -> LexicalBindings {
-    if let Some(forms) = syntax_for(prefix) {
+    if let Some(forms) = forms {
         locals::capture(data, root, source, forms, symbols, refs, policy);
         types::capture(data, root, source, forms, symbols);
     }
     std::mem::take(&mut data.graph)
+}
+
+#[cfg(test)]
+pub(crate) fn syntax_for(language: &str) -> Option<&'static Forms> {
+    crate::languages::default_registry()
+        .get(language)
+        .namespace_forms()
 }
 
 #[path = "namespace_arguments.rs"]

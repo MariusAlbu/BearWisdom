@@ -13,7 +13,7 @@ fn borrows_attest_exact_spans_mutability_and_physical_function_owners() {
     let data = super::super::capture(
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &extracted.symbols,
         &extracted.refs,
     )
@@ -46,7 +46,7 @@ fn borrows_attest_exact_spans_mutability_and_physical_function_owners() {
     let no_owners = super::super::capture(
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &[],
         &extracted.refs,
     )
@@ -66,7 +66,7 @@ fn method_regions_capture_dot_calls_and_physical_owners_not_ufcs_or_function_val
     let data = super::super::capture(
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &extracted.symbols,
         &extracted.refs,
     )
@@ -89,7 +89,7 @@ fn method_regions_capture_dot_calls_and_physical_owners_not_ufcs_or_function_val
     let filtered = super::super::capture(
         tree.root_node(),
         source.as_bytes(),
-        "rust",
+        Some(&crate::languages::rust_lang::namespaces::FORMS),
         &[],
         &extracted.refs,
     )

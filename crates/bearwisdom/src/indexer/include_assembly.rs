@@ -9,7 +9,7 @@
 //
 // This pass restores that identity before the Compilation is built: each
 // include ref's stem is resolved to an indexed file (same-directory probe
-// first, then sibling directories of the including file), and the resolved
+// first, then direct child and sibling directories of the including file), and the resolved
 // fragment's symbols are re-parented under the including unit's namespace —
 // in the ParsedFile batch, in the (path, qname) → id map, and in the
 // persisted symbol rows. The Compilation's qname-truncation member fallback
@@ -130,8 +130,8 @@ fn plan_splices(parsed: &[ParsedFile]) -> Vec<Splice> {
 }
 
 /// Directory probe for one include stem, relative to the file at `from_idx`:
-/// a same-directory fragment wins; otherwise the first fragment in a sibling
-/// directory. Candidates must share the including file's language, be
+/// a same-directory fragment wins, followed by direct child and sibling
+/// directories. Candidates must share the including file's language, be
 /// unclaimed fragments, and not be the including file itself.
 fn resolve_stem(
     parsed: &[ParsedFile],
@@ -154,6 +154,12 @@ fn resolve_stem(
         .iter()
         .copied()
         .find(|&i| eligible(i) && dir_lower(&parsed[i].path) == from_dir)
+        .or_else(|| {
+            candidates
+                .iter()
+                .copied()
+                .find(|&i| eligible(i) && parent_dir(&dir_lower(&parsed[i].path)) == from_dir)
+        })
         .or_else(|| {
             candidates
                 .iter()
@@ -208,6 +214,9 @@ fn apply_splices(
     for splice in splices {
         let prefix = splice.ns_qname.as_str();
         let pf = &mut parsed[splice.included_idx];
+        crate::languages::default_registry()
+            .get(&pf.language)
+            .prepare_include_splice(pf);
         for sym in &mut pf.symbols {
             let old_qname = std::mem::take(&mut sym.qualified_name);
             let new_qname = format!("{prefix}.{old_qname}");

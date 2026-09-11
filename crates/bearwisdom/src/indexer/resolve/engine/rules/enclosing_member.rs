@@ -14,6 +14,7 @@
 
 use crate::indexer::resolve::engine::contract::Symbol;
 use crate::indexer::resolve::engine::kinds::is_type_kind;
+use crate::indexer::resolve::engine::support::normalize_name;
 use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
 
 /// Maximum inheritance chain depth to walk before giving up. Prevents
@@ -71,6 +72,8 @@ impl LookupRule for EnclosingMemberRule {
         let Some(enc) = enclosing_type(ctx) else {
             return LookupResult::Pass;
         };
+        let normalization = ctx.profile.name_normalization;
+        let normalized_target = normalize_name(normalization, target);
         // Climb the inheritance DAG by symbol id, not by qname string: a base
         // whose qname is shared with an unrelated type in another package would
         // otherwise resolve the wrong type's members via a first-winner re-search.
@@ -87,14 +90,16 @@ impl LookupRule for EnclosingMemberRule {
                     continue;
                 }
                 seen.push(id);
-                for member in ctx.lookup.members_of_id(id) {
-                    if member.name == target && (ctx.kind)(edge_kind, &member.kind) {
+                for member in ctx.lookup.inheritance_members_of_id(id) {
+                    if normalize_name(normalization, &member.name) == normalized_target
+                        && (ctx.kind)(edge_kind, &member.kind)
+                    {
                         return LookupResult::Resolved(
                             ctx.resolved(member.id, "engine_enclosing_member"),
                         );
                     }
                 }
-                next.extend(ctx.lookup.parent_class_ids(id));
+                next.extend(ctx.lookup.inheritance_parent_ids(id));
             }
             frontier = next;
         }

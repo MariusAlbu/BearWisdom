@@ -7,9 +7,8 @@
 // from one of the file's non-relative imports.
 //
 // Two matching modes (`profile.imports.ext_match`):
-//   PkgSegment   — external file's `ext:<lang>:<pkg>` segment equals an import
-//                  root, or starts with `{root}-` (gem family: `aws-sdk-s3`
-//                  under `aws`).
+//   PkgSegment   — adapter-owned package identity from an external file matches
+//                  an import root.
 //   FileStemOrDir — external file's basename-stem / a dir-segment equals one
 //                  of the profile adapter's import-path terms, checked via
 //                  `path_stem_matches`.
@@ -93,17 +92,14 @@ impl LookupRule for ExternalByImportRule {
                 continue;
             }
             let matched = match &matcher {
-                ExtFileMatcher::PkgSegment(roots) => {
-                    let pkg = crate::ecosystem::package_specifier::external_package_key(
+                ExtFileMatcher::PkgSegment(roots) => roots.iter().any(|root| {
+                    crate::ecosystem::package_specifier::external_package_matches_import(
                         &ctx.file_ctx.language,
                         &sym.file_path,
-                    );
-                    pkg.as_deref().is_some_and(|pkg| {
-                        roots
-                            .iter()
-                            .any(|root| pkg == root || pkg.starts_with(&format!("{root}-")))
-                    })
-                }
+                        root,
+                    )
+                    .unwrap_or(false)
+                }),
                 ExtFileMatcher::FileStemOrDir(needles) => {
                     let file_lower = sym.file_path.to_lowercase();
                     needles.iter().any(|n| path_stem_matches(&file_lower, n))

@@ -499,6 +499,23 @@ pub trait SymbolLookup: FlowCacheLookup {
         self.parent_class_id(child_id).into_iter().collect()
     }
 
+    /// Direct parents visible to an inheritance member traversal. Most
+    /// lookups expose the same set as `parent_class_ids`. A scoped semantic
+    /// view may extend only this traversal with supplied external ancestors
+    /// reached by an attested inheritance edge, without admitting those
+    /// declarations to ordinary name lookup.
+    fn inheritance_parent_ids(&self, child_id: i64) -> Vec<i64> {
+        self.parent_class_ids(child_id)
+    }
+
+    /// Members visible while traversing an exact inheritance owner id. The
+    /// default is the ordinary id-keyed member surface. Scoped lookups may use
+    /// this narrow contract to expose supplied external contract members while
+    /// keeping their general program view closed.
+    fn inheritance_members_of_id(&self, parent_id: i64) -> SymbolSet<'_> {
+        self.members_of_id(parent_id)
+    }
+
     /// The generic type arguments on the `extends`/`implements` edge from
     /// `child_head` to its direct supertype `parent_head`: `["User"]` for
     /// `class Child extends Base<User>`. Empty when the edge carries no

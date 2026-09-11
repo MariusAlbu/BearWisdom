@@ -18,7 +18,12 @@ fn generic_parameter_syntax_does_not_erase_unmodeled_modifiers() {
         let tree = parser.parse(&source, None).unwrap();
         let node = tree.root_node().named_child(0).unwrap();
         assert_eq!(
-            super::complete_type_parameters(node),
+            super::complete_type_parameters(
+                node,
+                &crate::languages::typescript::flow::TS_LEXICAL_SYNTAX
+                    .globals
+                    .surface,
+            ),
             complete,
             "{parameters}"
         );
@@ -79,6 +84,7 @@ fn capture(source: &str) -> (LexicalBindings, Vec<Member>) {
     let graph = crate::indexer::lexical::capture(
         tree.root_node(),
         source.as_bytes(),
+        Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
         "ts",
         &mut vec![],
         &[],

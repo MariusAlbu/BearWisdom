@@ -18,6 +18,7 @@
 //!    and return it from [`LanguagePlugin::resolver()`]
 //! 4. Register the plugin in [`default_registry()`]
 
+pub(crate) mod callback_lexical_support;
 pub mod common;
 pub mod demand_filter;
 mod plugin_defaults;
@@ -630,6 +631,113 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         None
     }
+
+    /// Additional registry keys used by this plugin's flow configuration.
+    ///
+    /// Flow configurations may use a compact strategy key that differs from
+    /// the parser-facing language IDs. Declaring that key here keeps legacy
+    /// flow entry points able to recover the owning plugin without an
+    /// indexer-level language table. The default exposes no aliases.
+    fn flow_strategy_aliases(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    /// Function/block node kinds needed to build this language's flow CFG.
+    /// Plugins opt in explicitly; the generic flow runner treats a missing
+    /// table as no CFG evidence.
+    fn flow_cfg_node_kinds(&self) -> Option<&'static crate::indexer::flow_cfg::CfgNodeKinds> {
+        None
+    }
+
+    /// Query that identifies expressions contributing to inferred return
+    /// types. The query is interpreted by the generic runner only alongside
+    /// this plugin's CFG node kinds.
+    fn flow_return_query(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// Normalize an object-like return expression into its declared members.
+    /// `Some`, including an empty vector, means the node is a language-owned
+    /// object return and must not be correlated as an ordinary reference.
+    fn flow_return_object_members(
+        &self,
+        _node: tree_sitter::Node,
+        _source: &[u8],
+    ) -> Option<Vec<String>> {
+        None
+    }
+
+    /// Classify a destructuring binding without exposing source grammar to the
+    /// generic assignment collector.
+    fn flow_destructure_shape(
+        &self,
+        _binding: tree_sitter::Node,
+    ) -> crate::indexer::flow_assignments::DestructureShape {
+        crate::indexer::flow_assignments::DestructureShape::NotPositional
+    }
+
+    /// Whether this language's RHS node carries await-like flow semantics.
+    fn flow_is_await_rhs(&self, _node: tree_sitter::Node) -> bool {
+        false
+    }
+
+    /// Normalize a type captured by this plugin's guard query. Plugins must
+    /// explicitly own the source spelling their query captures.
+    fn normalize_flow_guard_type(&self, _raw: &str) -> Option<String> {
+        None
+    }
+
+    /// Return the post-guard range established by a language-specific early
+    /// exit node, or decline when the captured node does not prove an exit.
+    fn flow_discriminant_early_exit_scope(&self, _node: tree_sitter::Node) -> Option<(u32, u32)> {
+        None
+    }
+
+    /// Whether restored, externally filtered rows need the plugin's complete
+    /// source-addressed flow rebuild instead of identity-only restoration.
+    fn requires_correlated_flow_rebuild(&self) -> bool {
+        false
+    }
+
+    /// Apply language-owned structural flow facts after assignment capture.
+    /// Source grammar interpretation remains in the plugin; the generic
+    /// runner only persists the normalized `FlowMeta` updates.
+    fn augment_flow(
+        &self,
+        _root: tree_sitter::Node,
+        _source: &[u8],
+        _symbols: &[crate::types::ExtractedSymbol],
+        _refs: &[crate::types::ExtractedRef],
+        _meta: &mut crate::types::FlowMeta,
+    ) {
+    }
+
+    /// Callback syntax facts normalized by the owning language plugin.
+    fn callback_lexical_adapter(
+        &self,
+    ) -> Option<&'static crate::indexer::callback_lexical::CallbackLexicalAdapter> {
+        None
+    }
+
+    /// Tree-sitter syntax facts for lexical binding capture. The generic
+    /// indexer consumes only these normalized structural forms; each language
+    /// plugin decides whether it supports lexical capture at all.
+    fn lexical_syntax(&self) -> Option<&'static crate::indexer::lexical::LexicalSyntax> {
+        None
+    }
+
+    /// Tree-sitter syntax facts for namespace/module binding capture. The
+    /// generic namespace graph remains language-neutral; plugins opt in with
+    /// their own source forms.
+    fn namespace_forms(&self) -> Option<&'static crate::indexer::namespaces::Forms> {
+        None
+    }
+
+    /// Apply source-language ownership facts that become valid only after a
+    /// standalone fragment has been attested as a textual include. The
+    /// generic include assembler supplies the boundary; the plugin owns any
+    /// syntax-specific interpretation inside the fragment.
+    fn prepare_include_splice(&self, _file: &mut crate::types::ParsedFile) {}
 
     /// Populate cross-file plugin state once per index pass.
     ///

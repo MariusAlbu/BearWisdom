@@ -5,6 +5,7 @@
 mod decls;
 mod error_recovery;
 pub mod extract;
+mod implementation_owners;
 mod include_directives;
 pub mod keywords;
 pub(crate) mod main_unit;
@@ -85,6 +86,10 @@ impl LanguagePlugin for PascalPlugin {
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {
         Some(&profile::PASCAL_PROFILE)
+    }
+
+    fn prepare_include_splice(&self, file: &mut ParsedFile) {
+        implementation_owners::prepare_include_splice(&mut file.symbols);
     }
 
     fn populate_project_state(

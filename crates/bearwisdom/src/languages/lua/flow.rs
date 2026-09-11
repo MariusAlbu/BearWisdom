@@ -58,3 +58,47 @@ pub static LUA_FLOW_CONFIG: FlowConfig = FlowConfig {
     type_args_query: "",
     literal_type_kinds: &[],
 };
+
+pub const LUA_CFG_KINDS: crate::indexer::flow_cfg::CfgNodeKinds =
+    crate::indexer::flow_cfg::CfgNodeKinds {
+        function_kinds: &[
+            "function_declaration",
+            "local_function",
+            "function_definition",
+        ],
+        block_kinds: &["block"],
+        if_kind: "if_statement",
+        if_consequence_field: "consequence",
+        if_consequence_body: None,
+        if_alternative_field: "alternative",
+        if_alternative_body: None,
+        if_condition_field: "condition",
+        assignment_kind: "assignment_statement",
+        assignment_lhs_field: "left",
+        declarator_kind: "__lua_no_declarator__",
+        declarator_name_field: "name",
+        binding_name_kinds: &["identifier"],
+        definition_name_kinds: &["identifier"],
+        bare_return_name_kinds: &["identifier"],
+        function_name_fields: &["name"],
+        loop_kinds: &[
+            "while_statement",
+            "for_statement",
+            "for_numeric_statement",
+            "for_generic_statement",
+            "repeat_statement",
+        ],
+        loop_body_field: "body",
+        loop_condition_field: Some("condition"),
+        switch_kinds: &[],
+        switch_value_field: "value",
+        switch_body_field: None,
+        switch_case_kinds: &[],
+        switch_default_kinds: &[],
+        // `variable_declaration` is a thin wrapper over `assignment_statement`
+        // for `local x = …`; recursing through it puts the assignment into the
+        // current block where collect_defs_in sees it.
+        transparent_kinds: &["variable_declaration"],
+        implicit_return_candidate: None,
+        condition_true_guard: None,
+    };

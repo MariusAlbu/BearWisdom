@@ -222,4 +222,8 @@ impl LanguagePlugin for CLangPlugin {
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::C_FLOW_CONFIG)
     }
+
+    fn flow_cfg_node_kinds(&self) -> Option<&'static crate::indexer::flow_cfg::CfgNodeKinds> {
+        Some(&flow::C_CFG_KINDS)
+    }
 }

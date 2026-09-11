@@ -165,8 +165,10 @@ impl Builder<'_> {
         if visibility.utf8_text(self.source).ok() == Some(self.forms.public) {
             return None;
         }
-        let path = visibility
-            .named_child(0)
+        let path = self
+            .forms
+            .visibility_path
+            .and_then(|select| select(visibility))
             .and_then(|n| paths::tokens(n, self.source, self.forms, &mut self.data));
         Some(
             path.as_deref()
@@ -246,6 +248,9 @@ impl Builder<'_> {
         }
     }
     fn conditional(&self, node: Node) -> bool {
+        let Some(attribute_name) = self.forms.attribute_name else {
+            return false;
+        };
         let mut previous = node.prev_named_sibling();
         while let Some(attribute) = previous {
             previous = attribute.prev_named_sibling();
@@ -259,9 +264,8 @@ impl Builder<'_> {
             if attribute
                 .named_children(&mut cursor)
                 .filter(|n| n.kind() == self.forms.attribute_body)
-                .filter_map(|n| n.named_child(0))
-                .filter_map(|n| n.utf8_text(self.source).ok())
-                .any(|name| self.forms.conditional_attributes.contains(&name))
+                .filter_map(|n| attribute_name(n, self.source))
+                .any(|name| self.forms.conditional_attributes.contains(&name.as_str()))
             {
                 return true;
             }
@@ -365,7 +369,7 @@ impl Builder<'_> {
         }
         if node.kind() == self.forms.module {
             let Some(name) = node
-                .child_by_field_name("name")
+                .child_by_field_name(self.forms.declaration_name)
                 .and_then(|n| n.utf8_text(self.source).ok())
             else {
                 return;
@@ -422,7 +426,7 @@ impl Builder<'_> {
             .find(|&&(kind, _)| kind == node.kind())
         {
             if let Some(name) = node
-                .child_by_field_name("name")
+                .child_by_field_name(self.forms.declaration_name)
                 .and_then(|n| n.utf8_text(self.source).ok())
             {
                 let name = self.data.intern(name, self.forms);

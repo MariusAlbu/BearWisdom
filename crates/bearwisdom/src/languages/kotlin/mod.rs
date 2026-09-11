@@ -1,4 +1,5 @@
 //! kotlin language plugin.
+mod callback_lexical;
 
 mod calls;
 mod data_class;
@@ -58,6 +59,12 @@ impl LanguagePlugin for KotlinPlugin {
 
     fn scope_kinds(&self) -> &[ScopeKind] {
         extract::KOTLIN_SCOPE_KINDS
+    }
+
+    fn callback_lexical_adapter(
+        &self,
+    ) -> Option<&'static crate::indexer::callback_lexical::CallbackLexicalAdapter> {
+        Some(&callback_lexical::ADAPTER)
     }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
@@ -144,6 +151,18 @@ impl LanguagePlugin for KotlinPlugin {
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::KOTLIN_FLOW_CONFIG)
+    }
+
+    fn normalize_flow_guard_type(&self, raw: &str) -> Option<String> {
+        crate::languages::common::normalize_identifier_capture(raw)
+    }
+
+    fn flow_cfg_node_kinds(&self) -> Option<&'static crate::indexer::flow_cfg::CfgNodeKinds> {
+        Some(&flow::KOTLIN_CFG_KINDS)
+    }
+
+    fn flow_return_query(&self) -> Option<&'static str> {
+        Some(flow::KOTLIN_RETURN_QUERY)
     }
 
     fn populate_project_state(

@@ -1,4 +1,5 @@
 //! csharp language plugin.
+mod callback_lexical;
 
 mod calls;
 mod calls_narrowing;
@@ -62,6 +63,12 @@ impl LanguagePlugin for CSharpPlugin {
 
     fn scope_kinds(&self) -> &[ScopeKind] {
         extract::CSHARP_SCOPE_KINDS
+    }
+
+    fn callback_lexical_adapter(
+        &self,
+    ) -> Option<&'static crate::indexer::callback_lexical::CallbackLexicalAdapter> {
+        Some(&callback_lexical::ADAPTER)
     }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
@@ -197,5 +204,17 @@ impl LanguagePlugin for CSharpPlugin {
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
         Some(&flow::CSHARP_FLOW_CONFIG)
+    }
+
+    fn normalize_flow_guard_type(&self, raw: &str) -> Option<String> {
+        crate::languages::common::normalize_identifier_capture(raw)
+    }
+
+    fn flow_cfg_node_kinds(&self) -> Option<&'static crate::indexer::flow_cfg::CfgNodeKinds> {
+        Some(&flow::CSHARP_CFG_KINDS)
+    }
+
+    fn flow_return_query(&self) -> Option<&'static str> {
+        Some(flow::CSHARP_RETURN_QUERY)
     }
 }

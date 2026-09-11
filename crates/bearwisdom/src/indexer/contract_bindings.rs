@@ -11,9 +11,9 @@ pub(super) fn restore(pf: &mut ParsedFile) {
     let Some(config) = plugin.flow_config() else {
         return;
     };
-    if super::lexical::syntax_for(config.strategy_prefix).is_none()
-        && super::namespaces::syntax_for(config.strategy_prefix).is_none()
-        && !super::callback_lexical::supports(config.strategy_prefix)
+    if plugin.lexical_syntax().is_none()
+        && plugin.namespace_forms().is_none()
+        && plugin.callback_lexical_adapter().is_none()
     {
         return;
     }
@@ -27,15 +27,15 @@ pub(super) fn restore(pf: &mut ParsedFile) {
     let Some(tree) = parser.parse(source.as_bytes(), None) else {
         return;
     };
-    if config.strategy_prefix == "scala" {
-        // Scala case metadata is intentionally not portable: external
-        // filtering changes row slots, and case-arm ownership is
-        // source-addressed. Rebuild its flow products from retained source,
+    if plugin.requires_correlated_flow_rebuild() {
+        // Some plugins retain source-addressed flow products whose ownership
+        // cannot survive row filtering. Rebuild them against retained source,
         // correlating only so cold external files never synthesize body
         // symbols absent from the cache.
-        pf.flow = super::flow::run_flow_queries_with_tree(
+        pf.flow = super::flow::run_flow_queries_with_tree_and_plugin(
             source,
             config,
+            Some(plugin),
             &mut pf.symbols,
             &mut pf.refs,
             &tree,
@@ -44,6 +44,7 @@ pub(super) fn restore(pf: &mut ParsedFile) {
     } else {
         let identity = super::flow::identity::capture(
             source,
+            Some(plugin),
             config.strategy_prefix,
             &mut pf.symbols,
             &mut pf.refs,

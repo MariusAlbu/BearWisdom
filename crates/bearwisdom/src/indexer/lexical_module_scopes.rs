@@ -42,7 +42,7 @@ pub(in crate::indexer::lexical) fn kind(node: Node, forms: &ModuleForms) -> Opti
     }
     Some(
         if node
-            .child_by_field_name("name")
+            .child_by_field_name(forms.container_name_field)
             .is_some_and(|n| forms.literal_names.contains(&n.kind()))
         {
             Kind::Literal
@@ -66,22 +66,24 @@ pub(super) fn capture<'tree>(
         let mut owner = parent;
         if let Some(kind) = kind(node, forms) {
             let mut cursor = node.walk();
-            let body = node.child_by_field_name("body").or_else(|| {
-                node.named_children(&mut cursor)
-                    .find(|n| n.kind() == forms.augmentation.2)
-            });
+            let body = node
+                .child_by_field_name(forms.container_body_field)
+                .or_else(|| {
+                    node.named_children(&mut cursor)
+                        .find(|n| n.kind() == forms.augmentation.2)
+                });
             let scope = body.and_then(|body| graph.scope_at(body.start_byte() as u32));
             // Missing bodies remain units with explicit incomplete evidence.
             let scope = scope
                 .or_else(|| graph.scope_at(node.start_byte() as u32))
                 .unwrap_or(ScopeId(0));
             let name = node
-                .child_by_field_name("name")
+                .child_by_field_name(forms.container_name_field)
                 .filter(|name| {
                     forms.literal_names.contains(&name.kind())
                         || forms.identifier_names.contains(&name.kind())
                 })
-                .and_then(|name| super::text(name, source))
+                .and_then(|name| super::text(name, source, forms))
                 .map(|name| graph.intern(&name));
             owner = SourceModuleId(result.len() as u32 + 1);
             let range = span(node);

@@ -10,6 +10,7 @@ fn predicates_use_source_slots_and_keep_optional_rest_receiver_and_generics() {
     let graph = crate::indexer::lexical::capture(
         tree.root_node(),
         source.as_bytes(),
+        Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
         "ts",
         &mut symbols,
         &[],

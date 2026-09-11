@@ -1,6 +1,6 @@
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, DispatchAxis, LanguageProfile, NameTransform, SelectorResolution,
-    SupertypeDiscovery, PERMISSIVE_KIND_TABLE,
+    ChainQualification, DispatchAxis, LanguageProfile, SelectorResolution, SupertypeDiscovery,
+    PERMISSIVE_KIND_TABLE,
 };
 use crate::types::EdgeKind;
 
@@ -82,11 +82,11 @@ pub const ANGULAR_TEMPLATE_PROFILE: LanguageProfile = LanguageProfile {
     },
     self_receiver_discovery:
         crate::type_checker::profile::language_profile::SelfReceiverDiscovery::ScopePathThenDefault,
-    // Template component-tag / attribute-directive refs bind to the decorated
-    // class via the selector map; the raw target, then its kebab form.
+    // Template component-tag / attribute-directive refs bind via the owning
+    // selector spelling policy.
     selector_resolution: Some(SelectorResolution {
         edge_kinds: &[EdgeKind::Calls],
-        name_transforms: &[NameTransform::PascalToKebab],
+        selector_candidates: crate::languages::typescript::selectors::selector_lookup_candidates,
     }),
     namespaceless_global_type_lookup:
         crate::type_checker::profile::language_profile::NamespaceScope::Off,

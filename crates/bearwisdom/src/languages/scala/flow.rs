@@ -2,7 +2,8 @@
 // scala/flow.rs — R5 Sprint 4 Scala FlowConfig
 // =============================================================================
 
-use crate::indexer::flow::{correlate_scala_rhs_ref, FlowConfig, TUPLE_INDEX_KEY_PREFIX};
+use crate::indexer::flow::{FlowConfig, TUPLE_INDEX_KEY_PREFIX};
+use crate::indexer::flow_assignments::DestructureShape;
 use crate::types::{ExtractedRef, ExtractedSymbol, FlowMeta};
 use tree_sitter::Node;
 
@@ -84,6 +85,47 @@ pub static SCALA_FLOW_CONFIG: FlowConfig = FlowConfig {
     literal_type_kinds: &[],
 };
 
+pub(crate) fn destructure_shape(binding: Node) -> DestructureShape {
+    let Some(pattern) = binding.parent() else {
+        return DestructureShape::NotPositional;
+    };
+    if pattern.kind() != "tuple_pattern" {
+        let mut ancestor = Some(pattern);
+        while let Some(parent) = ancestor {
+            if parent.kind() == "tuple_pattern" {
+                return DestructureShape::Unsupported;
+            }
+            ancestor = parent.parent();
+        }
+        return DestructureShape::NotPositional;
+    }
+    let mut cursor = pattern.walk();
+    let direct = pattern.named_children(&mut cursor).collect::<Vec<_>>();
+    if direct.len() < 2 || direct.iter().any(|child| child.kind() != "identifier") {
+        return DestructureShape::Unsupported;
+    }
+    let mut ancestor = pattern.parent();
+    while let Some(parent) = ancestor {
+        if parent.kind() == "tuple_pattern" {
+            return DestructureShape::Unsupported;
+        }
+        ancestor = parent.parent();
+    }
+    let mut separators = 0;
+    for index in 0..pattern.child_count() {
+        let Some(child) = pattern.child(index) else {
+            return DestructureShape::Unsupported;
+        };
+        if child.id() == binding.id() {
+            return DestructureShape::Slot(separators);
+        }
+        if child.kind() == "," {
+            separators += 1;
+        }
+    }
+    DestructureShape::Unsupported
+}
+
 /// Attach each direct `case (left, right) => ...` binding to the value being
 /// matched.  This deliberately accepts only a flat tuple of two-or-more
 /// identifiers; richer patterns need recursive/extractor semantics and must
@@ -132,7 +174,8 @@ fn bind_match_tuple_case(
     else {
         return;
     };
-    let value_ref = correlate_scala_rhs_ref(refs, &value);
+    let value_ref =
+        crate::indexer::flow_bindings::correlate_rhs_ref(refs, &value, Some(&SCALA_CFG_KINDS));
     let Some(body) = expression.child_by_field_name("body") else {
         return;
     };
@@ -508,4 +551,44 @@ object O {
             "the nested flat case must project its first tuple position"
         );
     }
+}
+
+pub const SCALA_CFG_KINDS: crate::indexer::flow_cfg::CfgNodeKinds =
+    crate::indexer::flow_cfg::CfgNodeKinds {
+        function_kinds: &["function_definition", "lambda_expression"],
+        block_kinds: &["block"],
+        if_kind: "if_expression",
+        if_consequence_field: "consequence",
+        if_consequence_body: None,
+        if_alternative_field: "alternative",
+        if_alternative_body: None,
+        if_condition_field: "condition",
+        assignment_kind: "assignment_expression",
+        assignment_lhs_field: "left",
+        declarator_kind: "var_definition",
+        declarator_name_field: "pattern",
+        binding_name_kinds: &["identifier"],
+        definition_name_kinds: &["identifier"],
+        bare_return_name_kinds: &["identifier"],
+        function_name_fields: &["name", "pattern"],
+        loop_kinds: &["while_expression", "for_expression"],
+        loop_body_field: "body",
+        loop_condition_field: Some("condition"),
+        switch_kinds: &["match_expression"],
+        switch_value_field: "value",
+        switch_body_field: Some("body"),
+        switch_case_kinds: &["case_clause"],
+        switch_default_kinds: &[],
+        transparent_kinds: &[],
+        // `def f = { …; e }` returns its block's final expression with no `return`.
+        implicit_return_candidate: Some(implicit_return_candidate),
+        condition_true_guard: None,
+    };
+fn implicit_return_candidate(node: tree_sitter::Node) -> bool {
+    let kind = node.kind();
+    !(kind.ends_with("_statement")
+        || kind.ends_with("_declaration")
+        || kind.ends_with("_definition")
+        || kind.contains("return")
+        || kind == "block")
 }
