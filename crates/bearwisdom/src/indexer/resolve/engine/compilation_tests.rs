@@ -3207,3 +3207,93 @@ fn same_qname_across_files_never_merges() {
     assert_eq!(tree.canonical_decl_id(1), 1);
     assert_eq!(tree.canonical_decl_id(2), 2);
 }
+
+/// A bare return type spelled in the declaring namespace (`: Column` inside
+/// `namespace App`) must intern as the declaration's canonical qname, and a
+/// fully qualified spelling (`\App\Column`) must canonicalize the same way.
+#[test]
+fn php_return_types_resolve_in_the_declaring_namespace() {
+    fn parse(dir: &std::path::Path, name: &str, source: &str, arena: &Arc<TypeArena>) -> crate::types::ParsedFile {
+        let path = dir.join(name);
+        std::fs::write(&path, source).unwrap();
+        crate::indexer::parse_file::parse_file_with_arena(
+            &crate::walker::WalkedFile {
+                relative_path: name.into(),
+                absolute_path: path,
+                language: "php",
+            },
+            crate::languages::default_registry(),
+            arena,
+        )
+        .unwrap()
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let arena = Arc::new(TypeArena::new());
+    let files = [
+        parse(
+            dir.path(),
+            "Blueprint.php",
+            "<?php
+namespace App;
+class Blueprint {
+    public function string(string $name): Column { return new Column(); }
+    public function qualified(): \\App\\Column { return new Column(); }
+}
+",
+            &arena,
+        ),
+        parse(
+            dir.path(),
+            "Column.php",
+            "<?php
+namespace App;
+class Column {
+    public function primary(): void {}
+}
+",
+            &arena,
+        ),
+    ];
+    let db = crate::Database::open_in_memory().unwrap();
+    let (_, ids) =
+        crate::indexer::write::write_parsed_files_with_origin(&db, &files, "internal", Some(&arena))
+            .unwrap();
+    let tree = Compilation::build(&files, &ids, Arc::clone(&arena));
+    let column = tree.by_qualified_name("App.Column").expect("App.Column indexed").id;
+    for method in ["App.Blueprint.string", "App.Blueprint.qualified"] {
+        let rt = tree
+            .return_type_id(method)
+            .unwrap_or_else(|| panic!("{method} has no return type"));
+        assert_eq!(
+            arena.format_type(rt),
+            "App.Column",
+            "{method} return type must be the canonical declaration qname"
+        );
+        let member = tree.by_qualified_name(method).expect("method indexed").id;
+        let by_id = tree
+            .return_type_id_of(member)
+            .map(|id| arena.format_type(id));
+        assert_eq!(
+            by_id.as_deref(),
+            Some("App.Column"),
+            "{method}: the identity-keyed return type must agree with the qname-keyed one"
+        );
+        let receiver = arena.class("App.Blueprint");
+        let lookup: &dyn SymbolLookup = &tree;
+        assert!(lookup.accepts_type_context(&arena, receiver), "{method}: receiver accepted");
+        assert!(lookup.accepts_type_context(&arena, rt), "{method}: yield accepted");
+        assert!(
+            lookup.member_pattern(member).is_none(),
+            "{method}: a plain PHP method carries no receiver pattern"
+        );
+        let yielded = crate::indexer::resolve::engine::bound_call::member_yield(
+            lookup, &arena, member, receiver, rt,
+        );
+        assert_eq!(
+            arena.format_type(yielded),
+            "App.Column",
+            "{method}: the call's yield must keep the return declaration"
+        );
+        let _ = column;
+    }
+}

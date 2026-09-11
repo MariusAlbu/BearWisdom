@@ -111,6 +111,20 @@ pub fn bind_member_access(
     if root.id.is_none() {
         root.id = super::head_decl::head_decl_id(arena, root.ty)
             .or_else(|| import_scoped_decl_id(ref_ctx, file_ctx, lookup, arena, root.ty));
+        // A head bound by import evidence keeps its source spelling (`Blueprint`)
+        // while the declaration is indexed under its canonical qname
+        // (`App.Blueprint`); the walk compares heads by qname, so the root must
+        // speak the declaration's name or its own members read as inherited.
+        if let Some(sym) = root.id.and_then(|id| lookup.symbol_by_id(id)) {
+            if head_qname(arena, root.ty).is_some_and(|head| head != sym.qualified_name) {
+                root.ty = super::head_decl::rebind_head(arena, root.ty, &sym.qualified_name);
+            }
+        }
+        crate::tracef!(
+            "  ROOT bound: head={} id={:?}",
+            head_qname(arena, root.ty).unwrap_or_default(),
+            root.id
+        );
     }
     let (mut current, mut borrowed) =
         receiver_projection::project_with_borrow(root, lookup, arena, Some(file_ctx), profile);
@@ -1413,21 +1427,27 @@ fn yield_through_with_optional_profile(
         })
         .map(|ty| super::bound_call::member_yield(lookup, arena, member.id, receiver, ty));
     crate::tracef!(
-        "  YIELD '{}' is_call={}: return_type_id={} field_type_id={} -> {}",
+        "  YIELD '{}' is_call={}: return_type={} by_id={} context={} field_type={} -> {}",
         member.qualified_name,
         is_call,
         lookup
             .return_type_id(&member.qualified_name)
-            .map(|id| format!("{id:?}"))
+            .map(|id| format!("{id:?}={}", arena.format_type(id)))
             .as_deref()
             .unwrap_or("None"),
         lookup
+            .return_type_id_of(member.id)
+            .map(|id| format!("{id:?}={}", arena.format_type(id)))
+            .as_deref()
+            .unwrap_or("None"),
+        lookup.nominal_context().is_some(),
+        lookup
             .field_type_id(&member.qualified_name)
-            .map(|id| format!("{id:?}"))
+            .map(|id| format!("{id:?}={}", arena.format_type(id)))
             .as_deref()
             .unwrap_or("None"),
         result
-            .map(|id| format!("{id:?}"))
+            .map(|id| format!("{id:?}={}", arena.format_type(id)))
             .as_deref()
             .unwrap_or("None"),
     );

@@ -168,10 +168,15 @@ impl Compilation {
         }
         // ID owners never borrow an agreed name-bucket return from another owner.
         for (owner, candidates) in by_id {
-            self.type_info_by_id
-                .entry(owner)
-                .or_default()
-                .return_type_id = Some(agreed_return(&self.arena, &candidates));
+            let tid = self.type_info_by_id.entry(owner).or_default();
+            // A return already captured for this identity (declared, or derived
+            // from the signature in the declaring scope) is authoritative; a
+            // body whose returned calls carry no evidence adds nothing, and only
+            // disagreeing evidence records `unknown`.
+            if tid.return_type_id.is_some() || candidates.iter().all(Option::is_none) {
+                continue;
+            }
+            tid.return_type_id = Some(agreed_return(&self.arena, &candidates));
         }
         super::super::contract::generic_return::capture_all(&self.arena, &mut self.type_info_by_id);
     }

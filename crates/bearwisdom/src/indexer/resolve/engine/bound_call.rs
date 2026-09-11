@@ -16,6 +16,13 @@ pub(super) fn member_yield(
     ty: TypeId,
 ) -> TypeId {
     if !lookup.accepts_type_context(arena, receiver) || !lookup.accepts_type_context(arena, ty) {
+        crate::tracef!(
+            "  YIELD rejected: receiver={} accepted={} type={} accepted={}",
+            arena.format_type(receiver),
+            lookup.accepts_type_context(arena, receiver),
+            arena.format_type(ty),
+            lookup.accepts_type_context(arena, ty),
+        );
         return arena.intern(Type::Unknown);
     }
     let Some(pattern) = lookup.member_pattern(member) else {
@@ -23,7 +30,13 @@ pub(super) fn member_yield(
     };
     match pattern.bindings(lookup, arena, receiver) {
         Ok(Some(bindings)) => substitute(arena, ty, &bindings),
-        _ => arena.intern(Type::Unknown),
+        _ => {
+            crate::tracef!(
+                "  YIELD rejected: member pattern of {member} does not bind receiver={}",
+                arena.format_type(receiver),
+            );
+            arena.intern(Type::Unknown)
+        }
     }
 }
 

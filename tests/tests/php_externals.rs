@@ -368,3 +368,128 @@ fn aliased_parent_binds_the_vendor_class_not_the_namesake_child() {
         .ok();
     assert_eq!(now.as_deref(), Some("Carbon.Carbon.now"));
 }
+
+/// A closure parameter's own annotation types the binding inside the closure
+/// body even when the callee only declares the argument as `callable`.
+#[test]
+fn annotated_closure_parameter_types_its_member_calls() {
+    let project = TestProject {
+        dir: tempfile::TempDir::new().unwrap(),
+    };
+    project.add_file(
+        "src/Blueprint.php",
+        r#"<?php
+
+namespace App;
+
+class Blueprint
+{
+    public function string(string $name): Column
+    {
+        return new Column();
+    }
+}
+"#,
+    );
+    project.add_file(
+        "src/Column.php",
+        r#"<?php
+
+namespace App;
+
+class Column
+{
+    public function primary(): void
+    {
+    }
+}
+"#,
+    );
+    project.add_file(
+        "src/Schema.php",
+        r#"<?php
+
+namespace App;
+
+class Schema
+{
+    public static function create(string $table, callable $callback): void
+    {
+    }
+}
+"#,
+    );
+    project.add_file(
+        "src/Migration.php",
+        r#"<?php
+
+namespace App;
+
+use App\Blueprint;
+use App\Schema;
+
+class Migration
+{
+    public function up(): void
+    {
+        Schema::create("jobs", function (Blueprint $table) {
+            $table->string("id")->primary();
+        });
+    }
+}
+"#,
+    );
+    let mut db = TestProject::in_memory_db();
+    use bearwisdom::indexer::resolve::engine::trace;
+    trace::set_filters(vec![("Migration.php".to_string(), 13, "primary".to_string())]);
+    trace::activate();
+    full_index(&mut db, project.path(), None, None, None).unwrap();
+    trace::deactivate();
+    let traced: Vec<String> = trace::drain_collected()
+        .into_iter()
+        .flat_map(|t| t.trace_lines)
+        .collect();
+
+    let targets: Vec<String> = db
+        .prepare(
+            "SELECT t.qualified_name FROM edges e
+             JOIN symbols t ON t.id = e.target_id
+             WHERE e.kind = 'calls' AND t.name IN ('string', 'primary')
+             ORDER BY t.qualified_name",
+        )
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let residue: Vec<(String, Option<String>, Option<String>)> = db
+        .prepare(
+            "SELECT u.target_name, u.cause_kind, cs.qualified_name
+             FROM unresolved_refs u LEFT JOIN symbols cs ON cs.id = u.cause_symbol_id
+             WHERE u.target_name IN ('string', 'primary')",
+        )
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let return_types: Vec<(String, Option<String>)> = db
+        .prepare(
+            "SELECT s.qualified_name, t.return_type FROM symbols s
+             LEFT JOIN symbol_type_info t ON t.symbol_id = s.id
+             WHERE s.name IN ('string', 'primary')",
+        )
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(
+        targets,
+        vec!["App.Blueprint.string", "App.Column.primary"],
+        "residue: {residue:?}; return types: {return_types:?}; trace:
+{}",
+        traced.join("
+")
+    );
+}
