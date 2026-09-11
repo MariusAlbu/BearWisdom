@@ -125,6 +125,7 @@ pub(super) fn member(
     receiver: Receiver,
     segment: &crate::types::ChainSegment,
     profile: &LanguageProfile,
+    accept: &dyn Fn(&str) -> bool,
 ) -> Result<Option<Symbol>, super::super::member_selection::Selection> {
     use super::super::member_selection::{select_typed, Selection};
     if let Some(member) = lookup.source_object_member(receiver.ty, segment.byte_offset) {
@@ -151,14 +152,21 @@ pub(super) fn member(
             .ok_or(Selection::Missing);
     }
     let Some(name) = lookup.source_member_name(segment.byte_offset) else {
-        return implicit_root::walk_member(lookup, arena, receiver, &segment.name, profile);
+        return implicit_root::walk_member(
+            lookup,
+            arena,
+            receiver,
+            &segment.name,
+            profile,
+            accept,
+        );
     };
     match select_typed(
         lookup,
         arena,
         receiver,
         name.map_err(|_| Selection::Missing)?,
-        &|_| true,
+        accept,
     ) {
         Selection::Unique(id) => lookup
             .symbol_by_id(id)

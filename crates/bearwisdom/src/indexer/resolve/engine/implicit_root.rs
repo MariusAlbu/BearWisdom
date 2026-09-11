@@ -33,6 +33,7 @@ pub(super) fn walk_member(
     recv: Receiver,
     member: &str,
     profile: &LanguageProfile,
+    accept: &dyn Fn(&str) -> bool,
 ) -> Result<Option<Symbol>, super::member_selection::Selection> {
     // Keep declared access/ambiguity failures distinct from a miss across every
     // outer retry (implicit roots, deref, extensions and alternative yields).
@@ -42,7 +43,7 @@ pub(super) fn walk_member(
             return Err(Selection::Inaccessible);
         }
         if let Some(name) = lookup.member_index().and_then(|index| index.name(member)) {
-            match member_selection::select_typed(lookup, arena, recv, name, &|_| true) {
+            match member_selection::select_typed(lookup, arena, recv, name, accept) {
                 Selection::Unique(id) => return Ok(lookup.symbol_by_id(id).cloned()),
                 Selection::Missing => {}
                 denied => return Err(denied),
@@ -50,7 +51,7 @@ pub(super) fn walk_member(
         }
     }
     Ok(
-        lookup_member_on_with_profile(lookup, arena, recv, member, &|_kind| true, Some(profile))
+        lookup_member_on_with_profile(lookup, arena, recv, member, accept, Some(profile))
             .or_else(|| {
                 if recv.id.is_none() {
                     return None;

@@ -248,8 +248,22 @@ pub fn bind_member_access(
             alt_yields.clear();
             continue;
         }
+        // A called hop admits only the kinds the profile's table lists for
+        // `Calls`; a language with separate property and method namespaces
+        // therefore selects the method of a same-named pair instead of
+        // declining the pair as ambiguous. Uncalled hops stay open.
+        let accept = |kind: &str| {
+            !seg.is_call
+                || crate::type_checker::profile::chain_specs::kind_ok(
+                    profile.kind_compatible_table,
+                    crate::types::EdgeKind::Calls,
+                    kind,
+                )
+        };
         let member =
-            match bound_method::member(lookup, arena, current, seg, profile).map_err(|_| None)? {
+            match bound_method::member(lookup, arena, current, seg, profile, &accept)
+                .map_err(|_| None)?
+            {
                 Some(m) => m,
                 None => {
                     // Container-Deref rehead: retry the miss with the head rewritten

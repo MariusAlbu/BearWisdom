@@ -9,16 +9,15 @@
 // implement.
 // =============================================================================
 
-use std::str::FromStr;
 
 use crate::indexer::resolve::engine::cause::{Cause, CauseKind};
 use crate::indexer::resolve::engine::contract::{
     FileContext, RefContext, SymbolInfo, SymbolLookup,
 };
 use crate::type_checker::profile::language_profile::{
-    KindCompatibility, KindTable, LanguageProfile,
+    KindTable, LanguageProfile,
 };
-use crate::types::{EdgeKind, SymbolKind};
+use crate::types::EdgeKind;
 
 use super::{BindOutcome, Binder, BinderContext};
 
@@ -429,10 +428,7 @@ fn chain_root_is_wildcard_import(
 /// Profile-table-driven kind compatibility. An unrecognised symbol-kind string
 /// defaults permissive so an extractor typo doesn't silently hide a real symbol.
 fn kind_ok_table(table: KindTable, edge: EdgeKind, sym_kind: &str) -> bool {
-    match SymbolKind::from_str(sym_kind) {
-        Ok(parsed) => KindCompatibility::check(table, edge, parsed),
-        Err(_) => true,
-    }
+    crate::type_checker::profile::chain_specs::kind_ok(table, edge, sym_kind)
 }
 
 /// Test-only re-export of the engine's kind-compatibility predicate so sibling

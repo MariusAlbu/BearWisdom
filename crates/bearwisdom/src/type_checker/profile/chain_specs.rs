@@ -294,6 +294,15 @@ pub const PERMISSIVE_KIND_TABLE: KindTable = &[];
 /// edge kind?" against a KindTable.
 pub struct KindCompatibility;
 
+/// Table-driven kind admission for a symbol-kind string. An unrecognised kind
+/// string is admitted so an extractor typo cannot silently hide a declaration.
+pub fn kind_ok(table: KindTable, edge_kind: EdgeKind, sym_kind: &str) -> bool {
+    match <SymbolKind as std::str::FromStr>::from_str(sym_kind) {
+        Ok(parsed) => KindCompatibility::check(table, edge_kind, parsed),
+        Err(_) => true,
+    }
+}
+
 impl KindCompatibility {
     /// True when `sym_kind` is allowed as a resolution target for `edge_kind`
     /// under `table`. Empty tables accept everything.

@@ -80,7 +80,8 @@ fn inaccessible_members_and_owners_remain_barriers_to_base_and_outer_fallbacks()
                 &arena,
                 recv,
                 "read",
-                &crate::type_checker::profile::language_profile::DEFAULT_PROFILE
+                &crate::type_checker::profile::language_profile::DEFAULT_PROFILE,
+                &|_| true,
             ),
             Err(Selection::Inaccessible)
         ));
@@ -96,7 +97,8 @@ fn inaccessible_members_and_owners_remain_barriers_to_base_and_outer_fallbacks()
             &arena,
             recv,
             "read",
-            &crate::type_checker::profile::language_profile::DEFAULT_PROFILE
+            &crate::type_checker::profile::language_profile::DEFAULT_PROFILE,
+            &|_| true,
         ),
         Err(Selection::Ambiguous)
     ));
@@ -126,4 +128,36 @@ fn direct_conflicts_and_kind_rejections_do_not_expose_a_base_member() {
     let name = lookup.member_index().unwrap().name("read").unwrap();
     assert_eq!(select(&lookup, 1, name, &|_| true), Selection::Ambiguous);
     assert_eq!(select(&lookup, 1, name, &|_| false), Selection::Missing);
+}
+
+#[test]
+fn same_name_property_and_method_select_the_method_for_a_call() {
+    use crate::type_checker::profile::chain_specs::kind_ok;
+    use crate::types::EdgeKind;
+
+    let lookup = Lookup::new()
+        .with_member_id(1, sym(71, "messages", "Validator.messages", "property", "v.php"))
+        .with_member_id(1, sym(72, "messages", "Validator.messages", "method", "v.php"));
+    let name = lookup.member_index().unwrap().name("messages").unwrap();
+    let arena = crate::type_checker::core::types::TypeArena::new();
+    let recv = super::super::chain::Receiver::new(
+        crate::languages::type_text::intern_test_type_text(&arena, "Validator"),
+        1,
+    );
+    let table = crate::languages::php::PHP_PROFILE.kind_compatible_table;
+    let calls = |kind: &str| kind_ok(table, EdgeKind::Calls, kind);
+
+    assert_eq!(select_typed(&lookup, &arena, recv, name, &|_| true), Selection::Ambiguous);
+    assert_eq!(select_typed(&lookup, &arena, recv, name, &calls), Selection::Unique(72));
+    let walked = super::super::implicit_root::walk_member(
+        &lookup,
+        &arena,
+        recv,
+        "messages",
+        &crate::languages::php::PHP_PROFILE,
+        &calls,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(walked.id, 72);
 }
