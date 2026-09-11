@@ -28,6 +28,10 @@ pub struct CallbackParameter {
     pub declaration: SourceSpan,
     /// The name as emitted by the reference extractor.
     pub name: String,
+    /// The parameter's own type annotation as written, when the source carries
+    /// one. It types the binding directly; an unannotated parameter is typed
+    /// contextually from the callee.
+    pub annotation: Option<String>,
 }
 
 #[derive(Clone)]
@@ -88,7 +92,8 @@ pub(crate) fn capture(
         let mut parameters = Vec::new();
         for parameter in callback.parameters {
             let name_id = graph.intern(&parameter.name);
-            let binding = graph.declare(scope, name_id, callback.body.start, None);
+            let binding =
+                graph.declare(scope, name_id, callback.body.start, parameter.annotation.clone());
             graph.declarations.insert(parameter.declaration, binding);
             parameters.push((parameter.name, binding));
         }

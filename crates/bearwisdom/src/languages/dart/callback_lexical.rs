@@ -53,6 +53,7 @@ fn parameter(source: &[u8], node: Node) -> Option<CallbackParameter> {
     (!name.is_empty() && name != "_").then(|| CallbackParameter {
         declaration: span(node),
         name: name.to_owned(),
+        annotation: None,
     })
 }
 

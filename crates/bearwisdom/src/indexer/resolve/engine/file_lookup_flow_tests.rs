@@ -1326,7 +1326,7 @@ fn php_phpdoc_lambda_at_span_seeds_from_the_extracted_callback_contract() {
     use crate::types::CallArg;
     use rustc_hash::FxHashMap;
 
-    let source = "<?php\nfinal class Result {}\nfinal class Item { public function touch(): Result { return new Result(); } }\n/** @param callable(Item): Result $callback */\nfunction visit($options, callable $callback): void {}\nfunction run(): void { visit([], fn (Item $item): Result => $item->touch()); }\n";
+    let source = "<?php\nfinal class Result {}\nfinal class Item { public function touch(): Result { return new Result(); } }\n/** @param callable(Item): Result $callback */\nfunction visit($options, callable $callback): void {}\nfunction run(): void { visit([], fn ($item): Result => $item->touch()); }\n";
     let dir = tempfile::tempdir().unwrap();
     let relative_path = "callbacks.php";
     let path = dir.path().join(relative_path);
@@ -1687,4 +1687,113 @@ fn php_opaque_or_unattached_callback_contracts_do_not_seed() {
     ] {
         assert_php_callback_contract_does_not_seed(declaration);
     }
+}
+
+#[test]
+fn php_annotated_closure_parameter_is_a_typed_local_the_walk_accepts() {
+    let source = "<?php\nnamespace App;\nclass Blueprint { public function string(string $n): Column { return new Column(); } }\nclass Column { public function primary(): void {} }\nclass Schema { public static function create(string $t, callable $cb): void {} }\nclass Migration { public function up(): void { Schema::create('jobs', function (Blueprint $table) { $table->string('id')->primary(); }); } }\n";
+    let dir = tempfile::tempdir().unwrap();
+    let relative_path = "closure.php";
+    let path = dir.path().join(relative_path);
+    std::fs::write(&path, source).unwrap();
+    let arena = Arc::new(TypeArena::new());
+    let parsed = crate::indexer::parse_file::parse_file_with_arena(
+        &crate::walker::WalkedFile {
+            relative_path: relative_path.into(),
+            absolute_path: path,
+            language: "php",
+        },
+        crate::languages::default_registry(),
+        &arena,
+    )
+    .unwrap();
+    let files = [parsed];
+    let root = files[0]
+        .refs
+        .iter()
+        .find(|reference| {
+            reference.target_name == "string"
+                && reference
+                    .chain
+                    .as_ref()
+                    .and_then(|chain| chain.segments.first())
+                    .is_some_and(|segment| segment.name == "table")
+        })
+        .expect("$table->string chain")
+        .byte_offset;
+    let db = crate::Database::open_in_memory().unwrap();
+    let (_, ids) = crate::indexer::write::write_parsed_files_with_origin(
+        &db,
+        &files,
+        "internal",
+        Some(&arena),
+    )
+    .unwrap();
+    let tree = Compilation::build(&files, &ids, Arc::clone(&arena));
+    let lookup = FileLookup::for_file(&tree, &files[0], &ids);
+    lookup.set_cursor(root);
+    let local = lookup
+        .local_reference(root)
+        .expect("closure parameter is a lexical local");
+    let ty = local.value_type.expect("annotation types the closure parameter");
+    let as_lookup: &dyn SymbolLookup = &lookup;
+    assert!(
+        arena.format_type(ty).ends_with("Blueprint"),
+        "annotation names the class: {}",
+        arena.format_type(ty)
+    );
+    assert!(
+        as_lookup.accepts_type_context(&arena, ty),
+        "the annotated receiver must be usable by the member walk"
+    );
+
+    // The second hop rides the first hop's yield: `string(): Column` must
+    // carry the walk to `App.Column.primary`.
+    let (index, reference) = files[0]
+        .refs
+        .iter()
+        .enumerate()
+        .find(|(_, reference)| reference.target_name == "primary")
+        .expect("$table->string()->primary chain");
+    let _ = index;
+    let owner = ids
+        .row_id(relative_path, reference.source_symbol_index)
+        .unwrap();
+    let mut context = crate::indexer::resolve::engine::testkit::ref_ctx(
+        reference,
+        &files[0].symbols[reference.source_symbol_index],
+        vec![],
+    );
+    context.source_symbol_id = Some(owner);
+    let file = crate::indexer::resolve::engine::file_context::build_file_context(
+        "php",
+        &files[0],
+        &crate::languages::php::PHP_PROFILE,
+        Some(crate::languages::default_registry().get("php")),
+        None,
+    );
+    lookup.set_cursor(reference.byte_offset);
+    crate::indexer::resolve::engine::trace::TRACE_ACTIVE.store(true, std::sync::atomic::Ordering::Relaxed);
+    crate::indexer::resolve::engine::trace::begin_ref();
+    let outcome = crate::indexer::resolve::engine::semantic_model::SemanticModel::production().get_symbol_info(
+        &context,
+        &file,
+        &lookup,
+        &crate::languages::php::PHP_PROFILE,
+    );
+    let lines = crate::indexer::resolve::engine::trace::take_ref();
+    crate::indexer::resolve::engine::trace::TRACE_ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
+    let crate::indexer::resolve::engine::semantic_model::SolveOutcome::Resolved(info) = outcome else {
+        panic!("primary must bind through the string() yield; trace:
+{}", lines.join("
+"));
+    };
+    assert_eq!(
+        lookup.symbol_by_id(info.target_symbol_id).unwrap().qualified_name,
+        "App.Column.primary",
+        "trace:
+{}",
+        lines.join("
+")
+    );
 }

@@ -41,9 +41,14 @@ fn describe(n: Node, s: &[u8]) -> Option<CallbackDescriptor> {
                 .filter(|x| x.kind() == "variable_name")
             {
                 if let Some(name) = var(s, x) {
+                    let annotation = p
+                        .child_by_field_name("type")
+                        .and_then(|t| txt(s, t))
+                        .map(str::to_owned);
                     parameters.push(CallbackParameter {
                         declaration: sp(x),
                         name,
+                        annotation,
                     });
                 }
             }
@@ -199,3 +204,7 @@ fn binding_pattern_names<'tree>(node: Node<'tree>, names: &mut Vec<Node<'tree>>)
         binding_pattern_names(child, names);
     }
 }
+
+#[cfg(test)]
+#[path = "callback_lexical_tests.rs"]
+mod tests;

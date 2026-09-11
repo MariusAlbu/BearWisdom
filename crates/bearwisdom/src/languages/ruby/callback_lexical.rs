@@ -41,6 +41,7 @@ fn describe(n: Node, s: &[u8]) -> Option<CallbackDescriptor> {
                 parameters.push(CallbackParameter {
                     declaration: sp(p),
                     name: txt(s, p)?,
+                    annotation: None,
                 })
             } else {
                 for x in unsupported(p) {

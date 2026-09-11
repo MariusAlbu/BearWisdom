@@ -64,6 +64,7 @@ fn parameter(source: &[u8], declaration: Node) -> Option<CallbackParameter> {
     Some(CallbackParameter {
         declaration: span(declaration),
         name: node_text(source, declaration)?.to_owned(),
+        annotation: None,
     })
 }
 
