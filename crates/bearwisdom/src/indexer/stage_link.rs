@@ -115,9 +115,8 @@ pub(crate) fn parse_external_sources(
     // Phase 2: per-package locator subsets, derived from
     // `ctx.active_ecosystems_by_package` (populated by Phase 1's per-package
     // activation evaluator). When non-empty, root discovery iterates only
-    // each package's own active set — closing the workspace-flat gap where a
-    // frontend `tsconfig.json` declaring DOM previously activated `ts-lib-dom`
-    // for unrelated backend packages in the same monorepo.
+    // each package's own active set, preventing an activation marker in one
+    // package from enabling an unrelated provider in another package.
     let per_package_locators: HashMap<
         i64,
         Vec<(
@@ -156,9 +155,9 @@ pub(crate) fn parse_external_sources(
             all_roots.extend(roots);
         }
     } else {
-        // Sorted by path before iterating: a package whose deps are symlink-
-        // hoisted (pnpm) is reached again from every consuming package's own
-        // node_modules, producing several `ExternalDepRoot`s for the same
+        // Sorted by path before iterating: symlink-hoisted dependencies can
+        // be reached again from every consuming package, producing several
+        // `ExternalDepRoot`s for the same
         // physical directory under different symlink paths — the dedup key
         // below doesn't canonicalize symlinks, so those survive as distinct
         // entries. Their relative order among `all_roots` then decides the
@@ -201,16 +200,14 @@ pub(crate) fn parse_external_sources(
     drop(_t_discover);
 
     // Step 2 — deduplicate by (ecosystem, module_path, version, root_path).
-    // Root path is included so a package with BOTH a primary directory
-    // (node_modules/chai/) AND a DefinitelyTyped sibling (node_modules/
-    // @types/chai/) are treated as separate roots to walk.
+    // Root path is included so distinct package directories that represent
+    // the same module are treated as separate roots to walk.
     //
     // `root_path` is canonicalized for the KEY ONLY (the stored `ExternalDepRoot`
     // keeps its original, un-canonicalized `root`, so every other consumer —
     // relative-import resolution, virtual-path construction — is unaffected).
-    // A pnpm-hoisted dependency is reached again from every consuming
-    // package's own `node_modules/<dep>` symlink; each symlink is a distinct
-    // `PathBuf` even though all of them resolve to the same physical
+    // A symlink-hoisted dependency can be reached through several package
+    // paths; each path is a distinct `PathBuf` even though all resolve to the same physical
     // directory, so without canonicalizing, N symlinked copies of one
     // package survive as N separate un-deduped roots — each gets its own
     // independent symbol-index scan, and whichever one's scan happens to run
@@ -342,15 +339,11 @@ pub(crate) fn parse_external_sources(
         debug!("Walking {} external source files total", walked.len());
     }
 
-    // Compute the ambient-globals package set once: any discovered TS dep
-    // whose entry .d.ts contributes globals via `declare global { ... }`
-    // or top-level `declare namespace ...`. Cheap — bounded I/O over a
-    // small number of entry files.
-    let ambient_globals_packages: HashSet<String> = demand_driven_roots
-        .iter()
-        .filter(|r| crate::ecosystem::npm::package_declares_globals(&r.root))
-        .map(|r| r.module_path.clone())
-        .collect();
+    // Let the owning ecosystem identify packages that contribute ambient
+    // symbols. The resulting package set is the normalized input to the
+    // per-file demand policy below.
+    let ambient_globals_packages =
+        crate::ecosystem::external_policy::ambient_global_packages(&demand_driven_roots);
     if !ambient_globals_packages.is_empty() {
         debug!(
             "Ambient-globals packages (declare-global probe): {}",
@@ -358,14 +351,11 @@ pub(crate) fn parse_external_sources(
         );
     }
 
-    // R6: per-file demand lookup. For TS externals the module path lives in
-    // the virtual file path (`ext:ts:react/index.d.ts` → `react`). Other
-    // ecosystems haven't wired a demand mapping yet — they pass None and
-    // keep the permissive extract path.
+    // R6: the ecosystem supplies the per-file demand policy. Files outside
+    // that policy retain the permissive extract path.
     let results: Vec<Result<ParsedFile>> = {
         let _t = crate::indexer::phase_timer::scope("externals.parse_walked_files");
-        // External `.d.ts` — bundled/generated types (tRPC's inferred routers,
-        // deeply recursive mapped types) nest the CST far past the ~8 MB default
+        // Deep external declarations can nest the CST far past the default
         // stack, overflowing the extractor's recursive type walk. Parse on the
         // deep PARSE_STACK_SIZE pool, same as the project parse. (A bare
         // `par_iter` runs on the global default-stack pool and can execute items
@@ -375,11 +365,19 @@ pub(crate) fn parse_external_sources(
             walked
                 .par_iter()
                 .map(|w| {
-                    let per_file_demand = lookup_demand_for_walked(
+                    let per_file_demand = match crate::ecosystem::external_policy::external_demand(
                         &w.relative_path,
                         demand,
                         &ambient_globals_packages,
-                    );
+                    ) {
+                        crate::ecosystem::external_policy::ExternalDemandDecision::Filter(
+                            symbols,
+                        ) => Some(symbols),
+                        crate::ecosystem::external_policy::ExternalDemandDecision::Full
+                        | crate::ecosystem::external_policy::ExternalDemandDecision::Decline => {
+                            None
+                        }
+                    };
                     super::full::parse_file_with_arena_and_demand(
                         w,
                         registry,
@@ -400,8 +398,7 @@ pub(crate) fn parse_external_sources(
     for ((walked_file, owner), res) in walked.iter().zip(walked_owners.iter()).zip(results) {
         match res {
             Ok(mut pf) => {
-                // Per-locator post-processing hook: TS rewrites declaration
-                // file symbols to package-qualified names here.
+                // Per-locator post-processing may normalize extracted symbols.
                 owner.post_process_parsed(&mut pf, type_arena);
                 parsed.push(pf);
             }
@@ -426,38 +423,14 @@ pub(crate) fn parse_external_sources(
     }
 }
 
-/// Resolve a TypeScript / JavaScript relative import specifier to an
-/// absolute file path. Tries the extensions Node / bundlers try in order,
-/// then the `index.*` variant if the specifier points at a directory.
-pub(crate) fn resolve_ts_relative_import(base_dir: &Path, specifier: &str) -> Option<PathBuf> {
-    let target = base_dir.join(specifier);
-    const EXTS: &[&str] = &["ts", "tsx", "d.ts", "mts", "cts", "js", "jsx", "mjs", "cjs"];
-    for ext in EXTS {
-        let candidate = target.with_extension(ext);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    if target.is_dir() {
-        for ext in EXTS {
-            let candidate = target.join(format!("index.{ext}"));
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-    }
-    None
-}
-
 /// Wrap an absolute path in a `WalkedFile` so the shared parser can handle
 /// it. Filters by extension (via the shared language registry) and by the
 /// `already_virtual` set so we don't re-pull what the eager walker already
 /// surfaced.
 ///
 /// The virtual path mimics the eager walker's shape per ecosystem so
-/// post-processing hooks (notably npm's package-prefix rewrite) recognize
-/// pulled files. Falls back to an `ext:idx:<abs>` tag when the package
-/// layout can't be inferred.
+/// post-processing hooks recognize pulled files. Falls back to an
+/// `ext:idx:<abs>` tag when the package layout can't be inferred.
 pub(crate) fn make_walked_file(
     abs: &Path,
     already_virtual: &HashSet<String>,
@@ -467,20 +440,10 @@ pub(crate) fn make_walked_file(
     // `language_id_for_extension()` declaration is the single source of
     // truth. No caller needs to maintain a parallel extension table.
     //
-    // Fallback for C++ stdlib extensionless headers (`<vector>`,
-    // `<memory>`, `<string>`, `<unordered_map>`): these have no
-    // extension to drive detection, but they're real C++ headers
-    // pulled through the demand loop after the posix_headers walker
-    // recognized them. Treat as "cpp" so the parser actually runs.
+    // Providers may additionally classify extensionless files they own.
     let language = crate::languages::default_registry()
         .language_by_extension(file_name)
-        .or_else(|| {
-            if crate::ecosystem::posix_headers::is_extensionless_cpp_stdlib_header(file_name) {
-                Some("cpp")
-            } else {
-                None
-            }
-        })?;
+        .or_else(|| crate::ecosystem::external_policy::extensionless_source_language(file_name))?;
 
     let virtual_path = virtual_path_for_pulled(abs, language)
         .unwrap_or_else(|| format!("ext:idx:{}", abs.to_string_lossy().replace('\\', "/")));
@@ -492,77 +455,6 @@ pub(crate) fn make_walked_file(
         absolute_path: abs.to_path_buf(),
         language,
     })
-}
-
-/// R6: look up the demand set for a single external walked file based on its
-/// virtual path. Returns `None` when no demand is tracked (fall through to
-/// permissive extraction).
-///
-/// Routing:
-///   * ts-lib / @types/node globals — return the `__globals__` bucket.
-///   * Scoped DefinitelyTyped packages (`@types/react`) — try the demand
-///     for the runtime counterpart (`react`) first; fall back to globals.
-///   * Other npm packages — match the package name from the virtual path.
-fn lookup_demand_for_walked<'a>(
-    relative_path: &str,
-    demand: &'a DemandSet,
-    ambient_globals_packages: &HashSet<String>,
-) -> Option<&'a HashSet<String>> {
-    // Ambient-global libraries — lib.dom.d.ts, lib.es5.d.ts,
-    // lib.webworker.d.ts, @types/node — declare the whole runtime type
-    // surface. Filtering these by the project's user-ref demand set drops
-    // interfaces the user doesn't name directly but whose instance methods
-    // they still call (`Number.toFixed`, `String.trim`, `ExtendableEvent.waitUntil`).
-    // A top-level interface filtered out loses all its child method symbols,
-    // which leaves chain walkers nothing to land on. Parse these files
-    // fully — they're the type-system floor, not an optimisable surface.
-    if is_ambient_global_external(relative_path, ambient_globals_packages) {
-        return None;
-    }
-
-    if let Some(pkg) = crate::ecosystem::externals::ts_package_from_virtual_path(relative_path) {
-        if let Some(set) = demand.for_module(pkg) {
-            return Some(set);
-        }
-        // DefinitelyTyped: `@types/react` demand usually lives under `react`.
-        if let Some(runtime) = pkg.strip_prefix("@types/") {
-            if let Some(set) = demand.for_module(runtime) {
-                return Some(set);
-            }
-        }
-    }
-    None
-}
-
-/// R6: detect external files whose declarations are ambient globals
-/// (visible project-wide without an import). The demand filter MUST NOT
-/// run on these — top-level interfaces / classes / functions need to
-/// keep all their members reachable, even when the user source never
-/// names the parent type directly (the chain walker lands on members
-/// via `$.each`, `Buffer.from`, etc.).
-///
-/// Matches:
-///   * The `ts-lib-dom` synthetic `__ts_lib__` module wrapping
-///     `typescript/lib/lib.*.d.ts`.
-///   * Every package whose entry .d.ts contributes globals via
-///     `declare global { ... }` or top-level `declare namespace ...`.
-///     Set is computed by the caller via `npm::package_declares_globals`
-///     across the discovered dep roots.
-fn is_ambient_global_external(
-    relative_path: &str,
-    ambient_globals_packages: &HashSet<String>,
-) -> bool {
-    let normalized = relative_path.replace('\\', "/");
-    if normalized.starts_with(&format!(
-        "ext:ts:{}/",
-        crate::ecosystem::ts_lib_dom::TS_LIB_SYNTHETIC_MODULE
-    )) {
-        return true;
-    }
-    let Some(pkg) = crate::ecosystem::externals::ts_package_from_virtual_path(&normalized) else {
-        return false;
-    };
-    ambient_globals_packages.contains(pkg)
 }
 
 #[cfg(test)]

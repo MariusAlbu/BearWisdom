@@ -13,6 +13,52 @@ fn is_valid_npm_module_path_accepts_clean_names() {
     assert!(is_valid_npm_module_path("__ts_lib__"));
 }
 
+#[test]
+fn secondary_source_admission_is_owned_by_npm_web_languages() {
+    for language in ["typescript", "javascript", "vue", "svelte", "astro", "mdx"] {
+        assert!(
+            admits_secondary_source_language(language),
+            "{language} must admit project-relative module discovery"
+        );
+    }
+    for language in ["rust", "python", "php", "html"] {
+        assert!(
+            !admits_secondary_source_language(language),
+            "{language} must not use npm module discovery"
+        );
+    }
+}
+
+#[test]
+fn external_demand_policy_normalizes_npm_and_ambient_paths() {
+    let mut demand = crate::indexer::demand::DemandSet::new();
+    demand.add("react", "Component");
+    let mut ambient_packages = std::collections::HashSet::new();
+
+    assert!(matches!(
+        external_demand_policy("ext:ts:react/index.d.ts", &demand, &ambient_packages),
+        ExternalDemandPolicy::Demand(symbols) if symbols.contains("Component")
+    ));
+    assert!(matches!(
+        external_demand_policy("ext:ts:@types/react/index.d.ts", &demand, &ambient_packages),
+        ExternalDemandPolicy::Demand(symbols) if symbols.contains("Component")
+    ));
+    assert!(matches!(
+        external_demand_policy("ext:ts:__ts_lib__/lib.dom.d.ts", &demand, &ambient_packages),
+        ExternalDemandPolicy::Full
+    ));
+
+    ambient_packages.insert("globals-only".to_string());
+    assert!(matches!(
+        external_demand_policy("ext:ts:globals-only/index.d.ts", &demand, &ambient_packages),
+        ExternalDemandPolicy::Full
+    ));
+    assert!(matches!(
+        external_demand_policy("ext:idx:other/file", &demand, &ambient_packages),
+        ExternalDemandPolicy::Unmatched
+    ));
+}
+
 // ---- user-import gate -------------------------------------------------
 
 fn extract(src: &str) -> std::collections::HashSet<String> {

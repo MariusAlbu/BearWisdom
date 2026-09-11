@@ -22,7 +22,7 @@ use std::sync::Arc;
 
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
-    SymbolLocationIndex,
+    SymbolLocationIndex, WorkspacePackageMetadata,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
@@ -91,6 +91,17 @@ impl Ecosystem for NugetEcosystem {
         ]
     }
 
+    fn workspace_package_metadata(&self, dir: &Path) -> Option<WorkspacePackageMetadata> {
+        Some(WorkspacePackageMetadata {
+            declared_name: workspace_project_name(dir),
+            is_publishable: true,
+        })
+    }
+
+    fn package_dependency_ecosystem(&self) -> Option<&'static str> {
+        Some(LEGACY_ECOSYSTEM_TAG)
+    }
+
     fn pruned_dir_names(&self) -> &'static [&'static str] {
         &["bin", "obj", ".nuget"]
     }
@@ -145,6 +156,15 @@ impl Ecosystem for NugetEcosystem {
         let short = fqn.rsplit('.').next().unwrap_or(fqn);
         resolve_nuget_source_symbols(dep, &[short])
     }
+}
+
+fn workspace_project_name(dir: &Path) -> Option<String> {
+    std::fs::read_dir(dir).ok()?.flatten().find_map(|entry| {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        [".csproj", ".fsproj", ".vbproj"]
+            .into_iter()
+            .find_map(|extension| name.strip_suffix(extension).map(str::to_owned))
+    })
 }
 
 impl ExternalSourceLocator for NugetEcosystem {

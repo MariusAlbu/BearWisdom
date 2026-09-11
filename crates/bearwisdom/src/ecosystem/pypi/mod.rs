@@ -13,7 +13,7 @@ pub(crate) mod declared_deps;
 
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
-    SymbolLocationIndex,
+    SymbolLocationIndex, WorkspacePackageMetadata,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
@@ -48,6 +48,10 @@ impl Ecosystem for PypiEcosystem {
         // pyproject.toml is the modern marker; setup.py persists in older
         // projects. Both legitimately mark a package root.
         &[("pyproject.toml", "python"), ("setup.py", "python")]
+    }
+
+    fn workspace_package_metadata(&self, dir: &Path) -> Option<WorkspacePackageMetadata> {
+        Some(workspace_package_metadata(dir))
     }
 
     fn pruned_dir_names(&self) -> &'static [&'static str] {
@@ -154,6 +158,48 @@ impl Ecosystem for PypiEcosystem {
 
     fn uses_demand_driven_parse(&self) -> bool {
         true
+    }
+}
+
+fn workspace_package_metadata(dir: &Path) -> WorkspacePackageMetadata {
+    let Ok(content) = std::fs::read_to_string(dir.join("pyproject.toml")) else {
+        return WorkspacePackageMetadata {
+            declared_name: None,
+            is_publishable: true,
+        };
+    };
+    let mut declared_name = None;
+    let mut is_publishable = true;
+    for marker in ["[project]", "[tool.poetry]"] {
+        let Some(start) = content.find(marker) else {
+            continue;
+        };
+        let section = content[start + marker.len()..]
+            .split("\n[")
+            .next()
+            .unwrap_or("");
+        if declared_name.is_none() {
+            declared_name = section.lines().find_map(|line| {
+                if !line.trim_start().starts_with("name") {
+                    return None;
+                }
+                let value = line
+                    .split('=')
+                    .nth(1)?
+                    .trim()
+                    .trim_matches('"')
+                    .trim_matches('\'');
+                (!value.is_empty()).then(|| value.to_owned())
+            });
+        }
+        is_publishable &= !section.contains("Private :: Do Not Upload")
+            && !section
+                .lines()
+                .any(|line| line.trim_start().starts_with("private") && line.contains("true"));
+    }
+    WorkspacePackageMetadata {
+        declared_name,
+        is_publishable,
     }
 }
 

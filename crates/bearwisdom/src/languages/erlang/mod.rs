@@ -17,6 +17,7 @@ pub(crate) mod profile;
 pub use profile::ERLANG_PROFILE;
 mod attributes;
 mod cowboy;
+mod external_virtual_path;
 mod functions;
 
 #[cfg(test)]
@@ -48,6 +49,14 @@ impl LanguagePlugin for ErlangPlugin {
 
     fn scope_kinds(&self) -> &[ScopeKind] {
         &[]
+    }
+
+    fn external_virtual_path(
+        &self,
+        _language: &str,
+        normalized_absolute_path: &str,
+    ) -> Option<String> {
+        external_virtual_path::for_pulled(normalized_absolute_path)
     }
 
     fn extract(&self, source: &str, _file_path: &str, _lang_id: &str) -> ExtractionResult {

@@ -22,6 +22,7 @@ pub(crate) mod callback_lexical_support;
 pub mod common;
 pub mod demand_filter;
 mod plugin_defaults;
+pub(crate) mod query_builtins;
 pub mod registry;
 pub mod string_dsl;
 
@@ -204,6 +205,28 @@ pub trait LanguagePlugin: Send + Sync + 'static {
         _specifier: &str,
     ) -> crate::type_checker::profile::language_profile::SourceModulePathPolicy {
         crate::type_checker::profile::language_profile::SourceModulePathPolicy::unsupported()
+    }
+
+    /// Map a normalized absolute external-source path to the virtual identity
+    /// owned by this language's ecosystem layout. The default recognizes no
+    /// layout so generic indexing falls back to its opaque identity.
+    fn external_virtual_path(
+        &self,
+        _language: &str,
+        _normalized_absolute_path: &str,
+    ) -> Option<String> {
+        None
+    }
+
+    /// Query-derived builtin names and lexical-scope query owned by this
+    /// plugin's grammar IDs. The generated data is language-local; the
+    /// default declines IDs the plugin does not claim.
+    fn query_builtin_data(&self, language: &str) -> crate::languages::query_builtins::Data {
+        if self.language_ids().contains(&language) {
+            crate::languages::query_builtins::for_language(language)
+        } else {
+            crate::languages::query_builtins::Data::EMPTY
+        }
     }
 
     /// Interpret the return portion of one of this language's stored callable

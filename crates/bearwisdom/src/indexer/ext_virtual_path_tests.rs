@@ -2,6 +2,32 @@ use super::virtual_path_for_pulled;
 use std::path::Path;
 
 #[test]
+fn npm_layout_is_shared_by_supported_typescript_aliases_and_javascript() {
+    let abs = Path::new("/home/u/project/node_modules/@scope/pkg/dist/index.d.ts");
+    for language in ["typescript", "tsx", "javascript"] {
+        assert_eq!(
+            virtual_path_for_pulled(abs, language).as_deref(),
+            Some("ext:ts:@scope/pkg/dist/index.d.ts"),
+            "{language} must dispatch to its language-owned npm layout",
+        );
+    }
+}
+
+#[test]
+fn unsupported_javascript_alias_has_no_npm_layout() {
+    let abs = Path::new("/home/u/project/node_modules/pkg/index.js");
+    assert_eq!(virtual_path_for_pulled(abs, "jsx"), None);
+}
+
+#[test]
+fn unsupported_language_has_no_virtual_path_layout() {
+    assert_eq!(
+        virtual_path_for_pulled(Path::new("/any/layout/file.txt"), "unowned-language"),
+        None,
+    );
+}
+
+#[test]
 fn rust_pulled_file_matches_eager_walker_shape() {
     // A demand-pulled cargo registry file must reconstruct the eager walker's
     // `ext:rust:<crate>/<rel-to-crate-root>` virtual path (version stripped),

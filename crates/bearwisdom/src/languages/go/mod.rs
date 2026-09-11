@@ -5,6 +5,7 @@ mod call_sites;
 mod calls;
 mod chain;
 mod embedded;
+mod external_virtual_path;
 pub mod extract;
 pub(crate) mod flow;
 mod helpers;
@@ -73,6 +74,14 @@ impl LanguagePlugin for GoPlugin {
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
         extract::extract(source)
+    }
+
+    fn external_virtual_path(
+        &self,
+        _language: &str,
+        normalized_absolute_path: &str,
+    ) -> Option<String> {
+        external_virtual_path::for_pulled(normalized_absolute_path)
     }
 
     fn signature_return_type(&self, signature: &str) -> Option<String> {

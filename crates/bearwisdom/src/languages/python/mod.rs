@@ -6,6 +6,7 @@ mod calls;
 pub(crate) mod connectors;
 pub(crate) mod decorators;
 mod embedded;
+mod external_virtual_path;
 pub mod extract;
 pub(crate) mod flow;
 mod helpers;
@@ -63,6 +64,14 @@ impl LanguagePlugin for PythonPlugin {
 
     fn scope_kinds(&self) -> &[ScopeKind] {
         &[]
+    }
+
+    fn external_virtual_path(
+        &self,
+        _language: &str,
+        normalized_absolute_path: &str,
+    ) -> Option<String> {
+        external_virtual_path::for_pulled(normalized_absolute_path)
     }
 
     fn callback_lexical_adapter(

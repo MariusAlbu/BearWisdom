@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
-    SymbolLocationIndex,
+    SymbolLocationIndex, WorkspacePackageMetadata,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
@@ -52,6 +52,14 @@ impl Ecosystem for PubEcosystem {
         // string used by the Pub manifest reader (see ManifestKind::Pubspec
         // → "dart" in stage_discover::manifest_kind_to_ecosystem).
         &[("pubspec.yaml", "dart")]
+    }
+
+    fn workspace_package_metadata(&self, dir: &Path) -> Option<WorkspacePackageMetadata> {
+        let content = std::fs::read_to_string(dir.join("pubspec.yaml")).ok()?;
+        Some(WorkspacePackageMetadata {
+            declared_name: manifest::parse_pubspec_name(&content),
+            is_publishable: true,
+        })
     }
 
     fn pruned_dir_names(&self) -> &'static [&'static str] {

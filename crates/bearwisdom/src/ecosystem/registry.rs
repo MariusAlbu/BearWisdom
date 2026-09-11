@@ -8,6 +8,7 @@
 // =============================================================================
 
 use super::*;
+use std::path::Path;
 
 /// Process-lifetime registry of every `Ecosystem` impl. Constructed once;
 /// read-only thereafter.
@@ -56,6 +57,91 @@ impl EcosystemRegistry {
             .flat_map(|eco| eco.workspace_package_name_aliases(declared_name))
             .collect()
     }
+
+    /// Persisted dependency ecosystem for a normalized manifest kind.
+    /// Selection is registry-owned, so discovery never matches manifest enum
+    /// variants itself. Registration order is intentional first-wins policy.
+    pub fn package_dependency_ecosystem(
+        &self,
+        kind: crate::ecosystem::manifest::ManifestKind,
+    ) -> Option<&'static str> {
+        self.ecosystems
+            .iter()
+            .find(|eco| eco.manifest_kinds().contains(&kind))
+            .and_then(|eco| eco.package_dependency_ecosystem())
+    }
+
+    /// Convert a profile scanner's monorepo label into an adapter-owned
+    /// workspace package kind.
+    pub fn workspace_kind_for_monorepo_kind(&self, scanner_kind: &str) -> Option<&'static str> {
+        self.ecosystems.iter().find_map(|eco| {
+            eco.workspace_monorepo_kinds()
+                .iter()
+                .find_map(|(source, kind)| (*source == scanner_kind).then_some(*kind))
+        })
+    }
+
+    /// Read package metadata through the ecosystem that owns `kind`.
+    /// Unsupported kinds deliberately preserve the old neutral defaults.
+    pub fn workspace_package_metadata(&self, dir: &Path, kind: &str) -> WorkspacePackageMetadata {
+        self.ecosystems
+            .iter()
+            .filter(|eco| owns_workspace_kind(eco.as_ref(), kind))
+            .find_map(|eco| eco.workspace_package_metadata(dir))
+            .unwrap_or_else(|| WorkspacePackageMetadata {
+                declared_name: None,
+                is_publishable: true,
+            })
+    }
+
+    /// Ask the owning adapter whether a workspace root is also a package.
+    pub fn workspace_root_is_package(&self, root: &Path, kind: &str) -> bool {
+        self.ecosystems
+            .iter()
+            .filter(|eco| owns_workspace_kind(eco.as_ref(), kind))
+            .any(|eco| eco.workspace_root_is_package(root))
+    }
+
+    /// Find an owned package manifest in `dir`, returning its filename. Exact
+    /// filename markers win over extension markers, matching the recursive
+    /// scanner's precedence.
+    pub fn workspace_manifest_filename(&self, dir: &Path, kind: &str) -> Option<String> {
+        for eco in &self.ecosystems {
+            for (filename, label) in eco.workspace_package_files() {
+                if *label == kind && dir.join(filename).is_file() {
+                    return Some((*filename).to_owned());
+                }
+            }
+        }
+        let entries = std::fs::read_dir(dir).ok()?;
+        for entry in entries.flatten() {
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if !file_type.is_file() {
+                continue;
+            }
+            let filename = entry.file_name().to_string_lossy().into_owned();
+            if self.ecosystems.iter().any(|eco| {
+                eco.workspace_package_extensions()
+                    .iter()
+                    .any(|(extension, label)| *label == kind && filename.ends_with(extension))
+            }) {
+                return Some(filename);
+            }
+        }
+        None
+    }
+}
+
+fn owns_workspace_kind(eco: &dyn Ecosystem, kind: &str) -> bool {
+    eco.workspace_package_files()
+        .iter()
+        .any(|(_, label)| *label == kind)
+        || eco
+            .workspace_package_extensions()
+            .iter()
+            .any(|(_, label)| *label == kind)
 }
 
 /// Bridge to the legacy `ExternalSourceLocator` trait, keeping the

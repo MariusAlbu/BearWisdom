@@ -3,6 +3,7 @@ mod callback_lexical;
 
 pub(crate) mod callback_contract;
 mod calls;
+mod external_virtual_path;
 pub mod extract;
 pub(crate) mod flow;
 mod helpers;
@@ -76,6 +77,14 @@ impl LanguagePlugin for RubyPlugin {
 
     fn scope_kinds(&self) -> &[ScopeKind] {
         extract::RUBY_SCOPE_KINDS
+    }
+
+    fn external_virtual_path(
+        &self,
+        _language: &str,
+        normalized_absolute_path: &str,
+    ) -> Option<String> {
+        external_virtual_path::for_pulled(normalized_absolute_path)
     }
 
     fn callback_lexical_adapter(

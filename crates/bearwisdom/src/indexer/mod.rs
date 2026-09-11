@@ -35,7 +35,6 @@ pub mod phase_timer;
 pub mod plugin_state;
 pub mod plugin_state_phase;
 pub mod post_index;
-pub mod query_builtins;
 pub mod resolve_diff;
 mod return_object_types;
 pub mod secondary_scan;

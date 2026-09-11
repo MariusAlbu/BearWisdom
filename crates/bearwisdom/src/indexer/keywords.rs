@@ -25,11 +25,12 @@ pub fn keywords_for_language(lang: &str) -> &'static [&'static str] {
 /// so the resolver finds them as real symbols rather than through a hardcoded
 /// list.
 pub fn keywords_set_for_language(lang: &str) -> std::collections::HashSet<&'static str> {
-    let plugin = crate::languages::default_registry().get(lang);
+    let registry = crate::languages::default_registry();
+    let plugin = registry.get(lang);
     let mut set: std::collections::HashSet<&'static str> =
         plugin.keywords().iter().copied().collect();
     // Merge in query-extracted builtins from tree-sitter .scm files.
-    for name in super::query_builtins::query_builtins_for_language(lang) {
+    for name in registry.query_builtin_data(lang).builtins {
         set.insert(name);
     }
     set
@@ -96,5 +97,24 @@ mod tests {
         assert!(f.contains(&"unit"));
         assert!(f.contains(&"obj"));
         assert!(!std::ptr::eq(f, c));
+    }
+
+    #[test]
+    fn grammar_query_data_follows_the_exact_plugin_language_id() {
+        let registry = crate::languages::default_registry();
+        assert!(registry
+            .query_builtin_data("c")
+            .builtins
+            .contains(&"sizeof"));
+        assert!(registry
+            .query_builtin_data("cpp")
+            .builtins
+            .contains(&"concept"));
+        assert!(registry.query_builtin_data("c++").builtins.is_empty());
+        assert!(registry
+            .query_builtin_data("javascript")
+            .builtins
+            .contains(&"console"));
+        assert!(registry.query_builtin_data("jsx").builtins.is_empty());
     }
 }

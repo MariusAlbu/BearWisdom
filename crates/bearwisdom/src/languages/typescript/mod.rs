@@ -21,6 +21,7 @@ mod connectors_nextjs;
 mod connectors_react;
 pub(crate) mod decorators;
 mod embedded;
+pub(crate) mod external_virtual_path;
 pub(crate) mod flow;
 mod helpers;
 mod imports;
@@ -116,6 +117,16 @@ impl LanguagePlugin for TypeScriptPlugin {
         );
         crate::languages::common::append_handlebars_register_helper_globals(source, &mut result);
         result
+    }
+
+    fn external_virtual_path(
+        &self,
+        language: &str,
+        normalized_absolute_path: &str,
+    ) -> Option<String> {
+        matches!(language, "typescript" | "tsx")
+            .then(|| external_virtual_path::for_pulled(normalized_absolute_path))
+            .flatten()
     }
 
     fn signature_type_application(&self, text: &str) -> (String, Vec<String>) {

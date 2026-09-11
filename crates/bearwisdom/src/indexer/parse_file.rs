@@ -251,8 +251,10 @@ fn parse_file_internal(
     // skipped for large files. Locals and identity consumers share this parse.
     let shared_grammar = plugin.grammar(walked.language);
     let shared_tree = {
-        let want_for_locals =
-            crate::indexer::query_builtins::locals_scm_for_language(walked.language).is_some();
+        let want_for_locals = registry
+            .query_builtin_data(walked.language)
+            .locals_scm
+            .is_some();
         let want_for_flow = plugin.flow_config().is_some();
         if want_for_locals || want_for_flow {
             shared_grammar.as_ref().and_then(|g| {

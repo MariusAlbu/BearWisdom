@@ -16,7 +16,7 @@ use crate::parser::local_resolver::LocalResolver;
 /// repeated verbatim for every file of a language. Keyed by `(grammar,
 /// locals-source-pointer)`: the grammar because one locals source can serve
 /// several grammars (the TS source drives the `.ts` and `.tsx` grammars), the
-/// source pointer because each `locals_scm_for_language` result is a `&'static`
+/// source pointer because each language-owned locals query is a `&'static`
 /// literal. A `None` (empty / malformed / too few captures) is cached too, so a
 /// language without a usable locals.scm doesn't re-attempt the compile per file.
 /// Shared as `Arc`; `resolve` builds its own `QueryCursor`, so concurrent use
@@ -88,7 +88,7 @@ fn local_resolver_for(
     lang_id: &str,
     plugin: &dyn crate::languages::LanguagePlugin,
 ) -> Option<(Arc<LocalResolver>, tree_sitter::Language)> {
-    let locals_scm = crate::indexer::query_builtins::locals_scm_for_language(lang_id)?;
+    let locals_scm = plugin.query_builtin_data(lang_id).locals_scm?;
     let grammar = plugin.grammar(lang_id)?;
     let resolver = cached_local_resolver(&grammar, locals_scm)?;
     Some((resolver, grammar))

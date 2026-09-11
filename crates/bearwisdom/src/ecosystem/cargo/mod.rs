@@ -24,7 +24,7 @@ pub(crate) mod resolver_policy;
 
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
-    SymbolLocationIndex,
+    SymbolLocationIndex, WorkspacePackageMetadata,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
 use crate::walker::WalkedFile;
@@ -57,6 +57,20 @@ impl Ecosystem for CargoEcosystem {
 
     fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
         &[("Cargo.toml", "cargo")]
+    }
+
+    fn workspace_monorepo_kinds(&self) -> &'static [(&'static str, &'static str)] {
+        &[("cargo-workspace", "cargo")]
+    }
+
+    fn workspace_package_metadata(&self, dir: &Path) -> Option<WorkspacePackageMetadata> {
+        Some(workspace_package_metadata(dir))
+    }
+
+    fn workspace_root_is_package(&self, root: &Path) -> bool {
+        std::fs::read_to_string(root.join("Cargo.toml"))
+            .map(|content| content.contains("[package]"))
+            .unwrap_or(false)
     }
 
     fn workspace_package_name_aliases(&self, declared_name: &str) -> Vec<String> {
@@ -119,6 +133,57 @@ impl Ecosystem for CargoEcosystem {
 
     fn uses_demand_driven_parse(&self) -> bool {
         true
+    }
+}
+
+fn workspace_package_metadata(dir: &Path) -> WorkspacePackageMetadata {
+    let Ok(content) = std::fs::read_to_string(dir.join("Cargo.toml")) else {
+        return WorkspacePackageMetadata {
+            declared_name: None,
+            is_publishable: true,
+        };
+    };
+    let Some(package_start) = content.find("[package]") else {
+        return WorkspacePackageMetadata {
+            declared_name: None,
+            is_publishable: true,
+        };
+    };
+    let section = content[package_start + "[package]".len()..]
+        .split_inclusive('\n')
+        .take_while(|line| !line.trim_start().starts_with('['))
+        .collect::<String>();
+    let declared_name = section
+        .lines()
+        .find(|line| line.trim_start().starts_with("name"))
+        .and_then(|line| {
+            let value = line
+                .split('=')
+                .nth(1)?
+                .split('#')
+                .next()?
+                .trim()
+                .trim_matches('"');
+            (!value.is_empty()).then(|| value.to_owned())
+        });
+    let is_publishable = section
+        .lines()
+        .find(|line| line.trim_start().starts_with("publish"))
+        .map(|line| {
+            let value = line
+                .split('=')
+                .nth(1)
+                .unwrap_or("")
+                .split('#')
+                .next()
+                .unwrap_or("")
+                .trim();
+            value != "false" && value != "[]"
+        })
+        .unwrap_or(true);
+    WorkspacePackageMetadata {
+        declared_name,
+        is_publishable,
     }
 }
 

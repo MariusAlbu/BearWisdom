@@ -15,6 +15,7 @@
 //! - `type` section → scope; `TypeName = object/enum/concept/...` → Class/Struct/Enum/Interface/TypeAlias
 //! - `import`, `from ... import` → Imports edges
 
+mod external_virtual_path;
 pub mod extract;
 pub mod keywords;
 pub(crate) mod module_paths;
@@ -52,6 +53,14 @@ impl LanguagePlugin for NimPlugin {
 
     fn scope_kinds(&self) -> &[ScopeKind] {
         &[]
+    }
+
+    fn external_virtual_path(
+        &self,
+        _language: &str,
+        normalized_absolute_path: &str,
+    ) -> Option<String> {
+        external_virtual_path::for_pulled(normalized_absolute_path)
     }
 
     fn extract(&self, source: &str, file_path: &str, _lang_id: &str) -> ExtractionResult {

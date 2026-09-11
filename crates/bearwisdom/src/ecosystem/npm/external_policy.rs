@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::type_checker::core::types::TypeArena;
 use crate::types::{ExtractedRef, ParsedFile};
+use crate::walker::WalkedFile;
 
 const LANGUAGES: &[&str] = &[
     "typescript",
@@ -57,4 +58,8 @@ pub(super) fn resolve_relative_module(
             )
         })
         .flatten()
+}
+
+pub(super) fn secondary_scan(project_root: &Path, primary: &[WalkedFile]) -> Vec<WalkedFile> {
+    crate::ecosystem::npm::pull_gitignored_imports(project_root, primary)
 }

@@ -396,3 +396,99 @@ fn cargo_workspace_root_pure_virtual_manifest_skipped() {
     );
     assert!(paths.contains("app"));
 }
+
+// ---------------------------------------------------------------------------
+// Registry-owned discovery inputs
+// ---------------------------------------------------------------------------
+
+#[test]
+fn recursive_discovery_honors_adapter_markers_extensions_and_prune_dirs() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+
+    // These are intentionally from separate ecosystem adapters: Alire owns
+    // its exact marker, while Cabal owns its filename extension. Neither is a
+    // language parser concern for the generic filesystem walk.
+    fs::create_dir_all(root.join("workspace/ada-lib")).unwrap();
+    write(
+        &root.join("workspace/ada-lib"),
+        "alire.toml",
+        "name = \"ada_lib\"\n",
+    );
+    fs::create_dir_all(root.join("workspace/hs-lib")).unwrap();
+    write(
+        &root.join("workspace/hs-lib"),
+        "renderer.cabal",
+        "name: renderer\n",
+    );
+
+    // The same marker in dependency/build directories must stay invisible.
+    // `node_modules` and `alire` are supplied by their owning adapters.
+    fs::create_dir_all(root.join("node_modules/not-a-workspace-package")).unwrap();
+    write(
+        &root.join("node_modules/not-a-workspace-package"),
+        "alire.toml",
+        "name = \"vendored\"\n",
+    );
+    fs::create_dir_all(root.join("alire/generated")).unwrap();
+    write(
+        &root.join("alire/generated"),
+        "generated.cabal",
+        "name: generated\n",
+    );
+
+    let discovered = scan_all_manifests(root);
+    let identities: std::collections::HashSet<_> = discovered
+        .iter()
+        .map(|package| (package.path.as_str(), package.kind.as_deref()))
+        .collect();
+
+    assert!(
+        identities.contains(&("workspace/ada-lib", Some("ada"))),
+        "adapter-owned exact marker was missed: {discovered:?}"
+    );
+    assert!(
+        identities.contains(&("workspace/hs-lib", Some("haskell"))),
+        "adapter-owned extension marker was missed: {discovered:?}"
+    );
+    assert!(
+        !identities
+            .iter()
+            .any(|(path, _)| path.starts_with("node_modules/")),
+        "npm dependency cache leaked into workspace discovery: {discovered:?}"
+    );
+    assert!(
+        !identities
+            .iter()
+            .any(|(path, _)| path.starts_with("alire/")),
+        "Alire build/cache directory leaked into workspace discovery: {discovered:?}"
+    );
+}
+
+#[test]
+fn workspace_fallback_scans_member_roots_declared_by_adapters() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+
+    // `integrations` is an npm adapter-owned conventional member root. The
+    // package is nested below it, so the fallback's top-level sibling scan
+    // cannot find it without consuming that adapter declaration.
+    fs::create_dir_all(root.join("integrations/payments")).unwrap();
+    write(
+        &root.join("integrations/payments"),
+        "package.json",
+        r#"{"name":"payments"}"#,
+    );
+
+    let config = ScanConfig::from_registry(crate::ecosystem::default_registry());
+    let packages = scan_workspace_dirs(root, "unknown", &config);
+
+    assert!(
+        packages.iter().any(|package| {
+            package.path == "integrations/payments"
+                && package.kind.as_deref() == Some("npm")
+                && package.manifest.as_deref() == Some("integrations/payments/package.json")
+        }),
+        "adapter-declared member root was not scanned: {packages:?}"
+    );
+}

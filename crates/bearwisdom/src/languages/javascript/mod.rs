@@ -84,6 +84,20 @@ impl LanguagePlugin for JavascriptPlugin {
         result
     }
 
+    fn external_virtual_path(
+        &self,
+        language: &str,
+        normalized_absolute_path: &str,
+    ) -> Option<String> {
+        (language == "javascript")
+            .then(|| {
+                crate::languages::typescript::external_virtual_path::for_pulled(
+                    normalized_absolute_path,
+                )
+            })
+            .flatten()
+    }
+
     fn symbol_node_kinds(&self) -> &[&str] {
         &[
             "class_declaration",

@@ -4,6 +4,7 @@
 
 mod decls;
 mod error_recovery;
+mod external_virtual_path;
 pub mod extract;
 mod implementation_owners;
 mod include_directives;
@@ -47,6 +48,14 @@ impl LanguagePlugin for PascalPlugin {
 
     fn scope_kinds(&self) -> &[ScopeKind] {
         &[]
+    }
+
+    fn external_virtual_path(
+        &self,
+        _language: &str,
+        normalized_absolute_path: &str,
+    ) -> Option<String> {
+        external_virtual_path::for_pulled(normalized_absolute_path)
     }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {

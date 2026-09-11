@@ -327,7 +327,7 @@ must carry declaration/binding/type IDs, not re-find declarations by spelling.
 - [x] Move C/C++ include admission and SQL handling out of generic compilation.
 - [x] Move npm, Cargo, and NuGet manifest/package grammar out of the generic resolver.
 - [x] Move callback lexical syntax, specialized flow passes, namespace forms, and lexical language-family switches out of the generic indexer.
-- [ ] Move external virtual-path layouts, secondary package scans, stage-link language policies, builtin dispatch, and discovery inventories into language/ecosystem adapters.
+- [x] Move external virtual-path layouts, secondary package scans, stage-link language policies, builtin dispatch, and discovery inventories into language/ecosystem adapters.
 - [ ] Replace concrete plugin lifecycle state and route/embedded-region branches in full and incremental indexing with registry-owned hooks and opaque state.
 - [ ] Move source-language type-text parsing and formatting out of the generic TypeArena/core; keep only normalized semantic types and canonical serialization in core.
 - [ ] Move remaining source separators and member-chain recognition from canonical/workspace helpers into active language profiles.

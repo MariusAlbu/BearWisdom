@@ -274,6 +274,16 @@ pub struct ManifestSpec {
     pub parse: fn(&Path) -> std::io::Result<crate::ecosystem::manifest::ManifestData>,
 }
 
+/// Package facts supplied by the ecosystem that owns a workspace manifest.
+///
+/// Discovery stores these values verbatim; it does not parse package files or
+/// infer publish policy itself.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WorkspacePackageMetadata {
+    pub declared_name: Option<String>,
+    pub is_publishable: bool,
+}
+
 // ---------------------------------------------------------------------------
 // Activation
 // ---------------------------------------------------------------------------
@@ -418,6 +428,43 @@ pub trait Ecosystem: Send + Sync {
     /// at the default.
     fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
         &[]
+    }
+
+    /// Profile scanner kind names this ecosystem recognizes, paired with the
+    /// package-kind label discovery should persist. Empty means the scanner's
+    /// raw kind is not owned by this ecosystem.
+    fn workspace_monorepo_kinds(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
+
+    /// Conventional member-directory names this ecosystem recognizes when a
+    /// profile scanner reports a workspace but has no explicit member list.
+    fn workspace_member_directories(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    /// Read the package identity and publication policy from an owned
+    /// workspace manifest. `None` delegates to the neutral default of no
+    /// declared name and publishable; unsupported kinds therefore fail closed
+    /// with no language-specific interpretation.
+    fn workspace_package_metadata(&self, _dir: &Path) -> Option<WorkspacePackageMetadata> {
+        None
+    }
+
+    /// Whether the root manifest is both a workspace controller and a real
+    /// package. Pure controllers return false. The ecosystem owns the source
+    /// manifest policy used to make this distinction.
+    fn workspace_root_is_package(&self, _root: &Path) -> bool {
+        false
+    }
+
+    /// Legacy package-dependency tag written to the current database schema.
+    /// Package ecosystems opt in through their primary supported language;
+    /// adapters whose persisted tag differs override this hook.
+    fn package_dependency_ecosystem(&self) -> Option<&'static str> {
+        (self.kind() == EcosystemKind::Package)
+            .then(|| self.languages().first().copied())
+            .flatten()
     }
 
     /// Additional source spellings for a package's declared workspace name.

@@ -102,6 +102,25 @@ impl LanguageRegistry {
             .map(|&idx| self.plugins[idx].as_ref())
     }
 
+    /// Ask only the dedicated owner of a language to recognize an external
+    /// virtual-path layout. Unknown language IDs deliberately have no layout.
+    pub fn external_virtual_path(
+        &self,
+        lang_id: &str,
+        normalized_absolute_path: &str,
+    ) -> Option<String> {
+        self.get_dedicated(lang_id)?
+            .external_virtual_path(lang_id, normalized_absolute_path)
+    }
+
+    /// Return generated grammar-query data from the dedicated language owner.
+    /// Unknown IDs and aliases without their own grammar data fail closed.
+    pub fn query_builtin_data(&self, lang_id: &str) -> crate::languages::query_builtins::Data {
+        self.get_dedicated(lang_id)
+            .map(|plugin| plugin.query_builtin_data(lang_id))
+            .unwrap_or(crate::languages::query_builtins::Data::EMPTY)
+    }
+
     /// Get the plugin that owns a flow configuration strategy. Flow strategy
     /// keys are intentionally independent of parser language IDs, so callers
     /// cannot accidentally ask a plugin to parse a compact strategy spelling.

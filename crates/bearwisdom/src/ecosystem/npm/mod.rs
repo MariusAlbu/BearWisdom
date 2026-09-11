@@ -29,7 +29,7 @@ pub(crate) mod resolver_policy;
 
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
-    SymbolLocationIndex,
+    SymbolLocationIndex, WorkspacePackageMetadata,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::ecosystem::manifest::npm::NpmManifest;
@@ -39,6 +39,62 @@ use rayon::prelude::*;
 use tree_sitter::{Node, Parser};
 
 pub const ID: EcosystemId = EcosystemId::new("npm");
+
+/// Npm-owned admission for project files whose imports may pull ignored
+/// generated sources into the primary index.
+pub fn admits_secondary_source_language(language: &str) -> bool {
+    matches!(
+        language,
+        "typescript" | "tsx" | "javascript" | "jsx" | "vue" | "svelte" | "astro" | "mdx"
+    )
+}
+
+pub enum ExternalDemandPolicy<'a> {
+    Full,
+    Demand(&'a HashSet<String>),
+    Unmatched,
+}
+
+pub fn external_demand_policy<'a>(
+    relative_path: &str,
+    demand: &'a crate::indexer::demand::DemandSet,
+    ambient_globals_packages: &HashSet<String>,
+) -> ExternalDemandPolicy<'a> {
+    let normalized = relative_path.replace('\\', "/");
+    if normalized.starts_with(&format!(
+        "ext:ts:{}/",
+        crate::ecosystem::ts_lib_dom::TS_LIB_SYNTHETIC_MODULE
+    )) {
+        return ExternalDemandPolicy::Full;
+    }
+    let Some(package) = crate::ecosystem::externals::ts_package_from_virtual_path(&normalized)
+    else {
+        return ExternalDemandPolicy::Unmatched;
+    };
+    if ambient_globals_packages.contains(package) {
+        return ExternalDemandPolicy::Full;
+    }
+    demand
+        .for_module(package)
+        .or_else(|| {
+            package
+                .strip_prefix("@types/")
+                .and_then(|runtime| demand.for_module(runtime))
+        })
+        .map(ExternalDemandPolicy::Demand)
+        .unwrap_or(ExternalDemandPolicy::Unmatched)
+}
+
+/// Return the packages whose declaration entry points contribute ambient
+/// symbols. This keeps the declaration-file probe with the ecosystem that
+/// defines its package layout.
+pub fn ambient_global_packages(roots: &[ExternalDepRoot]) -> HashSet<String> {
+    roots
+        .iter()
+        .filter(|root| package_declares_globals(&root.root))
+        .map(|root| root.module_path.clone())
+        .collect()
+}
 
 /// Legacy ecosystem tag persisted in `package_deps.ecosystem` and
 /// `ExternalDepRoot::ecosystem`. Renamed to "npm" in Phase 4 alongside a
@@ -81,6 +137,39 @@ impl Ecosystem for NpmEcosystem {
 
     fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
         &[("package.json", "npm")]
+    }
+
+    fn workspace_monorepo_kinds(&self) -> &'static [(&'static str, &'static str)] {
+        &[
+            ("npm-workspaces", "npm"),
+            ("pnpm-workspace", "npm"),
+            ("turborepo", "npm"),
+            ("lerna", "npm"),
+            ("nx", "npm"),
+        ]
+    }
+
+    fn workspace_member_directories(&self) -> &'static [&'static str] {
+        &[
+            "packages",
+            "apps",
+            "libs",
+            "crates",
+            "modules",
+            "services",
+            "plugins",
+            "integrations",
+            "examples",
+            "src",
+        ]
+    }
+
+    fn workspace_package_metadata(&self, dir: &Path) -> Option<WorkspacePackageMetadata> {
+        Some(workspace_package_metadata(dir))
+    }
+
+    fn workspace_root_is_package(&self, root: &Path) -> bool {
+        workspace_root_is_package(root)
     }
 
     fn pruned_dir_names(&self) -> &'static [&'static str] {
@@ -165,6 +254,48 @@ impl Ecosystem for NpmEcosystem {
     fn uses_demand_driven_parse(&self) -> bool {
         true
     }
+}
+
+fn workspace_package_metadata(dir: &Path) -> WorkspacePackageMetadata {
+    let Ok(content) = std::fs::read_to_string(dir.join("package.json")) else {
+        return WorkspacePackageMetadata {
+            declared_name: None,
+            is_publishable: true,
+        };
+    };
+    let Ok(value): Result<serde_json::Value, _> = serde_json::from_str(&content) else {
+        return WorkspacePackageMetadata {
+            declared_name: None,
+            is_publishable: true,
+        };
+    };
+    WorkspacePackageMetadata {
+        declared_name: value
+            .get("name")
+            .and_then(|name| name.as_str())
+            .map(str::to_owned),
+        is_publishable: !value
+            .get("private")
+            .and_then(|private| private.as_bool())
+            .unwrap_or(false),
+    }
+}
+
+fn workspace_root_is_package(root: &Path) -> bool {
+    let Ok(content) = std::fs::read_to_string(root.join("package.json")) else {
+        return false;
+    };
+    let Ok(value): Result<serde_json::Value, _> = serde_json::from_str(&content) else {
+        return false;
+    };
+    ["dependencies", "peerDependencies"]
+        .into_iter()
+        .any(|field| {
+            value
+                .get(field)
+                .and_then(|deps| deps.as_object())
+                .is_some_and(|deps| !deps.is_empty())
+        })
 }
 
 /// Probe whether a package's entry .d.ts contributes runtime globals.
@@ -663,6 +794,7 @@ pub(crate) mod node_builtin;
 mod post_process;
 mod reexport_bridge;
 pub(crate) mod relative_imports;
+mod secondary_scan;
 mod symbol_index;
 mod ts_scan;
 mod ts_scan_ambient;
@@ -672,6 +804,7 @@ pub(crate) use externals::*;
 pub(crate) use externals_imports::*;
 pub(crate) use externals_node_modules::*;
 pub(crate) use post_process::*;
+pub use secondary_scan::pull_gitignored_imports;
 pub(crate) use symbol_index::*;
 pub(crate) use ts_scan::*;
 pub(crate) use walk::*;

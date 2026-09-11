@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
-    SymbolLocationIndex,
+    SymbolLocationIndex, WorkspacePackageMetadata,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
 use crate::walker::WalkedFile;
@@ -41,6 +41,14 @@ impl Ecosystem for GoModEcosystem {
 
     fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
         &[("go.mod", "go")]
+    }
+
+    fn workspace_package_metadata(&self, dir: &Path) -> Option<WorkspacePackageMetadata> {
+        let content = std::fs::read_to_string(dir.join("go.mod")).ok()?;
+        Some(WorkspacePackageMetadata {
+            declared_name: parse_go_mod(&content).module_path,
+            is_publishable: true,
+        })
     }
 
     fn pruned_dir_names(&self) -> &'static [&'static str] {
