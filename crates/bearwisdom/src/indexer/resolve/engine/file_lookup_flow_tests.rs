@@ -706,7 +706,9 @@ fn argument_reads_use_their_own_binding_and_position_without_moving_the_cursor()
     graph.writes.insert(2, inner);
     let mut lookup = FileLookup::new(&tree, "typescript");
     lookup.lexical = Some(super::super::super::lexical_cache::LexicalCache::new(
-        &graph, &arena,
+        &graph,
+        &arena,
+        "typescript",
     ));
     let alpha = arena.decl("Same", 71);
     let beta = arena.decl("Same", 72);
@@ -754,7 +756,9 @@ fn missing_lexical_row_blocks_the_ladder_and_target_spelling_is_not_identity() {
     graph.attach_symbol(1, binding);
     let mut lookup = FileLookup::new(&tree, "typescript");
     lookup.lexical = Some(super::super::super::lexical_cache::LexicalCache::new(
-        &graph, &arena,
+        &graph,
+        &arena,
+        "typescript",
     ));
     let mut reference = testkit::call_ref("not-the-binding-spelling");
     reference.byte_offset = 25;
@@ -799,7 +803,9 @@ fn scoped_writes_require_identity_and_clear_removes_inference() {
     graph.declarations.insert(parameter, binding);
     let mut lookup = FileLookup::new(&tree, "typescript");
     lookup.lexical = Some(super::super::super::lexical_cache::LexicalCache::new(
-        &graph, &arena,
+        &graph,
+        &arena,
+        "typescript",
     ));
     let ty = arena.class("Alpha");
     lookup.set_cursor(10);
@@ -869,7 +875,9 @@ fn callback_only_bindings_use_spans_and_block_legacy_same_name_fallbacks() {
 
     let mut lookup = FileLookup::new(&tree, "rust");
     lookup.callback_lexical = Some(super::super::super::lexical_cache::LexicalCache::new(
-        &graph, &arena,
+        &graph,
+        &arena,
+        "typescript",
     ));
     let outer_type = arena.class("Outer");
     let inner_type = arena.class("Inner");
@@ -975,10 +983,14 @@ fn full_lexical_context_precedes_an_overlapping_callback_graph() {
 
     let mut lookup = FileLookup::new(&tree, "rust");
     lookup.lexical = Some(super::super::super::lexical_cache::LexicalCache::new(
-        &full, &arena,
+        &full,
+        &arena,
+        "typescript",
     ));
     lookup.callback_lexical = Some(super::super::super::lexical_cache::LexicalCache::new(
-        &callback, &arena,
+        &callback,
+        &arena,
+        "typescript",
     ));
     let full_type = arena.class("Full");
     lookup.record_contextual_type(parameter, full_type);
@@ -1014,7 +1026,9 @@ fn scala_case_bindings_read_types_by_exact_arm_identity_before_legacy_names() {
 
     let mut lookup = FileLookup::new(&tree, "scala");
     lookup.case_lexical = Some(super::super::super::lexical_cache::LexicalCache::new(
-        &graph, &arena,
+        &graph,
+        &arena,
+        "typescript",
     ));
     let legacy = arena.class("Legacy");
     let left = arena.class("Left");

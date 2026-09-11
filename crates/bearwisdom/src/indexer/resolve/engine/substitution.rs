@@ -194,14 +194,17 @@ fn hop_env(
     acc: &FxHashMap<String, TypeId>,
 ) -> FxHashMap<String, TypeId> {
     let id_slice = lookup.parent_class_arg_ids(child, parent);
-    let arg_ids: Vec<TypeId> = if !id_slice.is_empty() {
-        id_slice.to_vec()
-    } else {
+    let arg_ids: Vec<TypeId> = if id_slice.is_empty() {
+        // An absent source language remains opaque; only a stamped lookup can
+        // opt into source-text structure through its language adapter.
+        let language = lookup.source_language().unwrap_or_default();
         lookup
             .parent_class_args(child, parent)
             .iter()
-            .map(|a| arena.intern_type_str(a))
+            .map(|arg| crate::languages::intern_type_text(language, arena, arg))
             .collect()
+    } else {
+        id_slice.to_vec()
     };
     if arg_ids.is_empty() {
         return FxHashMap::default();

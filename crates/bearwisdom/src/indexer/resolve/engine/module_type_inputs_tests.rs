@@ -81,7 +81,7 @@ fn retained_indirection_recipe_retargets_child_ids_and_preserves_deletion_uncert
 #[test]
 fn source_recipe_distinguishes_unconfigured_boundaries_from_negative_evidence() {
     let arena = TypeArena::new();
-    let legacy = arena.intern_type_str("OldDisplay");
+    let legacy = crate::languages::type_text::intern_test_type_text(&arena, "OldDisplay");
     let unknown = arena.intern(Type::Unknown);
     let recipe = Recipe::Source {
         binding: 8,

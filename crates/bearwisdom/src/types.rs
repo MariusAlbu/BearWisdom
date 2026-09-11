@@ -396,9 +396,9 @@ pub enum AliasTarget {
 
 /// Pre-interned form of [`AliasTarget`] stored in the Compilation's
 /// `alias_target` map. Every type-expression `String` field is replaced by a
-/// `TypeId` obtained via the same `TypeArena::intern_type_str` / `class` call
-/// the old expand-alias path made at lookup time; non-type fields (value paths,
-/// key literals, value-template strings, binding-variable names) stay `String`.
+/// normalized `TypeId` obtained through the declaring language adapter;
+/// non-type fields (value paths, key literals, value-template strings,
+/// binding-variable names) stay `String`.
 ///
 /// `Typeof` keeps its string because the payload is a VALUE path (`"users.get"`),
 /// not a type expression. `IndexedAccess.key` keeps its string because it is a
@@ -444,45 +444,63 @@ pub enum AliasTargetIds {
 
 /// Intern every type-expression component of an [`AliasTarget`] into the
 /// arena, producing the pre-interned [`AliasTargetIds`] form stored in the
-/// Compilation map. The resulting TypeIds are identical to those the old
-/// `expand_alias` path produced by calling `intern_type_str` / `class` at
-/// lookup time — the intern is just moved earlier, to map-build.
-pub fn intern_alias_target(arena: &TypeArena, t: &AliasTarget) -> AliasTargetIds {
+/// Compilation map. Textual components are parsed by the plugin that owns the
+/// declaring file, while nominal alias roots remain semantic class names. The
+/// resulting TypeIds are created once at map-build time rather than during
+/// alias expansion.
+pub fn intern_alias_target(language: &str, arena: &TypeArena, t: &AliasTarget) -> AliasTargetIds {
     match t {
         AliasTarget::Application { root, args } => AliasTargetIds::Application {
             root: arena.class(root),
-            args: args.iter().map(|a| arena.intern_type_str(a)).collect(),
+            args: args
+                .iter()
+                .map(|a| crate::languages::intern_type_text(language, arena, a))
+                .collect(),
         },
-        AliasTarget::Union(branches) => {
-            AliasTargetIds::Union(branches.iter().map(|b| arena.intern_type_str(b)).collect())
-        }
-        AliasTarget::Intersection(branches) => AliasTargetIds::Intersection(
-            branches.iter().map(|b| arena.intern_type_str(b)).collect(),
+        AliasTarget::Union(branches) => AliasTargetIds::Union(
+            branches
+                .iter()
+                .map(|b| crate::languages::intern_type_text(language, arena, b))
+                .collect(),
         ),
-        AliasTarget::Tuple(elems) => {
-            AliasTargetIds::Tuple(elems.iter().map(|e| arena.intern_type_str(e)).collect())
-        }
+        AliasTarget::Intersection(branches) => AliasTargetIds::Intersection(
+            branches
+                .iter()
+                .map(|b| crate::languages::intern_type_text(language, arena, b))
+                .collect(),
+        ),
+        AliasTarget::Tuple(elems) => AliasTargetIds::Tuple(
+            elems
+                .iter()
+                .map(|e| crate::languages::intern_type_text(language, arena, e))
+                .collect(),
+        ),
         AliasTarget::IntersectionMapped {
             branches,
             source,
             value_template,
         } => AliasTargetIds::IntersectionMapped {
-            branches: branches.iter().map(|b| arena.intern_type_str(b)).collect(),
-            source: arena.intern_type_str(source),
+            branches: branches
+                .iter()
+                .map(|b| crate::languages::intern_type_text(language, arena, b))
+                .collect(),
+            source: crate::languages::intern_type_text(language, arena, source),
             value_template: value_template.clone(),
         },
         AliasTarget::Object => AliasTargetIds::Object,
         AliasTarget::Typeof(s) => AliasTargetIds::Typeof(s.clone()),
-        AliasTarget::Keyof(s) => AliasTargetIds::Keyof(arena.intern_type_str(s)),
+        AliasTarget::Keyof(s) => {
+            AliasTargetIds::Keyof(crate::languages::intern_type_text(language, arena, s))
+        }
         AliasTarget::IndexedAccess { object, key } => AliasTargetIds::IndexedAccess {
-            object: arena.intern_type_str(object),
+            object: crate::languages::intern_type_text(language, arena, object),
             key: key.clone(),
         },
         AliasTarget::Mapped {
             source,
             value_template,
         } => AliasTargetIds::Mapped {
-            source: arena.intern_type_str(source),
+            source: crate::languages::intern_type_text(language, arena, source),
             value_template: value_template.clone(),
         },
         AliasTarget::Conditional {
@@ -492,10 +510,10 @@ pub fn intern_alias_target(arena: &TypeArena, t: &AliasTarget) -> AliasTargetIds
             false_branch,
             infer_binding,
         } => AliasTargetIds::Conditional {
-            check: arena.intern_type_str(check),
-            extends: arena.intern_type_str(extends),
-            true_branch: arena.intern_type_str(true_branch),
-            false_branch: arena.intern_type_str(false_branch),
+            check: crate::languages::intern_type_text(language, arena, check),
+            extends: crate::languages::intern_type_text(language, arena, extends),
+            true_branch: crate::languages::intern_type_text(language, arena, true_branch),
+            false_branch: crate::languages::intern_type_text(language, arena, false_branch),
             infer_binding: infer_binding.clone(),
         },
         AliasTarget::Other => AliasTargetIds::Other,

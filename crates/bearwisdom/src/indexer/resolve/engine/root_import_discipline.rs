@@ -139,18 +139,22 @@ fn type_candidate(
     }
     if is_call {
         if let Some(id) = super::type_slots::return_type_by_identity(lookup, sym).or_else(|| {
-            lookup
-                .return_type_str(&sym.qualified_name)
-                .map(|s| arena.intern_type_str(&s))
+            lookup.return_type_str(&sym.qualified_name).map(|text| {
+                crate::languages::intern_type_text(
+                    lookup.source_language().unwrap_or(""),
+                    arena,
+                    &text,
+                )
+            })
         }) {
             return RootImportOutcome::Typed(Receiver::untyped(id));
         }
         return RootImportOutcome::Deny(Cause::new(Some(sym.id), CauseKind::UncapturedReturn));
     }
     if let Some(id) = super::type_slots::field_type_by_identity(lookup, sym).or_else(|| {
-        lookup
-            .field_type_str(&sym.qualified_name)
-            .map(|s| arena.intern_type_str(&s))
+        lookup.field_type_str(&sym.qualified_name).map(|text| {
+            crate::languages::intern_type_text(lookup.source_language().unwrap_or(""), arena, &text)
+        })
     }) {
         return RootImportOutcome::Typed(Receiver::untyped(id));
     }

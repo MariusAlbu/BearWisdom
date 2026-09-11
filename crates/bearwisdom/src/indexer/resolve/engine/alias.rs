@@ -383,9 +383,10 @@ fn transparent_alias_target(
     {
         return Some(t);
     }
+    let language = lookup.source_language()?;
     lookup
         .field_type_str(head)
-        .map(|s| arena.intern_type_str(&s))
+        .map(|text| crate::languages::intern_type_text(language, arena, &text))
 }
 
 #[cfg(test)]

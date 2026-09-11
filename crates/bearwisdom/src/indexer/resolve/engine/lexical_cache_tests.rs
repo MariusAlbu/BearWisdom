@@ -15,7 +15,7 @@ fn source_value_copy_reads_the_rhs_binding_at_its_own_position() {
             byte: 20,
         },
     );
-    let cache = LexicalCache::new(&graph, &arena);
+    let cache = LexicalCache::new(&graph, &arena, "typescript");
     let before = arena.decl("Same", 71);
     let after = arena.decl("Same", 72);
     cache.set_cursor(11);
@@ -51,7 +51,7 @@ fn local_borrow_recipe_reads_prior_facts_without_moving_cursor_or_aliasing_later
         }),
     };
     graph.types.values.insert(local, expr.clone());
-    let mut cache = LexicalCache::new(&graph, &arena);
+    let mut cache = LexicalCache::new(&graph, &arena, "typescript");
     assert_eq!(
         cache.type_at(local, 60),
         Some(arena.intern(Type::Unknown)),
@@ -93,7 +93,10 @@ fn cyclic_value_recipes_stop_at_the_combined_binding_expression_depth_limit() {
         .types
         .values
         .insert(binding, ValueExpr::Read { binding, byte: 10 });
-    assert_eq!(LexicalCache::new(&graph, &arena).type_at(binding, 20), None);
+    assert_eq!(
+        LexicalCache::new(&graph, &arena, "typescript").type_at(binding, 20),
+        None
+    );
 }
 
 #[test]
@@ -103,7 +106,7 @@ fn failed_inference_replaces_a_previous_flow_fact_with_explicit_unknown() {
     let root = graph.add_scope(None, 0, 100, true);
     let name = graph.intern("value");
     let binding = graph.declare_ordered(root, name, 5, None);
-    let cache = LexicalCache::new(&graph, &arena);
+    let cache = LexicalCache::new(&graph, &arena, "typescript");
     cache.set_cursor(10);
     cache.record(binding, arena.decl("Doc", 41), true);
     cache.set_cursor(20);
@@ -124,7 +127,7 @@ fn argument_fact_and_callable_reads_do_not_borrow_later_versions() {
     let binding = graph.declare(root, name, 1, None);
     let span = crate::types::SourceSpan { start: 20, end: 25 };
     graph.argument_reads.insert(span, binding);
-    let cache = LexicalCache::new(&graph, &arena);
+    let cache = LexicalCache::new(&graph, &arena, "typescript");
     let first = arena.decl("Same", 71);
     let later = arena.decl("Same", 72);
     cache.set_cursor(10);
@@ -151,7 +154,7 @@ fn reference_targets_are_positional_and_missing_rows_remain_missing() {
     let binding = graph.declare(scope, name, 1, Some("() => void".into()));
     graph.attach_symbol(1, binding);
     graph.references.insert(25, binding);
-    let mut cache = LexicalCache::new(&graph, &arena);
+    let mut cache = LexicalCache::new(&graph, &arena, "typescript");
     let mut ids = crate::indexer::symbol_ids::SymbolIds::default();
     ids.insert_key("a.ts".into(), "f.callback".into(), 99);
     ids.set_rows("a.ts".into(), vec![10, 0]);
@@ -176,7 +179,7 @@ fn nested_function_union_fact_cannot_overwrite_outer_execution_state() {
     let name = graph.intern("value");
     let binding = graph.declare(root, name, 1, Some("Alpha | Beta".into()));
     graph.preserve_non_union_type = true;
-    let cache = LexicalCache::new(&graph, &arena);
+    let cache = LexicalCache::new(&graph, &arena, "typescript");
     let alpha = arena.class("Alpha");
     let beta = arena.class("Beta");
     cache.set_cursor(10);
@@ -196,7 +199,7 @@ fn facts_keep_canonical_variants_and_do_not_reparse_display_strings() {
     let root = graph.add_scope(None, 0, 100, true);
     let name = graph.intern("value");
     let binding = graph.declare(root, name, 1, None);
-    let cache = LexicalCache::new(&graph, &arena);
+    let cache = LexicalCache::new(&graph, &arena, "typescript");
     let ty = arena.intern(Type::Optional(
         arena.primitive(crate::type_checker::core::types::PrimKind::Int),
     ));
@@ -218,7 +221,7 @@ fn contextual_facts_belong_to_callback_bindings_not_the_callers_execution() {
     let a = graph.declare(first, name, 22, None);
     let b = graph.declare(second, name, 52, Some("Explicit".into()));
     graph.preserve_non_union_type = true;
-    let cache = LexicalCache::new(&graph, &arena);
+    let cache = LexicalCache::new(&graph, &arena, "typescript");
     let ty = arena.intern(Type::Optional(arena.class("Alpha")));
     cache.set_cursor(10);
     cache.record_contextual(a, ty);
@@ -241,7 +244,7 @@ fn conflicting_contexts_abstain_instead_of_picking_the_latest_type() {
     let root = graph.add_scope(None, 0, 100, true);
     let name = graph.intern("value");
     let binding = graph.declare(root, name, 1, None);
-    let cache = LexicalCache::new(&graph, &arena);
+    let cache = LexicalCache::new(&graph, &arena, "typescript");
     cache.record_contextual(binding, arena.class("Alpha"));
     cache.record_contextual(binding, arena.class("Beta"));
     cache.record_contextual(binding, arena.class("Alpha"));

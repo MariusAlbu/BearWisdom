@@ -108,10 +108,11 @@ fn roundtrip(src: &TypeArena, id: TypeId, dst: &TypeArena) -> TypeId {
 #[test]
 fn class_and_apply_roundtrip_structurally() {
     let src = TypeArena::new();
-    let id = src.intern_type_str("Vec<tantivy.Document>");
+    let id = crate::languages::type_text::intern_test_type_text(&src, "Vec<tantivy.Document>");
     let dst = TypeArena::new();
     let got = roundtrip(&src, id, &dst);
-    let expected = dst.intern_type_str("Vec<tantivy.Document>");
+    let expected =
+        crate::languages::type_text::intern_test_type_text(&dst, "Vec<tantivy.Document>");
     assert_eq!(got, expected);
     // The qname→class index must be populated by the import, matching what a
     // fresh extraction's `class()` calls produce.

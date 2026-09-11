@@ -25,6 +25,9 @@ mod plugin_defaults;
 pub(crate) mod query_builtins;
 pub mod registry;
 pub mod string_dsl;
+pub mod type_text;
+#[cfg(test)]
+mod type_text_tests;
 
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::{EmbeddedRegion, ExtractedRef, ExtractedSymbol, ExtractionResult};
@@ -34,6 +37,7 @@ use crate::types::{EmbeddedRegion, ExtractedRef, ExtractedSymbol, ExtractionResu
 pub use common::emit_chain_type_ref;
 pub use plugin_defaults::Synthesized;
 pub use registry::LanguageRegistry;
+pub use type_text::TypeTextPolicy;
 
 /// A language-owned declaration that augments an interface exported by another
 /// module. Resolver code only consumes these normalized names; each language
@@ -101,12 +105,24 @@ pub(crate) fn signature_type_head<'a>(language: &str, text: &'a str) -> &'a str 
     default_registry().get(language).signature_type_head(text)
 }
 
+/// Intern source-language type text through its owning plugin.  Generic
+/// callers supply the stamped source language; the plugin's default policy is
+/// opaque and performs no surface-syntax recognition.
+pub(crate) fn intern_type_text(
+    language: &str,
+    arena: &crate::type_checker::core::types::TypeArena,
+    text: &str,
+) -> crate::type_checker::core::types::TypeId {
+    default_registry()
+        .get(language)
+        .intern_type_text(arena, text)
+}
+
 /// Shared structural adapter for languages that deliberately spell type
 /// applications with angle brackets. The language plugin, rather than a
 /// generic resolver, opts into this spelling.
 pub(crate) fn angle_type_application(text: &str) -> (String, Vec<String>) {
-    let (head, args) =
-        crate::type_checker::profile::signature_parser::parse_type_head_and_args(text);
+    let (head, args) = type_text::parse_type_head_and_args(text, '<', '>');
     (
         head.to_string(),
         args.into_iter().map(str::to_string).collect(),
@@ -114,14 +130,13 @@ pub(crate) fn angle_type_application(text: &str) -> (String, Vec<String>) {
 }
 
 pub(crate) fn angle_type_head(text: &str) -> &str {
-    crate::type_checker::profile::signature_parser::parse_type_head_and_args(text).0
+    type_text::parse_type_head_and_args(text, '<', '>').0
 }
 
 /// Shared structural adapter for languages that deliberately spell type
 /// applications with square brackets. The language plugin opts in explicitly.
 pub(crate) fn bracket_type_application(text: &str) -> (String, Vec<String>) {
-    let (head, args) =
-        crate::type_checker::profile::signature_parser::parse_type_head_and_args_bracket(text);
+    let (head, args) = type_text::parse_type_head_and_args(text, '[', ']');
     (
         head.to_string(),
         args.into_iter().map(str::to_string).collect(),
@@ -129,7 +144,7 @@ pub(crate) fn bracket_type_application(text: &str) -> (String, Vec<String>) {
 }
 
 pub(crate) fn bracket_type_head(text: &str) -> &str {
-    crate::type_checker::profile::signature_parser::parse_type_head_and_args_bracket(text).0
+    type_text::parse_type_head_and_args(text, '[', ']').0
 }
 /// A language plugin provides grammar, scope config, and extraction for one or
 /// more language IDs (e.g., TypeScript handles both "typescript" and "tsx").
@@ -173,6 +188,25 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// - `file_path`: relative path (used for heuristics like `.tsx` detection)
     /// - `lang_id`: the language ID from detection (e.g., "typescript" or "tsx")
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult;
+
+    /// Source-language forms this plugin deliberately allows the shared
+    /// language-layer parser to recognize.  The default is opaque so foreign
+    /// surface syntax cannot acquire generic meaning.
+    fn type_text_policy(&self) -> TypeTextPolicy {
+        TypeTextPolicy::OPAQUE
+    }
+
+    /// Intern one source type expression into normalized semantic storage.
+    /// Plugins can override this for AST-backed or otherwise richer parsing;
+    /// ordinary plugins opt into individual textual forms with
+    /// [`Self::type_text_policy`].
+    fn intern_type_text(
+        &self,
+        arena: &crate::type_checker::core::types::TypeArena,
+        text: &str,
+    ) -> crate::type_checker::core::types::TypeId {
+        type_text::intern_type_text(arena, text, self.type_text_policy())
+    }
 
     /// Normalize one source-language type application into its semantic head
     /// and direct arguments. The default is fail-closed: no surface parsing.

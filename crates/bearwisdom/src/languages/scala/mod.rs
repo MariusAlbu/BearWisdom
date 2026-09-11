@@ -112,6 +112,16 @@ impl LanguagePlugin for ScalaPlugin {
         crate::languages::bracket_type_head(text)
     }
 
+    fn type_text_policy(&self) -> crate::languages::TypeTextPolicy {
+        crate::languages::TypeTextPolicy {
+            fat_arrow_function: true,
+            bare_arrow_parameter: true,
+            parenthesized_tuple: true,
+            bracket_application: true,
+            ..crate::languages::TypeTextPolicy::OPAQUE
+        }
+    }
+
     fn signature_return_type(&self, signature: &str) -> Option<String> {
         crate::languages::colon_return_type(signature)
     }

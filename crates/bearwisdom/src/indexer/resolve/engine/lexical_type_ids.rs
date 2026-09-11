@@ -13,6 +13,7 @@ pub(super) struct TypeBinder<'a> {
     pub lookup: &'a dyn SymbolLookup,
     pub source: Option<&'a super::compilation::Compilation>,
     pub arena: &'a TypeArena,
+    pub language: &'a str,
 }
 
 impl TypeBinder<'_> {
@@ -33,9 +34,13 @@ impl TypeBinder<'_> {
                         .and_then(|id| self.lookup.declaration_type(self.arena, id))
                         .unwrap_or_else(|| self.arena.intern(Type::Unknown))
                 }
-                None => return self.arena.intern_type_str(legacy),
+                None => {
+                    return crate::languages::intern_type_text(self.language, self.arena, legacy)
+                }
             },
-            TypeExpr::Legacy(text) => return self.arena.intern_type_str(text),
+            TypeExpr::Legacy(text) => {
+                return crate::languages::intern_type_text(self.language, self.arena, text)
+            }
             TypeExpr::Primitive(kind) => Type::Primitive(*kind),
             TypeExpr::Intrinsic(kind) => Type::Intrinsic(*kind),
             TypeExpr::Literal(value) => Type::Literal(value.clone()),
@@ -48,7 +53,7 @@ impl TypeBinder<'_> {
             TypeExpr::ValueQuery { site, legacy } => {
                 return match self.lookup.source_value_type(*site) {
                     Some(ty) => ty.unwrap_or_else(|| self.arena.intern(Type::Unknown)),
-                    None => self.arena.intern_type_str(legacy),
+                    None => crate::languages::intern_type_text(self.language, self.arena, legacy),
                 }
             }
             TypeExpr::Operator(op) => Type::Operator(op.map(lower)),
@@ -68,7 +73,11 @@ impl TypeBinder<'_> {
                 }
                 if self.source.is_some() && fact.is_none() && !usage.local {
                     if let Some(legacy) = legacy {
-                        return self.arena.intern_type_str(legacy);
+                        return crate::languages::intern_type_text(
+                            self.language,
+                            self.arena,
+                            legacy,
+                        );
                     }
                 }
                 Type::Unknown

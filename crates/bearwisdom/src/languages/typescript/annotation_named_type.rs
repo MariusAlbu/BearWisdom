@@ -70,7 +70,7 @@ pub(super) fn enrich_ambient_declarator_signatures(
             continue;
         };
         // Named shapes, plus an INTERSECTION of them: `const v: A & B` carries
-        // every arm's members, and `intern_type_str` decomposes the recorded
+        // every arm's members, and the TypeScript adapter decomposes the
         // annotation into the structural intersection the member walk traverses
         // arm by arm. A FUNCTION type (`const make: <G>(opts) => Client<…>`) is
         // recorded whole: the value has no member surface of its own, but a

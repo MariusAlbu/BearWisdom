@@ -840,10 +840,10 @@ fn arc_clone(a: &Arc<TypeArena>) -> Arc<TypeArena> {
 
 /// Storing a `Primitive(Int)` TypeId via `record_local_type_id` and reading it
 /// back via `local_type_id` must return the exact same TypeId — not a
-/// `Class("Int")` nominalization that `intern_type_str("Int")` would produce.
+/// `Class("Int")` nominalization that source-text parsing would produce.
 ///
 /// The corruption this guards: serializing `Primitive(Int)` via
-/// `arena.format_type` yields `"Int"`, and `arena.intern_type_str("Int")`
+/// `arena.format_type` yields `"Int"`, and `crate::languages::type_text::intern_test_type_text(&arena, "Int")`
 /// re-interns it as `Class("Int")` — a distinct, member-less nominal type. The
 /// TypeId cache stores the id directly, so the primitive survives intact.
 #[test]
@@ -862,12 +862,12 @@ fn local_type_id_round_trips_primitive_without_nominalization() {
     // Intern a real Primitive(Int) TypeId.
     let prim_id = arena.intern(Type::Primitive(PrimKind::Int));
 
-    // Verify the corruption: intern_type_str("Int") produces Class("Int"), not
-    // Primitive(Int).  This is the shape the old round-trip produced.
-    let nominalized = arena.intern_type_str("Int");
+    // Verify the corruption: source-text parsing of "Int" produces Class("Int"),
+    // not Primitive(Int). This is the shape the old round-trip produced.
+    let nominalized = crate::languages::type_text::intern_test_type_text(&arena, "Int");
     assert!(
         matches!(arena.get(nominalized), Type::Class(_)),
-        "intern_type_str(\"Int\") must yield Class, not Primitive — confirms the corruption"
+        "source-text parsing of \"Int\" must yield Class, not Primitive"
     );
     assert_ne!(
         nominalized, prim_id,
@@ -893,8 +893,9 @@ fn local_type_id_round_trips_primitive_without_nominalization() {
 /// `Optional` TypeId and `local_type_id` must return it intact.
 ///
 /// Serializing `Optional(User)` via `format_type` yields `"User?"`, and
-/// `intern_type_str("User?")` falls through to `class("User?")` — a member-less
-/// `Class` named `"User?"`. The TypeId cache stores the id directly instead.
+/// Parsing `"User?"` without a language policy falls through to
+/// `class("User?")` — a member-less `Class` named `"User?"`. The TypeId cache
+/// stores the id directly instead.
 #[test]
 fn local_type_id_round_trips_optional_without_nominalization() {
     use crate::type_checker::core::types::Type;
@@ -916,10 +917,10 @@ fn local_type_id_round_trips_optional_without_nominalization() {
     // a member-less `Class("User?")`. The TypeId cache remains the identity
     // path either way.
     let formatted = arena.format_type(opt_id); // "User?"
-    let reinterned = arena.intern_type_str(&formatted);
+    let reinterned = crate::languages::type_text::intern_test_type_text(&arena, &formatted);
     assert_eq!(
         reinterned, opt_id,
-        "intern_type_str(\"User?\") must round-trip to Optional(User)"
+        "the opted-in nullable suffix must round-trip to Optional(User)"
     );
 
     // New path: TypeId stored and retrieved intact.
@@ -2607,7 +2608,7 @@ fn tuple_destructure_projects_positions_and_abstains_when_not_a_tuple_slot() {
     let scalar_ty = arena.class("Scalar");
     // Exercise the same parenthesized tuple spelling captured from Scala and
     // Rust signatures before the shared resolver projects its positional flow.
-    let pair_ty = arena.intern_type_str("(Counter, Reset)");
+    let pair_ty = crate::languages::type_text::intern_test_type_text(&arena, "(Counter, Reset)");
     let symbols = vec![
         symbol("entry", "entry", SymbolKind::Function, None, None), // 0
         symbol(

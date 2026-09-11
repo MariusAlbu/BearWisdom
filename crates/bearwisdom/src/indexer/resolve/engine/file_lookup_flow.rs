@@ -59,7 +59,11 @@ impl FileLookup<'_> {
     pub(crate) fn record_rhs_text(&self, reference: usize, legacy_name: &str, ty: String) {
         if self.lexical.is_some() {
             if let Some(arena) = self.tree.type_arena() {
-                self.record_rhs_type(reference, legacy_name, arena.intern_type_str(&ty));
+                self.record_rhs_type(
+                    reference,
+                    legacy_name,
+                    crate::languages::intern_type_text(&self.language, arena, &ty),
+                );
             }
         } else {
             self.record_local_type(legacy_name.to_owned(), ty);

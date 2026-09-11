@@ -460,7 +460,7 @@ pub(super) fn resolve_one_file<'a>(
                 // The TypeId path is preferred: `resolved_yield_type` is already a
                 // canonical TypeId that correctly represents primitives, optionals,
                 // and generics. Storing it directly via `record_local_type_id`
-                // avoids the `format_type` → `intern_type_str` round-trip that
+                // avoids a canonical-format → source-parse round-trip that
                 // nominalizes those types to `Class`. The String path is kept as a
                 // fallback for bindings that carry no `resolved_yield_type` (the
                 // `return_type_str` / `field_type_str` / `Instantiates` branches).
@@ -619,7 +619,13 @@ pub(super) fn resolve_one_file<'a>(
                             .map(|s| {
                                 s.type_args
                                     .iter()
-                                    .map(|t| arena.intern_type_str(t))
+                                    .map(|text| {
+                                        crate::languages::intern_type_text(
+                                            &pf.language,
+                                            arena,
+                                            text,
+                                        )
+                                    })
                                     .collect()
                             })
                             .unwrap_or_default();

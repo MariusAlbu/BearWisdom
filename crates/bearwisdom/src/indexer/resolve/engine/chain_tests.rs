@@ -345,7 +345,7 @@ fn field_type_on_substitutes_receiver_type_arg_into_field() {
         .with_member("Result", sym(3, "data", "Result.data", "property", "a.ts"))
         .with_field_type("Result.data", "T");
     let arena = lookup.type_arena().unwrap();
-    let recv = arena.intern_type_str("Result<Movie>");
+    let recv = crate::languages::type_text::intern_test_type_text(&arena, "Result<Movie>");
     let ty = field_type_on(&lookup, arena, recv, Some(1), "data").expect("data field resolves");
     assert_eq!(
         head_qname(arena, ty).as_deref(),
@@ -443,7 +443,10 @@ fn field_type_on_threads_arg_through_alias_union_chain() {
         .with_field_type("Success.data", "T")
         .with(sym(5, "Movie", "Movie", "interface", "a.ts"));
     let arena = lookup.type_arena().unwrap();
-    let recv = arena.intern_type_str("UseQueryResult<NoInfer<Movie>>");
+    let recv = crate::languages::type_text::intern_test_type_text(
+        &arena,
+        "UseQueryResult<NoInfer<Movie>>",
+    );
     let ty = field_type_on_with_profile(
         &lookup,
         arena,
@@ -2729,7 +2732,8 @@ fn inheritance_climb_keys_on_parent_symbol_id() {
 /// type is `Query<string>` — interns structurally at the root, so member lookup
 /// keys on the bare head `Query`, not on a flat class literally named
 /// `Query<string>` (which would have no members). `resolve_root` runs the local
-/// type through `arena.intern_type_str`, producing `Apply { Query, [string] }`;
+/// type through the stamped TypeScript adapter, producing
+/// `Apply { Query, [string] }`;
 /// `head_qname` looks through the application to `Query`, where `isStaleByTime`
 /// is found.
 #[test]

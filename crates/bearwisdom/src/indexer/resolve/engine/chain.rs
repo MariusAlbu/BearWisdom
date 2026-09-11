@@ -1040,7 +1040,9 @@ fn lookup_member_on_mapped_supertype(
         // The supertype's applied type, carrying the `extends Parent<Arg>` edge
         // args so its mapped source param binds to the concrete argument.
         let base = arena.class(parent_head);
-        // Prefer the interned-id edge args; fall back to interning the string form.
+        // Prefer the interned-id edge args. Older lookups may still expose the
+        // source spelling only; that text belongs to the active file language,
+        // never to the generic engine parser.
         let id_slice = lookup.parent_class_arg_ids(head, parent_head);
         let arg_ids: Vec<TypeId> = if !id_slice.is_empty() {
             id_slice.to_vec()
@@ -1048,7 +1050,7 @@ fn lookup_member_on_mapped_supertype(
             lookup
                 .parent_class_args(head, parent_head)
                 .iter()
-                .map(|a| arena.intern_type_str(a))
+                .filter_map(|arg| intern_lookup_type_text(lookup, arena, arg))
                 .collect()
         };
         let parent_ty = if arg_ids.is_empty() {
@@ -1278,11 +1280,10 @@ fn tuple_element_type(
 }
 
 /// The element type of a homogeneous single-arg sequence application — `E` for
-/// `Apply(Array,[E])` / `Apply(ReadonlyArray,[E])` / `Apply(Vec,[E])`. `Array`
-/// is the canonical head `intern_type_str` mints for every `T[]` suffix and
-/// Rust's `[T; N]` / `[T]` array/slice syntax; `Vec` is Rust's growable-vector
-/// head, decomposed the same way any `Foo<Bar>` generic application is — so
-/// this is language-agnostic. Looks through the nullable/async/iterator
+/// `Apply(Array,[E])` / `Apply(ReadonlyArray,[E])` / `Apply(Vec,[E])`.
+/// Language adapters normalize their source-specific array and generic syntax
+/// into these semantic applications before resolution. Looks through the
+/// nullable/async/iterator
 /// wrappers the same way `head_qname` does. `None` for any other receiver —
 /// the head is checked against the known homogeneous-sequence heads rather
 /// than projecting the first argument of any application, since a keyed
@@ -1599,7 +1600,8 @@ fn receiver_mapped_supertype_has_source(
             continue;
         }
         let base = arena.class(parent_head);
-        // Prefer the interned-id edge args; fall back to interning the string form.
+        // Prefer the interned-id edge args. Textual compatibility is parsed by
+        // the active source-language plugin only.
         let id_slice = lookup.parent_class_arg_ids(receiver_head, parent_head);
         let arg_ids: Vec<TypeId> = if !id_slice.is_empty() {
             id_slice.to_vec()
@@ -1607,7 +1609,7 @@ fn receiver_mapped_supertype_has_source(
             lookup
                 .parent_class_args(receiver_head, parent_head)
                 .iter()
-                .map(|a| arena.intern_type_str(a))
+                .filter_map(|arg| intern_lookup_type_text(lookup, arena, arg))
                 .collect()
         };
         let parent_ty = if arg_ids.is_empty() {
@@ -1667,8 +1669,11 @@ pub(crate) fn member_yield_type(
         if let Some(id) = super::type_slots::return_type_by_identity(lookup, member) {
             return Some(id);
         }
-        if let Some(s) = lookup.return_type_str(qname) {
-            return Some(arena.intern_type_str(&s));
+        if let Some(id) = lookup
+            .return_type_str(qname)
+            .and_then(|text| intern_lookup_type_text(lookup, arena, &text))
+        {
+            return Some(id);
         }
         // A synthesized object-literal return type (`{fn}$Ret`): the function's
         // body returned an object literal, materialized post-extract as a type
@@ -1686,7 +1691,7 @@ pub(crate) fn member_yield_type(
         let ft = super::type_slots::field_type_by_identity(lookup, member).or_else(|| {
             lookup
                 .field_type_str(qname)
-                .map(|s| arena.intern_type_str(&s))
+                .and_then(|text| intern_lookup_type_text(lookup, arena, &text))
         })?;
         if let Some(head) = head_qname(arena, ft) {
             if let Some(rt) = callable_named_return(lookup, arena, &head) {
@@ -1698,8 +1703,11 @@ pub(crate) fn member_yield_type(
     if let Some(id) = super::type_slots::field_type_by_identity(lookup, member) {
         return Some(id);
     }
-    if let Some(s) = lookup.field_type_str(qname) {
-        return Some(arena.intern_type_str(&s));
+    if let Some(id) = lookup
+        .field_type_str(qname)
+        .and_then(|text| intern_lookup_type_text(lookup, arena, &text))
+    {
+        return Some(id);
     }
     // A getter (`get user(): T`) is indexed as a `method` but accessed as a
     // PROPERTY — `obj.user` (no call) yields its declared RETURN type, not a
@@ -1711,7 +1719,7 @@ pub(crate) fn member_yield_type(
     }
     lookup
         .return_type_str(qname)
-        .map(|s| arena.intern_type_str(&s))
+        .and_then(|text| intern_lookup_type_text(lookup, arena, &text))
 }
 
 /// `true` when the type's nominal head is a profile-declared enclosing-type
@@ -2198,7 +2206,7 @@ fn raw_field_type_of(
     }
     lookup
         .field_type_str(qname)
-        .map(|s| arena.intern_type_str(&s))
+        .and_then(|text| intern_lookup_type_text(lookup, arena, &text))
 }
 
 /// Upper bound on value-indirection hops when a field type names a value whose
@@ -2474,8 +2482,11 @@ fn resolve_callee_return_and_id(
             if let Some(id) = super::type_slots::return_type_by_identity(lookup, cand) {
                 return Ok((id, cand.id));
             }
-            if let Some(s) = lookup.return_type_str(&cand.qualified_name) {
-                return Ok((arena.intern_type_str(&s), cand.id));
+            if let Some(id) = lookup
+                .return_type_str(&cand.qualified_name)
+                .and_then(|text| intern_lookup_type_text(lookup, arena, &text))
+            {
+                return Ok((id, cand.id));
             }
             // Scoped callee exists but carries no recorded return — fall through.
             untyped_callee = Some(cand.id);
@@ -2513,8 +2524,11 @@ fn resolve_callee_return_and_id(
             if let Some(id) = super::type_slots::return_type_by_identity(lookup, callee) {
                 return Ok((id, callee.id));
             }
-            if let Some(n) = lookup.return_type_str(&callee.qualified_name) {
-                return Ok((arena.intern_type_str(&n), callee.id));
+            if let Some(id) = lookup
+                .return_type_str(&callee.qualified_name)
+                .and_then(|text| intern_lookup_type_text(lookup, arena, &text))
+            {
+                return Ok((id, callee.id));
             }
             untyped_callee.get_or_insert(callee.id);
         }
@@ -2544,8 +2558,11 @@ fn resolve_callee_return_and_id(
     if let Some(id) = lookup.return_type_id(&callee.qualified_name) {
         return Ok((id, callee.id));
     }
-    if let Some(s) = lookup.return_type_str(&callee.qualified_name) {
-        return Ok((arena.intern_type_str(&s), callee.id));
+    if let Some(id) = lookup
+        .return_type_str(&callee.qualified_name)
+        .and_then(|text| intern_lookup_type_text(lookup, arena, &text))
+    {
+        return Ok((id, callee.id));
     }
     Err(Some(Cause::new(
         Some(callee.id),
@@ -2589,20 +2606,29 @@ pub(crate) fn call_return_with_type_args(
     if params.is_empty() || call_args.is_empty() {
         return Some(ret);
     }
-    let defaults = lookup
-        .generic_param_defaults_of(params_id)
+    let default_ids = lookup
+        .canonical_type_info(lookup.canonical_decl_id(params_id))
+        .map(|info| info.generic_param_default_ids.as_slice())
         .unwrap_or_default();
+    let text_defaults = lookup.generic_param_defaults_of(params_id);
     let mut subst: FxHashMap<String, TypeId> = FxHashMap::default();
     for (i, param) in params.iter().enumerate() {
         // Positional arg, else the param's default — which may name an earlier
         // param (`TData = TQueryFnData`), resolved against the bindings so far.
         let bound = call_args.get(i).copied().or_else(|| {
-            defaults.get(i).and_then(|d| d.as_ref()).map(|d| {
-                subst
-                    .get(d)
-                    .copied()
-                    .unwrap_or_else(|| arena.intern_type_str(d))
-            })
+            default_ids
+                .get(i)
+                .copied()
+                .flatten()
+                .map(|default| arena.rebind_class_params(default, &subst))
+                .or_else(|| {
+                    text_defaults
+                        .as_ref()
+                        .and_then(|defaults| defaults.get(i))
+                        .and_then(|default| default.as_deref())
+                        .and_then(|text| intern_lookup_type_text(lookup, arena, text))
+                        .map(|default| arena.rebind_class_params(default, &subst))
+                })
         });
         if let Some(ty) = bound {
             subst.insert(param.clone(), ty);
@@ -2665,8 +2691,11 @@ fn callable_value_return_type(
         if let Some(id) = lookup.return_type_id(&qname) {
             return Some(id);
         }
-        if let Some(s) = lookup.return_type_str(&qname) {
-            return Some(arena.intern_type_str(&s));
+        if let Some(id) = lookup
+            .return_type_str(&qname)
+            .and_then(|text| intern_lookup_type_text(lookup, arena, &text))
+        {
+            return Some(id);
         }
     }
     callee_return_type(lookup, arena, file_ctx, value)
@@ -2709,7 +2738,21 @@ pub(crate) fn callable_named_return(
     }
     lookup
         .return_type_str(&callee_qname)
-        .map(|s| arena.intern_type_str(&s))
+        .and_then(|text| intern_lookup_type_text(lookup, arena, &text))
+}
+
+/// Compatibility boundary for legacy lookup slots that still expose type text.
+/// The text was captured from the active source file, so only its registered
+/// language plugin may interpret it. Lookups without a source language stay
+/// TypeId-only rather than selecting a generic syntax parser.
+fn intern_lookup_type_text(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    text: &str,
+) -> Option<TypeId> {
+    lookup
+        .source_language()
+        .map(|language| crate::languages::intern_type_text(language, arena, text))
 }
 
 #[cfg(test)]

@@ -32,7 +32,7 @@ fn one_argument_binds_one_param() {
         "method",
         "src/S.cs",
     );
-    let yielded = arena.intern_type_str("T");
+    let yielded = crate::languages::type_text::intern_test_type_text(&arena, "T");
     let bound = bind_explicit_type_args(
         &lookup,
         arena,
@@ -50,7 +50,7 @@ fn a_partial_argument_list_binds_a_prefix() {
     let lookup = Lookup::new().with_generics("M.pair", &["A", "B"]);
     let arena = lookup.type_arena().unwrap();
     let member = sym(11, "pair", "M.pair", "method", "src/M.ts");
-    let yielded = arena.intern_type_str("Map<A, B>");
+    let yielded = crate::languages::type_text::intern_test_type_text(&arena, "Map<A, B>");
     let bound =
         bind_explicit_type_args(&lookup, arena, &member, &call_seg("pair", &["K"]), yielded);
     let formatted = arena.format_type(bound);
@@ -67,7 +67,7 @@ fn a_non_generic_callee_is_untouched() {
     let lookup = Lookup::new();
     let arena = lookup.type_arena().unwrap();
     let member = sym(11, "plain", "M.plain", "method", "src/M.ts");
-    let yielded = arena.intern_type_str("Widget");
+    let yielded = crate::languages::type_text::intern_test_type_text(&arena, "Widget");
     assert_eq!(
         bind_explicit_type_args(&lookup, arena, &member, &call_seg("plain", &["X"]), yielded),
         yielded,
@@ -80,7 +80,7 @@ fn an_argless_segment_is_untouched() {
     let lookup = Lookup::new().with_generics("M.get", &["T"]);
     let arena = lookup.type_arena().unwrap();
     let member = sym(11, "get", "M.get", "method", "src/M.ts");
-    let yielded = arena.intern_type_str("T");
+    let yielded = crate::languages::type_text::intern_test_type_text(&arena, "T");
     assert_eq!(
         bind_explicit_type_args(&lookup, arena, &member, &call_seg("get", &[]), yielded),
         yielded,
@@ -93,12 +93,12 @@ fn an_argless_segment_is_untouched() {
 fn segment_args_attach_only_to_a_bare_head() {
     let lookup = Lookup::new();
     let arena = lookup.type_arena().unwrap();
-    let bare = arena.intern_type_str("Repository");
-    let attached = with_segment_args(arena, bare, &["User".to_string()]);
+    let bare = crate::languages::type_text::intern_test_type_text(&arena, "Repository");
+    let attached = with_segment_args(arena, bare, &["User".to_string()], "typescript");
     assert!(matches!(arena.get(attached), Type::Apply { .. }));
-    let applied = arena.intern_type_str("Repository<Order>");
+    let applied = crate::languages::type_text::intern_test_type_text(&arena, "Repository<Order>");
     assert_eq!(
-        with_segment_args(arena, applied, &["User".to_string()]),
+        with_segment_args(arena, applied, &["User".to_string()], "typescript"),
         applied,
     );
 }

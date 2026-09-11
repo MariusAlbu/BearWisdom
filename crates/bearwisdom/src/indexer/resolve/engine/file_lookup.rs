@@ -28,6 +28,7 @@ use crate::types::AliasTargetIds;
 /// CFG joins and identity-bearing contextual lambda writes remain separate work.
 pub(super) struct FileLookup<'a> {
     tree: &'a Compilation,
+    language: String,
     program: Option<super::program_view::Lookup<'a>>,
     module_site: super::module_graph::ModuleSite,
     lexical: Option<super::lexical_cache::LexicalCache<'a>>,
@@ -90,6 +91,7 @@ impl<'a> FileLookup<'a> {
     pub(super) fn new(tree: &'a Compilation, language: &str) -> Self {
         Self {
             tree,
+            language: language.to_string(),
             program: None,
             module_site: Default::default(),
             lexical: None,
@@ -202,15 +204,15 @@ impl<'a> FileLookup<'a> {
         }
         lookup.lexical = pf.flow.lexical.as_ref().and_then(|bindings| {
             tree.type_arena()
-                .map(|arena| super::lexical_cache::LexicalCache::new(bindings, arena))
+                .map(|arena| super::lexical_cache::LexicalCache::new(bindings, arena, &pf.language))
         });
         lookup.callback_lexical = pf.flow.callback_lexical.as_ref().and_then(|bindings| {
             tree.type_arena()
-                .map(|arena| super::lexical_cache::LexicalCache::new(bindings, arena))
+                .map(|arena| super::lexical_cache::LexicalCache::new(bindings, arena, &pf.language))
         });
         lookup.case_lexical = pf.flow.case_lexical.as_ref().and_then(|bindings| {
             tree.type_arena()
-                .map(|arena| super::lexical_cache::LexicalCache::new(bindings, arena))
+                .map(|arena| super::lexical_cache::LexicalCache::new(bindings, arena, &pf.language))
         });
         if let Some(cache) = &mut lookup.lexical {
             cache.install_declarations(&pf.path, ids);
@@ -237,6 +239,10 @@ impl<'a> FileLookup<'a> {
 }
 
 impl<'a> SymbolLookup for FileLookup<'a> {
+    fn source_language(&self) -> Option<&str> {
+        Some(&self.language)
+    }
+
     fn bound_import_namespace(
         &self,
         file: &str,

@@ -17,7 +17,6 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::indexer::resolve::engine::contract::{Symbol, SymbolLookup};
-use crate::languages::LanguagePlugin;
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 
 use super::chain::head_qname;
@@ -252,7 +251,11 @@ pub(crate) fn param_patterns(
                 .get(lang)
                 .signature_parameter_types(s)
         })
-        .map(|ps| ps.iter().map(|p| arena.intern_type_str(p)).collect())
+        .map(|ps| {
+            ps.iter()
+                .map(|p| crate::languages::intern_type_text(lang, arena, p))
+                .collect()
+        })
         .unwrap_or_default()
 }
 

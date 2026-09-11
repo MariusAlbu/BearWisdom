@@ -281,7 +281,7 @@ pub trait FlowCacheLookup {
     }
 
     /// Store the canonical TypeId for a local binding directly, avoiding the
-    /// `format_type` → `intern_type_str` round-trip that nominalizes
+    /// canonical-format → source-parse round-trip that nominalizes
     /// `Primitive`/`Optional`/`Generic` to `Class`.
     fn record_local_type_id(&self, _name: String, _id: TypeId) {}
 

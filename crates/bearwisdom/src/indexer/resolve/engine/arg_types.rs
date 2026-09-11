@@ -89,7 +89,11 @@ fn ident_type(lookup: &dyn SymbolLookup, arena: &TypeArena, name: &str) -> TypeI
         return id;
     }
     if let Some(ty) = lookup.local_type(name) {
-        return arena.intern_type_str(&ty);
+        return crate::languages::intern_type_text(
+            lookup.source_language().unwrap_or(""),
+            arena,
+            &ty,
+        );
     }
     if lookup.has_local_binding(name) {
         return arena.intern(Type::Unknown);
@@ -130,7 +134,7 @@ fn literal_type(arena: &TypeArena, text: &str) -> TypeId {
 }
 
 /// An array literal types as the canonical sequence application over its
-/// element type — the same `Apply { Array, [E] }` form `intern_type_str` mints
+/// element type — the same `Apply { Array, [E] }` form language adapters mint
 /// for a `T[]` suffix, so `f([user])` unifies against a declared `xs: T[]`.
 /// Requires every element to agree and be typed: a mixed or partly-untyped
 /// literal has no single element type.

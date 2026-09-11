@@ -5,7 +5,7 @@ use rustc_hash::FxHashMap;
 impl TypeArena {
     /// Rewrite every `Class(name)` whose `name` is a key of `params` to that
     /// param's `Type::Generic` id, recursing through structural types.
-    /// `intern_type_str` is param-blind — it interns a generic return like
+    /// Source-text parsing is param-blind — it normalizes a generic return like
     /// `Iter<T>` as `Apply{Iter,[Class("T")]}`. Applying this with the owning
     /// type's `{name → Type::Generic id}` map turns the nominal `Class("T")`
     /// into the bindable `Generic(T)` so the chain walker's `substitute` can

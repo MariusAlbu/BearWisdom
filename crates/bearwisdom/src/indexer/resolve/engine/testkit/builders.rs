@@ -224,7 +224,7 @@ impl Lookup {
     /// matching the behavior of the Compilation map so tests exercise the same
     /// id-keyed path the production engine uses.
     pub(crate) fn with_alias(mut self, name: &str, target: AliasTarget) -> Self {
-        let interned = intern_alias_target(&self.arena, &target);
+        let interned = intern_alias_target("typescript", &self.arena, &target);
         self.aliases.insert(name.to_string(), interned);
         self
     }
@@ -232,7 +232,7 @@ impl Lookup {
     /// Register an alias target keyed by the declaration's symbol id — the
     /// collision-free path a use site uses when a bare name has several aliases.
     pub(crate) fn with_alias_id(mut self, id: i64, target: AliasTarget) -> Self {
-        let interned = intern_alias_target(&self.arena, &target);
+        let interned = intern_alias_target("typescript", &self.arena, &target);
         self.aliases_by_id.insert(id, interned);
         self
     }

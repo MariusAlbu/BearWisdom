@@ -200,7 +200,9 @@ fn infer_capture_yields_the_matched_type_argument() {
     let arena = lookup.type_arena().unwrap();
     let applied = arena.intern(Type::Apply {
         base: arena.class("Elem"),
-        args: vec![arena.intern_type_str("User[]")],
+        args: vec![crate::languages::type_text::intern_test_type_text(
+            &arena, "User[]",
+        )],
     });
 
     let out = expand(applied, &lookup, arena, None);

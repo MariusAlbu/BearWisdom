@@ -94,6 +94,15 @@ impl LanguagePlugin for FSharpPlugin {
         crate::languages::angle_type_head(text)
     }
 
+    fn type_text_policy(&self) -> crate::languages::TypeTextPolicy {
+        crate::languages::TypeTextPolicy {
+            thin_arrow_function: true,
+            bare_arrow_parameter: true,
+            angle_application: true,
+            ..crate::languages::TypeTextPolicy::OPAQUE
+        }
+    }
+
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {

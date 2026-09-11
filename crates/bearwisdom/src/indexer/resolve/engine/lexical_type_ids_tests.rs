@@ -38,6 +38,7 @@ fn structural_recipes_keep_same_spelled_nominals_distinct() {
         lookup: &lookup,
         source: None,
         arena: &arena,
+        language: "typescript",
     };
     let recipe = TypeExpr::Function(
         vec![TypeExpr::Declaration(a)],
@@ -71,6 +72,7 @@ fn missing_type_rows_do_not_reenter_a_name_lookup() {
         lookup: &lookup,
         source: None,
         arena: &arena,
+        language: "typescript",
     };
     assert_eq!(
         arena.get(binder.materialize(&TypeExpr::Declaration(binding))),

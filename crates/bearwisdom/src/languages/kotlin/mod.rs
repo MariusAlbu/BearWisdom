@@ -135,6 +135,15 @@ impl LanguagePlugin for KotlinPlugin {
         crate::languages::angle_type_head(text)
     }
 
+    fn type_text_policy(&self) -> crate::languages::TypeTextPolicy {
+        crate::languages::TypeTextPolicy {
+            thin_arrow_function: true,
+            nullable_suffix: true,
+            angle_application: true,
+            ..crate::languages::TypeTextPolicy::OPAQUE
+        }
+    }
+
     fn signature_return_type(&self, signature: &str) -> Option<String> {
         crate::languages::colon_return_type(signature)
     }

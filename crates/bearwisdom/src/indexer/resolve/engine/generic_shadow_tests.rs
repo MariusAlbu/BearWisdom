@@ -142,7 +142,7 @@ fn a_declaring_type_param_left_in_the_yield_becomes_a_generic_marker() {
     let lookup = Lookup::new().with_generics("NamedId", &["T"]);
     let arena = lookup.type_arena().unwrap();
     let member = sym(11, "Id", "NamedId.Id", "property", "src/NamedId.cs");
-    let yielded = arena.intern_type_str("T");
+    let yielded = crate::languages::type_text::intern_test_type_text(&arena, "T");
     let marked = mark_unbound_member_params(
         &lookup,
         arena,
@@ -159,7 +159,7 @@ fn a_method_own_param_inside_an_application_becomes_a_generic_marker() {
     let lookup = Lookup::new().with_generics("App.Resolvers.Sync", &["TSource", "T"]);
     let arena = lookup.type_arena().unwrap();
     let member = sym(40, "Sync", "App.Resolvers.Sync", "method", "src/R.cs");
-    let yielded = arena.intern_type_str("Func<TSource, T>");
+    let yielded = crate::languages::type_text::intern_test_type_text(&arena, "Func<TSource, T>");
     let marked = mark_unbound_member_params(
         &lookup,
         arena,
@@ -186,7 +186,7 @@ fn a_concrete_yield_is_untouched() {
     let lookup = Lookup::new().with_generics("NamedId", &["T"]);
     let arena = lookup.type_arena().unwrap();
     let member = sym(11, "Id", "NamedId.Id", "property", "src/NamedId.cs");
-    let yielded = arena.intern_type_str("DomainId");
+    let yielded = crate::languages::type_text::intern_test_type_text(&arena, "DomainId");
     assert_eq!(
         mark_unbound_member_params(
             &lookup,

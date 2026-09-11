@@ -27,6 +27,7 @@ pub(super) struct LexicalCache<'a> {
     import_kinds: HashMap<BindingId, crate::types::SymbolKind>,
     import_namespaces: std::collections::HashSet<BindingId>,
     arena: &'a TypeArena,
+    language: &'a str,
     inferred_declarations: RefCell<HashMap<BindingId, TypeId>>,
     contextual: RefCell<HashMap<BindingId, TypeId>>,
     facts: RefCell<HashMap<(BindingId, ScopeId), Vec<(u32, TypeId)>>>,
@@ -39,7 +40,11 @@ pub(super) struct LexicalCache<'a> {
 mod tests;
 
 impl<'a> LexicalCache<'a> {
-    pub(super) fn new(bindings: &'a LexicalBindings, arena: &'a TypeArena) -> Self {
+    pub(super) fn new(
+        bindings: &'a LexicalBindings,
+        arena: &'a TypeArena,
+        language: &'a str,
+    ) -> Self {
         Self {
             bindings,
             cursor: Cell::new(0),
@@ -63,17 +68,24 @@ impl<'a> LexicalCache<'a> {
                 .map(|(&byte, args)| {
                     (
                         byte,
-                        args.iter().map(|arg| arena.intern_type_str(arg)).collect(),
+                        args.iter()
+                            .map(|arg| crate::languages::intern_type_text(language, arena, arg))
+                            .collect(),
                     )
                 })
                 .collect(),
             arena,
+            language,
             inferred_declarations: RefCell::new(HashMap::new()),
             contextual: RefCell::new(HashMap::new()),
             declared: bindings
                 .bindings
                 .iter()
-                .map(|b| b.annotation.as_deref().map(|ty| arena.intern_type_str(ty)))
+                .map(|b| {
+                    b.annotation
+                        .as_deref()
+                        .map(|ty| crate::languages::intern_type_text(language, arena, ty))
+                })
                 .collect(),
             facts: RefCell::new(HashMap::new()),
             causes: RefCell::new(HashMap::new()),
@@ -110,6 +122,7 @@ impl<'a> LexicalCache<'a> {
             lookup: selected,
             source: Some(lookup),
             arena: self.arena,
+            language: self.language,
         };
         let configured = selected.nominal_context().is_some();
         let materialize = |recipe| {

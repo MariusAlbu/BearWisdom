@@ -14,7 +14,10 @@ impl Compilation {
     /// DIRECT call return — a chained `return a.b()` is left to the chain walker.
     pub(crate) fn infer_call_wrapper_returns(&mut self, parsed: &[ParsedFile], ids: &SymbolIds) {
         let mut by_id: FxHashMap<i64, Vec<Option<TypeId>>> = FxHashMap::default();
-        let mut candidates: Vec<(String, String, Option<TypeId>, Vec<String>)> = Vec::new();
+        // Keep semantic ids through the whole wrapper pass. A wrapper return is
+        // resolved from another declaration and therefore must never be rendered
+        // and reparsed according to the wrapper's source language.
+        let mut candidates: Vec<(String, TypeId)> = Vec::new();
         for pf in parsed.iter().filter(|p| !p.path.starts_with("ext:")) {
             if pf.flow.flow_return_lhs.is_empty() {
                 continue;
@@ -91,11 +94,10 @@ impl Compilation {
                 let Some(ret_id) = ret else {
                     continue;
                 };
-                let s = self.arena.format_type(ret_id);
-                if s.is_empty() || s.eq_ignore_ascii_case("unknown") {
+                if matches!(self.arena.get(ret_id), Type::Unknown) {
                     continue;
                 }
-                candidates.push((fn_sym.qualified_name.clone(), s, Some(ret_id), Vec::new()));
+                candidates.push((fn_sym.qualified_name.clone(), ret_id));
             }
         }
         // Group candidates by function. Object-literal-builder returns (`{…}$Ret`)
@@ -103,23 +105,24 @@ impl Compilation {
         // that (union of) object shape(s) as its return, overriding any stored
         // return mis-inferred from a param/body. A non-builder single return keeps
         // the agreement-gated, slot-respecting behaviour.
-        let mut by_fn: FxHashMap<String, Vec<(String, Option<TypeId>, Vec<String>)>> =
-            FxHashMap::default();
-        for (qname, ty, ty_id, type_args) in candidates {
-            by_fn.entry(qname).or_default().push((ty, ty_id, type_args));
+        let mut by_fn: FxHashMap<String, Vec<TypeId>> = FxHashMap::default();
+        for (qname, ty_id) in candidates {
+            by_fn.entry(qname).or_default().push(ty_id);
         }
         for (qname, variants) in by_fn {
-            // Distinct return-type strings, first occurrence kept.
-            let mut distinct: Vec<(String, Option<TypeId>, Vec<String>)> = Vec::new();
+            // Distinct semantic return types, first occurrence kept.
+            let mut distinct: Vec<TypeId> = Vec::new();
             for v in variants {
-                if !distinct.iter().any(|d| d.0 == v.0) {
+                if !distinct.contains(&v) {
                     distinct.push(v);
                 }
             }
             let mut ret_branches: Vec<String> = distinct
                 .iter()
-                .filter(|d| d.0.ends_with("$Ret"))
-                .map(|d| d.0.clone())
+                .filter_map(|&id| match self.arena.get(id) {
+                    Type::Class(name) if name.ends_with("$Ret") => Some(name.to_string()),
+                    _ => None,
+                })
                 .collect();
             if !ret_branches.is_empty() {
                 let (ret_str, ret_id) = if ret_branches.len() == 1 {
@@ -132,7 +135,12 @@ impl Compilation {
                     let union_name = format!("{qname}$Ret");
                     self.alias_target.insert(
                         union_name.clone(),
-                        intern_alias_target(&self.arena, &AliasTarget::Union(ret_branches)),
+                        AliasTargetIds::Union(
+                            ret_branches
+                                .iter()
+                                .map(|name| self.arena.class(name))
+                                .collect(),
+                        ),
                     );
                     let id = self.arena.class(&union_name);
                     (union_name, id)
@@ -152,9 +160,7 @@ impl Compilation {
                 continue;
             }
             if distinct.len() == 1 {
-                let (ty, ty_id, type_args) = distinct.into_iter().next().unwrap();
-                let rid =
-                    ty_id.unwrap_or_else(|| intern_head_and_args(&self.arena, &ty, &type_args));
+                let rid = distinct[0];
                 let ti = self.type_info.entry(qname.clone()).or_default();
                 ti.return_type_id = Some(rid);
                 self.mirror_ret_interface_member(&qname, rid);

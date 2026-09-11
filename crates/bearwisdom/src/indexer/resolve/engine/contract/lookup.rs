@@ -21,6 +21,13 @@ use super::{Symbol, SymbolSet};
 /// cache surface lives on the `FlowCacheLookup` supertrait (`flow_cache.rs`);
 /// every `SymbolLookup` carries it, defaults are no-ops.
 pub trait SymbolLookup: FlowCacheLookup {
+    /// Source language for the active file overlay. Global stores and test
+    /// doubles have no active source grammar and therefore decline textual
+    /// parsing by default.
+    fn source_language(&self) -> Option<&str> {
+        None
+    }
+
     /// File-environment ingestion: a captured import BindingId's exported declaration.
     /// Missing or ambiguous module evidence never enables a spelling fallback.
     fn bound_import(
@@ -247,7 +254,7 @@ pub trait SymbolLookup: FlowCacheLookup {
     /// chain segment iteration so the walker can follow
     /// `type UserMap = Map<string, User>` aliases through to the underlying
     /// concrete head and type args. Every type-expression component is
-    /// pre-interned; no `TypeArena::intern_type_str` call is needed at
+    /// pre-interned; no source-text parsing is needed at
     /// lookup time.
     ///
     /// Default returns `None` so synthetic test lookups don't have to

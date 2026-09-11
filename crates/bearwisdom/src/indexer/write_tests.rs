@@ -335,13 +335,17 @@ fn param_change_replaces_symbol_and_reports_new_name() {
     let arena = TypeArena::new();
 
     let mut foo1 = esym("M.foo", SymbolKind::Function, Some("fn foo(x: int)"), 1);
-    foo1.param_types = vec![arena.intern_type_str("int")];
+    foo1.param_types = vec![crate::languages::type_text::intern_test_type_text(
+        &arena, "int",
+    )];
     let v1 = pfile("a.rs", "rust", vec![foo1]);
     write_parsed_files_incremental(&db, std::slice::from_ref(&v1), Some(&arena)).unwrap();
     let id1 = sym_id(&db, "M.foo").unwrap();
 
     let mut foo2 = esym("M.foo", SymbolKind::Function, Some("fn foo(x: string)"), 1);
-    foo2.param_types = vec![arena.intern_type_str("string")];
+    foo2.param_types = vec![crate::languages::type_text::intern_test_type_text(
+        &arena, "string",
+    )];
     let v2 = pfile("a.rs", "rust", vec![foo2]);
     let (_, _, report) =
         write_parsed_files_incremental(&db, std::slice::from_ref(&v2), Some(&arena)).unwrap();

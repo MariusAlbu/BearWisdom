@@ -97,6 +97,14 @@ impl LanguagePlugin for GroovyPlugin {
         crate::languages::angle_type_head(text)
     }
 
+    fn type_text_policy(&self) -> crate::languages::TypeTextPolicy {
+        crate::languages::TypeTextPolicy {
+            array_suffix: true,
+            angle_application: true,
+            ..crate::languages::TypeTextPolicy::OPAQUE
+        }
+    }
+
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {

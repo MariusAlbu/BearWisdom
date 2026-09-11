@@ -79,7 +79,9 @@ pub(super) fn type_arguments(
     }
     seg.type_args
         .iter()
-        .map(|arg| arena.intern_type_str(arg))
+        .map(|arg| {
+            crate::languages::intern_type_text(lookup.source_language().unwrap_or(""), arena, arg)
+        })
         .collect()
 }
 
@@ -87,13 +89,21 @@ pub(super) fn type_arguments(
 /// that didn't already carry its own. A declared annotation reaches the chain
 /// pre-split — `repo: Repository<User>` as head `Repository` + args `[User]` —
 /// so the args must be reattached, else generic substitution sees no arguments.
-pub(crate) fn with_segment_args(arena: &TypeArena, id: TypeId, type_args: &[String]) -> TypeId {
+pub(crate) fn with_segment_args(
+    arena: &TypeArena,
+    id: TypeId,
+    type_args: &[String],
+    language: &str,
+) -> TypeId {
     if type_args.is_empty() {
         return id;
     }
     match arena.get(id) {
         Type::Class(_) => {
-            let args = type_args.iter().map(|a| arena.intern_type_str(a)).collect();
+            let args = type_args
+                .iter()
+                .map(|arg| crate::languages::intern_type_text(language, arena, arg))
+                .collect();
             arena.intern(Type::Apply { base: id, args })
         }
         // Already an application (or another structural type) — the inline args

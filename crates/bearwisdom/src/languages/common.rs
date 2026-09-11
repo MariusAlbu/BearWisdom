@@ -7,7 +7,6 @@
 // uncluttered.
 // =============================================================================
 
-use crate::languages::LanguagePlugin;
 use crate::type_checker::core::types::TypeArena;
 use crate::types::{EmbeddedOrigin, EmbeddedRegion, ExtractionResult, SymbolKind};
 use tree_sitter::{Node, Parser};
@@ -36,8 +35,8 @@ pub fn normalize_identifier_capture(raw: &str) -> Option<String> {
 ///   - Callable kinds (Method / Function / Constructor) get the return
 ///     type and parameter types parsed from their signature via
 ///     `parse_return_type_from_signature` and the language-aware
-///     the language plugin's signature adapter, then interned
-///     through `arena.intern_type_str` so generic applications decompose
+///     the language plugin's signature adapter, then interned through that
+///     same language plugin's type-text policy so generic applications decompose
 ///     into structural `Apply { base, args }`.
 ///
 /// Idempotent: skips symbols whose `return_type` / `param_types` are
@@ -78,7 +77,8 @@ pub fn populate_return_type_ids(result: &mut ExtractionResult, arena: &TypeArena
                         let is_bare = !rt.contains('.') && !rt.contains("::");
                         let has_scope = sym.scope_path.as_deref().is_some_and(|s| !s.is_empty());
                         if !rt.is_empty() && !(is_bare && has_scope) {
-                            sym.return_type = Some(arena.intern_type_str(&rt));
+                            sym.return_type =
+                                Some(crate::languages::intern_type_text(lang_id, arena, &rt));
                         }
                     }
                 }
@@ -87,7 +87,10 @@ pub fn populate_return_type_ids(result: &mut ExtractionResult, arena: &TypeArena
                         .get(lang_id)
                         .signature_parameter_types(sig)
                     {
-                        sym.param_types = params.iter().map(|p| arena.intern_type_str(p)).collect();
+                        sym.param_types = params
+                            .iter()
+                            .map(|p| crate::languages::intern_type_text(lang_id, arena, p))
+                            .collect();
                     }
                 }
             }
@@ -106,7 +109,8 @@ pub fn populate_return_type_ids(result: &mut ExtractionResult, arena: &TypeArena
                     .signature_declared_type(sig)
                 {
                     if !ty.is_empty() {
-                        sym.declared_type = Some(arena.intern_type_str(&ty));
+                        sym.declared_type =
+                            Some(crate::languages::intern_type_text(lang_id, arena, &ty));
                     }
                 }
             }

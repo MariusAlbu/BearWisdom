@@ -86,6 +86,7 @@ pub(super) fn capture(
         lookup,
         source: Some(lookup),
         arena,
+        language: &file.language,
     };
     let mut out = Vec::new();
     for (slot, recipes) in [
@@ -168,9 +169,9 @@ pub(super) fn lower(recipe: &TypeExpr, binder: &TypeBinder) -> Recipe {
         TypeExpr::Source { usage, legacy } => Recipe::Source {
             binding: usage.binding.0,
             local: usage.local,
-            legacy: legacy
-                .as_ref()
-                .map(|legacy| binder.arena.intern_type_str(legacy)),
+            legacy: legacy.as_ref().map(|legacy| {
+                crate::languages::intern_type_text(binder.language, binder.arena, legacy)
+            }),
         },
         TypeExpr::Apply(base, args) => {
             Recipe::Apply(Box::new(child(base)), args.iter().map(child).collect())

@@ -162,6 +162,19 @@ impl LanguagePlugin for RustLangPlugin {
         crate::languages::angle_type_head(text)
     }
 
+    fn type_text_policy(&self) -> crate::languages::TypeTextPolicy {
+        crate::languages::TypeTextPolicy {
+            reference_sigil: true,
+            pointer_sigil: true,
+            thin_arrow_function: true,
+            parenthesized_tuple: true,
+            rust_array_or_slice: true,
+            angle_application: true,
+            lifetime_arguments: true,
+            ..crate::languages::TypeTextPolicy::OPAQUE
+        }
+    }
+
     fn signature_return_type(&self, signature: &str) -> Option<String> {
         signature
             .rfind("->")

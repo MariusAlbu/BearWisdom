@@ -894,7 +894,10 @@ fn object_type_return_routes_through_synth_ret_with_typed_members() {
     let arena = Arc::new(TypeArena::new());
     // The extractor sets the function's return to the inline object type and
     // mirrors it onto BOTH the qname and id slots — the routing must override it.
-    let obj_ret = arena.intern_type_str("{ browser: Browser; flag: boolean }");
+    let obj_ret = crate::languages::type_text::intern_test_type_text(
+        &arena,
+        "{ browser: Browser; flag: boolean }",
+    );
     let mut setup = make_symbol(
         "setup",
         "setup",

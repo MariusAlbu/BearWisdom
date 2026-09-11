@@ -110,6 +110,7 @@ pub(super) fn capture(
         lookup,
         source: Some(lookup),
         arena,
+        language: &file.language,
     };
     let names: std::collections::HashMap<_, _> = graph.interned_names().collect();
     let mut input = Input {

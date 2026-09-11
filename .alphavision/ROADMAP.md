@@ -329,7 +329,7 @@ must carry declaration/binding/type IDs, not re-find declarations by spelling.
 - [x] Move callback lexical syntax, specialized flow passes, namespace forms, and lexical language-family switches out of the generic indexer.
 - [x] Move external virtual-path layouts, secondary package scans, stage-link language policies, builtin dispatch, and discovery inventories into language/ecosystem adapters.
 - [x] Replace concrete plugin lifecycle state and route/embedded-region branches in full and incremental indexing with registry-owned hooks and opaque state.
-- [ ] Move source-language type-text parsing and formatting out of the generic TypeArena/core; keep only normalized semantic types and canonical serialization in core.
+- [x] Move source-language type-text parsing and formatting out of the generic TypeArena/core; keep only normalized semantic types and canonical serialization in core.
 - [ ] Move remaining source separators and member-chain recognition from canonical/workspace helpers into active language profiles.
 - [ ] Replace the concrete module-resolver constructor registry and Go/Dart manifest inputs with registry-owned factories and opaque adapter configuration.
 - [ ] Move host-language script-tag dispatch, web-asset extension grammar, and ASP.NET asset-layout rules into language/ecosystem adapters.

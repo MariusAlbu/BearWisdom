@@ -161,10 +161,9 @@ pub(super) fn run_assignment_query(
             continue;
         };
 
-        // Explicit annotation: record the declared type text verbatim (trimmed
-        // only). `intern_type_str` decomposes `Vec<Item>` into `Apply(Vec,
-        // [Item])` itself, so the head still keys the member lookup AND the
-        // generic argument survives for element-type projection (`v[0]`).
+        // Explicit annotation: record the declared type text verbatim. The
+        // declaring language adapter later normalizes generic applications so
+        // both the lookup head and element arguments survive.
         if let Some(ty) = type_node {
             if let Ok(text) = ty.utf8_text(src) {
                 let text = text.trim();

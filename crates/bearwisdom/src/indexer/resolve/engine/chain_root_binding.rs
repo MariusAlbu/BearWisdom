@@ -38,7 +38,7 @@ pub(super) fn resolve_root_impl(
         return Ok(Receiver::untyped(id));
     }
     if let Some(ty) = lookup.local_type(&seg.name) {
-        let id = arena.intern_type_str(&ty);
+        let id = crate::languages::intern_type_text(&file_ctx.language, arena, &ty);
         if let Some(r) = resolve_return_type_extraction(id, lookup, arena, file_ctx, Some(profile))
         {
             return Ok(Receiver::untyped(r));
@@ -53,8 +53,9 @@ pub(super) fn resolve_root_impl(
     if let Some(ty) = &seg.declared_type {
         return Ok(Receiver::untyped(with_segment_args(
             arena,
-            arena.intern_type_str(ty),
+            crate::languages::intern_type_text(&file_ctx.language, arena, ty),
             &seg.type_args,
+            &file_ctx.language,
         )));
     }
     if matches!(seg.kind, SegmentKind::SelfRef) {
@@ -216,6 +217,7 @@ pub(super) fn resolve_root_impl(
         arena,
         super::super::head_decl::nominal_head(lookup, arena, s),
         &seg.type_args,
+        &file_ctx.language,
     );
     Ok(Receiver::new(ty, s.id))
 }

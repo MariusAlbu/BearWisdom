@@ -774,6 +774,7 @@ fn imported_type_annotations_keep_exact_rows_before_member_resolution() {
             lookup: &tree,
             source: Some(&tree),
             arena: &arena,
+            language: "typescript",
         };
         let ty = binder
             .materialize(&crate::indexer::lexical::type_syntax::TypeExpr::Declaration(binding));

@@ -90,6 +90,10 @@ fn is_type_like(kind: &str) -> bool {
 }
 
 impl SymbolLookup for Lookup {
+    fn source_language(&self) -> Option<&str> {
+        Some("typescript")
+    }
+
     fn by_name(&self, name: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(self.by_name.get(name).map(|v| v.as_slice()).unwrap_or(&[]))
     }
@@ -163,7 +167,7 @@ impl SymbolLookup for Lookup {
     fn return_type_id_of(&self, symbol_id: i64) -> Option<TypeId> {
         self.return_types_by_id
             .get(&symbol_id)
-            .map(|s| self.arena.intern_type_str(s))
+            .map(|text| crate::languages::intern_type_text("typescript", &self.arena, text))
     }
     fn parent_class_qname(&self, class_qname: &str) -> Option<&str> {
         self.parents

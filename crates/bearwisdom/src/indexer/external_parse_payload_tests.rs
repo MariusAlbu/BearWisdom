@@ -5,7 +5,8 @@ use crate::type_checker::core::types::{GenericParamData, Type};
 /// TypeIds back the symbol/segment type fields.
 fn sample() -> (ParsedFile, TypeArena) {
     let arena = TypeArena::new();
-    let vec_doc = arena.intern_type_str("Vec<tantivy.Document>");
+    let vec_doc =
+        crate::languages::type_text::intern_test_type_text(&arena, "Vec<tantivy.Document>");
     let u64_ty = arena.class("u64");
     let t_param = arena.intern_generic(GenericParamData {
         kind: Default::default(),
@@ -247,7 +248,8 @@ fn symbol_roundtrip_preserves_every_field_and_type() {
     // generic-params slot must all survive with identity intact.
     let f = &got.symbols[1];
     let ret = f.return_type.expect("return_type must survive the cache");
-    let expected_ret = dst.intern_type_str("Vec<tantivy.Document>");
+    let expected_ret =
+        crate::languages::type_text::intern_test_type_text(&dst, "Vec<tantivy.Document>");
     assert_eq!(ret, expected_ret);
     assert_eq!(f.generic_params.len(), 1);
     let Type::Generic { param } = dst.get(f.param_types[0]) else {
@@ -328,7 +330,10 @@ fn ref_roundtrip_preserves_chain_and_call_args() {
     assert_eq!(is_call, orig_seg.is_call);
     assert_eq!(seg_call_args, orig_seg.call_args);
     let dt = declared_type_id.expect("segment declared_type_id must survive");
-    assert_eq!(dt, dst.intern_type_str("Vec<tantivy.Document>"));
+    assert_eq!(
+        dt,
+        crate::languages::type_text::intern_test_type_text(&dst, "Vec<tantivy.Document>")
+    );
     assert_eq!(type_arg_ids.len(), 1);
     assert_eq!(dst.get(type_arg_ids[0]), Type::Class("Document".into()));
 }

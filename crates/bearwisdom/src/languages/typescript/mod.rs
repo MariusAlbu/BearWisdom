@@ -64,6 +64,10 @@ mod calls_tests;
 #[path = "module_augmentations_tests.rs"]
 mod module_augmentations_tests;
 
+#[cfg(test)]
+#[path = "type_text_tests.rs"]
+mod type_text_tests;
+
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::{EmbeddedRegion, ExtractionResult};
@@ -135,6 +139,18 @@ impl LanguagePlugin for TypeScriptPlugin {
 
     fn signature_type_head<'a>(&self, text: &'a str) -> &'a str {
         crate::languages::angle_type_head(text)
+    }
+
+    fn type_text_policy(&self) -> crate::languages::TypeTextPolicy {
+        crate::languages::TypeTextPolicy {
+            fat_arrow_function: true,
+            readonly_modifier: true,
+            array_suffix: true,
+            union_intersection: true,
+            bracket_tuple: true,
+            angle_application: true,
+            ..crate::languages::TypeTextPolicy::OPAQUE
+        }
     }
 
     fn primitive_member_head(&self, head: &str) -> Option<String> {

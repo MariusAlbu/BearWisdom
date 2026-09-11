@@ -351,6 +351,7 @@ impl Compilation {
                 lookup: self,
                 source: Some(self),
                 arena: &self.arena,
+                language: &file.language,
             };
             let mut pending = Vec::new();
             for (kind, recipes) in [

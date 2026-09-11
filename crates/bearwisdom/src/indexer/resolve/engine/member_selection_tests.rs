@@ -67,7 +67,10 @@ fn inaccessible_members_and_owners_remain_barriers_to_base_and_outer_fallbacks()
     let mut lookup = Restricted { inner, denied: 71 };
     let name = lookup.member_index().unwrap().name("read").unwrap();
     let arena = crate::type_checker::core::types::TypeArena::new();
-    let recv = super::super::chain::Receiver::new(arena.intern_type_str("Doc"), 1);
+    let recv = super::super::chain::Receiver::new(
+        crate::languages::type_text::intern_test_type_text(&arena, "Doc"),
+        1,
+    );
     for denied in [71, 1] {
         lookup.denied = denied;
         assert_eq!(select(&lookup, 1, name, &|_| true), Selection::Inaccessible);

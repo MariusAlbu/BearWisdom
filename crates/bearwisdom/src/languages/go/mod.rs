@@ -144,6 +144,15 @@ impl LanguagePlugin for GoPlugin {
         crate::languages::bracket_type_head(text)
     }
 
+    fn type_text_policy(&self) -> crate::languages::TypeTextPolicy {
+        crate::languages::TypeTextPolicy {
+            pointer_sigil: true,
+            go_function: true,
+            bracket_application: true,
+            ..crate::languages::TypeTextPolicy::OPAQUE
+        }
+    }
+
     fn profile(
         &self,
     ) -> Option<&'static crate::type_checker::profile::language_profile::LanguageProfile> {

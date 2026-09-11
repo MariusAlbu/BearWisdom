@@ -207,9 +207,7 @@ fn strict_ruby_block_contracts_reject_positional_callbacks_and_accept_trailing_b
         let arena = TypeArena::new();
         let mut contract = map_method();
         contract.file_path = format!("contracts/catalog.{extension}").into();
-        if extension == "rbi" {
-            contract.signature = Some("map(&block: (T) -> U): Array<U>".into());
-        }
+        contract.signature = Some("map(&block: (T) -> U): Array[U]".into());
         let parameter = crate::types::SourceSpan { start: 24, end: 28 };
 
         for positional in [
@@ -420,6 +418,7 @@ fn non_contract_ruby_callbacks_still_seed_positional_lambdas() {
     let arena = TypeArena::new();
     let mut callee = map_method();
     callee.file_path = "app/catalog.rb".into();
+    callee.signature = Some("map(fn: (value: T) -> U): Array[U]".into());
     let parameter = crate::types::SourceSpan { start: 24, end: 28 };
 
     seed_lambda_params(

@@ -97,7 +97,7 @@ fn defaults_are_canonicalized_and_expanded_in_parameter_order() {
     let arena = TypeArena::new();
     let t = parameter(&arena, "T", 1);
     let u = parameter(&arena, "U", 1);
-    let result = arena.intern_type_str("Promise<U[]>");
+    let result = crate::languages::type_text::intern_test_type_text(&arena, "Promise<U[]>");
     let template = GenericReturn::capture(&arena, &[t, u], &[None, Some(arena.class("T"))], result);
     let alpha = arena.decl("Alpha", 7);
     // Use the same parser's wrapper representation, then verify the leaf by ID.

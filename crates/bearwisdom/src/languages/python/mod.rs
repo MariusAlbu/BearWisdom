@@ -136,6 +136,14 @@ impl LanguagePlugin for PythonPlugin {
         crate::languages::bracket_type_head(text)
     }
 
+    fn type_text_policy(&self) -> crate::languages::TypeTextPolicy {
+        crate::languages::TypeTextPolicy {
+            python_callable: true,
+            bracket_application: true,
+            ..crate::languages::TypeTextPolicy::OPAQUE
+        }
+    }
+
     fn signature_parameter_types(&self, signature: &str) -> Option<Vec<String>> {
         crate::languages::colon_parameter_types(signature)
     }

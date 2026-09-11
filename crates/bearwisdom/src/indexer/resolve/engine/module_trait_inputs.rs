@@ -94,6 +94,7 @@ pub(super) fn capture(
         lookup,
         source: Some(lookup),
         arena,
+        language: &file.language,
     };
     let providers = source
         .bindings

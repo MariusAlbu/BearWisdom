@@ -22,13 +22,9 @@ use crate::indexer::resolve::engine::import_qualify;
 use crate::indexer::resolve::engine::module_specifier;
 use crate::indexer::resolve::engine::support::resolve_module_exported_value_type;
 use crate::indexer::write::SymbolIds;
-use crate::languages::LanguagePlugin;
 use crate::type_checker::core::types::{GenericParamData, GenericParamId, Type, TypeArena, TypeId};
 use crate::type_checker::profile::language_profile::LanguageProfile;
-use crate::types::{
-    intern_alias_target, AliasTarget, AliasTargetIds, EdgeKind, ExtractedSymbol, ParsedFile,
-    SymbolKind,
-};
+use crate::types::{intern_alias_target, AliasTargetIds, EdgeKind, ParsedFile, SymbolKind};
 
 // ---------------------------------------------------------------------------
 // `is_type_like` is the single canonical type-name-surface predicate, owned by
@@ -154,7 +150,7 @@ pub struct Compilation {
     /// these edge arguments — the arguments live on the edge, not on the receiver.
     inherits_args: FxHashMap<String, Vec<(String, Vec<String>)>>,
     /// Interned-id form of `inherits_args` (arg type-heads as `TypeId`) so the
-    /// supertype-arg substitution binds without re-`intern_type_str`ing the
+    /// supertype-arg substitution binds without reparsing the
     /// stored arg strings on each access. Populated on full build; empty after an
     /// incremental DB reload (the edge args aren't recoverable there).
     inherits_arg_ids: FxHashMap<String, Vec<(String, Vec<TypeId>)>>,
@@ -613,8 +609,10 @@ impl Compilation {
                 if !parent_args.is_empty() {
                     let args: Vec<String> =
                         parent_args.iter().map(|a| a.trim().to_string()).collect();
-                    let arg_ids: Vec<TypeId> =
-                        args.iter().map(|a| self.arena.intern_type_str(a)).collect();
+                    let arg_ids: Vec<TypeId> = args
+                        .iter()
+                        .map(|a| crate::languages::intern_type_text(&pf.language, &self.arena, a))
+                        .collect();
                     self.inherits_arg_ids
                         .entry(child_sym.qualified_name.clone())
                         .or_default()
@@ -673,12 +671,12 @@ impl Compilation {
             // carries its scope prefix. Type-expression components are interned
             // once here so expand reads TypeIds directly.
             for (name, target) in &pf.alias_targets {
-                let interned = intern_alias_target(&self.arena, target);
+                let interned = intern_alias_target(&pf.language, &self.arena, target);
                 self.alias_target.insert(name.clone(), interned);
                 if let Some((_, simple)) = name.rsplit_once('.') {
                     self.alias_target
                         .entry(simple.to_string())
-                        .or_insert_with(|| intern_alias_target(&self.arena, target));
+                        .or_insert_with(|| intern_alias_target(&pf.language, &self.arena, target));
                 }
                 // Id-keyed entry: the bare/qualified name collides across sibling
                 // aliases (two `type Logger = …`), but the declaration id does not —
@@ -686,7 +684,7 @@ impl Compilation {
                 // expands its OWN target, not the last writer's.
                 if let Some(&id) = symbol_id_map.by_key().get(&(pf.path.clone(), name.clone())) {
                     self.alias_target_by_id
-                        .insert(id, intern_alias_target(&self.arena, target));
+                        .insert(id, intern_alias_target(&pf.language, &self.arena, target));
                 }
             }
         }
@@ -1093,7 +1091,8 @@ impl Compilation {
                         } else {
                             Vec::new()
                         };
-                        let fid = intern_head_and_args(&self.arena, &resolved, &arg_strs);
+                        let fid =
+                            intern_head_and_args(&pf.language, &self.arena, &resolved, &arg_strs);
                         derived = Some((resolved, arg_strs, fid));
                     } else if let Some(decoded) = sym.signature.as_deref().and_then(|signature| {
                         crate::ecosystem::signature::return_type_for_language(
@@ -1120,7 +1119,11 @@ impl Compilation {
                             &self.by_qname,
                             profile,
                         );
-                        let fid = self.arena.intern_type_str(&resolved);
+                        let fid = crate::languages::intern_type_text(
+                            &pf.language,
+                            &self.arena,
+                            &resolved,
+                        );
                         derived = Some((resolved, Vec::new(), fid));
                     }
 
@@ -1174,7 +1177,11 @@ impl Compilation {
                                 &self.by_qname,
                                 profile,
                             );
-                            ti.return_type_id = Some(self.arena.intern_type_str(&resolved));
+                            ti.return_type_id = Some(crate::languages::intern_type_text(
+                                &pf.language,
+                                &self.arena,
+                                &resolved,
+                            ));
                         }
                     }
                 }
@@ -1196,7 +1203,11 @@ impl Compilation {
                                 &self.by_qname,
                                 profile,
                             );
-                            ti.field_type_id = Some(self.arena.intern_type_str(&resolved));
+                            ti.field_type_id = Some(crate::languages::intern_type_text(
+                                &pf.language,
+                                &self.arena,
+                                &resolved,
+                            ));
                         }
                     }
                 }
@@ -1272,7 +1283,11 @@ impl Compilation {
                                 &self.by_qname,
                                 profile,
                             );
-                            let rid = self.arena.intern_type_str(&resolved);
+                            let rid = crate::languages::intern_type_text(
+                                &pf.language,
+                                &self.arena,
+                                &resolved,
+                            );
                             let mti = self.type_info.entry(mqname.clone()).or_default();
                             if mti.field_type_id.is_none() {
                                 mti.field_type_id = Some(rid);
@@ -1307,7 +1322,11 @@ impl Compilation {
                         // `this` verbatim so the chain walker's self-head rebind
                         // returns the receiver instead.
                         let result = sig_rt.as_deref().unwrap_or_default().trim();
-                        let rid = self.arena.intern_type_str(result);
+                        let rid = crate::languages::intern_type_text(
+                            &pf.language,
+                            &self.arena,
+                            result,
+                        );
                         Some((result.to_string(), Some(rid)))
                     } else if let Some(rt) = sig_rt.as_deref().filter(|result| {
                         crate::languages::default_registry()
@@ -1319,8 +1338,8 @@ impl Compilation {
                         // (the `sig_generic` arm) would mis-read the `[A, B]` as a
                         // generic application and drop the positional structure a
                         // destructure binding indexes.
-                        let rid = self.arena.intern_type_str(rt);
-                        Some((self.arena.format_type(rid), Some(rid)))
+                        let rid = crate::languages::intern_type_text(&pf.language, &self.arena, rt);
+                        Some((rt.to_string(), Some(rid)))
                     } else if let Some((tb, fb)) = sig_rt.as_deref().and_then(|rt| {
                         crate::languages::default_registry()
                             .get(&pf.language)
@@ -1343,7 +1362,11 @@ impl Compilation {
                                     .chars()
                                     .all(|c| c.is_alphanumeric() || c == '_' || c == '.');
                             if !head_is_name {
-                                return self.arena.intern_type_str(branch);
+                                return crate::languages::intern_type_text(
+                                    &pf.language,
+                                    &self.arena,
+                                    branch,
+                                );
                             }
                             let resolved = resolve_type_name_in_scope(
                                 &head,
@@ -1352,7 +1375,7 @@ impl Compilation {
                                 profile,
                             );
                             let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-                            intern_head_and_args(&self.arena, &resolved, &args)
+                            intern_head_and_args(&pf.language, &self.arena, &resolved, &args)
                         };
                         let t_id = (tb.trim() != "never").then(|| intern_branch(&tb));
                         let f_id = (fb.trim() != "never").then(|| intern_branch(&fb));
@@ -1360,9 +1383,13 @@ impl Compilation {
                             (Some(t), Some(f)) => self.arena.intern(Type::Intersection(vec![t, f])),
                             (Some(t), None) => t,
                             (None, Some(f)) => f,
-                            (None, None) => self.arena.intern_type_str("never"),
+                            (None, None) => crate::languages::intern_type_text(
+                                &pf.language,
+                                &self.arena,
+                                "never",
+                            ),
                         };
-                        Some((self.arena.format_type(rid), Some(rid)))
+                        Some((String::new(), Some(rid)))
                     } else if let Some((head, args)) = sig_generic {
                         let resolved = resolve_type_name_in_scope(
                             &head,
@@ -1370,7 +1397,7 @@ impl Compilation {
                             &self.by_qname,
                             profile,
                         );
-                        let rid = intern_head_and_args(&self.arena, &resolved, &args);
+                        let rid = intern_head_and_args(&pf.language, &self.arena, &resolved, &args);
                         Some((resolved, Some(rid)))
                     } else if let Some(&(last, _)) = type_refs.last().filter(|&&(last, _)| {
                         // The trailing TypeRef is the return type only when it
@@ -1410,7 +1437,11 @@ impl Compilation {
                             &self.by_qname,
                             profile,
                         );
-                        let rid = self.arena.intern_type_str(&resolved);
+                        let rid = crate::languages::intern_type_text(
+                            &pf.language,
+                            &self.arena,
+                            &resolved,
+                        );
                         Some((resolved, Some(rid)))
                     } else if let Some(rt) = &sig_rt {
                         let resolved = resolve_type_name_in_scope(
@@ -1419,7 +1450,11 @@ impl Compilation {
                             &self.by_qname,
                             profile,
                         );
-                        let rid = self.arena.intern_type_str(&resolved);
+                        let rid = crate::languages::intern_type_text(
+                            &pf.language,
+                            &self.arena,
+                            &resolved,
+                        );
                         Some((resolved, Some(rid)))
                     } else {
                         None
@@ -1505,10 +1540,14 @@ impl Compilation {
             let mut param_ids = Vec::with_capacity(gparams.len());
             let mut default_ids = Vec::with_capacity(gparams.len());
             for (n, b, d) in gparams {
-                let bound = b.as_deref().map(|s| self.arena.intern_type_str(s));
+                let bound = b
+                    .as_deref()
+                    .map(|s| crate::languages::intern_type_text(&pf.language, &self.arena, s));
                 let gp_id = self.arena.intern_type_parameter(n, 0, bound);
                 param_ids.push(gp_id);
-                default_ids.push(d.map(|s| self.arena.intern_type_str(&s)));
+                default_ids.push(
+                    d.map(|s| crate::languages::intern_type_text(&pf.language, &self.arena, &s)),
+                );
             }
             // Key on both simple name and qname so callers
             // using either form get the params.
@@ -1582,8 +1621,9 @@ impl Compilation {
     /// correctly, while two same-named functions with different returns leave the
     /// qname uninferred (one slot cannot hold two types).
     fn infer_bare_identifier_returns(&mut self, parsed: &[ParsedFile]) {
-        // (fn_qname, candidate_return_type, candidate_return_type_id)
-        let mut candidates: Vec<(String, String, Option<TypeId>)> = Vec::new();
+        // (fn_qname, candidate_return_type_id). These are already semantic
+        // values; preserve them rather than rendering and reparsing text.
+        let mut candidates: Vec<(String, TypeId)> = Vec::new();
 
         for pf in parsed {
             for (fn_idx, ident) in &pf.flow.flow_return_ident {
@@ -1610,35 +1650,37 @@ impl Compilation {
                 let Some(fid) = param_ti.field_type_id else {
                     continue;
                 };
-                let ty = self.arena.format_type(fid);
-                if ty.is_empty() || ty.eq_ignore_ascii_case("unknown") {
+                if matches!(self.arena.get(fid), Type::Unknown) {
                     continue;
                 }
                 // An unbound type variable of the function is not an inference.
-                let is_generic_param = self
-                    .type_info
-                    .get(&fn_sym.qualified_name)
-                    .map(|ti| {
-                        ti.generic_param_ids
-                            .iter()
-                            .any(|&id| self.arena.generic_param(id).name == ty)
-                    })
-                    .unwrap_or(false);
+                let is_generic_param = match self.arena.get(fid) {
+                    Type::Class(name) => {
+                        self.type_info
+                            .get(&fn_sym.qualified_name)
+                            .is_some_and(|ti| {
+                                ti.generic_param_ids
+                                    .iter()
+                                    .any(|&id| self.arena.generic_param(id).name == name)
+                            })
+                    }
+                    _ => false,
+                };
                 if is_generic_param {
                     continue;
                 }
-                candidates.push((fn_sym.qualified_name.clone(), ty, param_ti.field_type_id));
+                candidates.push((fn_sym.qualified_name.clone(), fid));
             }
         }
 
-        for (qname, ty, ty_id) in agree_inferred_returns(candidates) {
+        for (qname, ty_id) in agree_inferred_return_ids(candidates) {
             // Re-check the slot: a same-batch candidate ordering, or a slot a
             // concurrent function already filled, must not be overwritten.
             let ti = self.type_info.entry(qname).or_default();
             if ti.return_type_id.is_some() {
                 continue;
             }
-            ti.return_type_id = ty_id.or_else(|| Some(intern_head_and_args(&self.arena, &ty, &[])));
+            ti.return_type_id = Some(ty_id);
         }
     }
 
@@ -1696,20 +1738,16 @@ impl Compilation {
             };
             for sym in &pf.symbols {
                 // Cheap pre-filter: only a `typeof`-bearing return type can match.
-                let Some(rt) = self
-                    .type_info
-                    .get(&sym.qualified_name)
-                    .and_then(|ti| ti.return_type_id)
-                    .map(|id| self.arena.format_type(id))
-                    .filter(|result| {
-                        crate::languages::default_registry()
-                            .get(&pf.language)
-                            .signature_has_callable_return_extraction(result)
-                    })
+                let plugin = crate::languages::default_registry().get(&pf.language);
+                let Some(rt) = sym
+                    .signature
+                    .as_deref()
+                    .and_then(|signature| plugin.signature_return_type(signature))
+                    .filter(|result| plugin.signature_has_callable_return_extraction(result))
                 else {
                     continue;
                 };
-                let id = self.arena.intern_type_str(&rt);
+                let id = crate::languages::intern_type_text(&pf.language, &self.arena, &rt);
                 if let Some(resolved) = super::chain::resolve_return_type_extraction(
                     id,
                     self,
@@ -2916,6 +2954,28 @@ fn agree_inferred_returns(
         .collect()
 }
 
+/// Id-preserving counterpart of [`agree_inferred_returns`] for inference that
+/// starts with stored type metadata. A qname slot is safe to fill only when all
+/// owners agree on exactly the same semantic id.
+fn agree_inferred_return_ids(candidates: Vec<(String, TypeId)>) -> Vec<(String, TypeId)> {
+    let mut by_fn: HashMap<String, Option<TypeId>> = HashMap::new();
+    for (qname, ty_id) in candidates {
+        match by_fn.get(&qname) {
+            None => {
+                by_fn.insert(qname, Some(ty_id));
+            }
+            Some(Some(previous)) if *previous != ty_id => {
+                by_fn.insert(qname, None);
+            }
+            _ => {}
+        }
+    }
+    by_fn
+        .into_iter()
+        .filter_map(|(qname, agreed)| agreed.map(|ty_id| (qname, ty_id)))
+        .collect()
+}
+
 /// Serialize a string vec to a JSON array, or `None` (SQL NULL) when empty.
 pub(super) fn json_string_array(items: &[String]) -> Option<String> {
     if items.is_empty() {
@@ -2935,12 +2995,15 @@ fn parse_json_string_array(raw: Option<&str>) -> Vec<String> {
 /// canonical TypeId: a bare `Class(head)` when there are no args, else
 /// `Apply { Class(head), [args…] }`. The chain walker reads this id directly, so
 /// a ref-derived field/return type needs no per-hop string re-parse.
-fn intern_head_and_args(arena: &TypeArena, head: &str, args: &[String]) -> TypeId {
+fn intern_head_and_args(language: &str, arena: &TypeArena, head: &str, args: &[String]) -> TypeId {
     let base = arena.class(head);
     if args.is_empty() {
         base
     } else {
-        let arg_ids = args.iter().map(|a| arena.intern_type_str(a)).collect();
+        let arg_ids = args
+            .iter()
+            .map(|a| crate::languages::intern_type_text(language, arena, a))
+            .collect();
         arena.intern(Type::Apply {
             base,
             args: arg_ids,

@@ -71,6 +71,18 @@ impl LanguagePlugin for PhpPlugin {
         extract::extract(source)
     }
 
+    fn type_text_policy(&self) -> crate::languages::TypeTextPolicy {
+        crate::languages::TypeTextPolicy {
+            thin_arrow_function: true,
+            nullable_prefix: true,
+            nullable_suffix: true,
+            array_suffix: true,
+            union_intersection: true,
+            angle_application: true,
+            ..crate::languages::TypeTextPolicy::OPAQUE
+        }
+    }
+
     fn signature_return_type(&self, signature: &str) -> Option<String> {
         crate::languages::prefix_return_type(signature)
     }

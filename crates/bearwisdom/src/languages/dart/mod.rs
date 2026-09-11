@@ -123,6 +123,15 @@ impl LanguagePlugin for DartPlugin {
         crate::languages::angle_type_head(text)
     }
 
+    fn type_text_policy(&self) -> crate::languages::TypeTextPolicy {
+        crate::languages::TypeTextPolicy {
+            dart_function: true,
+            nullable_suffix: true,
+            angle_application: true,
+            ..crate::languages::TypeTextPolicy::OPAQUE
+        }
+    }
+
     fn source_module_path_policy(
         &self,
         _specifier: &str,

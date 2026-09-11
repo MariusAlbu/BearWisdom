@@ -47,14 +47,18 @@ fn overloads_differ_by_param_types() {
     let a = sym(
         "M.foo",
         SymbolKind::Method,
-        vec![arena.intern_type_str("int")],
+        vec![crate::languages::type_text::intern_test_type_text(
+            &arena, "int",
+        )],
         0,
         None,
     );
     let b = sym(
         "M.foo",
         SymbolKind::Method,
-        vec![arena.intern_type_str("string")],
+        vec![crate::languages::type_text::intern_test_type_text(
+            &arena, "string",
+        )],
         0,
         None,
     );
@@ -73,14 +77,18 @@ fn body_change_keeps_key_stable() {
     let a = sym(
         "M.foo",
         SymbolKind::Method,
-        vec![arena.intern_type_str("int")],
+        vec![crate::languages::type_text::intern_test_type_text(
+            &arena, "int",
+        )],
         0,
         Some("v1"),
     );
     let b = sym(
         "M.foo",
         SymbolKind::Method,
-        vec![arena.intern_type_str("int")],
+        vec![crate::languages::type_text::intern_test_type_text(
+            &arena, "int",
+        )],
         0,
         Some("v2"),
     );
@@ -123,14 +131,20 @@ fn param_type_whitespace_is_normalized() {
     let spaced = sym(
         "M.g",
         SymbolKind::Method,
-        vec![arena.intern_type_str("Map< string , int >")],
+        vec![crate::languages::type_text::intern_test_type_text(
+            &arena,
+            "Map< string , int >",
+        )],
         0,
         None,
     );
     let tight = sym(
         "M.g",
         SymbolKind::Method,
-        vec![arena.intern_type_str("Map<string,int>")],
+        vec![crate::languages::type_text::intern_test_type_text(
+            &arena,
+            "Map<string,int>",
+        )],
         0,
         None,
     );

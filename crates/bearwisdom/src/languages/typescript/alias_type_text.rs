@@ -60,7 +60,7 @@ pub(super) fn type_annotation_head(ta: &Node, src: &[u8]) -> String {
 /// `AndNot<TNonPromise>` stays applied instead of reducing to `AndNot`. Used
 /// wherever a captured position feeds substitution — union/intersection
 /// branches, application arguments, conditional parts, array elements.
-/// `intern_alias_target` interns this through `intern_type_str`, which
+/// `intern_alias_target` interns this through the TypeScript adapter, which
 /// decomposes it into `Apply { base, args }` — every consumer keys on the
 /// head, so the head readings are unchanged while the arguments become
 /// available to substitution. Falls back to the head name for every other

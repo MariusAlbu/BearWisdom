@@ -114,6 +114,18 @@ impl LanguagePlugin for RubyPlugin {
         ))
     }
 
+    fn type_text_policy(&self) -> crate::languages::TypeTextPolicy {
+        crate::languages::TypeTextPolicy {
+            thin_arrow_function: true,
+            bare_arrow_parameter: true,
+            nullable_suffix: true,
+            union_intersection: true,
+            bracket_tuple: true,
+            bracket_application: true,
+            ..crate::languages::TypeTextPolicy::OPAQUE
+        }
+    }
+
     fn signature_return_type(&self, signature: &str) -> Option<String> {
         crate::languages::colon_return_type(signature)
     }
