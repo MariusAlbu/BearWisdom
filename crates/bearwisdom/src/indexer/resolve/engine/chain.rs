@@ -1879,6 +1879,10 @@ pub(super) fn import_scoped_external_root(
                     &root,
                 )
                 .unwrap_or(false)
+                    || (profile.source_module_path_policy(spec).bare_module_matches_file)(
+                        &s.file_path,
+                        spec,
+                    )
             }
         })
         .collect();

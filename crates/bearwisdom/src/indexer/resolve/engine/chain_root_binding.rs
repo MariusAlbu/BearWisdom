@@ -197,7 +197,19 @@ pub(super) fn resolve_root_impl(
     // fall back to the first same-named type. The resolved `Symbol` IS the
     // receiver's declaration, so bind its id directly rather than round-tripping
     // its qname back through `by_qualified_name`.
-    let candidates = lookup.types_by_name(&seg.name);
+    // A renaming import binds the local spelling to the module's original
+    // name: the probe asks for that name, and a rename no declaration answers
+    // is a miss, never a same-named stranger under the local spelling.
+    let renamed = file_ctx
+        .imports
+        .iter()
+        .filter(|import| !import.is_wildcard)
+        .find(|import| {
+            import.alias.as_deref() == Some(seg.name.as_str())
+                && import.imported_name != seg.name
+        });
+    let probe = renamed.map_or(seg.name.as_str(), |import| import.imported_name.as_str());
+    let candidates = lookup.types_by_name(probe);
     let cand_refs: Vec<&Symbol> = candidates.iter().collect();
     // Prefer the import-scoped declaration — the package/module the use site
     // imports `name` from — over a first-winner same-name pick (a `Page` from the
