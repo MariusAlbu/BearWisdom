@@ -627,7 +627,7 @@ fn unbraced_namespace_qualifies_top_level_class() {
         .iter()
         .find(|s| s.name == "Str")
         .expect("Str class symbol");
-    assert_eq!(cls.qualified_name, "Illuminate\\Support.Str");
+    assert_eq!(cls.qualified_name, "Illuminate.Support.Str");
 }
 
 #[test]
@@ -645,14 +645,14 @@ class User {
         .iter()
         .find(|s| s.name == "getName")
         .expect("getName method symbol");
-    assert_eq!(method.qualified_name, "App\\Models.User.getName");
+    assert_eq!(method.qualified_name, "App.Models.User.getName");
 
     let konst = r
         .symbols
         .iter()
         .find(|s| s.name == "STATUS_ACTIVE")
         .expect("STATUS_ACTIVE const symbol");
-    assert_eq!(konst.qualified_name, "App\\Models.User.STATUS_ACTIVE");
+    assert_eq!(konst.qualified_name, "App.Models.User.STATUS_ACTIVE");
 }
 
 #[test]
@@ -664,7 +664,7 @@ fn unbraced_namespace_qualifies_top_level_function() {
         .iter()
         .find(|s| s.name == "enum_value")
         .expect("enum_value function symbol");
-    assert_eq!(func.qualified_name, "App\\Support.enum_value");
+    assert_eq!(func.qualified_name, "App.Support.enum_value");
 }
 
 #[test]
@@ -688,7 +688,7 @@ fn braced_namespace_still_scopes_its_own_body_only() {
         .iter()
         .find(|s| s.name == "User")
         .expect("User class symbol");
-    assert_eq!(user.qualified_name, "App\\Models.User");
+    assert_eq!(user.qualified_name, "App.Models.User");
 
     let outside = r
         .symbols
@@ -714,7 +714,7 @@ class User implements FactoryContract {}
         .iter()
         .find(|s| s.name == "User")
         .expect("User class symbol");
-    assert_eq!(cls.qualified_name, "App\\Models.User");
+    assert_eq!(cls.qualified_name, "App.Models.User");
 
     let imp = r
         .refs
@@ -724,5 +724,46 @@ class User implements FactoryContract {}
     assert_eq!(
         imp.target_name, "Factory",
         "the alias rewrite from the imports module must still fire alongside namespace hoisting"
+    );
+}
+
+#[test]
+fn namespace_qualified_names_are_canonical_dotted_paths() {
+    let source = r#"<?php
+namespace Illuminate\Support;
+class Str {}
+"#;
+    let extracted = extract::extract(source);
+    let ns = extracted
+        .symbols
+        .iter()
+        .find(|s| s.kind == SymbolKind::Namespace && !s.name.is_empty())
+        .unwrap();
+    assert_eq!(ns.name, "Illuminate\\Support");
+    assert_eq!(ns.qualified_name, "Illuminate.Support");
+    let cls = extracted.symbols.iter().find(|s| s.name == "Str").unwrap();
+    assert_eq!(cls.qualified_name, "Illuminate.Support.Str");
+    assert_eq!(cls.scope_path.as_deref(), Some("Illuminate.Support"));
+}
+
+#[test]
+fn sequential_bodyless_namespaces_do_not_chain_prefixes() {
+    let source = r#"<?php
+namespace Http\Client;
+class Curl {}
+namespace Http\Encoding;
+class Stream {}
+"#;
+    let extracted = extract::extract(source);
+    let qnames: Vec<&str> = extracted
+        .symbols
+        .iter()
+        .filter(|s| !s.name.is_empty())
+        .filter(|s| s.kind == SymbolKind::Namespace || s.kind == SymbolKind::Class)
+        .map(|s| s.qualified_name.as_str())
+        .collect();
+    assert_eq!(
+        qnames,
+        ["Http.Client", "Http.Client.Curl", "Http.Encoding", "Http.Encoding.Stream"]
     );
 }

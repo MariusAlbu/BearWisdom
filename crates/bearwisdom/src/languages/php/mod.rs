@@ -7,6 +7,7 @@ pub mod embedded;
 pub mod extract;
 pub(crate) mod flow;
 mod helpers;
+pub(crate) mod module_paths;
 mod imports;
 pub(crate) mod keywords;
 mod symbols;

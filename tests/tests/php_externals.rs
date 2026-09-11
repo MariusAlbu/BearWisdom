@@ -167,3 +167,111 @@ fn external_php_vendor_is_indexed_and_resolved() {
         "expected at least one internal→external edge (Controller → Auth), got {edges_to_external}"
     );
 }
+
+/// A project test class extending an external PHPUnit `TestCase` reached
+/// through a `use` import: the inherits edge and inherited member calls must
+/// land on the vendor symbols.
+fn build_phpunit_project() -> TestProject {
+    let project = TestProject {
+        dir: tempfile::TempDir::new().unwrap(),
+    };
+    project.add_file(
+        "composer.json",
+        r#"{"require-dev":{"phpunit/phpunit":"^11.0"}}"#,
+    );
+    project.add_file(
+        "vendor/phpunit/phpunit/composer.json",
+        r#"{"name":"phpunit/phpunit","version":"11.0.0"}"#,
+    );
+    project.add_file(
+        "vendor/phpunit/phpunit/src/Framework/Assert.php",
+        r#"<?php
+
+namespace PHPUnit\Framework;
+
+abstract class Assert
+{
+    public static function assertSame($expected, $actual): void
+    {
+    }
+}
+"#,
+    );
+    project.add_file(
+        "vendor/phpunit/phpunit/src/Framework/TestCase.php",
+        r#"<?php
+
+namespace PHPUnit\Framework;
+
+abstract class TestCase extends Assert
+{
+}
+"#,
+    );
+    project.add_file(
+        "tests/FooTest.php",
+        r#"<?php
+
+namespace App\Tests;
+
+use PHPUnit\Framework\TestCase;
+
+class FooTest extends TestCase
+{
+    public function testIt(): void
+    {
+        $this->assertSame(1, 1);
+    }
+}
+"#,
+    );
+    project
+}
+
+#[test]
+fn external_parent_class_members_resolve_through_use_import() {
+    let project = build_phpunit_project();
+    let mut db = TestProject::in_memory_db();
+    full_index(&mut db, project.path(), None, None, None).unwrap();
+
+    let inherits_target: Option<String> = db
+        .query_row(
+            "SELECT t.qualified_name FROM edges e
+             JOIN symbols s ON s.id = e.source_id
+             JOIN symbols t ON t.id = e.target_id
+             WHERE e.kind = 'inherits' AND s.name = 'FooTest'",
+            [],
+            |r| r.get(0),
+        )
+        .ok();
+    assert_eq!(
+        inherits_target.as_deref(),
+        Some("PHPUnit.Framework.TestCase"),
+        "FooTest extends TestCase must bind the imported external class"
+    );
+
+    let call_target: Option<String> = db
+        .query_row(
+            "SELECT t.qualified_name FROM edges e
+             JOIN symbols t ON t.id = e.target_id
+             WHERE e.kind = 'calls' AND t.name = 'assertSame'",
+            [],
+            |r| r.get(0),
+        )
+        .ok();
+    assert_eq!(
+        call_target.as_deref(),
+        Some("PHPUnit.Framework.Assert.assertSame"),
+        "$this->assertSame must climb TestCase -> Assert on the external side"
+    );
+
+    let unresolved: i64 = db
+        .query_row(
+            "SELECT COUNT(*) FROM unresolved_refs
+             WHERE target_name IN ('TestCase', 'assertSame')",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(unresolved, 0, "no residue for the imported parent or its member");
+}

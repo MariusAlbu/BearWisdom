@@ -5,7 +5,7 @@
 use super::calls::{extract_calls_from_body, extract_trait_use};
 use super::helpers::{
     adjacent_phpdoc, build_class_signature, build_method_signature, extract_visibility, node_text,
-    qualify, qualify_ns, scope_from_prefix,
+    qualify, scope_from_prefix,
 };
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::Node;
@@ -23,9 +23,12 @@ pub(super) fn extract_namespace(
 ) -> Option<(String, String)> {
     let name_node = node.child_by_field_name("name")?;
     let name = node_text(&name_node, src);
-    let qualified_name = qualify_ns(&name, qualified_prefix);
+    // PHP namespaces never nest: a braced block sits at file level and a
+    // body-less `namespace X;` replaces the file's current namespace rather
+    // than extending it, so the qname is the canonical namespace path alone.
+    let qualified_name = super::profile::PHP_PROFILE.index_qname_from_source(&name);
     let new_prefix = qualified_name.clone();
-    let ns_prefix = name.replace('\\', ".");
+    let ns_prefix = qualified_name.clone();
 
     let idx = symbols.len();
     symbols.push(ExtractedSymbol {

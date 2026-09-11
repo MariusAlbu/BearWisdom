@@ -68,8 +68,7 @@ pub(crate) fn php_module_path_match(
         required_file_prefix: None,
         compound_extensions: &[],
         authority: crate::type_checker::profile::language_profile::ModuleMatchAuthority::Heuristic,
-        source_module_path_policy:
-            crate::type_checker::profile::language_profile::SourceModulePathPolicy::unsupported(),
+        source_module_path_policy: super::module_paths::PHP_SOURCE_MODULE_PATH_POLICY,
     }
 }
 
@@ -103,7 +102,7 @@ pub(crate) fn php_qualified_import_type_candidates(
     vec![source_qname, containment_qname]
 }
 
-fn php_namespace_path_is_well_formed(path: &str) -> bool {
+pub(super) fn php_namespace_path_is_well_formed(path: &str) -> bool {
     !path.is_empty() && path.split('\\').all(|segment| !segment.is_empty())
 }
 
