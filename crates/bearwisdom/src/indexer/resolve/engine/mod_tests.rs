@@ -281,3 +281,37 @@ fn same_file_rule_binds_non_generic_inherits_target_unchanged() {
         other => panic!("non-generic target must bind unchanged, got {other:?}"),
     }
 }
+
+/// `use Vendor\Carbon as BaseCarbon; class Carbon extends BaseCarbon` in
+/// namespace `App`: after the alias rewrite the target spells the child's own
+/// name, and a scope rung would bind the class to itself. The ladder must skip
+/// that binding and fall through.
+#[test]
+fn ladder_never_binds_an_inheritance_target_to_the_declaring_symbol() {
+    use crate::indexer::resolve::engine::Binder;
+    let lookup = FileLookup::new().with(sym(10, "Carbon", "App.Carbon", "class", "src/Carbon.php"));
+    let r = type_ref("Carbon", EdgeKind::Inherits);
+    let s = source_symbol("Carbon");
+    let fc = FileContext {
+        file_path: "src/Carbon.php".to_string(),
+        language: "php".to_string(),
+        imports: vec![],
+        file_namespace: None,
+    };
+    let mut rc = ref_ctx(&r, &s, vec![]);
+    rc.source_symbol_id = Some(10);
+    let kind = accept_any;
+    let ctx = BinderContext {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind: &kind,
+        profile: &DEFAULT_PROFILE,
+    };
+    assert!(matches!(
+        SameFileRule.apply(&ctx),
+        LookupResult::Resolved(ref res) if res.target_symbol_id == 10
+    ));
+    let binder = Binder::new(vec![Box::new(SameFileRule)]);
+    assert!(matches!(binder.bind(&ctx), crate::indexer::resolve::engine::BindOutcome::Unresolved));
+}

@@ -253,6 +253,16 @@ impl Binder {
     pub fn bind(&self, ctx: &BinderContext) -> BindOutcome {
         for rule in &self.rules {
             match rule.apply(ctx) {
+                // A declaration cannot be its own supertype: a rung that binds
+                // an inheritance target to the declaring symbol (a class
+                // aliasing its namesake parent) has matched the wrong name
+                // scope, and the ladder continues to the module-evidence rungs.
+                LookupResult::Resolved(res)
+                    if matches!(ctx.r().kind, EdgeKind::Inherits | EdgeKind::Implements)
+                        && ctx.ref_ctx.source_symbol_id == Some(res.target_symbol_id) =>
+                {
+                    continue;
+                }
                 LookupResult::Resolved(res) => return BindOutcome::Resolved(res, rule.name()),
                 LookupResult::Pass => continue,
                 LookupResult::Stop => return BindOutcome::Unresolved,
