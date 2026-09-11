@@ -89,6 +89,14 @@ fn is_type_like(kind: &str) -> bool {
         || matches!(kind, "trait" | "type" | "object" | "record")
 }
 
+impl crate::indexer::resolve::engine::contract::IncludeLookup for Lookup {
+    fn include_reaches(&self, source_file: &str, candidate_file: &str) -> bool {
+        self.include_reaches
+            .get(source_file)
+            .is_some_and(|paths| paths.contains(candidate_file))
+    }
+}
+
 impl SymbolLookup for Lookup {
     fn source_language(&self) -> Option<&str> {
         Some("typescript")
@@ -149,11 +157,6 @@ impl SymbolLookup for Lookup {
     }
     fn in_file(&self, _: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(&self.empty)
-    }
-    fn include_reaches(&self, source_file: &str, candidate_file: &str) -> bool {
-        self.include_reaches
-            .get(source_file)
-            .is_some_and(|paths| paths.contains(candidate_file))
     }
     fn field_type_name(&self, qname: &str) -> Option<&str> {
         self.field_types.get(qname).map(|s| s.as_str())

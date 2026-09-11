@@ -292,6 +292,8 @@ impl ReexportLookup {
 
 impl crate::indexer::resolve::engine::contract::FlowCacheLookup for ReexportLookup {}
 
+impl crate::indexer::resolve::engine::contract::IncludeLookup for ReexportLookup {}
+
 impl SymbolLookup for ReexportLookup {
     fn by_name(&self, name: &str) -> SymbolSet<'_> {
         self.inner.by_name(name)

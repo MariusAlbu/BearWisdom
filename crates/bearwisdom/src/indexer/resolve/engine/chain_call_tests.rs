@@ -78,6 +78,8 @@ impl FlowCacheLookup for CallbackSeedLookup {
     }
 }
 
+impl crate::indexer::resolve::engine::contract::IncludeLookup for CallbackSeedLookup {}
+
 impl SymbolLookup for CallbackSeedLookup {
     fn by_name(&self, _: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(&self.empty)

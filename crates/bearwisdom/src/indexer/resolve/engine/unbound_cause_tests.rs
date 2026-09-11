@@ -34,6 +34,8 @@ fn sym(id: i64, name: &str, qname: &str) -> ContractSymbol {
 
 impl crate::indexer::resolve::engine::contract::FlowCacheLookup for FakeLookup {}
 
+impl crate::indexer::resolve::engine::contract::IncludeLookup for FakeLookup {}
+
 impl SymbolLookup for FakeLookup {
     fn by_name(&self, name: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(self.by_name.get(name).unwrap_or(&self.empty))

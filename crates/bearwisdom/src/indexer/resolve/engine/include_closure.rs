@@ -19,6 +19,7 @@ pub(super) struct IncludeClosure {
     direct_specs: FxHashMap<String, Vec<String>>,
     parsed_sources: FxHashSet<String>,
     reachable: FxHashMap<String, FxHashSet<String>>,
+    placed_specs: FxHashMap<String, FxHashSet<String>>,
 }
 
 impl IncludeClosure {
@@ -105,18 +106,31 @@ impl IncludeClosure {
             .is_some_and(|paths| paths.contains(candidate_file))
     }
 
+    /// Whether `source_file`'s include spelling `spec` was placed on exactly
+    /// one indexed file by the owning plugin.
+    pub(super) fn spec_resolves(&self, source_file: &str, spec: &str) -> bool {
+        self.placed_specs
+            .get(source_file)
+            .is_some_and(|specs| specs.contains(spec))
+    }
+
     fn rebuild(&mut self) {
+        let mut placed: FxHashMap<String, FxHashSet<String>> = FxHashMap::default();
         let adjacency: FxHashMap<String, Vec<String>> = self
             .direct_specs
             .iter()
             .map(|(source, specs)| {
-                let targets = specs
-                    .iter()
-                    .filter_map(|spec| self.resolve_unique(source, spec))
-                    .collect();
+                let mut targets = Vec::new();
+                for spec in specs {
+                    if let Some(target) = self.resolve_unique(source, spec) {
+                        targets.push(target);
+                        placed.entry(source.clone()).or_default().insert(spec.clone());
+                    }
+                }
                 (source.clone(), targets)
             })
             .collect();
+        self.placed_specs = placed;
 
         self.reachable.clear();
         for source in self.direct_specs.keys() {

@@ -242,6 +242,8 @@ impl FlowCacheLookup for Lookup<'_> {
             .copied()
     }
 }
+impl crate::indexer::resolve::engine::contract::IncludeLookup for Lookup<'_> {}
+
 impl SymbolLookup for Lookup<'_> {
     fn by_name(&self, _: &str) -> SymbolSet<'_> {
         SymbolSet::empty()

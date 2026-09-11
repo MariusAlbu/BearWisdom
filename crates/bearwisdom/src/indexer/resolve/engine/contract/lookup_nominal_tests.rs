@@ -27,6 +27,8 @@ impl FlowCacheLookup for Scoped {
         self.denied != Some(id)
     }
 }
+impl crate::indexer::resolve::engine::contract::IncludeLookup for Scoped {}
+
 impl SymbolLookup for Scoped {
     fn by_name(&self, _: &str) -> SymbolSet<'_> {
         panic!("name recovery is not evidence")

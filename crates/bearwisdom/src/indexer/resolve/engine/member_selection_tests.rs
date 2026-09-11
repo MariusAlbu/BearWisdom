@@ -10,6 +10,8 @@ impl super::super::contract::FlowCacheLookup for Restricted {
         id != self.denied
     }
 }
+impl crate::indexer::resolve::engine::contract::IncludeLookup for Restricted {}
+
 impl SymbolLookup for Restricted {
     fn by_name(&self, name: &str) -> super::super::contract::SymbolSet<'_> {
         self.inner.by_name(name)

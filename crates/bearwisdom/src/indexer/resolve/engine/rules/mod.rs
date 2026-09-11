@@ -25,6 +25,7 @@ pub mod file_scoped_import;
 pub mod generic_param;
 pub mod head_alias;
 pub mod implicit_prelude;
+pub mod include_file;
 pub mod import_path;
 pub mod imported_namespace;
 pub mod local_flow_head;
@@ -68,6 +69,7 @@ use file_scoped_import::FileScopedImportRule;
 use generic_param::GenericParamRule;
 use head_alias::HeadAliasRule;
 use implicit_prelude::ImplicitPreludeRule;
+use include_file::IncludeFileRule;
 use import_path::ImportPathRule;
 use imported_namespace::ImportedNamespaceRule;
 use local_flow_head::LocalFlowHeadRule;
@@ -105,6 +107,7 @@ pub fn default_rules() -> Vec<Box<dyn LookupRule>> {
     vec![
         Box::new(ModuleSkipRule),
         Box::new(BuiltinSkipRule),
+        Box::new(IncludeFileRule),
         Box::new(GenericParamShadowRule),
         Box::new(ImportPathRule),
         Box::new(WorkspacePackageRule),

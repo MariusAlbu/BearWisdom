@@ -11,6 +11,7 @@ use crate::type_checker::core::types::{TypeArena, TypeId};
 use crate::types::AliasTargetIds;
 
 use super::flow_cache::FlowCacheLookup;
+use super::include_lookup::IncludeLookup;
 use super::{Symbol, SymbolSet};
 
 // ---------------------------------------------------------------------------
@@ -20,7 +21,7 @@ use super::{Symbol, SymbolSet};
 /// Read-only access to the global symbol index. The per-file flow-typing
 /// cache surface lives on the `FlowCacheLookup` supertrait (`flow_cache.rs`);
 /// every `SymbolLookup` carries it, defaults are no-ops.
-pub trait SymbolLookup: FlowCacheLookup {
+pub trait SymbolLookup: FlowCacheLookup + IncludeLookup {
     /// Source language for the active file overlay. Global stores and test
     /// doubles have no active source grammar and therefore decline textual
     /// parsing by default.
@@ -318,13 +319,6 @@ pub trait SymbolLookup: FlowCacheLookup {
     /// to tell user source from vendored symbols with matching names.
     fn is_external_file(&self, path: &str) -> bool {
         path.starts_with("ext:")
-    }
-
-    /// Whether a C/C++ translation unit reaches `candidate_file` through its
-    /// transitive, uniquely-resolved `#include` graph. The default is closed so
-    /// other languages and synthetic stores never gain external visibility.
-    fn include_reaches(&self, _source_file: &str, _candidate_file: &str) -> bool {
-        false
     }
 
     /// The symbols a package contributes to *ambient scope* under `name` —

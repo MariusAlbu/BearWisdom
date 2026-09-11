@@ -15,6 +15,8 @@ struct Lookup {
     args: FxHashMap<(i64, i64), Vec<TypeId>>,
 }
 impl FlowCacheLookup for Lookup {}
+impl crate::indexer::resolve::engine::contract::IncludeLookup for Lookup {}
+
 impl SymbolLookup for Lookup {
     fn field_type_name(&self, _: &str) -> Option<&str> {
         panic!("no field text")

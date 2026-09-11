@@ -102,6 +102,8 @@ impl WsLookup {
 
 impl crate::indexer::resolve::engine::contract::FlowCacheLookup for WsLookup {}
 
+impl crate::indexer::resolve::engine::contract::IncludeLookup for WsLookup {}
+
 impl SymbolLookup for WsLookup {
     fn by_name(&self, name: &str) -> SymbolSet<'_> {
         let refs: Vec<&Symbol> = self

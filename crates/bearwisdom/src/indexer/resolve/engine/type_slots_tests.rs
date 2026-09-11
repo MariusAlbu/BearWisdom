@@ -31,6 +31,8 @@ fn sym(id: i64, file: &str) -> ContractSymbol {
 
 impl crate::indexer::resolve::engine::contract::FlowCacheLookup for SlotLookup {}
 
+impl crate::indexer::resolve::engine::contract::IncludeLookup for SlotLookup {}
+
 impl SymbolLookup for SlotLookup {
     fn by_name(&self, _: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(&self.empty)

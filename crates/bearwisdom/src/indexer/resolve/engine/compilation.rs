@@ -41,6 +41,8 @@ mod lexical_visibility;
 mod scoped_merges;
 #[path = "compilation_wrappers.rs"]
 mod wrappers;
+#[path = "compilation_includes.rs"]
+mod includes;
 
 // ---------------------------------------------------------------------------
 // PendingModuleValue — a deferred module-tagged value TypeRef
@@ -2497,10 +2499,6 @@ impl SymbolLookup for Compilation {
 
     fn is_declared_dependency(&self, package_id: Option<i64>, language: &str, spec: &str) -> bool {
         self.declared_deps.contains(package_id, language, spec)
-    }
-
-    fn include_reaches(&self, source_file: &str, candidate_file: &str) -> bool {
-        self.include_closure.reaches(source_file, candidate_file)
     }
 
     fn ambient_symbols(&self, name: &str) -> SymbolSet<'_> {

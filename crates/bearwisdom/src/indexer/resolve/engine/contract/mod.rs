@@ -11,6 +11,7 @@
 pub mod chain_walker;
 pub mod flow_cache;
 pub mod generic_return;
+pub mod include_lookup;
 pub mod lookup;
 mod lookup_display;
 mod lookup_nominal;
@@ -20,6 +21,7 @@ pub mod types;
 pub mod util;
 
 pub use flow_cache::FlowCacheLookup;
+pub use include_lookup::IncludeLookup;
 pub use lookup::SymbolLookup;
 pub use symbol_set::SymbolSet;
 pub use types::{

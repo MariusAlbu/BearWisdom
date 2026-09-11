@@ -38,6 +38,8 @@ impl crate::indexer::resolve::engine::contract::FlowCacheLookup for SeedLookup {
     }
 }
 
+impl crate::indexer::resolve::engine::contract::IncludeLookup for SeedLookup {}
+
 impl SymbolLookup for SeedLookup {
     fn by_name(&self, _: &str) -> SymbolSet<'_> {
         SymbolSet::Borrowed(&self.empty)

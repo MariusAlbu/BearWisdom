@@ -433,10 +433,6 @@ impl<'a> SymbolLookup for FileLookup<'a> {
         self.tree.is_declared_dependency(package_id, language, spec)
     }
 
-    fn include_reaches(&self, source_file: &str, candidate_file: &str) -> bool {
-        self.tree.include_reaches(source_file, candidate_file)
-    }
-
     fn parent_class_qname(&self, class_qname: &str) -> Option<&str> {
         self.tree.parent_class_qname(class_qname)
     }
@@ -573,5 +569,7 @@ impl<'a> SymbolLookup for FileLookup<'a> {
     }
 }
 
+#[path = "file_lookup_includes.rs"]
+mod includes;
 #[path = "file_lookup_flow.rs"]
 mod flow_cache;
