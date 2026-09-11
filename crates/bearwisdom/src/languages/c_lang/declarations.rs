@@ -703,6 +703,9 @@ pub(super) fn push_include(
     for child in node.children(&mut cursor) {
         match child.kind() {
             "string_literal" | "system_lib_string" => {
+                // The delimiters are the include's search order (`"x.h"` looks
+                // in the including directory first, `<x.h>` only on the include
+                // paths), so the module keeps the spelling as written.
                 let raw = node_text(child, src);
                 let path = raw.trim_matches('"').trim_matches('<').trim_matches('>');
                 let target_name = path.rsplit('/').next().unwrap_or(path).to_string();
@@ -715,7 +718,7 @@ pub(super) fn push_include(
                     kind: EdgeKind::Imports,
                     line: node.start_position().row as u32,
                     col: 0,
-                    module: Some(path.to_string()),
+                    module: Some(raw.trim().to_string()),
                     chain: None,
                     byte_offset: node.start_byte() as u32,
                     namespace_segments: Vec::new(),

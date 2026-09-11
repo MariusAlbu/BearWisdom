@@ -264,7 +264,7 @@ fn cov_preproc_include_emits_imports() {
         .collect();
     assert!(
         imports.iter().any(|r| {
-            r.target_name == "stdio.h" && r.module.as_deref() == Some("stdio.h") && r.is_include
+            r.target_name == "stdio.h" && r.module.as_deref() == Some("<stdio.h>") && r.is_include
         }),
         "expected Imports ref for stdio.h; got: {imports:?}"
     );

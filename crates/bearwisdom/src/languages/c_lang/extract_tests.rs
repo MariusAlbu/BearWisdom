@@ -77,10 +77,10 @@ int main() { return 0; }
     assert!(imports.iter().all(|r| r.is_include));
     assert!(imports
         .iter()
-        .any(|r| r.module.as_deref() == Some("stdio.h")));
+        .any(|r| r.module.as_deref() == Some("<stdio.h>")));
     assert!(imports
         .iter()
-        .any(|r| r.module.as_deref() == Some("myheader.h")));
+        .any(|r| r.module.as_deref() == Some("\"myheader.h\"")));
 }
 
 #[test]
