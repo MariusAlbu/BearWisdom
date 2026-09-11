@@ -21,6 +21,7 @@ use rustc_hash::FxHashMap;
 use crate::ecosystem::symbol_index::SymbolLocationIndex;
 use crate::indexer::resolve::engine::compilation::Compilation;
 use crate::indexer::resolve::engine::contract::SymbolLookup;
+use crate::indexer::resolve::engine::support::index_qname_leaf;
 use crate::languages::LanguagePlugin;
 use crate::type_checker::profile::language_profile::LanguageProfile;
 
@@ -134,7 +135,8 @@ pub(super) fn collect_chain_root_type_files(
             continue;
         };
         let (head, _args) = crate::languages::signature_type_application(lang, declared);
-        if type_leaf(&head, profile) == head {
+        let indexed_head = profile.index_qname_from_source(&head);
+        if index_qname_leaf(&indexed_head) == indexed_head {
             continue;
         }
         demand_type_head(&head, profile, tree, loc, seen, out);
@@ -142,9 +144,9 @@ pub(super) fn collect_chain_root_type_files(
 }
 
 /// Demand-pull the file(s) defining `head` when the tree does not already
-/// hold it. The lookup key is the bare declared name, split with the active
-/// profile's qualified-name separator, while the location index keys locations
-/// by leaf name. The already-indexed guard compares the identity the chain walker
+/// hold it. The source head crosses the profile boundary once into a canonical
+/// index qname, while the location index keys locations by its canonical leaf.
+/// The already-indexed guard compares the identity the chain walker
 /// will look the type up by: for a QUALIFIED head the bare-leaf check is
 /// wrong in both directions — a same-named type from an unrelated module
 /// satisfies `by_name` and suppresses the pull of the one the signature
@@ -164,14 +166,15 @@ fn demand_type_head(
     seen: &mut HashSet<PathBuf>,
     out: &mut Vec<PathBuf>,
 ) {
-    let leaf = type_leaf(head, profile);
+    let indexed_head = profile.index_qname_from_source(head);
+    let leaf = index_qname_leaf(&indexed_head);
     if leaf.is_empty() {
         return;
     }
-    let already_indexed = if leaf == head {
+    let already_indexed = if leaf == indexed_head {
         !tree.by_name(leaf).is_empty()
     } else {
-        tree.by_qualified_name(head).is_some()
+        tree.by_qualified_name(&indexed_head).is_some()
     };
     if already_indexed {
         return;
@@ -179,12 +182,12 @@ fn demand_type_head(
     let offered = loc.find_by_name(leaf);
     // A qualified head is addressable only when at least one entry carries the
     // qualified name; that entry set then replaces the leaf offering.
-    let addressable = leaf != head
+    let addressable = leaf != indexed_head
         && offered
             .iter()
-            .any(|(_module, file)| path_addresses_type(file, head));
+            .any(|(_module, file)| path_addresses_type(file, &indexed_head));
     for (_module, file) in offered {
-        if addressable && !path_addresses_type(file, head) {
+        if addressable && !path_addresses_type(file, &indexed_head) {
             continue;
         }
         let file = file.to_path_buf();
@@ -192,18 +195,6 @@ fn demand_type_head(
             out.push(file.clone());
         }
     }
-}
-
-/// The bare declared name of a type head under the active profile's
-/// qualified-name separator.
-fn type_leaf<'a>(head: &'a str, profile: &LanguageProfile) -> &'a str {
-    type_leaf_for_separator(head, profile.qname_separator)
-}
-
-fn type_leaf_for_separator<'a>(head: &'a str, separator: &str) -> &'a str {
-    (!separator.is_empty())
-        .then(|| head.rsplit(separator).next().unwrap_or(head))
-        .unwrap_or(head)
 }
 
 /// True when an offering entry's path ADDRESSES `qualified` — a metadata

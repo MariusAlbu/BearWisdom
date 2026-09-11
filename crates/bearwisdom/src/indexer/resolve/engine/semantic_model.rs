@@ -256,8 +256,8 @@ impl SemanticModel {
 }
 
 /// `true` when the ref's extractor-set `module` is exactly the chain's own
-/// qualifier path — every segment but the target, joined by the profile's
-/// separator (or the universal `.`). That shape means the target is a DIRECT
+/// qualifier path — every segment but the target, normalized through the active
+/// profile into the canonical index qname. That shape means the target is a DIRECT
 /// member of the module (`serde_json::from_value` → module `serde_json`,
 /// chain `[serde_json, from_value]`), so the module-evidence rungs can bind
 /// it. A module tag naming where the chain's root was imported from joins to
@@ -270,16 +270,12 @@ fn module_is_chain_qualifier(
     let Some(module) = r.module.as_deref() else {
         return false;
     };
-    let quals = &chain.segments[..chain.segments.len() - 1];
-    let mut for_sep = |sep: &str| {
-        let joined = quals
-            .iter()
-            .map(|s| s.name.as_str())
-            .collect::<Vec<_>>()
-            .join(sep);
-        joined == module
-    };
-    for_sep(profile.qname_separator) || for_sep(".")
+    let chain_qname = chain.segments[..chain.segments.len() - 1]
+        .iter()
+        .fold(String::new(), |qname, segment| {
+            profile.index_qname_join(&qname, &segment.name)
+        });
+    chain_qname == profile.index_qname_from_source(module)
 }
 
 /// Source-addressed module paths a namespace root may use after its value walk
@@ -380,7 +376,7 @@ fn namespace_matches_import(
         .iter()
         .any(|symbol| symbol.id == candidate.id)
         || lookup
-            .workspace_package_id(module)
+            .workspace_package_id(profile.workspace_specifier_path(module).as_ref())
             .is_some_and(|package_id| candidate.package_id == Some(package_id))
         || candidate.qualified_name == module
         || super::support::qname_under_module(profile, &candidate.qualified_name, module)

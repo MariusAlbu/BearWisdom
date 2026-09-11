@@ -28,7 +28,8 @@ pub(super) fn push_class(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::profile::TYPESCRIPT_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let gp = extract_type_parameters(node, src);
@@ -70,7 +71,8 @@ pub(super) fn push_interface(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::profile::TYPESCRIPT_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let gp = extract_type_parameters(node, src);
@@ -112,7 +114,8 @@ pub(super) fn push_function(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::profile::TYPESCRIPT_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let gp = extract_type_parameters(node, src);
@@ -168,7 +171,8 @@ pub(super) fn push_construct_signature(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify("new", parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::profile::TYPESCRIPT_PROFILE, "new", parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let gp = extract_type_parameters(node, src);
@@ -219,7 +223,8 @@ pub(super) fn push_call_signature(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify("call", parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::profile::TYPESCRIPT_PROFILE, "call", parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let gp = extract_type_parameters(node, src);
@@ -270,7 +275,8 @@ pub(super) fn push_method(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::profile::TYPESCRIPT_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let kind = if name == "constructor" {
@@ -330,7 +336,8 @@ pub(super) fn push_enum(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::profile::TYPESCRIPT_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
     let idx = symbols.len();
 
@@ -413,7 +420,8 @@ pub(super) fn push_type_alias(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::profile::TYPESCRIPT_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let idx = symbols.len();
@@ -463,7 +471,8 @@ pub(super) fn push_namespace(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::profile::TYPESCRIPT_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let idx = symbols.len();
@@ -526,7 +535,8 @@ pub(super) fn push_index_signature(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::profile::TYPESCRIPT_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let idx = symbols.len();

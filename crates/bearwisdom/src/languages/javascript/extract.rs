@@ -104,7 +104,12 @@ pub fn extract(source: &str) -> super::ExtractionResult {
     ];
 
     let root = tree.root_node();
-    let scope_tree = scope_tree::build(root, src_bytes, JS_SCOPE_KINDS);
+    let scope_tree = scope_tree::build(
+        root,
+        src_bytes,
+        JS_SCOPE_KINDS,
+        &super::profile::JAVASCRIPT_PROFILE,
+    );
 
     // Pre-pass: build a local-alias → module-path map from all import statements.
     let import_map = crate::ecosystem::ecmascript_imports::build_import_map(root, src_bytes);
@@ -296,7 +301,8 @@ fn push_class(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::profile::JAVASCRIPT_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let idx = symbols.len();
@@ -338,7 +344,8 @@ fn push_function(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::profile::JAVASCRIPT_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let params = node
@@ -385,7 +392,8 @@ fn push_method(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::profile::JAVASCRIPT_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let kind = if name == "constructor" {
@@ -436,7 +444,8 @@ fn push_field(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::profile::JAVASCRIPT_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     symbols.push(Sym {
@@ -488,7 +497,8 @@ fn push_variable_decl(
         match name_node.kind() {
             "identifier" => {
                 let name = node_text(name_node, src);
-                let qualified_name = scope_tree::qualify(&name, parent_scope);
+                let qualified_name =
+                    scope_tree::qualify(&super::profile::JAVASCRIPT_PROFILE, &name, parent_scope);
 
                 // Inspect the initializer to pick the right symbol kind.
                 let init = child.child_by_field_name("value");
@@ -808,7 +818,8 @@ fn push_destructured_var(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::profile::JAVASCRIPT_PROFILE, name, parent_scope);
     symbols.push(Sym {
         name: name.to_string(),
         qualified_name,
@@ -986,7 +997,8 @@ fn extract_for_loop_var(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::profile::JAVASCRIPT_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let idx = symbols.len();
@@ -1096,7 +1108,8 @@ fn extract_catch_variable(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::profile::JAVASCRIPT_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     symbols.push(Sym {

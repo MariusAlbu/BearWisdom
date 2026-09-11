@@ -13,6 +13,7 @@ pub const HTML_PROFILE: LanguageProfile = LanguageProfile {
     compiled_name_prefixes: &[],
     id: "html",
     qname_separator: ".",
+    member_chain_markers: &[],
     declaration_merging: crate::type_checker::profile::language_profile::MergeScope::None,
     receiver_spellings: &[],
     supertype_discovery: SupertypeDiscovery::Explicit,

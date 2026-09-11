@@ -32,10 +32,7 @@ impl LookupRule for ExternalByImportRule {
         }
 
         let target = ctx.target();
-        if target.is_empty()
-            || (!ctx.profile.qname_separator.is_empty()
-                && target.contains(ctx.profile.qname_separator))
-        {
+        if target.is_empty() || ctx.profile.is_qualified_name(target) {
             return LookupResult::Pass;
         }
         let edge_kind = ctx.edge_kind();

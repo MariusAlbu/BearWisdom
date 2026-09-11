@@ -171,14 +171,10 @@ pub struct Compilation {
     merge_groups: super::merge_canonical::MergeGroups,
     /// Non-canonical merge-set row id → the set's canonical (smallest) id.
     merge_canonical: FxHashMap<i64, i64>,
-    /// `(child_qname, parent_head) → import module`: the child file's import
-    /// of that exact head, captured when the edge was recorded. The one
-    /// signal that survives homonyms when a head binds to a declaration.
-    inherits_import_evidence: FxHashMap<(String, String), String>,
-    /// Profile qname separator captured from the file that declared each
-    /// inheritance edge. Parent resolution runs after parsing, so this keeps
-    /// source-language path evidence with the edge rather than guessing.
-    inherits_qname_separators: FxHashMap<String, String>,
+    /// Source-attested inheritance evidence by child declaration identity.
+    /// This keeps an edge's profile, import module, and generic arguments with
+    /// the declaration that emitted them even when packages share a qname.
+    inherits_edges_by_id: FxHashMap<i64, Vec<super::parent_resolution::InheritanceEdge>>,
     /// Nearest enclosing type-kind ancestor: source_qname → enclosing_type_qname.
     enclosing_type: FxHashMap<String, String>,
     /// Identity twin: source row id → enclosing type's row id.
@@ -347,8 +343,7 @@ impl Compilation {
             inherits_args_by_pair: FxHashMap::default(),
             merge_groups: super::merge_canonical::MergeGroups::default(),
             merge_canonical: FxHashMap::default(),
-            inherits_import_evidence: FxHashMap::default(),
-            inherits_qname_separators: FxHashMap::default(),
+            inherits_edges_by_id: FxHashMap::default(),
             enclosing_type: FxHashMap::default(),
             enclosing_type_by_id: FxHashMap::default(),
             enclosing_namespace: FxHashMap::default(),
@@ -584,10 +579,9 @@ impl Compilation {
                 let Some(child_sym) = pf.symbols.get(r.source_symbol_index) else {
                     continue;
                 };
-                // Split the head from any generic args. The head keys the inherits
-                // map (the supertype climb is head/id-based); the args ride on
-                // `inherits_args` so a member found on a generic supertype can bind
-                // that supertype's parameters from the `extends Base<Arg>` edge.
+                // Split the head from any generic args. The legacy qname map
+                // keeps source heads for compatibility; the id-owned edge record
+                // below supplies the profile-sensitive supertype climb.
                 let (parent_head_raw, parent_args) =
                     crate::languages::signature_type_application(&pf.language, &r.target_name);
                 let parent_head = parent_head_raw.to_string();
@@ -595,24 +589,42 @@ impl Compilation {
                     .inherits
                     .entry(child_sym.qualified_name.clone())
                     .or_default();
-                self.inherits_qname_separators
-                    .entry(child_sym.qualified_name.clone())
-                    .or_insert_with(|| profile.qname_separator.to_string());
                 if !parents.contains(&parent_head) {
                     parents.push(parent_head.clone());
                 }
-                if let Some(module) = import_modules.get(parent_head.as_str()) {
-                    self.inherits_import_evidence
-                        .entry((child_sym.qualified_name.clone(), parent_head.clone()))
-                        .or_insert_with(|| (*module).to_string());
-                }
-                if !parent_args.is_empty() {
+                let (args, arg_ids) = if parent_args.is_empty() {
+                    (Vec::new(), Vec::new())
+                } else {
                     let args: Vec<String> =
                         parent_args.iter().map(|a| a.trim().to_string()).collect();
                     let arg_ids: Vec<TypeId> = args
                         .iter()
                         .map(|a| crate::languages::intern_type_text(&pf.language, &self.arena, a))
                         .collect();
+                    (args, arg_ids)
+                };
+                if let Some(child_id) =
+                    symbol_id_map.id_of(&pf.path, r.source_symbol_index, &child_sym.qualified_name)
+                {
+                    let edges = self.inherits_edges_by_id.entry(child_id).or_default();
+                    if let Some(edge) = edges.iter_mut().find(|edge| edge.head == parent_head) {
+                        // Keep the first source profile, but retain generic
+                        // arguments if a duplicate ref supplies the richer edge.
+                        if edge.arg_ids.is_empty() && !arg_ids.is_empty() {
+                            edge.arg_ids = arg_ids.clone();
+                        }
+                    } else {
+                        edges.push(super::parent_resolution::InheritanceEdge {
+                            head: parent_head.clone(),
+                            import_module: import_modules
+                                .get(parent_head.as_str())
+                                .map(|module| (*module).to_string()),
+                            profile,
+                            arg_ids: arg_ids.clone(),
+                        });
+                    }
+                }
+                if !args.is_empty() {
                     self.inherits_arg_ids
                         .entry(child_sym.qualified_name.clone())
                         .or_default()
@@ -803,9 +815,8 @@ impl Compilation {
         super::contract::generic_return::capture_all(&self.arena, &mut self.type_info_by_id);
         self.capture_lexical_visibility(parsed, symbol_id_map);
 
-        // Id-keyed inherits, derived from the now-complete `inherits` (child qname
-        // → parent head string) + `by_qname`. Each edge resolves to specific
-        // symbol ids so the chain walker climbs supertypes by identity.
+        // Id-keyed inherits come from source-attested edges. Persisted canonical
+        // qname entries remain a fallback for incremental reloads.
         self.rebuild_inherits_by_id();
     }
 
@@ -822,8 +833,7 @@ impl Compilation {
         super::parent_resolution::attach_edge_args(
             &pairs,
             &self.by_id,
-            &self.inherits_arg_ids,
-            &self.inherits_qname_separators,
+            &self.inherits_edges_by_id,
             &mut self.inherits_args_by_pair,
         );
     }
@@ -833,10 +843,9 @@ impl Compilation {
     fn rebuild_inherits_by_id(&mut self) {
         let (by_id, args_by_pair) = super::parent_resolution::rebuild_inherits_by_id(
             self,
+            &self.by_id,
+            &self.inherits_edges_by_id,
             &self.inherits,
-            &self.inherits_import_evidence,
-            &self.inherits_qname_separators,
-            &self.inherits_arg_ids,
         );
         self.inherits_by_id = by_id;
         self.inherits_args_by_pair.extend(args_by_pair);

@@ -42,6 +42,10 @@ pub fn normalize_identifier_capture(raw: &str) -> Option<String> {
 /// Idempotent: skips symbols whose `return_type` / `param_types` are
 /// already populated.
 pub fn populate_return_type_ids(result: &mut ExtractionResult, arena: &TypeArena, lang_id: &str) {
+    let plugin = crate::languages::default_registry().get(lang_id);
+    let profile = plugin
+        .profile()
+        .unwrap_or(&crate::type_checker::profile::language_profile::DEFAULT_PROFILE);
     for sym in &mut result.symbols {
         match sym.kind {
             SymbolKind::Class
@@ -59,10 +63,7 @@ pub fn populate_return_type_ids(result: &mut ExtractionResult, arena: &TypeArena
                     continue;
                 };
                 if sym.return_type.is_none() {
-                    if let Some(rt) = crate::languages::default_registry()
-                        .get(lang_id)
-                        .signature_return_type(sig)
-                    {
+                    if let Some(rt) = plugin.signature_return_type(sig) {
                         // A bare (unqualified) return-type name is only safe to
                         // intern here when the symbol has no enclosing scope: a
                         // method nested under a namespace/module whose signature
@@ -74,7 +75,7 @@ pub fn populate_return_type_ids(result: &mut ExtractionResult, arena: &TypeArena
                         // (`resolve_type_name_in_scope`, run once the full symbol
                         // table is built), which reads the same signature text
                         // plus this symbol's `scope_path`.
-                        let is_bare = !rt.contains('.') && !rt.contains("::");
+                        let is_bare = !profile.is_qualified_name(&rt);
                         let has_scope = sym.scope_path.as_deref().is_some_and(|s| !s.is_empty());
                         if !rt.is_empty() && !(is_bare && has_scope) {
                             sym.return_type =
@@ -83,10 +84,7 @@ pub fn populate_return_type_ids(result: &mut ExtractionResult, arena: &TypeArena
                     }
                 }
                 if sym.param_types.is_empty() {
-                    if let Some(params) = crate::languages::default_registry()
-                        .get(lang_id)
-                        .signature_parameter_types(sig)
-                    {
+                    if let Some(params) = plugin.signature_parameter_types(sig) {
                         sym.param_types = params
                             .iter()
                             .map(|p| crate::languages::intern_type_text(lang_id, arena, p))
@@ -104,10 +102,7 @@ pub fn populate_return_type_ids(result: &mut ExtractionResult, arena: &TypeArena
                 let Some(sig) = sym.signature.as_deref() else {
                     continue;
                 };
-                if let Some(ty) = crate::languages::default_registry()
-                    .get(lang_id)
-                    .signature_declared_type(sig)
-                {
+                if let Some(ty) = plugin.signature_declared_type(sig) {
                     if !ty.is_empty() {
                         sym.declared_type =
                             Some(crate::languages::intern_type_text(lang_id, arena, &ty));
@@ -119,107 +114,12 @@ pub fn populate_return_type_ids(result: &mut ExtractionResult, arena: &TypeArena
     }
 }
 
-pub use super::javascript::chains::build_member_chain;
-
 /// Extract text for a node from the raw byte buffer.
 pub(super) fn node_text_bytes(node: Node, src: &[u8]) -> String {
     src.get(node.start_byte()..node.end_byte())
         .and_then(|b| std::str::from_utf8(b).ok())
         .unwrap_or("")
         .to_string()
-}
-
-/// True when `name` is bound as a parameter of any enclosing JS/TS
-/// function in the AST. Shared by both the JavaScript and TypeScript
-/// extractors — both grammars use the same node kinds for function-like
-/// constructs and their parameter list nodes (formal_parameters,
-/// required_parameter, etc.) and destructuring patterns (object_pattern,
-/// array_pattern, rest_pattern, assignment_pattern).
-///
-/// Walks the parent chain from `at` up to the program root. Returns true
-/// the first time it finds a function whose parameter list binds `name`.
-/// Used to filter ref-emission for chain receivers, callees, and for-loop
-/// iterables whose identifier is a local parameter rather than a type or
-/// declared function.
-pub fn is_enclosing_js_function_parameter(at: Node, src: &[u8], name: &str) -> bool {
-    if name.is_empty() {
-        return false;
-    }
-    let mut cur = at;
-    while let Some(parent) = cur.parent() {
-        if matches!(
-            parent.kind(),
-            "function_declaration"
-                | "function_expression"
-                | "arrow_function"
-                | "method_definition"
-                | "generator_function_declaration"
-                | "generator_function"
-        ) {
-            let params = parent
-                .child_by_field_name("parameters")
-                .or_else(|| parent.child_by_field_name("parameter"));
-            if let Some(params) = params {
-                if js_parameter_list_binds(params, src, name) {
-                    return true;
-                }
-            }
-        }
-        cur = parent;
-    }
-    false
-}
-
-fn js_parameter_list_binds(params: Node, src: &[u8], name: &str) -> bool {
-    if js_pattern_binds_name(params, src, name) {
-        return true;
-    }
-    let mut cursor = params.walk();
-    for child in params.named_children(&mut cursor) {
-        if js_pattern_binds_name(child, src, name) {
-            return true;
-        }
-    }
-    false
-}
-
-fn js_pattern_binds_name(node: Node, src: &[u8], name: &str) -> bool {
-    match node.kind() {
-        "identifier" | "shorthand_property_identifier_pattern" => {
-            node_text_bytes(node, src) == name
-        }
-        "rest_pattern" | "spread_element" => node
-            .named_child(0)
-            .map(|c| js_pattern_binds_name(c, src, name))
-            .unwrap_or(false),
-        "assignment_pattern" => node
-            .child_by_field_name("left")
-            .or_else(|| node.named_child(0))
-            .map(|c| js_pattern_binds_name(c, src, name))
-            .unwrap_or(false),
-        "object_pattern" | "array_pattern" | "object_assignment_pattern" => {
-            let mut cursor = node.walk();
-            for child in node.named_children(&mut cursor) {
-                if js_pattern_binds_name(child, src, name) {
-                    return true;
-                }
-            }
-            false
-        }
-        "pair_pattern" => node
-            .child_by_field_name("value")
-            .map(|c| js_pattern_binds_name(c, src, name))
-            .unwrap_or(false),
-        "required_parameter" | "optional_parameter" | "formal_parameters" => {
-            let inner = node
-                .child_by_field_name("pattern")
-                .or_else(|| node.named_child(0));
-            inner
-                .map(|c| js_pattern_binds_name(c, src, name))
-                .unwrap_or(false)
-        }
-        _ => false,
-    }
 }
 
 /// When a call has a chain (e.g. `Foo::bar()`, `Foo.bar()`, or the nested-

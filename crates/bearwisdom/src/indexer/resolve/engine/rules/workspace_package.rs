@@ -70,18 +70,16 @@ impl LookupRule for WorkspacePackageRule {
         // head to the target package so lookup, sub-path, and barrel discovery
         // all key on the real member.
         let rewritten;
-        let specifier = if ctx.lookup.workspace_package_id(specifier).is_some() {
+        let workspace_specifier = ctx.profile.workspace_specifier_path(specifier);
+        let specifier = if ctx
+            .lookup
+            .workspace_package_id(workspace_specifier.as_ref())
+            .is_some()
+        {
             specifier
         } else {
-            let head = if ctx.profile.imports.self_package_root.is_none()
-                || ctx.profile.qname_separator.is_empty()
-            {
-                specifier
-            } else {
-                specifier
-                    .split(ctx.profile.qname_separator)
-                    .next()
-                    .unwrap_or(specifier)
+            let Some(head) = ctx.profile.workspace_alias_head(specifier) else {
+                return LookupResult::Pass;
             };
             match ctx
                 .lookup
@@ -94,10 +92,12 @@ impl LookupRule for WorkspacePackageRule {
                 None => specifier,
             }
         };
+        let workspace_specifier = ctx.profile.workspace_specifier_path(specifier);
         let (pkg_id, sub_path) = match self_package_sub_path(ctx.profile, specifier) {
             Some(sub_path) => (ctx.ref_ctx.file_package_id, sub_path),
             None => (
-                ctx.lookup.workspace_package_id(specifier),
+                ctx.lookup
+                    .workspace_package_id(workspace_specifier.as_ref()),
                 workspace_sub_path(ctx.profile, specifier, ctx.lookup),
             ),
         };
@@ -132,7 +132,7 @@ impl LookupRule for WorkspacePackageRule {
         // workspace package. (The bare specifier has no `resolve_module_from`
         // mapping, so the barrel is recovered from the package's own symbol set.)
         let stems = ctx.profile.imports.reexport_barrel_stems;
-        for barrel in workspace_pkg_barrels(ctx.lookup, specifier, stems) {
+        for barrel in workspace_pkg_barrels(ctx.lookup, workspace_specifier.as_ref(), stems) {
             if let Some(res) = follow_reexports(
                 &barrel,
                 target,

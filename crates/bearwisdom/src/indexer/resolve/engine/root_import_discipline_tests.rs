@@ -107,8 +107,9 @@ impl SymbolLookup for FakeLookup {
         self.declared_deps.iter().any(|d| d == spec)
     }
     fn workspace_package_id(&self, spec: &str) -> Option<i64> {
-        let normalized = spec.replace("::", "/");
-        let mut path = normalized.as_str();
+        // Generic lookup receives a neutral slash path; the active profile
+        // adapts source-language spelling before this boundary.
+        let mut path = spec;
         loop {
             if let Some(&id) = self.packages.get(path) {
                 return Some(id);

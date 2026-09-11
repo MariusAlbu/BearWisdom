@@ -7,9 +7,10 @@
 // keyword filter, callee-name unwrap).
 // =============================================================================
 
+use super::chains::build_member_chain;
 use super::helpers::node_text;
 use super::imports::{extract_first_string_arg, extract_require_path};
-use crate::languages::common::{build_member_chain, extract_call_args};
+use crate::languages::common::extract_call_args;
 use crate::types::{CallArg, EdgeKind, ExtractedRef as Ref};
 use tree_sitter::Node;
 
@@ -452,7 +453,7 @@ fn is_js_keyword(name: &str) -> bool {
 /// Walks the parent chain from `at` up to the program root. Handles
 /// destructured (`{ a, b }`), array (`[x, y]`), rest (`...rest`), and
 /// default (`x = 1`) parameter forms.
-pub(super) fn is_enclosing_function_parameter(at: Node, src: &[u8], name: &str) -> bool {
+pub(crate) fn is_enclosing_function_parameter(at: Node, src: &[u8], name: &str) -> bool {
     if name.is_empty() {
         return false;
     }

@@ -10,10 +10,11 @@ pub(super) fn node_text(node: &Node, src: &[u8]) -> String {
 }
 
 pub(super) fn qualify(name: &str, prefix: &str) -> String {
+    let name = super::profile::RUBY_PROFILE.index_qname_from_source(name);
     if prefix.is_empty() {
-        name.to_string()
+        name
     } else {
-        format!("{prefix}::{name}")
+        format!("{prefix}.{name}")
     }
 }
 

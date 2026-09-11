@@ -63,7 +63,7 @@ pub fn extract(source: &str) -> super::ExtractionResult {
     let src = source.as_bytes();
     let root = tree.root_node();
 
-    let _scope_tree = scope_tree::build(root, src, PHP_SCOPE_KINDS);
+    let _scope_tree = scope_tree::build(root, src, PHP_SCOPE_KINDS, &super::profile::PHP_PROFILE);
 
     let mut syms: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();

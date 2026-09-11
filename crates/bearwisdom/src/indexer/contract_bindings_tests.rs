@@ -254,7 +254,7 @@ fn rbi_callback_contract_keeps_its_structural_type_through_portable_cache() {
     let visit = parsed
         .symbols
         .iter()
-        .find(|symbol| symbol.qualified_name == "Catalog::visit")
+        .find(|symbol| symbol.qualified_name == "Catalog.visit")
         .expect("strict RBI visit contract");
     assert_eq!(
         visit.signature.as_deref(),
@@ -282,7 +282,7 @@ fn rbi_callback_contract_keeps_its_structural_type_through_portable_cache() {
     let cold_visit = cold
         .symbols
         .iter()
-        .find(|symbol| symbol.qualified_name == "Catalog::visit")
+        .find(|symbol| symbol.qualified_name == "Catalog.visit")
         .expect("cold RBI visit contract");
     assert_eq!(
         cold_visit.signature, visit.signature,
@@ -321,7 +321,7 @@ fn rbi_positional_callback_contract_keeps_its_marker_through_portable_cache() {
     let visit = parsed
         .symbols
         .iter()
-        .find(|symbol| symbol.qualified_name == "Catalog::visit")
+        .find(|symbol| symbol.qualified_name == "Catalog.visit")
         .expect("strict positional RBI visit contract");
     assert_eq!(
         visit.signature.as_deref(),
@@ -349,7 +349,7 @@ fn rbi_positional_callback_contract_keeps_its_marker_through_portable_cache() {
     let cold_visit = cold
         .symbols
         .iter()
-        .find(|symbol| symbol.qualified_name == "Catalog::visit")
+        .find(|symbol| symbol.qualified_name == "Catalog.visit")
         .expect("cold positional RBI visit contract");
     assert_eq!(
         cold_visit.signature, visit.signature,

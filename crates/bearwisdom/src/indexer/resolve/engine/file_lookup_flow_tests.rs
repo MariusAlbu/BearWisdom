@@ -1475,7 +1475,7 @@ fn ruby_rbs_required_block_contract_seeds_the_exact_trailing_block_parameter() {
     let visit_contract = rbs
         .symbols
         .iter()
-        .find(|symbol| symbol.qualified_name == "Catalog::visit")
+        .find(|symbol| symbol.qualified_name == "Catalog.visit")
         .expect("strict required-block RBS visit contract");
     let signature = visit_contract
         .signature
@@ -1562,7 +1562,7 @@ fn ruby_rbs_required_block_contract_seeds_the_exact_trailing_block_parameter() {
     let callee = crate::indexer::resolve::engine::testkit::sym_with_sig(
         904,
         "visit",
-        "Catalog::visit",
+        "Catalog.visit",
         "method",
         "catalog.rbs",
         &signature,

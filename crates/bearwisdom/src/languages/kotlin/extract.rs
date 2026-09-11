@@ -71,10 +71,16 @@ pub fn extract(source: &str) -> super::ExtractionResult {
     // symbols.
     let hoisted_pkg = hoist_top_level_package(root, src);
 
-    let mut scope_tree = scope_tree::build(root, src, KOTLIN_SCOPE_KINDS);
+    let mut scope_tree = scope_tree::build(
+        root,
+        src,
+        KOTLIN_SCOPE_KINDS,
+        &super::profile::KOTLIN_PROFILE,
+    );
     if let Some(pkg) = hoisted_pkg.as_deref() {
         for entry in scope_tree.iter_mut() {
-            entry.qualified_name = format!("{pkg}.{}", entry.qualified_name);
+            entry.qualified_name =
+                super::profile::KOTLIN_PROFILE.index_qname_join(pkg, &entry.qualified_name);
         }
     }
 
@@ -83,7 +89,11 @@ pub fn extract(source: &str) -> super::ExtractionResult {
 
     extract_node(root, src, &scope_tree, &mut symbols, &mut refs, None);
 
-    scope_tree::prefix_top_level_qnames(&mut symbols, hoisted_pkg.as_deref());
+    scope_tree::prefix_top_level_qnames(
+        &mut symbols,
+        hoisted_pkg.as_deref(),
+        &super::profile::KOTLIN_PROFILE,
+    );
 
     // Emit a Namespace symbol for the package_header so the resolver's
     // `file_namespace` lookup succeeds (used by same-package resolution).
@@ -93,8 +103,8 @@ pub fn extract(source: &str) -> super::ExtractionResult {
     if let Some(pkg) = hoisted_pkg.as_deref() {
         if let Some((line, col, end_line, end_col)) = find_package_header_span(root) {
             symbols.push(ExtractedSymbol {
-                name: pkg.rsplit('.').next().unwrap_or(pkg).to_string(),
-                qualified_name: pkg.to_string(),
+                name: super::profile::KOTLIN_PROFILE.simple_name(pkg).to_string(),
+                qualified_name: super::profile::KOTLIN_PROFILE.index_qname_from_source(pkg),
                 kind: SymbolKind::Namespace,
                 visibility: None,
                 start_line: line,
@@ -555,7 +565,7 @@ fn push_type_decl_alias(
     use crate::parser::scope_tree as st;
     use crate::types::Visibility;
     let scope = helpers::enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = st::qualify(&name, scope);
+    let qualified_name = st::qualify(&super::profile::KOTLIN_PROFILE, &name, scope);
     let scope_path = st::scope_path(scope);
 
     let idx = symbols.len();

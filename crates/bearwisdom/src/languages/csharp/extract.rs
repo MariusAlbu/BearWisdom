@@ -128,7 +128,12 @@ pub fn extract(source: &str) -> ExtractionResult {
     // --- Build the scope tree (first pass) ---
     // This gives us a flat list of all scope entries with their byte ranges
     // and qualified names.  We'll use it to look up the scope of any node.
-    let mut scope_tree = scope_tree::build(root, src_bytes, CSHARP_SCOPE_KINDS);
+    let mut scope_tree = scope_tree::build(
+        root,
+        src_bytes,
+        CSHARP_SCOPE_KINDS,
+        &super::profile::CSHARP_PROFILE,
+    );
 
     // File-scoped namespaces (`namespace Foo.Bar;`) logically encompass the
     // entire compilation unit, but their tree-sitter node ends at the semicolon.

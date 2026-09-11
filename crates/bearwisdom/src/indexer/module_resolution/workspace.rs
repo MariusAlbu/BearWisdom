@@ -3,8 +3,9 @@
 // language
 //
 // A specifier whose head names a workspace package (`next/link` in a repo
-// whose `packages/next` declares `name: next`; `tantivy::schema` in a Cargo
-// workspace member) maps to a file under that package's root directory. The
+// whose `packages/next` declares `name: next`; `tantivy/schema` after the
+// Rust profile adapts its source spelling) maps to a file under that package's
+// root directory. The
 // mapping is manifest-driven — declared name → package root — and identical
 // across languages, so this resolver is universal (empty `language_ids`) and
 // runs before the per-language resolver.
@@ -38,21 +39,18 @@ impl ModuleResolver for WorkspacePackageResolver {
         if specifier.starts_with('.') || specifier.starts_with('/') {
             return None;
         }
-        // `::` (qualified-path separator) canonicalizes to `/` so a deep
-        // `member::module` specifier peels the same way `pkg/sub` does.
-        let normalized = specifier.replace("::", "/");
         // Longest declared name owning the specifier head wins.
         let (name, root) = self
             .packages
             .iter()
             .filter(|(name, _)| {
-                normalized == *name
-                    || normalized
+                specifier == name
+                    || specifier
                         .strip_prefix(name.as_str())
                         .is_some_and(|r| r.starts_with('/'))
             })
             .max_by_key(|(name, _)| name.len())?;
-        let sub = normalized[name.len()..].trim_start_matches('/');
+        let sub = specifier[name.len()..].trim_start_matches('/');
         let root_prefix = format!("{root}/");
         let mut best: Option<&str> = None;
         for path in file_paths {

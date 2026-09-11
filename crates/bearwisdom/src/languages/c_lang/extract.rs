@@ -123,7 +123,7 @@ pub fn extract_with_file(source: &str, file_path: &str, language: &str) -> super
     } else {
         CPP_SCOPE_KINDS
     };
-    let scope_tree = scope_tree::build(root, src, scope_config);
+    let scope_tree = scope_tree::build(root, src, scope_config, &super::profile::C_LANG_PROFILE);
 
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();

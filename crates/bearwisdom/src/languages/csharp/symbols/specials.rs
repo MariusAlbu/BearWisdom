@@ -29,7 +29,11 @@ pub(in super::super) fn push_indexer_decl(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify("this[]", parent_scope);
+    let qualified_name = scope_tree::qualify(
+        &super::super::profile::CSHARP_PROFILE,
+        "this[]",
+        parent_scope,
+    );
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let type_str = node
@@ -105,7 +109,8 @@ pub(in super::super) fn push_operator_decl(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::super::profile::CSHARP_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let idx = symbols.len();
@@ -172,7 +177,8 @@ pub(in super::super) fn push_conversion_operator_decl(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::super::profile::CSHARP_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let idx = symbols.len();
@@ -222,7 +228,8 @@ pub(in super::super) fn push_destructor_decl(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::super::profile::CSHARP_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let idx = symbols.len();
@@ -264,7 +271,8 @@ pub(in super::super) fn push_local_function_decl(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::super::profile::CSHARP_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let params = node
@@ -319,7 +327,8 @@ pub(in super::super) fn push_event_decl(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::super::profile::CSHARP_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let type_str = node

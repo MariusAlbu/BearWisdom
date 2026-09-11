@@ -25,38 +25,14 @@ impl LookupRule for AmbientPrefixStripRule {
             return LookupResult::Pass;
         }
         let target = ctx.target();
-        let Some(leaf) = strip_ambient_prefix(
-            target,
-            ctx.profile.ambient_namespace_prefixes,
-            ctx.profile.qname_separator,
-        ) else {
+        let Some((prefix, leaf)) = ctx.profile.split_source_qualified_name(target) else {
             return LookupResult::Pass;
         };
+        if leaf.is_empty() || !ctx.profile.ambient_namespace_prefixes.contains(&prefix) {
+            return LookupResult::Pass;
+        }
         super::ambient_scope::resolve_ambient_named(ctx, leaf, "ambient_prefix_strip")
     }
-}
-
-/// Strip a leading `{prefix}.` when `prefix` is one of `ambient_prefixes`.
-/// Returns the stripped leaf, or `None` when no prefix matches. Only strips
-/// when the remainder after the dot is non-empty.
-fn strip_ambient_prefix<'t>(
-    target: &'t str,
-    ambient_prefixes: &[&str],
-    qname_separator: &str,
-) -> Option<&'t str> {
-    if qname_separator.is_empty() {
-        return None;
-    }
-    for prefix in ambient_prefixes {
-        if let Some(rest) = target.strip_prefix(prefix) {
-            if let Some(after) = rest.strip_prefix(qname_separator) {
-                if !after.is_empty() {
-                    return Some(after);
-                }
-            }
-        }
-    }
-    None
 }
 
 #[cfg(test)]

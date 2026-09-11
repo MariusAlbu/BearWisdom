@@ -123,7 +123,7 @@ pub(super) fn push_type_decl(
     let name = node_text(name_node, src);
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::KOTLIN_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let kw = match kind {
@@ -173,7 +173,7 @@ pub(super) fn push_function_decl(
     let name = node_text(name_node, src);
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::KOTLIN_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let kind = if scope.is_some() {
@@ -299,7 +299,7 @@ pub(super) fn push_property_decl(
     };
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::KOTLIN_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let kw = if node_text(*node, src).trim_start().starts_with("val") {
@@ -349,7 +349,7 @@ pub(super) fn push_companion_object(
         .unwrap_or_else(|| "Companion".to_string());
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::KOTLIN_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let idx = symbols.len();
@@ -398,7 +398,8 @@ pub(super) fn extract_primary_constructor_params(
                 .unwrap_or_else(|| "constructor".to_string());
 
             let scope = enclosing_scope(scope_tree, child.start_byte(), child.end_byte());
-            let qualified_name = scope_tree::qualify(&class_name, scope);
+            let qualified_name =
+                scope_tree::qualify(&super::profile::KOTLIN_PROFILE, &class_name, scope);
             let scope_path = scope_tree::scope_path(scope);
 
             let params_text = find_child_by_kind(&child, "class_parameters")
@@ -516,7 +517,7 @@ fn extract_class_parameter(
     }
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::KOTLIN_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let kind = if is_property {
@@ -596,7 +597,7 @@ pub(super) fn push_secondary_constructor(
         .map(|s| s.name.as_str())
         .unwrap_or("constructor")
         .to_string();
-    let qualified_name = scope_tree::qualify(&class_name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::KOTLIN_PROFILE, &class_name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let params = find_child_by_kind(node, "function_value_parameters")
@@ -863,7 +864,7 @@ pub(super) fn push_getter_decl(
         .unwrap_or_else(|| "get".to_string());
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::KOTLIN_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     symbols.push(ExtractedSymbol {
@@ -905,7 +906,7 @@ pub(super) fn push_setter_decl(
         .unwrap_or_else(|| "set".to_string());
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::KOTLIN_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     // Extract parameter name if present (typically "value").

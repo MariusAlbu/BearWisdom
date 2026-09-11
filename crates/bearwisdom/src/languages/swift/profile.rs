@@ -68,6 +68,7 @@ pub const SWIFT_PROFILE: LanguageProfile = LanguageProfile {
     compiled_name_prefixes: &[],
     id: "swift",
     qname_separator: ".",
+    member_chain_markers: &["."],
     declaration_merging: crate::type_checker::profile::language_profile::MergeScope::None,
     receiver_spellings: &[
         crate::type_checker::profile::language_profile::ReceiverSpelling::enclosing("self", "."),

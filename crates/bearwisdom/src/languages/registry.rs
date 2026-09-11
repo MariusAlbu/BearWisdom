@@ -113,6 +113,17 @@ impl LanguageRegistry {
         }
     }
 
+    /// Active source-language profile for `lang_id`, with the conservative
+    /// default when its plugin does not provide one.
+    pub fn profile_for(
+        &self,
+        lang_id: &str,
+    ) -> &'static crate::type_checker::profile::language_profile::LanguageProfile {
+        self.get(lang_id)
+            .profile()
+            .unwrap_or(&crate::type_checker::profile::language_profile::DEFAULT_PROFILE)
+    }
+
     /// Get a dedicated plugin only (no fallback).
     pub fn get_dedicated(&self, lang_id: &str) -> Option<&dyn LanguagePlugin> {
         self.by_lang_id

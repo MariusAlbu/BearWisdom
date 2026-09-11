@@ -1,13 +1,4 @@
-use super::{module_path_match, relative_wildcard_module_files, workspace_package_specifier};
-
-#[test]
-fn rust_workspace_package_spelling_is_adapter_owned() {
-    assert_eq!(
-        workspace_package_specifier("tantivy::schema").as_deref(),
-        Some("tantivy/schema")
-    );
-    assert_eq!(workspace_package_specifier("tantivy/schema"), None);
-}
+use super::{module_path_match, relative_wildcard_module_files};
 
 #[test]
 fn super_glob_candidates_cover_parent_module_file_forms() {

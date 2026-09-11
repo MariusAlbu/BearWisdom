@@ -73,12 +73,11 @@ pub(crate) fn workspace_package_id(
     specifier: &str,
     declared_names: &rustc_hash::FxHashMap<String, i64>,
 ) -> Option<i64> {
-    let normalized = super::package_specifier::workspace_package_specifier(specifier);
-    declared_names.get(&normalized).copied().or_else(|| {
+    declared_names.get(specifier).copied().or_else(|| {
         declared_names
             .iter()
             .filter(|(name, _)| {
-                normalized
+                specifier
                     .strip_prefix(name.as_str())
                     .is_some_and(|suffix| suffix.starts_with('/'))
             })

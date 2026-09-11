@@ -102,14 +102,6 @@ pub(crate) fn external_file_under_module(
         .find_map(|adapter| (adapter.external_file_under_module)(language, file_path, module_root))
 }
 
-/// Canonical workspace-package spelling for manifest/package matching. Each
-/// adapter declines syntax it does not own; an unchanged string is already a
-/// manifest-shaped package key.
-pub(crate) fn workspace_package_specifier(specifier: &str) -> String {
-    crate::languages::rust_lang::module_paths::workspace_package_specifier(specifier)
-        .unwrap_or_else(|| specifier.to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::{

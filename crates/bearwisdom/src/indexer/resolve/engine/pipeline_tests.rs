@@ -338,12 +338,12 @@ fn engine_selects_an_rbs_contract_before_typing_a_ruby_trailing_block() {
     let visit_index = files[0]
         .symbols
         .iter()
-        .position(|symbol| symbol.qualified_name == "Catalog::visit")
+        .position(|symbol| symbol.qualified_name == "Catalog.visit")
         .expect("RBS visit contract");
     let touch_index = files[1]
         .symbols
         .iter()
-        .position(|symbol| symbol.qualified_name == "Item::touch")
+        .position(|symbol| symbol.qualified_name == "Item.touch")
         .expect("Ruby Item#touch method");
     let visit_id = ids
         .row_id("catalog.rbs", visit_index)
@@ -452,12 +452,12 @@ fn engine_selects_an_rbi_contract_before_typing_a_ruby_trailing_block() {
     let visit_index = files[0]
         .symbols
         .iter()
-        .position(|symbol| symbol.qualified_name == "Catalog::visit")
+        .position(|symbol| symbol.qualified_name == "Catalog.visit")
         .expect("RBI visit contract");
     let touch_index = files[1]
         .symbols
         .iter()
-        .position(|symbol| symbol.qualified_name == "Item::touch")
+        .position(|symbol| symbol.qualified_name == "Item.touch")
         .expect("Ruby Item#touch method");
     let visit_id = ids
         .row_id("catalog.rbi", visit_index)
@@ -566,12 +566,12 @@ fn engine_selects_an_rbi_positional_proc_before_typing_a_ruby_arrow_lambda() {
     let visit_index = files[0]
         .symbols
         .iter()
-        .position(|symbol| symbol.qualified_name == "Catalog::visit")
+        .position(|symbol| symbol.qualified_name == "Catalog.visit")
         .expect("RBI positional visit contract");
     let touch_index = files[1]
         .symbols
         .iter()
-        .position(|symbol| symbol.qualified_name == "Item::touch")
+        .position(|symbol| symbol.qualified_name == "Item.touch")
         .expect("Ruby Item#touch method");
     let visit_id = ids
         .row_id("catalog.rbi", visit_index)

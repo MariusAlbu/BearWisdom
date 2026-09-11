@@ -294,7 +294,7 @@ fn push_variable_symbol(
     symbols: &mut Vec<ExtractedSymbol>,
     parent_index: Option<usize>,
 ) {
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::CSHARP_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
     symbols.push(ExtractedSymbol {
         name,

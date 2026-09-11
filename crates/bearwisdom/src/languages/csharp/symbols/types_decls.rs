@@ -30,7 +30,8 @@ pub(in super::super) fn push_namespace(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::super::profile::CSHARP_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let idx = symbols.len();
@@ -78,7 +79,8 @@ pub(in super::super) fn push_type_decl(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::super::profile::CSHARP_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let keyword = match kind {
@@ -200,7 +202,8 @@ pub(in super::super) fn push_enum_decl(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::super::profile::CSHARP_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let idx = symbols.len();

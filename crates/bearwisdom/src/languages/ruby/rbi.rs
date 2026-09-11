@@ -151,9 +151,8 @@ fn walk_scopes(
                     continue;
                 };
                 let name = text(name_node, src);
-                *method_counts
-                    .entry(format!("{}::{name}", scope.qualified_name))
-                    .or_default() += 1;
+                let qualified_name = super::helpers::qualify(&name, &scope.qualified_name);
+                *method_counts.entry(qualified_name.clone()).or_default() += 1;
                 let Some(previous) = index.checked_sub(1).and_then(|i| children.get(i)) else {
                     continue;
                 };
@@ -168,7 +167,7 @@ fn walk_scopes(
                     continue;
                 };
                 methods.push(Method {
-                    qualified_name: format!("{}::{name}", scope.qualified_name),
+                    qualified_name,
                     name,
                     scope_path: scope.qualified_name.clone(),
                     parent_index: scope.symbol_index,
@@ -487,9 +486,9 @@ fn source_first_line(node: Node, src: &[u8]) -> Option<String> {
 
 fn qualify_scope_name(prefix: &str, name: &str) -> String {
     if name.starts_with("::") || prefix.is_empty() {
-        name.trim_start_matches("::").to_string()
+        super::helpers::qualify(name.trim_start_matches("::"), "")
     } else {
-        format!("{prefix}::{name}")
+        super::helpers::qualify(name, prefix)
     }
 }
 

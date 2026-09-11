@@ -89,7 +89,18 @@ pub fn validate(file: &ParsedFile) -> Vec<ContractViolation> {
     for (idx, r) in file.refs.iter().enumerate() {
         check_ref_001(file, idx, r, &mut out);
         check_ref_002(file, idx, r, &mut out);
-        check_ref_003(file, idx, r, &mut out);
+        let ref_language = file
+            .ref_origin_languages
+            .get(idx)
+            .and_then(|language| language.as_deref())
+            .unwrap_or(&file.language);
+        check_ref_003(
+            file,
+            idx,
+            r,
+            crate::languages::default_registry().profile_for(ref_language),
+            &mut out,
+        );
         check_ref_004(file, idx, r, &mut out);
         check_ref_005(file, idx, r, &mut out);
         check_ref_006(file, idx, r, line_starts.as_deref(), &mut out);
@@ -423,15 +434,6 @@ fn file_loc(file: &ParsedFile) -> ViolationLocation {
     }
 }
 
-/// Returns true for any character that any registered language uses as a
-/// qname separator.
-fn is_qname_separator_char(c: char) -> bool {
-    matches!(
-        c,
-        '.' | ':' | '/' | '\\' | '$' | '>' | '-' | '\'' | '|' | '#' | '@'
-    )
-}
-
 /// Whether `kind` is a callable kind that legitimately carries `call_args`.
 fn kind_allows_call_args(kind: EdgeKind) -> bool {
     matches!(
@@ -589,8 +591,9 @@ fn check_flow_meta(file: &ParsedFile, out: &mut Vec<ContractViolation>) {
 // SYM-* rules
 // ---------------------------------------------------------------------------
 
-/// SYM-001: qualified_name ends with name, with a separator char immediately
-/// before the suffix (or qname == name for top-level symbols).
+/// SYM-001: a canonical qualified_name ends with name, with the canonical
+/// dot boundary immediately before the suffix (or qname == name for top-level
+/// symbols). Source separators are normalized before validation.
 fn check_sym_001(
     file: &ParsedFile,
     idx: usize,
@@ -614,16 +617,14 @@ fn check_sym_001(
         return;
     }
     let prefix_len = qname.len() - name.len();
-    if let Some(c) = qname[..prefix_len].chars().last() {
-        if !is_qname_separator_char(c) {
-            out.push(ContractViolation {
-                code: "SYM-001",
-                message: format!(
-                    "qualified_name '{qname}' ends with name '{name}' but is not preceded by a separator character (found '{c}')",
-                ),
-                location: sym_loc(file, idx, sym),
-            });
-        }
+    if !qname[..prefix_len].ends_with('.') {
+        out.push(ContractViolation {
+            code: "SYM-001",
+            message: format!(
+                "canonical qualified_name '{qname}' ends with name '{name}' but is not preceded by '.'",
+            ),
+            location: sym_loc(file, idx, sym),
+        });
     }
 }
 
@@ -745,12 +746,13 @@ fn check_ref_002(
     });
 }
 
-/// REF-003: a Calls ref whose target_name contains a `.`, `::`, or `->` must
-/// carry a MemberChain.
+/// REF-003: a Calls ref whose active-language target spelling denotes a
+/// member or qualified chain must carry a MemberChain.
 fn check_ref_003(
     file: &ParsedFile,
     idx: usize,
     r: &ExtractedRef,
+    profile: &crate::type_checker::profile::language_profile::LanguageProfile,
     out: &mut Vec<ContractViolation>,
 ) {
     if r.kind != EdgeKind::Calls {
@@ -759,12 +761,13 @@ fn check_ref_003(
     if r.chain.is_some() {
         return;
     }
-    let tn = r.target_name.as_str();
-    let dotted = tn.contains('.') || tn.contains("::") || tn.contains("->");
-    if dotted {
+    let target = r.target_name.as_str();
+    if profile.call_target_requires_member_chain(target) {
         out.push(ContractViolation {
             code: "REF-003",
-            message: format!("Calls ref has dotted target_name '{tn}' but no MemberChain",),
+            message: format!(
+                "Calls ref has chain-marked target_name '{target}' but no MemberChain",
+            ),
             location: ref_loc(file, idx, r),
         });
     }

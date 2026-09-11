@@ -40,13 +40,12 @@ enum ScanOutcome {
 fn scan(
     ctx: &BinderContext,
     namespaces: &[&str],
-    separator: &str,
     edge_kind: EdgeKind,
     lookup_name: &str,
 ) -> ScanOutcome {
     let expected: Vec<String> = namespaces
         .iter()
-        .map(|ns| format!("{ns}{separator}{lookup_name}"))
+        .map(|ns| ctx.profile.index_qname_join(ns, lookup_name))
         .collect();
 
     let mut chosen: Option<i64> = None;
@@ -86,13 +85,12 @@ impl LookupRule for ImplicitPreludeRule {
             return LookupResult::Pass;
         }
         let target = ctx.target();
-        let separator = ctx.profile.qname_separator;
-        if target.is_empty() || target.contains(separator) {
+        if target.is_empty() || ctx.profile.is_qualified_name(target) {
             return LookupResult::Pass;
         }
         let edge_kind = ctx.edge_kind();
 
-        match scan(ctx, namespaces, separator, edge_kind, target) {
+        match scan(ctx, namespaces, edge_kind, target) {
             ScanOutcome::Found(id) => {
                 return LookupResult::Resolved(ctx.resolved(id, "implicit_prelude"));
             }
@@ -102,7 +100,7 @@ impl LookupRule for ImplicitPreludeRule {
 
         for prefix in ctx.profile.compiled_name_prefixes {
             let decorated = format!("{prefix}{target}");
-            match scan(ctx, namespaces, separator, edge_kind, &decorated) {
+            match scan(ctx, namespaces, edge_kind, &decorated) {
                 ScanOutcome::Found(id) => {
                     return LookupResult::Resolved(ctx.resolved(id, "implicit_prelude"));
                 }

@@ -98,7 +98,12 @@ pub fn extract(source: &str) -> ExtractionResult {
     let src_bytes = source.as_bytes();
     let root = tree.root_node();
 
-    let scope_tree = scope_tree::build(root, src_bytes, JAVA_SCOPE_KINDS);
+    let scope_tree = scope_tree::build(
+        root,
+        src_bytes,
+        JAVA_SCOPE_KINDS,
+        &super::profile::JAVA_PROFILE,
+    );
 
     // The package name is read once and threaded through qualified name building.
     let package = extract_package(root, src_bytes);

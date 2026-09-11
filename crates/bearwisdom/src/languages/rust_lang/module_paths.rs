@@ -99,15 +99,6 @@ fn rust_module_matches_file(file_path: &str, source_module: &str) -> bool {
         || path_contains_segment_run(&module_file.replace("/src/", "/"), &run)
 }
 
-/// Canonical package-import spelling for Cargo package matching. Rust paths
-/// use a language-owned qualification separator while manifest package names
-/// use the resolver's path-shaped package key.
-pub(crate) fn workspace_package_specifier(specifier: &str) -> Option<String> {
-    specifier
-        .contains("::")
-        .then(|| specifier.replace("::", "/"))
-}
-
 /// Candidate module-root files for a Rust `use super::*` or
 /// `use crate::x::*` wildcard. The generic resolver consumes only the returned
 /// paths and preserves its usual unique-hit rule.

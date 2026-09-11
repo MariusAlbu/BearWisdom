@@ -63,9 +63,7 @@ pub(super) fn extract(source: &str) -> ExtractionResult {
             let parent_qname = scopes
                 .last()
                 .and_then(|scope| scope.qualified_name.as_deref());
-            let qualified_name = parent_qname
-                .map(|parent| format!("{parent}::{name}"))
-                .unwrap_or_else(|| name.to_string());
+            let qualified_name = super::helpers::qualify(name, parent_qname.unwrap_or_default());
             let index = result.symbols.len();
             result.symbols.push(ExtractedSymbol {
                 name: name.to_string(),
@@ -105,7 +103,7 @@ pub(super) fn extract(source: &str) -> ExtractionResult {
                     let name_col = raw_line.find(&name).unwrap_or(0) as u32;
                     methods.push(Method {
                         name: name.clone(),
-                        qualified_name: format!("{qualified_name}::{name}"),
+                        qualified_name: super::helpers::qualify(&name, qualified_name),
                         scope_path: qualified_name.to_string(),
                         parent_index,
                         signature,

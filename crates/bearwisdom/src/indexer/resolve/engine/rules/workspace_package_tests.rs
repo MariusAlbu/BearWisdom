@@ -35,6 +35,8 @@ struct WsLookup {
     symbols: Vec<(i64, Symbol)>,
     /// (specifier, package_id)
     packages: Vec<(&'static str, i64)>,
+    /// (consumer alias, canonical workspace package)
+    aliases: Vec<(&'static str, &'static str)>,
     /// (barrel_file_path, [(exported_name, source_module)]) re-export entries.
     reexports: Vec<(&'static str, Vec<(String, String)>)>,
     empty_reexports: Vec<(String, String)>,
@@ -45,6 +47,7 @@ impl WsLookup {
         Self {
             symbols: Vec::new(),
             packages: Vec::new(),
+            aliases: Vec::new(),
             reexports: Vec::new(),
             empty_reexports: Vec::new(),
         }
@@ -63,6 +66,11 @@ impl WsLookup {
 
     fn with_pkg(mut self, specifier: &'static str, pkg_id: i64) -> Self {
         self.packages.push((specifier, pkg_id));
+        self
+    }
+
+    fn with_alias(mut self, alias: &'static str, target: &'static str) -> Self {
+        self.aliases.push((alias, target));
         self
     }
 
@@ -169,6 +177,13 @@ impl SymbolLookup for WsLookup {
     fn is_workspace_declared_name(&self, name: &str) -> bool {
         self.packages.iter().any(|(s, _)| *s == name)
     }
+
+    fn resolve_package_alias(&self, _: Option<i64>, alias: &str) -> Option<&str> {
+        self.aliases
+            .iter()
+            .find(|(candidate, _)| *candidate == alias)
+            .map(|(_, target)| *target)
+    }
 }
 
 fn resolve(lookup: &WsLookup, target: &str, imports: Vec<ImportEntry>) -> Option<i64> {
@@ -216,6 +231,46 @@ fn binds_named_import_from_workspace_package() {
     );
     let imports = vec![import("createSlug", "@org/utils")];
     assert_eq!(resolve(&lookup, "createSlug", imports), Some(42));
+}
+
+#[test]
+fn dotted_npm_package_name_is_not_rewritten_as_a_source_qualified_alias() {
+    let lookup = WsLookup::new()
+        .with_alias("@scope/pkg", "@wrong/target")
+        .with_pkg("@wrong/target.name", 9)
+        .with_sym(
+            9,
+            90,
+            "createSlug",
+            "function",
+            "packages/wrong/src/index.ts",
+        );
+    let imports = vec![import("createSlug", "@scope/pkg.name/sub")];
+
+    assert_eq!(resolve(&lookup, "createSlug", imports), None);
+}
+
+#[test]
+fn dotted_npm_reexport_source_is_not_rewritten_through_a_prefix_alias() {
+    let lookup = WsLookup::new()
+        .with_alias("@scope/pkg", "@wrong/target")
+        .with_pkg("@entry/package", 1)
+        .with_pkg("@wrong/target.name", 9)
+        .with_sym(1, 10, "barrel", "module", "packages/entry/src/index.ts")
+        .with_sym(
+            9,
+            90,
+            "createSlug",
+            "function",
+            "packages/wrong/src/createSlug.ts",
+        )
+        .with_reexports(
+            "packages/entry/src/index.ts",
+            vec![("*", "@scope/pkg.name/sub")],
+        );
+    let imports = vec![import("createSlug", "@entry/package")];
+
+    assert_eq!(resolve(&lookup, "createSlug", imports), None);
 }
 
 #[test]

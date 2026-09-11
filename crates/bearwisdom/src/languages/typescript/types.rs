@@ -801,7 +801,8 @@ pub(super) fn extract_typed_params_as_symbols(
         };
 
         let name = node_text(name_node, src);
-        let qualified_name = scope_tree::qualify(&name, method_scope);
+        let qualified_name =
+            scope_tree::qualify(&super::profile::TYPESCRIPT_PROFILE, &name, method_scope);
         let scope_path = scope_tree::scope_path(method_scope);
 
         let idx = symbols.len();

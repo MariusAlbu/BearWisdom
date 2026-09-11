@@ -40,7 +40,7 @@ pub(super) fn push_function_def(
     }
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::C_LANG_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let kind = if is_destructor {
@@ -124,7 +124,7 @@ pub(super) fn push_specifier(
     };
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::C_LANG_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let kw = match kind {
@@ -168,7 +168,7 @@ pub(super) fn push_namespace(
     let name = node_text(name_node, src);
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::C_LANG_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let idx = symbols.len();
@@ -224,7 +224,7 @@ pub(super) fn push_namespace_alias(
     }
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::C_LANG_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let idx = symbols.len();
@@ -310,7 +310,7 @@ fn push_type_alias(
     symbols: &mut Vec<ExtractedSymbol>,
     parent_index: Option<usize>,
 ) {
-    let qualified_name = scope_tree::qualify(name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::C_LANG_PROFILE, name, scope);
     symbols.push(ExtractedSymbol {
         name: name.to_string(),
         qualified_name,
@@ -611,7 +611,7 @@ pub(super) fn push_declaration(
             if name == type_str && has_function_declarator(&child) {
                 continue;
             }
-            let qualified_name = scope_tree::qualify(&name, scope);
+            let qualified_name = scope_tree::qualify(&super::profile::C_LANG_PROFILE, &name, scope);
             // Forward declarations whose declarator is (or contains) a
             // function_declarator represent function/method signatures, not variables.
             let kind = if has_function_declarator(&child) {

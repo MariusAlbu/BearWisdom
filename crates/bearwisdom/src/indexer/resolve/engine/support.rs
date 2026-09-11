@@ -93,6 +93,7 @@ pub(crate) fn import_scoped_package_id(
     lookup: &dyn SymbolLookup,
     name: &str,
 ) -> Option<i64> {
+    let profile = crate::languages::default_registry().profile_for(&file_ctx.language);
     for import in &file_ctx.imports {
         let names_target = import.bound_name() == name;
         if !names_target {
@@ -101,7 +102,8 @@ pub(crate) fn import_scoped_package_id(
         let Some(spec) = import.module_path.as_deref() else {
             continue;
         };
-        if let Some(pkg) = lookup.workspace_package_id(spec) {
+        let spec = profile.workspace_specifier_path(spec);
+        if let Some(pkg) = lookup.workspace_package_id(spec.as_ref()) {
             return Some(pkg);
         }
     }
@@ -112,25 +114,15 @@ pub(crate) fn import_scoped_package_id(
 /// that `specifier` starts with. `None` when `specifier` IS a declared name
 /// (no sub-path) or when no workspace package matches.
 ///
-/// Peels on `/`, normalizing a profile's source qualification separator first
-/// when needed. This keeps package-root lookup and sub-path matching in the
-/// generic resolver while the profile owns the source spelling.
+/// Peels only neutral `/` path components. The profile adapts source syntax
+/// before this generic package-root lookup runs.
 pub(crate) fn workspace_sub_path(
     profile: &LanguageProfile,
     specifier: &str,
     lookup: &dyn SymbolLookup,
 ) -> Option<String> {
-    let normalized;
-    let specifier: &str = if profile.imports.self_package_root.is_some()
-        && !profile.qname_separator.is_empty()
-        && profile.qname_separator != "/"
-        && specifier.contains(profile.qname_separator)
-    {
-        normalized = specifier.replace(profile.qname_separator, "/");
-        &normalized
-    } else {
-        specifier
-    };
+    let specifier = profile.workspace_specifier_path(specifier);
+    let specifier = specifier.as_ref();
     if lookup.is_workspace_declared_name(specifier) {
         return None;
     }
@@ -154,14 +146,7 @@ pub(crate) fn self_package_sub_path(
     profile: &LanguageProfile,
     specifier: &str,
 ) -> Option<Option<String>> {
-    let keyword = profile.imports.self_package_root?;
-    let rest = specifier.strip_prefix(keyword)?;
-    if rest.is_empty() {
-        return Some(None);
-    }
-    rest.strip_prefix(profile.qname_separator)
-        .or_else(|| rest.strip_prefix('/'))
-        .map(|sub| Some(sub.to_string()))
+    profile.self_package_sub_path(specifier)
 }
 
 /// `true` when `qualified_name` reads as a source module prefix followed by
@@ -276,6 +261,7 @@ pub(crate) fn score_candidate(
     lookup: &dyn SymbolLookup,
     sym: &Symbol,
 ) -> i32 {
+    let profile = crate::languages::default_registry().profile_for(&file_ctx.language);
     let mut s: i32 = 0;
     if let (Some(caller_pkg), Some(sym_pkg)) = (file_package_id, sym.package_id) {
         if caller_pkg == sym_pkg {
@@ -286,7 +272,8 @@ pub(crate) fn score_candidate(
         let Some(mod_path) = import.module_path.as_deref() else {
             continue;
         };
-        if let Some(wp_id) = lookup.workspace_package_id(mod_path) {
+        let mod_path = profile.workspace_specifier_path(mod_path);
+        if let Some(wp_id) = lookup.workspace_package_id(mod_path.as_ref()) {
             if Some(wp_id) == sym.package_id {
                 s += 500;
             }

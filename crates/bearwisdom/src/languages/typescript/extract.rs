@@ -112,7 +112,12 @@ fn extract_inner(source: &str, is_tsx: bool, demand: Option<&HashSet<String>>) -
     let src_bytes = source.as_bytes();
     let root = tree.root_node();
 
-    let scope_tree = scope_tree::build(root, src_bytes, TS_SCOPE_KINDS);
+    let scope_tree = scope_tree::build(
+        root,
+        src_bytes,
+        TS_SCOPE_KINDS,
+        &super::profile::TYPESCRIPT_PROFILE,
+    );
 
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();

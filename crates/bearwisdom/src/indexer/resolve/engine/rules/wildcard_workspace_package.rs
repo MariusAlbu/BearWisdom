@@ -55,10 +55,12 @@ impl LookupRule for WildcardWorkspacePackageRule {
             {
                 continue;
             }
+            let workspace_specifier = ctx.profile.workspace_specifier_path(specifier);
             let (pkg_id, sub_path) = match self_package_sub_path(ctx.profile, specifier) {
                 Some(sub_path) => (ctx.ref_ctx.file_package_id, sub_path),
                 None => (
-                    ctx.lookup.workspace_package_id(specifier),
+                    ctx.lookup
+                        .workspace_package_id(workspace_specifier.as_ref()),
                     workspace_sub_path(ctx.profile, specifier, ctx.lookup),
                 ),
             };

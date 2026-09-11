@@ -54,14 +54,7 @@ impl LookupRule for GenericParamShadowRule {
                 .iter()
                 .any(|id| arena.generic_param(*id).name == target)
         });
-        if !own
-            && !param_in_scope(
-                ctx.lookup,
-                &source.qualified_name,
-                target,
-                ctx.profile.qname_separator,
-            )
-        {
+        if !own && !param_in_scope(ctx.lookup, &source.qualified_name, target) {
             return LookupResult::Pass;
         }
         crate::tracef!(
@@ -77,20 +70,12 @@ impl LookupRule for GenericParamShadowRule {
 /// `source_qname` or on any enclosing owner — every dotted prefix of the
 /// qname is consulted, so a member of a generic type sees the type's
 /// parameters however deep the nesting.
-pub(crate) fn param_in_scope(
-    lookup: &dyn SymbolLookup,
-    source_qname: &str,
-    name: &str,
-    separator: &str,
-) -> bool {
+pub(crate) fn param_in_scope(lookup: &dyn SymbolLookup, source_qname: &str, name: &str) -> bool {
     if declares_param(lookup, source_qname, name) {
         return true;
     }
     let mut prefix = source_qname;
-    while !separator.is_empty() {
-        let Some((owner, _)) = prefix.rsplit_once(separator) else {
-            break;
-        };
+    while let Some(owner) = super::support::index_qname_parent(prefix) {
         if declares_param(lookup, owner, name) {
             return true;
         }
@@ -130,9 +115,8 @@ pub(crate) fn mark_unbound_member_params(
     arena: &TypeArena,
     member: &Symbol,
     yielded: TypeId,
-    qname_separator: &str,
 ) -> TypeId {
-    let names = member_param_names(lookup, member, qname_separator);
+    let names = member_param_names(lookup, member);
     if names.is_empty() || !mentions_param(arena, yielded, &names) {
         return yielded;
     }
@@ -155,19 +139,12 @@ pub(crate) fn mark_unbound_member_params(
 /// member's own parameters plus its declaring type's (the qname minus the
 /// final segment). Id-keyed slots are preferred over qname slots so a
 /// same-qname collision in another package cannot leak params in.
-fn member_param_names(
-    lookup: &dyn SymbolLookup,
-    member: &Symbol,
-    qname_separator: &str,
-) -> Vec<String> {
+fn member_param_names(lookup: &dyn SymbolLookup, member: &Symbol) -> Vec<String> {
     let mut names = lookup
         .generic_params_of(member.id)
         .or_else(|| lookup.generic_params(&member.qualified_name))
         .unwrap_or_default();
-    if let Some((decl, _)) = (!qname_separator.is_empty())
-        .then(|| member.qualified_name.rsplit_once(qname_separator))
-        .flatten()
-    {
+    if let Some(decl) = super::support::index_qname_parent(&member.qualified_name) {
         let decl_params = lookup
             .by_qualified_name(decl)
             .and_then(|s| lookup.generic_params_of(s.id))

@@ -29,7 +29,7 @@ end
         .find(|s| s.name == "initialize")
         .expect("initialize");
     assert_eq!(init.kind, SymbolKind::Constructor);
-    assert_eq!(init.qualified_name, "Animal::initialize");
+    assert_eq!(init.qualified_name, "Animal.initialize");
 
     let speak = r.symbols.iter().find(|s| s.name == "speak").expect("speak");
     assert_eq!(speak.kind, SymbolKind::Method);

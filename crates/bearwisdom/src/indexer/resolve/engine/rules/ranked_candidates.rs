@@ -27,11 +27,7 @@ impl LookupRule for RankedCandidatesRule {
             return LookupResult::Pass;
         }
         let target = ctx.target();
-        if target.is_empty()
-            || (!ctx.profile.qname_separator.is_empty()
-                && target.contains(ctx.profile.qname_separator))
-            || target.contains('/')
-        {
+        if target.is_empty() || ctx.profile.is_qualified_name(target) {
             return LookupResult::Pass;
         }
         let edge_kind = ctx.edge_kind();

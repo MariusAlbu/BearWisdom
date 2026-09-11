@@ -26,11 +26,7 @@ impl LookupRule for HeadAliasRule {
             return LookupResult::Pass;
         };
         let target = ctx.target();
-        let separator = ctx.profile.qname_separator;
-        if separator.is_empty() {
-            return LookupResult::Pass;
-        }
-        let Some((head, _)) = target.split_once(separator) else {
+        let Some((head, _)) = ctx.profile.split_source_qualified_name(target) else {
             return LookupResult::Pass;
         };
         if head.is_empty() || head.contains('_') {

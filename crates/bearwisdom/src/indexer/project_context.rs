@@ -920,24 +920,16 @@ impl ProjectContext {
         Some(format!("{target}{remainder}"))
     }
 
-    /// Resolve a module specifier (e.g. `@myorg/utils`, `@myorg/utils/sub/mod`,
-    /// Rust's `tantivy::schema`) to a workspace `package_id` via `declared_name`.
-    ///
-    /// `::` is canonicalized to `/` first, so a `::`-qualified specifier peels
-    /// the same way a slash-separated deep import does. Matches exact first,
-    /// then strips trailing path segments to handle deep imports:
+    /// Resolve an already normalized slash-separated workspace specifier (e.g.
+    /// `@myorg/utils` or `@myorg/utils/sub/mod`) to a workspace `package_id`
+    /// via `declared_name`. Source-language qualification is adapted before this
+    /// neutral lookup boundary. Matches exact first, then strips trailing path
+    /// segments to handle deep imports:
     /// `@myorg/utils/sub/mod` → `@myorg/utils` → `@myorg`.
     ///
     /// Returns `None` if no workspace package declared that name, including
     /// single-project contexts where `workspace_pkg_by_declared_name` is empty.
     pub fn workspace_package_id(&self, specifier: &str) -> Option<i64> {
-        let normalized;
-        let specifier: &str = if specifier.contains("::") {
-            normalized = specifier.replace("::", "/");
-            &normalized
-        } else {
-            specifier
-        };
         if let Some(&id) = self.workspace_pkg_by_declared_name.get(specifier) {
             return Some(id);
         }

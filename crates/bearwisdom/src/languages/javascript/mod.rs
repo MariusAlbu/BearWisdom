@@ -12,6 +12,8 @@ pub(crate) mod keywords;
 pub(crate) mod predicates;
 pub(crate) mod profile;
 
+pub(crate) use calls::is_enclosing_function_parameter;
+
 pub use profile::JAVASCRIPT_PROFILE;
 
 #[cfg(test)]

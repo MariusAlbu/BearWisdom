@@ -20,17 +20,17 @@ end
     let class = extracted
         .symbols
         .iter()
-        .position(|symbol| symbol.qualified_name == "Services::Catalog")
+        .position(|symbol| symbol.qualified_name == "Services.Catalog")
         .expect("class symbol");
     let method = extracted
         .symbols
         .iter()
-        .find(|symbol| symbol.qualified_name == "Services::Catalog::visit")
+        .find(|symbol| symbol.qualified_name == "Services.Catalog.visit")
         .expect("strict RBI method contract");
     assert_eq!(method.kind, SymbolKind::Method);
     assert_eq!(method.parent_index, Some(class));
     assert_eq!(extracted.symbols[class].parent_index, Some(module));
-    assert_eq!(method.scope_path.as_deref(), Some("Services::Catalog"));
+    assert_eq!(method.scope_path.as_deref(), Some("Services.Catalog"));
     assert_eq!(method.start_line, 4);
     assert_eq!(method.start_col, 8);
     assert_eq!(
@@ -51,7 +51,7 @@ end
     let method = extracted
         .symbols
         .iter()
-        .find(|symbol| symbol.qualified_name == "Catalog::each")
+        .find(|symbol| symbol.qualified_name == "Catalog.each")
         .expect("RBI method");
     assert_eq!(
         method.signature.as_deref(),
@@ -63,7 +63,7 @@ end
     let method = extracted
         .symbols
         .iter()
-        .find(|symbol| symbol.qualified_name == "Catalog::each")
+        .find(|symbol| symbol.qualified_name == "Catalog.each")
         .unwrap();
     assert!(matches!(
         arena.get(method.param_types[0]),
@@ -84,7 +84,7 @@ end
     let method = extracted
         .symbols
         .iter()
-        .find(|symbol| symbol.qualified_name == "Catalog::visit")
+        .find(|symbol| symbol.qualified_name == "Catalog.visit")
         .expect("strict positional RBI method contract");
     assert_eq!(
         method.signature.as_deref(),
@@ -96,7 +96,7 @@ end
     let method = extracted
         .symbols
         .iter()
-        .find(|symbol| symbol.qualified_name == "Catalog::visit")
+        .find(|symbol| symbol.qualified_name == "Catalog.visit")
         .unwrap();
     assert!(matches!(
         arena.get(method.param_types[0]),
@@ -118,7 +118,7 @@ end
     let method = extracted
         .symbols
         .iter()
-        .find(|symbol| symbol.qualified_name == "Catalog::each")
+        .find(|symbol| symbol.qualified_name == "Catalog.each")
         .expect("strict positional RBI void contract");
     assert_eq!(
         method.signature.as_deref(),
@@ -129,7 +129,7 @@ end
     let method = extracted
         .symbols
         .iter()
-        .find(|symbol| symbol.qualified_name == "Catalog::each")
+        .find(|symbol| symbol.qualified_name == "Catalog.each")
         .unwrap();
     assert!(matches!(
         arena.get(method.param_types[0]),
@@ -202,7 +202,7 @@ fn rbi_rejects_non_exact_positional_proc_contract_shapes() {
             extracted
                 .symbols
                 .iter()
-                .all(|symbol| symbol.qualified_name != "Catalog::each"),
+                .all(|symbol| symbol.qualified_name != "Catalog.each"),
             "{label} must not produce an RBI contract: {:?}",
             extracted
                 .symbols
@@ -436,5 +436,5 @@ end
     assert!(extracted
         .symbols
         .iter()
-        .all(|symbol| symbol.qualified_name != "Catalog::each"));
+        .all(|symbol| symbol.qualified_name != "Catalog.each"));
 }

@@ -186,7 +186,7 @@ pub(super) fn push_type_def(
     let name = node_text(name_node, src);
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::SCALA_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let kw = match kind {
@@ -236,7 +236,7 @@ pub(super) fn push_function_def(
     let name = node_text(name_node, src);
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::SCALA_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let kind = if scope.is_some() {
@@ -357,7 +357,7 @@ pub(super) fn push_val_var(
     };
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::SCALA_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let text = node_text(*node, src);
@@ -425,7 +425,7 @@ pub(super) fn push_direct_case_tuple_bindings(
         let scope = enclosing_scope(scope_tree, binding.start_byte(), binding.end_byte());
         symbols.push(ExtractedSymbol {
             name: name.clone(),
-            qualified_name: scope_tree::qualify(&name, scope),
+            qualified_name: scope_tree::qualify(&super::profile::SCALA_PROFILE, &name, scope),
             kind: SymbolKind::Variable,
             visibility: None,
             start_line: binding.start_position().row as u32,
@@ -471,7 +471,7 @@ fn push_direct_tuple_symbol(
 ) {
     let name = node_text(binding, src);
     let scope = enclosing_scope(scope_tree, binding.start_byte(), binding.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::SCALA_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
     let kw = if node_text(*declaration, src).trim_start().starts_with("val") {
         "val"
@@ -513,7 +513,7 @@ pub(super) fn push_type_definition(
     let name = node_text(name_node, src);
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::SCALA_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let type_params = node
@@ -588,7 +588,7 @@ pub(super) fn push_given_definition(
         })?;
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::SCALA_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let idx = symbols.len();
@@ -675,7 +675,7 @@ pub(super) fn push_extension_definition(
         .unwrap_or_else(|| "extension".to_string());
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::SCALA_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let idx = symbols.len();
@@ -738,7 +738,7 @@ pub(super) fn push_package_clause(
     let qualified_name = if full_name.contains('.') {
         full_name.clone()
     } else {
-        scope_tree::qualify(&name, scope)
+        scope_tree::qualify(&super::profile::SCALA_PROFILE, &name, scope)
     };
     let scope_path = if full_name.contains('.') {
         // For `package foo.bar.baz` use the prefix as scope.

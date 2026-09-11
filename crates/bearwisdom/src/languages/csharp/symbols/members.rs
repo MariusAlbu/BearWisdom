@@ -31,7 +31,8 @@ pub(in super::super) fn push_method_decl(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::super::profile::CSHARP_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let kind = if has_test_attribute(node, src) {
@@ -96,7 +97,8 @@ pub(in super::super) fn push_constructor_decl(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::super::profile::CSHARP_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let params = node
@@ -158,7 +160,8 @@ pub(in super::super) fn push_property_decl(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::super::profile::CSHARP_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let type_str = node
@@ -233,7 +236,11 @@ pub(in super::super) fn push_accessor_decl(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&accessor_kind, parent_scope);
+    let qualified_name = scope_tree::qualify(
+        &super::super::profile::CSHARP_PROFILE,
+        &accessor_kind,
+        parent_scope,
+    );
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let idx = symbols.len();
@@ -296,7 +303,11 @@ pub(in super::super) fn push_field_decl(
         if declarator.kind() == "variable_declarator" {
             if let Some(name_node) = declarator.child_by_field_name("name") {
                 let name = node_text(name_node, src);
-                let qualified_name = scope_tree::qualify(&name, parent_scope);
+                let qualified_name = scope_tree::qualify(
+                    &super::super::profile::CSHARP_PROFILE,
+                    &name,
+                    parent_scope,
+                );
                 let idx = symbols.len();
                 symbols.push(ExtractedSymbol {
                     name: name.clone(),
@@ -357,7 +368,11 @@ pub(in super::super) fn push_event_field_decl(
         if declarator.kind() == "variable_declarator" {
             if let Some(name_node) = declarator.child_by_field_name("name") {
                 let name = node_text(name_node, src);
-                let qualified_name = scope_tree::qualify(&name, parent_scope);
+                let qualified_name = scope_tree::qualify(
+                    &super::super::profile::CSHARP_PROFILE,
+                    &name,
+                    parent_scope,
+                );
                 symbols.push(ExtractedSymbol {
                     name: name.clone(),
                     qualified_name,
@@ -400,7 +415,8 @@ pub(in super::super) fn push_delegate_decl(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::super::profile::CSHARP_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let ret = node

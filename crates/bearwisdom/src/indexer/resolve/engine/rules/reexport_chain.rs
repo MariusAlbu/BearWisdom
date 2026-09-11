@@ -62,33 +62,31 @@ impl LookupRule for ReexportChainRule {
 
         // Shape (b): profile-qualified target. First segment may be an import alias;
         // last segment is the actual symbol.
-        if !ctx.profile.qname_separator.is_empty() {
-            if let Some((prefix, _)) = target.split_once(ctx.profile.qname_separator) {
-                let suffix = ctx.profile.simple_name(target);
-                if !prefix.is_empty() && !suffix.is_empty() && suffix != target {
-                    if let Some(matching) = ctx
-                        .file_ctx
-                        .imports
-                        .iter()
-                        .find(|imp| imp.imported_name == prefix)
-                    {
-                        if let Some(module) = matching.module_path.as_deref() {
-                            if !module.is_empty()
-                                && !ctx
-                                    .profile
-                                    .source_module_path_policy(module)
-                                    .is_relative(module)
+        if let Some((prefix, _)) = ctx.profile.split_source_qualified_name(target) {
+            let suffix = ctx.profile.simple_name(target);
+            if !prefix.is_empty() && !suffix.is_empty() && suffix != target {
+                if let Some(matching) = ctx
+                    .file_ctx
+                    .imports
+                    .iter()
+                    .find(|imp| imp.imported_name == prefix)
+                {
+                    if let Some(module) = matching.module_path.as_deref() {
+                        if !module.is_empty()
+                            && !ctx
+                                .profile
+                                .source_module_path_policy(module)
+                                .is_relative(module)
+                        {
+                            if let Some(id) =
+                                ctx.lookup.resolve_external_reexport(suffix, prefix, module)
                             {
-                                if let Some(id) =
-                                    ctx.lookup.resolve_external_reexport(suffix, prefix, module)
+                                if let Some(sid) =
+                                    candidate_with_compatible_kind(ctx, suffix, id, edge_kind)
                                 {
-                                    if let Some(sid) =
-                                        candidate_with_compatible_kind(ctx, suffix, id, edge_kind)
-                                    {
-                                        return LookupResult::Resolved(
-                                            ctx.resolved(sid, "default_reexport_chain"),
-                                        );
-                                    }
+                                    return LookupResult::Resolved(
+                                        ctx.resolved(sid, "default_reexport_chain"),
+                                    );
                                 }
                             }
                         }

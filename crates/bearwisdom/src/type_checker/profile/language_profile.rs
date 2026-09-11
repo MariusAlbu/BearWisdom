@@ -10,6 +10,8 @@
 // (`import_axes.rs`); every other axis is a direct field on this struct.
 // =============================================================================
 
+use std::borrow::Cow;
+
 use crate::types::{EdgeKind, SymbolKind, Visibility};
 
 use super::super::core::types::PrimKind;
@@ -98,6 +100,10 @@ pub struct LanguageProfile {
     // === Identity ===
     pub id: &'static str,
     pub qname_separator: &'static str,
+    /// Source spellings in a call target that require the extractor to emit a
+    /// `MemberChain`.  This is source grammar: canonical index keys and file
+    /// paths do not participate.  Empty is fail-closed.
+    pub member_chain_markers: &'static [&'static str],
     /// Declaration-merging reach for this language's type declarations.
     pub declaration_merging: MergeScope,
     /// Receiver-role and member-prefix spellings owned by this language.
@@ -400,6 +406,90 @@ pub struct LanguageProfile {
 }
 
 impl LanguageProfile {
+    /// Whether a source call target contains a spelling this language uses for
+    /// member or qualified-chain access.  Extractors must represent such a
+    /// call with `MemberChain` rather than leaving a compound target string.
+    pub fn call_target_requires_member_chain(&self, target: &str) -> bool {
+        self.member_chain_markers
+            .iter()
+            .any(|marker| !marker.is_empty() && target.contains(marker))
+    }
+
+    /// Split a source-qualified name at its first language-owned separator.
+    /// Returns `None` when this profile has no separator or the spelling is
+    /// not source-qualified.
+    pub fn split_source_qualified_name<'a>(&self, name: &'a str) -> Option<(&'a str, &'a str)> {
+        (!self.qname_separator.is_empty())
+            .then(|| name.split_once(self.qname_separator))
+            .flatten()
+    }
+
+    /// Return source-qualified name components under this profile.  A bare
+    /// name is returned as one component; an empty component denotes malformed
+    /// source qualification and lets callers decline it.
+    pub fn source_qualified_name_parts<'a>(&self, name: &'a str) -> Vec<&'a str> {
+        if self.qname_separator.is_empty() {
+            vec![name]
+        } else {
+            name.split(self.qname_separator).collect()
+        }
+    }
+
+    /// Join source-qualified components with the language-owned separator.
+    pub fn join_source_qualified_name<'a, I>(&self, parts: I) -> String
+    where
+        I: IntoIterator<Item = &'a str>,
+    {
+        parts
+            .into_iter()
+            .collect::<Vec<_>>()
+            .join(self.qname_separator)
+    }
+
+    /// Adapt a workspace module specifier into neutral slash-separated path
+    /// evidence when this profile's self-package syntax uses a source
+    /// qualification separator. Existing slash-shaped package specifiers are
+    /// preserved verbatim.
+    pub fn workspace_specifier_path<'a>(&self, specifier: &'a str) -> Cow<'a, str> {
+        if self.imports.self_package_root.is_some()
+            && !self.qname_separator.is_empty()
+            && self.qname_separator != "/"
+            && specifier.contains(self.qname_separator)
+        {
+            Cow::Owned(specifier.replace(self.qname_separator, "/"))
+        } else {
+            Cow::Borrowed(specifier)
+        }
+    }
+
+    /// Identify a self-package specifier and return its optional sub-path.
+    /// `Some(None)` is the package root, `Some(Some(path))` is a descendant,
+    /// and `None` means this specifier belongs to normal package lookup.
+    pub fn self_package_sub_path(&self, specifier: &str) -> Option<Option<String>> {
+        let keyword = self.imports.self_package_root?;
+        let rest = specifier.strip_prefix(keyword)?;
+        if rest.is_empty() {
+            return Some(None);
+        }
+        rest.strip_prefix(self.qname_separator)
+            .or_else(|| rest.strip_prefix('/'))
+            .map(|sub| Some(sub.to_string()))
+    }
+
+    /// Package-alias head of a workspace specifier. Only profiles with explicit
+    /// self-package qualification may split source syntax here; other module
+    /// grammars keep the whole specifier, including dots in package names.
+    pub fn workspace_alias_head<'a>(&self, specifier: &'a str) -> Option<&'a str> {
+        if self.imports.self_package_root.is_none() {
+            return (!specifier.is_empty()).then_some(specifier);
+        }
+        let head = self
+            .split_source_qualified_name(specifier)
+            .map(|(head, _)| head)
+            .unwrap_or(specifier);
+        (!head.is_empty()).then_some(head)
+    }
+
     /// The declared receiver meaning of an exact source spelling. Does not
     /// infer from the spelling, so an unconfigured language fails closed.
     pub fn receiver_role(&self, spelling: &str) -> Option<ReceiverRole> {

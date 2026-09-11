@@ -90,7 +90,8 @@ pub(super) fn apply(
     // Workspace package: candidates are the package's own symbols, narrowed
     // by the deep-import sub-path when one is present. `workspace_package_id`
     // peels deep specifiers itself.
-    if let Some(pkg_id) = lookup.workspace_package_id(spec) {
+    let workspace_specifier = profile.workspace_specifier_path(spec);
+    if let Some(pkg_id) = lookup.workspace_package_id(workspace_specifier.as_ref()) {
         let sub_path = workspace_sub_path(profile, spec, lookup);
         let candidates = lookup.symbols_in_package(pkg_id);
         let sub = sub_path.as_deref();

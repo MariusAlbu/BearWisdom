@@ -56,7 +56,7 @@ pub fn extract(source: &str) -> super::ExtractionResult {
     let root = tree.root_node();
 
     // Build scope tree for qualified-name lookups (used in scope_path).
-    let _scope_tree = scope_tree::build(root, src, RUBY_SCOPE_KINDS);
+    let _scope_tree = scope_tree::build(root, src, RUBY_SCOPE_KINDS, &super::profile::RUBY_PROFILE);
 
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();

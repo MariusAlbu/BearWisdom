@@ -56,7 +56,7 @@ pub fn extract(source: &str) -> ExtractionResult {
     let src = source.as_bytes();
     let has_errors = root.has_error();
 
-    let scope_tree = scope_tree::build(root, src, LUA_SCOPE_KINDS);
+    let scope_tree = scope_tree::build(root, src, LUA_SCOPE_KINDS, &super::profile::LUA_PROFILE);
 
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();

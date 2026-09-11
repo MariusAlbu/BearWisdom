@@ -64,7 +64,8 @@ pub(super) fn extract_constructor_params(
         } else {
             None
         };
-        let qualified_name = scope_tree::qualify(&name, parent_scope);
+        let qualified_name =
+            scope_tree::qualify(&super::profile::TYPESCRIPT_PROFILE, &name, parent_scope);
         let scope_path = scope_tree::scope_path(parent_scope);
 
         let prop_idx = symbols.len();
@@ -163,7 +164,8 @@ pub(super) fn extract_catch_variable(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::profile::TYPESCRIPT_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let idx = symbols.len();
@@ -260,7 +262,8 @@ pub(super) fn extract_for_loop_var(
     } else {
         None
     };
-    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let qualified_name =
+        scope_tree::qualify(&super::profile::TYPESCRIPT_PROFILE, &name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
     let idx = symbols.len();
@@ -314,7 +317,7 @@ pub(super) fn extract_for_loop_var(
         // has `mutations` as an arrow-function parameter. The iterable TypeRef
         // would never resolve — the binding is a local, not a declared type.
         let shadowed = chain.segments.len() == 1
-            && crate::languages::common::is_enclosing_js_function_parameter(
+            && crate::languages::javascript::is_enclosing_function_parameter(
                 iterable_node,
                 src,
                 &target,
@@ -340,7 +343,7 @@ pub(super) fn extract_for_loop_var(
         // Simple identifier iterable: `for (const item of items)` — emit a
         // plain TypeRef so the index builder can look up `items` type.
         let target = node_text(iterable_node, src);
-        let shadowed = crate::languages::common::is_enclosing_js_function_parameter(
+        let shadowed = crate::languages::javascript::is_enclosing_function_parameter(
             iterable_node,
             src,
             &target,

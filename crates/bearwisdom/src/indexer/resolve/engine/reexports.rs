@@ -55,26 +55,25 @@ pub(crate) fn follow_reexports(
         // A bare workspace-package source may use a consumer-scoped package
         // alias. Rewrite the profile-delimited alias head to the target package
         // so the hop keys on the real member; the wildcard path keeps the original.
+        let workspace_source_module = profile.workspace_specifier_path(source_module);
         let renamed = if profile
             .source_module_path_policy(source_module)
             .is_relative(source_module)
-            || lookup.workspace_package_id(source_module).is_some()
+            || lookup
+                .workspace_package_id(workspace_source_module.as_ref())
+                .is_some()
         {
             None
         } else {
-            let head = if profile.qname_separator.is_empty() {
-                source_module
-            } else {
-                source_module
-                    .split(profile.qname_separator)
-                    .next()
-                    .unwrap_or(source_module)
+            let Some(head) = profile.workspace_alias_head(source_module) else {
+                continue;
             };
             lookup
                 .resolve_package_alias(lookup.package_id_for_file(module_path), head)
                 .map(|t| format!("{t}{}", &source_module[head.len()..]))
         };
         let source = renamed.as_deref().unwrap_or(source_module);
+        let workspace_source = profile.workspace_specifier_path(source);
 
         // A bare source is followable when it resolves to a file OR names a sibling
         // workspace package whose barrel can be recovered; a true external is skipped.
@@ -82,9 +81,15 @@ pub(crate) fn follow_reexports(
             .source_module_path_policy(source)
             .is_relative(source)
             && lookup.resolve_module_from(module_path, source).is_none()
-            && workspace_pkg_barrels(lookup, source, profile.imports.reexport_barrel_stems)
-                .is_empty()
-            && lookup.workspace_package_id(source).is_none()
+            && workspace_pkg_barrels(
+                lookup,
+                workspace_source.as_ref(),
+                profile.imports.reexport_barrel_stems,
+            )
+            .is_empty()
+            && lookup
+                .workspace_package_id(workspace_source.as_ref())
+                .is_none()
         {
             continue;
         }
@@ -108,7 +113,7 @@ pub(crate) fn follow_reexports(
         {
             if let Some(id) = workspace_pkg_declared_symbol(
                 lookup,
-                source,
+                workspace_source.as_ref(),
                 target_name,
                 edge_kind,
                 kind_compatible,
@@ -247,9 +252,12 @@ fn follow_reexport_source(
         .source_module_path_policy(source_module)
         .is_relative(source_module)
     {
-        for barrel in
-            workspace_pkg_barrels(lookup, source_module, profile.imports.reexport_barrel_stems)
-        {
+        let workspace_source = profile.workspace_specifier_path(source_module);
+        for barrel in workspace_pkg_barrels(
+            lookup,
+            workspace_source.as_ref(),
+            profile.imports.reexport_barrel_stems,
+        ) {
             if let Some(res) = follow_reexports(
                 &barrel,
                 target_name,

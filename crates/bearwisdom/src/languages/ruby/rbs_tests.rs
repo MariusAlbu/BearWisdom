@@ -16,10 +16,10 @@ end
     let method = extracted
         .symbols
         .iter()
-        .find(|symbol| symbol.qualified_name == "Services::Catalog::visit")
+        .find(|symbol| symbol.qualified_name == "Services.Catalog.visit")
         .expect("strict RBS method contract");
     assert_eq!(method.kind, SymbolKind::Method);
-    assert_eq!(method.scope_path.as_deref(), Some("Services::Catalog"));
+    assert_eq!(method.scope_path.as_deref(), Some("Services.Catalog"));
     assert_eq!(
         method.signature.as_deref(),
         Some("visit(arg0: Request, callback: (Item, Context) -> Result): void")
@@ -30,7 +30,7 @@ end
     let method = extracted
         .symbols
         .iter()
-        .find(|symbol| symbol.qualified_name == "Services::Catalog::visit")
+        .find(|symbol| symbol.qualified_name == "Services.Catalog.visit")
         .unwrap();
     assert!(matches!(
         arena.get(method.param_types[1]),

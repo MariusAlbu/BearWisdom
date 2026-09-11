@@ -25,6 +25,7 @@
 use super::helpers;
 use crate::parser::languages;
 use crate::parser::scope_tree::{self, ScopeKind, ScopeTree};
+use crate::type_checker::profile::default_profile::DEFAULT_PROFILE;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
 use tree_sitter::{Node, Parser};
 
@@ -201,7 +202,11 @@ pub fn extract(source: &str, language: &str) -> Option<GenericExtraction> {
 
     // Build the scope tree for this language before the DFS walk.
     let config = scope_config_for(language);
-    let scope_tree = scope_tree::build(root, src, config);
+    let profile = crate::languages::default_registry()
+        .get(language)
+        .profile()
+        .unwrap_or(&DEFAULT_PROFILE);
+    let scope_tree = scope_tree::build(root, src, config, profile);
 
     let mut ctx = ExtractionCtx {
         src,
@@ -469,7 +474,11 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
                 node.start_byte(),
                 node.end_byte(),
             );
-            let qualified_name = scope_tree::qualify(&name, containing_scope);
+            let profile = crate::languages::default_registry()
+                .get(language)
+                .profile()
+                .unwrap_or(&DEFAULT_PROFILE);
+            let qualified_name = scope_tree::qualify(profile, &name, containing_scope);
             let sp = scope_tree::scope_path(containing_scope);
 
             let start = node.start_position();

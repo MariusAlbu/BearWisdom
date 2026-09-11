@@ -23,10 +23,12 @@ use crate::ecosystem::package_specifier;
 use rustc_hash::FxHashMap;
 
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
+use crate::type_checker::profile::language_profile::LanguageProfile;
 use crate::types::{EdgeKind, ParsedFile};
 
 use super::contract::util::is_type_like_kind;
 use super::contract::{Symbol, TypeInfo};
+use super::support::join_index_qname;
 
 /// One file's deferred requalification work: the import-derived candidate map
 /// and the ids of the symbols whose type slots it governs.
@@ -37,9 +39,9 @@ pub(crate) struct PendingFile {
     pub(crate) imports: FxHashMap<String, Vec<String>>,
     /// Ids of this file's symbols (the `type_info_by_id` keys to rewrite).
     pub(crate) symbol_ids: Vec<i64>,
-    /// Active language's qualified-name separator. Missing profile evidence
-    /// disables spelling-sensitive requalification for this file.
-    pub(crate) qname_separator: Option<&'static str>,
+    /// Active language profile. Missing profile evidence disables
+    /// source-spelling-sensitive requalification for this file.
+    pub(crate) profile: Option<&'static LanguageProfile>,
 }
 
 /// Build a file's pending entry from its import-describing refs. `None` when
@@ -78,10 +80,12 @@ pub(crate) fn collect_pending(
                 _ => None,
             })
             .unwrap_or(&r.target_name);
-        let mut cands = vec![format!("{module}.{original}")];
+        // Package roots stay opaque (`@scope/pkg`); only the indexed member
+        // suffix uses the canonical qname join.
+        let mut cands = vec![join_index_qname(module, original)];
         let root = package_specifier::package_root(&pf.language, module);
         if let Some(root) = root.as_deref().filter(|root| *root != module) {
-            cands.push(format!("{root}.{original}"));
+            cands.push(join_index_qname(root, original));
         }
         imports.entry(r.target_name.clone()).or_insert(cands);
     }
@@ -98,10 +102,7 @@ pub(crate) fn collect_pending(
         path: pf.path.clone(),
         imports,
         symbol_ids,
-        qname_separator: crate::languages::default_registry()
-            .get(&pf.language)
-            .profile()
-            .map(|profile| profile.qname_separator),
+        profile,
     })
 }
 
@@ -144,13 +145,13 @@ pub(crate) fn apply_pending(
                 };
                 if let Some(new) = ti
                     .return_type_id
-                    .and_then(|t| requalify_type(arena, t, &resolved, entry.qname_separator))
+                    .and_then(|t| requalify_type(arena, t, &resolved, entry.profile))
                 {
                     ti.return_type_id = Some(new);
                 }
                 if let Some(new) = ti
                     .field_type_id
-                    .and_then(|t| requalify_type(arena, t, &resolved, entry.qname_separator))
+                    .and_then(|t| requalify_type(arena, t, &resolved, entry.profile))
                 {
                     ti.field_type_id = Some(new);
                 }
@@ -167,12 +168,12 @@ fn requalify_type(
     arena: &TypeArena,
     ty: TypeId,
     resolve: &FxHashMap<String, String>,
-    qname_separator: Option<&str>,
+    profile: Option<&LanguageProfile>,
 ) -> Option<TypeId> {
     match arena.get(ty) {
         Type::Class(name) => {
-            let separator = qname_separator?;
-            if !separator.is_empty() && name.contains(separator) {
+            let profile = profile?;
+            if profile.is_qualified_name(&name) {
                 return None;
             }
             resolve.get(&name).map(|q| arena.class(q))
@@ -180,10 +181,10 @@ fn requalify_type(
         // A bound nominal is not a bare name; requalification never touches it.
         Type::Decl { .. } => None,
         Type::Apply { base, args } => {
-            let new_base = requalify_type(arena, base, resolve, qname_separator);
+            let new_base = requalify_type(arena, base, resolve, profile);
             let new_args: Vec<Option<TypeId>> = args
                 .iter()
-                .map(|&a| requalify_type(arena, a, resolve, qname_separator))
+                .map(|&a| requalify_type(arena, a, resolve, profile))
                 .collect();
             if new_base.is_none() && new_args.iter().all(Option::is_none) {
                 return None;
@@ -198,26 +199,28 @@ fn requalify_type(
                 args,
             }))
         }
-        Type::Optional(inner) => requalify_type(arena, inner, resolve, qname_separator)
-            .map(|i| arena.intern(Type::Optional(i))),
-        Type::AsyncWrapper(inner) => requalify_type(arena, inner, resolve, qname_separator)
+        Type::Optional(inner) => {
+            requalify_type(arena, inner, resolve, profile).map(|i| arena.intern(Type::Optional(i)))
+        }
+        Type::AsyncWrapper(inner) => requalify_type(arena, inner, resolve, profile)
             .map(|i| arena.intern(Type::AsyncWrapper(i))),
-        Type::Iterator(inner) => requalify_type(arena, inner, resolve, qname_separator)
-            .map(|i| arena.intern(Type::Iterator(i))),
-        Type::Constructor(inner) => requalify_type(arena, inner, resolve, qname_separator)
+        Type::Iterator(inner) => {
+            requalify_type(arena, inner, resolve, profile).map(|i| arena.intern(Type::Iterator(i)))
+        }
+        Type::Constructor(inner) => requalify_type(arena, inner, resolve, profile)
             .map(|i| arena.intern(Type::Constructor(i))),
-        Type::Union(arms) => requalify_arms(arena, &arms, resolve, qname_separator)
+        Type::Union(arms) => requalify_arms(arena, &arms, resolve, profile)
             .map(|arms| arena.intern(Type::Union(arms))),
-        Type::Intersection(arms) => requalify_arms(arena, &arms, resolve, qname_separator)
+        Type::Intersection(arms) => requalify_arms(arena, &arms, resolve, profile)
             .map(|arms| arena.intern(Type::Intersection(arms))),
-        Type::Tuple(items) => requalify_arms(arena, &items, resolve, qname_separator)
+        Type::Tuple(items) => requalify_arms(arena, &items, resolve, profile)
             .map(|items| arena.intern(Type::Tuple(items))),
         Type::Function { params, return_ } => {
             let new_params: Vec<Option<TypeId>> = params
                 .iter()
-                .map(|&p| requalify_type(arena, p, resolve, qname_separator))
+                .map(|&p| requalify_type(arena, p, resolve, profile))
                 .collect();
-            let new_return = requalify_type(arena, return_, resolve, qname_separator);
+            let new_return = requalify_type(arena, return_, resolve, profile);
             if new_return.is_none() && new_params.iter().all(Option::is_none) {
                 return None;
             }
@@ -249,11 +252,11 @@ fn requalify_arms(
     arena: &TypeArena,
     arms: &[TypeId],
     resolve: &FxHashMap<String, String>,
-    qname_separator: Option<&str>,
+    profile: Option<&LanguageProfile>,
 ) -> Option<Vec<TypeId>> {
     let rewritten: Vec<Option<TypeId>> = arms
         .iter()
-        .map(|&a| requalify_type(arena, a, resolve, qname_separator))
+        .map(|&a| requalify_type(arena, a, resolve, profile))
         .collect();
     if rewritten.iter().all(Option::is_none) {
         return None;

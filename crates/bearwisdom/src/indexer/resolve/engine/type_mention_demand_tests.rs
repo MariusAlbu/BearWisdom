@@ -319,14 +319,16 @@ fn chain_root_without_declared_type_pulls_nothing() {
 }
 
 #[test]
-fn type_leaf_uses_the_active_separator() {
+fn source_qualified_type_head_normalizes_to_a_canonical_index_qname() {
+    let profile = crate::type_checker::profile::language_profile::LanguageProfile {
+        qname_separator: "::",
+        ..crate::type_checker::profile::language_profile::DEFAULT_PROFILE
+    };
+    let indexed = profile.index_qname_from_source("package::subpackage::Type");
+    assert_eq!(indexed, "package.subpackage.Type");
     assert_eq!(
-        super::type_leaf_for_separator("package/subpackage/Type", "/"),
+        crate::indexer::resolve::engine::support::index_qname_leaf(&indexed),
         "Type"
-    );
-    assert_eq!(
-        super::type_leaf_for_separator("package.subpackage.Type", "/"),
-        "package.subpackage.Type"
     );
 }
 

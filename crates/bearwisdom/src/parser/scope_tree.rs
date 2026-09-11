@@ -26,12 +26,14 @@
 //     ScopeNode { name: "Baz",  qualified_name: "Foo.Bar.Baz",  depth: 2 }
 //
 // Usage by extractors:
-//   let tree = scope_tree::build(root_node, source, &CSHARP_SCOPE_CONFIG);
+//   let tree = scope_tree::build(root_node, source, &CSHARP_SCOPE_CONFIG, &CSHARP_PROFILE);
 //   let scope = scope_tree::find_scope_at(&tree, byte_offset);
 //   let qname = scope.map(|s| s.qualified_name.as_str()).unwrap_or("");
 // =============================================================================
 
 use tree_sitter::Node;
+
+use crate::type_checker::profile::language_profile::LanguageProfile;
 
 /// A single scope entry in the scope tree.
 #[derive(Debug, Clone)]
@@ -73,10 +75,16 @@ pub type ScopeTree = Vec<ScopeEntry>;
 ///   `root`   — the tree-sitter root node (from `tree.root_node()`).
 ///   `source` — the original source text as bytes (UTF-8).
 ///   `config` — which node kinds open scopes.
-pub fn build(root: Node, source: &[u8], config: &[ScopeKind]) -> ScopeTree {
+///   `profile` — source-name normalization owned by the active language.
+pub fn build(
+    root: Node,
+    source: &[u8],
+    config: &[ScopeKind],
+    profile: &LanguageProfile,
+) -> ScopeTree {
     let mut tree = Vec::new();
     // Walk from the root with no parent scope yet.
-    walk(root, source, config, &[], &mut tree, 0);
+    walk(root, source, config, profile, &[], &mut tree, 0);
     tree
 }
 
@@ -123,10 +131,15 @@ pub fn find_enclosing_scope(
 ///
 /// `symbol_name`: the simple name of the symbol (e.g. "MapCatalogApiV1").
 /// `containing_scope`: the result of `find_scope_at` for that symbol's position.
-pub fn qualify(symbol_name: &str, containing_scope: Option<&ScopeEntry>) -> String {
+pub fn qualify(
+    profile: &LanguageProfile,
+    symbol_name: &str,
+    containing_scope: Option<&ScopeEntry>,
+) -> String {
+    let symbol_name = profile.index_qname_from_source(symbol_name);
     match containing_scope {
-        Some(scope) => format!("{}.{symbol_name}", scope.qualified_name),
-        None => symbol_name.to_string(),
+        Some(scope) => join_index_qname(&scope.qualified_name, &symbol_name),
+        None => symbol_name,
     }
 }
 
@@ -164,6 +177,7 @@ pub fn scope_path(containing_scope: Option<&ScopeEntry>) -> Option<String> {
 pub fn prefix_top_level_qnames(
     symbols: &mut [crate::types::ExtractedSymbol],
     hoisted_pkg: Option<&str>,
+    profile: &LanguageProfile,
 ) {
     use crate::types::SymbolKind;
 
@@ -172,6 +186,7 @@ pub fn prefix_top_level_qnames(
         return;
     }
 
+    let hoisted_pkg = hoisted_pkg.map(|pkg| profile.index_qname_from_source(pkg));
     let mut rewrites: Vec<(usize, String, String)> = Vec::new();
 
     for i in 0..n {
@@ -179,10 +194,10 @@ pub fn prefix_top_level_qnames(
             continue;
         }
         if matches!(symbols[i].kind, SymbolKind::Namespace | SymbolKind::Module) {
-            if symbols[i].qualified_name.contains('.') {
+            if index_qname_parent(&symbols[i].qualified_name).is_some() {
                 continue;
             }
-            if let Some(pkg) = hoisted_pkg {
+            if let Some(pkg) = hoisted_pkg.as_deref() {
                 if pkg.split('.').any(|seg| seg == symbols[i].name) {
                     continue;
                 }
@@ -198,20 +213,20 @@ pub fn prefix_top_level_qnames(
             {
                 Some(symbols[p_idx].qualified_name.clone())
             }
-            _ => hoisted_pkg.map(|s| s.to_string()),
+            _ => hoisted_pkg.clone(),
         };
 
         let Some(pfx) = prefix else { continue };
 
         let old = symbols[i].qualified_name.clone();
-        let new = format!("{pfx}.{old}");
+        let new = join_index_qname(&pfx, &old);
         rewrites.push((i, old, new));
     }
 
     for (i, old, new) in rewrites {
         symbols[i].qualified_name = new.clone();
         if symbols[i].scope_path.is_none() {
-            let new_scope = new.rsplit_once('.').map(|(p, _)| p.to_string());
+            let new_scope = index_qname_parent(&new).map(str::to_string);
             symbols[i].scope_path = new_scope;
         }
         let old_dot = format!("{old}.");
@@ -243,6 +258,7 @@ fn walk(
     root: Node,
     source: &[u8],
     config: &[ScopeKind],
+    profile: &LanguageProfile,
     root_chain: &[String], // qualified_name components of all ancestor scopes
     tree: &mut ScopeTree,
     root_depth: usize,
@@ -276,13 +292,13 @@ fn walk(
             });
 
         let (child_chain, child_depth) = if let Some((node_kind, name_node)) = scope_match {
-            // For C# `qualified_name` nodes (namespace "Foo.Bar"), keep the full text.
             let name = node_text(name_node, source);
+            let index_name = profile.index_qname_from_source(&name);
 
             let qualified_name = if chain.is_empty() {
-                name.clone()
+                index_name.clone()
             } else {
-                format!("{}.{name}", chain.join("."))
+                join_index_qname(&chain.join("."), &index_name)
             };
 
             tree.push(ScopeEntry {
@@ -294,11 +310,10 @@ fn walk(
                 depth,
             });
 
-            // Build the new parent chain for children. For dotted namespace
-            // names ("Foo.Bar") push each dot-segment individually so that
-            // `qualify("Baz", scope)` gives "Foo.Bar.Baz" not "Foo.Bar.Bar.Baz".
+            // Scope names have crossed the source boundary above, so the
+            // canonical index separator is safe to use here.
             let mut new_chain = (*chain).clone();
-            for part in name.split('.') {
+            for part in index_name.split('.') {
                 new_chain.push(part.to_string());
             }
             (Rc::new(new_chain), depth + 1)
@@ -312,6 +327,23 @@ fn walk(
             stack.push((child, Rc::clone(&child_chain), child_depth));
         }
     }
+}
+
+/// Join two canonical index qnames. The dot is index storage syntax, never
+/// source-language spelling.
+fn join_index_qname(prefix: &str, leaf: &str) -> String {
+    if prefix.is_empty() {
+        leaf.to_string()
+    } else if leaf.is_empty() {
+        prefix.to_string()
+    } else {
+        format!("{prefix}.{leaf}")
+    }
+}
+
+/// The parent of a canonical index qname.
+fn index_qname_parent(qname: &str) -> Option<&str> {
+    qname.rsplit_once('.').map(|(parent, _)| parent)
 }
 
 // ---------------------------------------------------------------------------

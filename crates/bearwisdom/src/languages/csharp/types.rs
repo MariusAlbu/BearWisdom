@@ -326,7 +326,8 @@ pub(super) fn extract_csharp_typed_params_as_symbols(
             continue;
         }
 
-        let qualified_name = scope_tree::qualify(&name, method_scope);
+        let qualified_name =
+            scope_tree::qualify(&super::profile::CSHARP_PROFILE, &name, method_scope);
         let scope_path = scope_tree::scope_path(method_scope);
 
         let param_idx = symbols.len();

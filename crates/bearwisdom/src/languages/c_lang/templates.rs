@@ -186,7 +186,7 @@ pub(super) fn push_concept_def(
     }
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::C_LANG_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let idx = symbols.len();
@@ -268,7 +268,7 @@ pub(super) fn push_alias_decl(
     };
     let name = node_text(name_node, src);
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::C_LANG_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let idx = symbols.len();

@@ -24,8 +24,10 @@ static WWS_PROFILE: LanguageProfile = LanguageProfile {
                 declines_directory_match:
                     crate::languages::rust_lang::module_paths::does_not_decline_directory_match,
             },
+        self_package_root: Some("crate"),
         ..DEFAULT_PROFILE.imports
     },
+    qname_separator: "::",
     ..DEFAULT_PROFILE
 };
 
@@ -149,16 +151,8 @@ impl SymbolLookup for WsLookup {
     }
 
     fn workspace_package_id(&self, specifier: &str) -> Option<i64> {
-        // Mirrors the production impl: `::` canonicalizes to `/` before the
-        // deep-import peel, so a Rust `tantivy::schema` specifier walks the
-        // same way an npm `@org/utils/sub` one does.
-        let normalized;
-        let specifier: &str = if specifier.contains("::") {
-            normalized = specifier.replace("::", "/");
-            &normalized
-        } else {
-            specifier
-        };
+        // Generic lookup receives a neutral slash path; profile code adapts
+        // Rust qualification before this deep-import peel.
         let mut path = specifier;
         loop {
             if let Some(&(_, pkg_id)) = self.packages.iter().find(|(s, _)| *s == path) {

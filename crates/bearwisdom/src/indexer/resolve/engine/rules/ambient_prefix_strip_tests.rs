@@ -120,9 +120,25 @@ fn passes_when_leaf_not_ambient() {
 
 #[test]
 fn uses_the_profile_separator_for_alias_prefixes() {
-    assert_eq!(
-        strip_ambient_prefix("sys::concat", &["sys"], "::"),
-        Some("concat")
-    );
-    assert_eq!(strip_ambient_prefix("sys.concat", &["sys"], "::"), None);
+    let lookup = Lookup::new().with_ambient(sym(30, "concat", "concat", "function", "ext:ambient"));
+    let r = call_ref("sys::concat");
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let kind = accept_any;
+    let mut profile = DEFAULT_PROFILE;
+    profile.qname_separator = "::";
+    profile.ambient_namespace_prefixes = &["sys"];
+    let ctx = BinderContext {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind: &kind,
+        profile: &profile,
+    };
+
+    assert!(matches!(
+        AmbientPrefixStripRule.apply(&ctx),
+        LookupResult::Resolved(_)
+    ));
 }

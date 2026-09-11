@@ -86,10 +86,15 @@ fn binds_via_dot_qualified_name() {
 }
 
 #[test]
-fn binds_via_double_colon_separator() {
-    // The profile's source separator supplements the dotted index join.
-    let lookup = Lookup::new().with(sym(2, "mutate", "dplyr::mutate", "function", "R/dplyr.R"));
-    let got = resolve_with_profile(&lookup, "mutate", "dplyr", &COLON_COLON_PROFILE);
+fn source_separator_normalizes_to_canonical_index_qname() {
+    let lookup = Lookup::new().with(sym(
+        2,
+        "mutate",
+        "dplyr.verbs.mutate",
+        "function",
+        "R/dplyr.R",
+    ));
+    let got = resolve_with_profile(&lookup, "mutate", "dplyr::verbs", &COLON_COLON_PROFILE);
     assert_eq!(got, Some(2));
 }
 

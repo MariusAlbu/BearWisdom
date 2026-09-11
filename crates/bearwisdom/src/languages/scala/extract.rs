@@ -73,10 +73,12 @@ pub fn extract(source: &str) -> super::ExtractionResult {
     // where parent_index is set but enclosing_scope is None).
     let hoisted_pkg = hoist_top_level_package(root, src);
 
-    let mut scope_tree = scope_tree::build(root, src, SCALA_SCOPE_KINDS);
+    let mut scope_tree =
+        scope_tree::build(root, src, SCALA_SCOPE_KINDS, &super::profile::SCALA_PROFILE);
     if let Some(pkg) = hoisted_pkg.as_deref() {
         for entry in scope_tree.iter_mut() {
-            entry.qualified_name = format!("{pkg}.{}", entry.qualified_name);
+            entry.qualified_name =
+                super::profile::SCALA_PROFILE.index_qname_join(pkg, &entry.qualified_name);
         }
     }
 
@@ -85,7 +87,11 @@ pub fn extract(source: &str) -> super::ExtractionResult {
 
     extract_node(root, src, &scope_tree, &mut symbols, &mut refs, None);
 
-    scope_tree::prefix_top_level_qnames(&mut symbols, hoisted_pkg.as_deref());
+    scope_tree::prefix_top_level_qnames(
+        &mut symbols,
+        hoisted_pkg.as_deref(),
+        &super::profile::SCALA_PROFILE,
+    );
 
     // Post-traversal: scan the entire CST for type_identifier nodes and emit
     // TypeRef for any that the top-down walker didn't reach (e.g., inside

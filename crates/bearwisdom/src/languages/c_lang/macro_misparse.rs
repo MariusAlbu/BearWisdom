@@ -92,7 +92,7 @@ pub(super) fn push_misparsed_class(
 ) -> Option<usize> {
     use crate::parser::scope_tree as st;
     let scope = super::helpers::enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = st::qualify(real_name, scope);
+    let qualified_name = st::qualify(&super::profile::C_LANG_PROFILE, real_name, scope);
     let scope_path = st::scope_path(scope);
     let idx = symbols.len();
     symbols.push(ExtractedSymbol {

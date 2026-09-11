@@ -37,7 +37,11 @@ pub(super) fn push_variable_decl(
                 // Capture simple identifiers and object destructuring patterns.
                 if name_node.kind() == "identifier" {
                     let name = node_text(name_node, src);
-                    let qualified_name = scope_tree::qualify(&name, parent_scope);
+                    let qualified_name = scope_tree::qualify(
+                        &super::profile::TYPESCRIPT_PROFILE,
+                        &name,
+                        parent_scope,
+                    );
                     let idx = symbols.len();
                     // Promote to Function when the initializer is a function-like expression.
                     // `const f = function() {}` or `const f = () => {}` -- standard TS idiom
@@ -321,7 +325,11 @@ pub(super) fn push_variable_decl(
                             continue;
                         }
 
-                        let qualified_name = scope_tree::qualify(&binding_name, parent_scope);
+                        let qualified_name = scope_tree::qualify(
+                            &super::profile::TYPESCRIPT_PROFILE,
+                            &binding_name,
+                            parent_scope,
+                        );
                         let prop_idx = symbols.len();
                         symbols.push(ExtractedSymbol {
                             name: binding_name.clone(),
@@ -447,7 +455,11 @@ pub(super) fn push_variable_decl(
                             continue;
                         }
 
-                        let qualified_name = scope_tree::qualify(&elem_name, parent_scope);
+                        let qualified_name = scope_tree::qualify(
+                            &super::profile::TYPESCRIPT_PROFILE,
+                            &elem_name,
+                            parent_scope,
+                        );
                         let elem_sym_idx = symbols.len();
                         symbols.push(ExtractedSymbol {
                             name: elem_name.clone(),

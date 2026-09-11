@@ -1,6 +1,6 @@
 use super::{
-    chain_root_is_namespace, chain_root_is_wildcard_import, kind_ok_table_for_test, SemanticModel,
-    SolveOutcome,
+    chain_root_is_namespace, chain_root_is_wildcard_import, kind_ok_table_for_test,
+    module_is_chain_qualifier, SemanticModel, SolveOutcome,
 };
 use crate::indexer::resolve::engine::cause::CauseKind;
 use crate::indexer::resolve::engine::testkit::{
@@ -25,6 +25,37 @@ fn nseg(name: &str) -> ChainSegment {
         call_args: Vec::new(),
         type_arg_ids: Vec::new(),
     }
+}
+
+#[test]
+fn source_qualified_module_matches_the_canonical_chain_qname() {
+    let r = ExtractedRef {
+        is_include: false,
+        is_import_binding: false,
+        is_reexport: false,
+        source_symbol_index: 0,
+        target_name: "connect".to_string(),
+        kind: EdgeKind::Calls,
+        line: 0,
+        col: 0,
+        module: Some("crate::net".to_string()),
+        namespace_segments: Vec::new(),
+        chain: Some(MemberChain {
+            segments: vec![nseg("crate"), nseg("net"), nseg("connect")],
+        }),
+        byte_offset: 0,
+        call_args: Vec::new(),
+    };
+
+    assert_eq!(
+        RUST_PROFILE.index_qname_from_source("crate::net"),
+        "crate.net"
+    );
+    assert!(module_is_chain_qualifier(
+        &r,
+        r.chain.as_ref().unwrap(),
+        &RUST_PROFILE
+    ));
 }
 
 /// `React.useState` — the root names a module/namespace, so a chain the walker

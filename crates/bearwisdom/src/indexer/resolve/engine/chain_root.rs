@@ -118,16 +118,16 @@ fn split_import_qualified_root<'a>(
         .is_none()
         || root.kind != SegmentKind::TypeAccess
         || root.is_call
-        || profile.qname_separator.is_empty()
     {
         return None;
     }
-    let (binding, qualified_tail) = root.name.split_once(profile.qname_separator)?;
+    let (binding, qualified_tail) = profile.split_source_qualified_name(&root.name)?;
     if binding.is_empty()
         || qualified_tail.is_empty()
-        || qualified_tail
-            .split(profile.qname_separator)
-            .any(|part| part.is_empty())
+        || profile
+            .source_qualified_name_parts(qualified_tail)
+            .into_iter()
+            .any(str::is_empty)
     {
         return None;
     }
@@ -252,7 +252,6 @@ fn namespace_anchor(
     package_id: Option<i64>,
     segments: &[ChainSegment],
 ) -> Option<(Receiver, usize)> {
-    let sep = profile.qname_separator;
     let max = MAX_ANCHOR_SEGMENTS.min(segments.len().checked_sub(1)?);
     let open = open_namespaces(file_ctx, lookup, profile, package_id);
     for k in (1..=max).rev() {
@@ -261,14 +260,20 @@ fn namespace_anchor(
         if segments[..k].iter().any(|s| s.is_call) {
             continue;
         }
-        let joined = join_segments(&segments[..k], sep);
-        if k > 1 || (!sep.is_empty() && joined.contains(sep)) {
+        let joined = join_segments(profile, &segments[..k]);
+        if k > 1
+            || segments
+                .first()
+                .is_some_and(|root| profile.split_source_qualified_name(&root.name).is_some())
+        {
             if let Some(recv) = type_receiver(lookup, arena, &joined) {
                 return Some((recv, k));
             }
         }
         for ns in &open {
-            if let Some(recv) = type_receiver(lookup, arena, &format!("{ns}{sep}{joined}")) {
+            let ns = profile.index_qname_from_source(ns);
+            let qualified = super::support::join_index_qname(&ns, &joined);
+            if let Some(recv) = type_receiver(lookup, arena, &qualified) {
                 return Some((recv, k));
             }
         }
@@ -276,13 +281,13 @@ fn namespace_anchor(
     None
 }
 
-/// The segment names joined with the profile's qualified-name separator.
-fn join_segments(segments: &[ChainSegment], sep: &str) -> String {
-    segments
-        .iter()
-        .map(|s| s.name.as_str())
-        .collect::<Vec<_>>()
-        .join(sep)
+/// Normalize source-spelled segment names and join them into one canonical
+/// index qname before probing `by_qualified_name`.
+fn join_segments(profile: &LanguageProfile, segments: &[ChainSegment]) -> String {
+    segments.iter().fold(String::new(), |joined, segment| {
+        let name = profile.index_qname_from_source(&segment.name);
+        super::support::join_index_qname(&joined, &name)
+    })
 }
 
 /// The receiver `qname` names, when the index holds a TYPE declaration under

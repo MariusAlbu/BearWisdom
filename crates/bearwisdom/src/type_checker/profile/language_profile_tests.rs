@@ -147,3 +147,57 @@ fn member_surface_adapters_are_opt_in_and_fail_closed() {
     assert!(rust.has_homogeneous_computed_access("Vec"));
     assert!(!rust.has_homogeneous_computed_access("Array"));
 }
+
+#[test]
+fn source_member_chain_markers_are_profile_owned_and_fail_closed() {
+    assert!(!DEFAULT_PROFILE.call_target_requires_member_chain("repo.save"));
+
+    let mut profile = DEFAULT_PROFILE;
+    profile.member_chain_markers = &[".", "->"];
+    assert!(profile.call_target_requires_member_chain("repo.save"));
+    assert!(profile.call_target_requires_member_chain("request->save"));
+    assert!(!profile.call_target_requires_member_chain("save"));
+}
+
+#[test]
+fn source_qualification_and_workspace_helpers_stay_profile_owned() {
+    let mut profile = DEFAULT_PROFILE;
+    profile.qname_separator = "::";
+    profile.imports.self_package_root = Some("crate");
+
+    assert_eq!(
+        profile.split_source_qualified_name("tantivy::schema"),
+        Some(("tantivy", "schema"))
+    );
+    assert_eq!(
+        profile.source_qualified_name_parts("tantivy::schema::field"),
+        vec!["tantivy", "schema", "field"]
+    );
+    assert_eq!(
+        profile.join_source_qualified_name(["tantivy", "schema"]),
+        "tantivy::schema"
+    );
+    assert_eq!(
+        profile.workspace_specifier_path("tantivy::schema"),
+        "tantivy/schema"
+    );
+    assert_eq!(
+        profile.workspace_specifier_path("@scope/pkg/sub"),
+        "@scope/pkg/sub"
+    );
+    assert_eq!(
+        profile.self_package_sub_path("crate::schema"),
+        Some(Some("schema".to_string()))
+    );
+    assert_eq!(
+        profile.workspace_alias_head("tantivy::schema"),
+        Some("tantivy")
+    );
+
+    let mut npm = DEFAULT_PROFILE;
+    npm.qname_separator = ".";
+    assert_eq!(
+        npm.workspace_alias_head("@scope/pkg.name/sub"),
+        Some("@scope/pkg.name/sub")
+    );
+}

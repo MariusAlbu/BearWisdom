@@ -863,7 +863,7 @@ pub(super) fn extract_java_typed_params_as_symbols(
                 Some(parent.qualified_name.clone()),
             ),
             None => (
-                scope_tree::qualify(&name, method_scope),
+                scope_tree::qualify(&super::profile::JAVA_PROFILE, &name, method_scope),
                 scope_tree::scope_path(method_scope),
             ),
         };

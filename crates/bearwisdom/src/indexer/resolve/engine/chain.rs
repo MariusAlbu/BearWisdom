@@ -364,13 +364,7 @@ pub fn bind_member_access(
                 confidence: RESOLVED_CONFIDENCE,
                 strategy: STRATEGY,
                 resolved_yield_type: resolved_yield_type.map(|y| {
-                    super::generic_shadow::mark_unbound_member_params(
-                        lookup,
-                        arena,
-                        &member,
-                        y,
-                        profile.qname_separator,
-                    )
+                    super::generic_shadow::mark_unbound_member_params(lookup, arena, &member, y)
                 }),
                 flow_emit: None,
             });
@@ -445,13 +439,7 @@ pub fn bind_member_access(
         let yielded_recv = yielded_receiver(
             lookup,
             arena,
-            super::generic_shadow::mark_unbound_member_params(
-                lookup,
-                arena,
-                &member,
-                yielded,
-                profile.qname_separator,
-            ),
+            super::generic_shadow::mark_unbound_member_params(lookup, arena, &member, yielded),
             member.package_id,
         );
         method_receiver = yielded_recv.ty;

@@ -218,7 +218,7 @@ pub(super) fn push_type_decl(
     let name = node_text(name_node, src);
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::SWIFT_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let kw = match kind {
@@ -294,7 +294,7 @@ pub(super) fn push_extension(
         .map(|n| node_text(n, src))?;
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::SWIFT_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let idx = symbols.len();
@@ -331,7 +331,7 @@ pub(super) fn push_function_decl(
     let name = node_text(name_node, src);
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::SWIFT_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let kind = if scope.is_some() {
@@ -499,7 +499,7 @@ pub(super) fn push_init(
 ) -> Option<usize> {
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
     let class_name = scope.map(|s| s.name.as_str()).unwrap_or("init").to_string();
-    let qualified_name = scope_tree::qualify(&class_name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::SWIFT_PROFILE, &class_name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let params = find_child_by_kind(node, "parameter_clause")
@@ -542,7 +542,7 @@ pub(super) fn push_deinit(
         .unwrap_or("deinit")
         .to_string();
     let name = format!("~{class_name}");
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::SWIFT_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     symbols.push(ExtractedSymbol {
@@ -597,7 +597,7 @@ pub(super) fn push_property(
     };
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::SWIFT_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let text = node_text(*node, src);
@@ -648,7 +648,7 @@ pub(super) fn push_typealias(
     let name = find_alias_name(node, src)?;
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::SWIFT_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let idx = symbols.len();
@@ -717,7 +717,7 @@ pub(super) fn push_subscript(
     parent_index: Option<usize>,
 ) -> Option<usize> {
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify("subscript", scope);
+    let qualified_name = scope_tree::qualify(&super::profile::SWIFT_PROFILE, "subscript", scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let params = find_child_by_kind(node, "parameter_clause")
@@ -891,7 +891,7 @@ pub(super) fn push_associatedtype(
     };
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::SWIFT_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     symbols.push(ExtractedSymbol {

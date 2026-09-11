@@ -7,6 +7,11 @@ fn ruby_profile_identity() {
     assert_eq!(RUBY_PROFILE.id, "ruby");
     assert_eq!(RUBY_PROFILE.qname_separator, "::");
     assert_eq!(RUBY_PROFILE.receiver_spellings, &["self"]);
+    assert_eq!(RUBY_PROFILE.member_chain_markers, &[".", "::"]);
+    assert_eq!(
+        RUBY_PROFILE.index_qname_from_source("Services::Catalog"),
+        "Services.Catalog"
+    );
 }
 
 #[test]

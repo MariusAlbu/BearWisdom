@@ -25,7 +25,7 @@ pub(super) fn push_preproc_def(
     };
     let name = node_text(name_node, src);
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::C_LANG_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     let value = node
@@ -82,7 +82,7 @@ pub(super) fn push_preproc_function_def(
         .unwrap_or_default();
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
+    let qualified_name = scope_tree::qualify(&super::profile::C_LANG_PROFILE, &name, scope);
     let scope_path = scope_tree::scope_path(scope);
 
     symbols.push(ExtractedSymbol {

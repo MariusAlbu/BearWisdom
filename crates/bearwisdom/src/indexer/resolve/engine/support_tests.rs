@@ -8,6 +8,37 @@ static COLON_COLON_PROFILE: LanguageProfile = LanguageProfile {
     ..DEFAULT_PROFILE
 };
 
+static RUST_WORKSPACE_PROFILE: LanguageProfile = LanguageProfile {
+    qname_separator: "::",
+    imports: crate::type_checker::profile::language_profile::ImportAxes {
+        self_package_root: Some("crate"),
+        ..DEFAULT_PROFILE.imports
+    },
+    ..DEFAULT_PROFILE
+};
+
+#[test]
+fn workspace_paths_are_profile_normalized_before_neutral_peeling() {
+    use crate::indexer::resolve::engine::testkit::Lookup;
+
+    let lookup = Lookup::new()
+        .with_workspace_pkg("tantivy", 1)
+        .with_workspace_pkg("@scope/pkg", 2);
+
+    assert_eq!(
+        workspace_sub_path(&RUST_WORKSPACE_PROFILE, "tantivy::schema", &lookup),
+        Some("schema".to_string())
+    );
+    assert_eq!(
+        workspace_sub_path(&DEFAULT_PROFILE, "@scope/pkg/sub", &lookup),
+        Some("sub".to_string())
+    );
+    assert_eq!(
+        self_package_sub_path(&RUST_WORKSPACE_PROFILE, "crate::schema"),
+        Some(Some("schema".to_string()))
+    );
+}
+
 #[test]
 fn qname_under_module_matches_prefix_and_exact() {
     assert!(qname_under_module(

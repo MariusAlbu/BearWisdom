@@ -1,5 +1,7 @@
 use super::WorkspacePackageResolver;
-use crate::indexer::module_resolution::ModuleResolver;
+use crate::indexer::module_resolution::{
+    all_resolvers_with_workspace, resolve_module_to_file, ModuleResolver,
+};
 
 fn resolver() -> WorkspacePackageResolver {
     WorkspacePackageResolver::new(vec![
@@ -59,12 +61,41 @@ fn scoped_name_matches_before_shorter_heads() {
 }
 
 #[test]
-fn qualified_separator_normalizes_to_slash() {
+fn scoped_deep_import_uses_neutral_slash_path() {
+    let resolver =
+        WorkspacePackageResolver::new(vec![("@scope/pkg".to_string(), "packages/pkg".to_string())]);
+    let files = ["packages/pkg/sub/index.js"];
+    assert_eq!(
+        resolver.resolve_to_file("@scope/pkg/sub", "app.js", &files),
+        Some("packages/pkg/sub/index.js".to_string())
+    );
+}
+
+#[test]
+fn neutral_slash_path_resolves_without_source_syntax() {
     let r =
         WorkspacePackageResolver::new(vec![("tantivy".to_string(), "crates/tantivy".to_string())]);
     let files = ["crates/tantivy/schema.rs"];
     assert_eq!(
+        r.resolve_to_file("tantivy/schema", "src/main.rs", &files),
+        Some("crates/tantivy/schema.rs".to_string())
+    );
+    assert_eq!(
         r.resolve_to_file("tantivy::schema", "src/main.rs", &files),
+        None
+    );
+}
+
+#[test]
+fn rust_source_qualification_is_adapted_at_the_dispatch_boundary() {
+    let resolvers = all_resolvers_with_workspace(
+        None,
+        None,
+        vec![("tantivy".to_string(), "crates/tantivy".to_string())],
+    );
+    let files = ["crates/tantivy/schema.rs"];
+    assert_eq!(
+        resolve_module_to_file("rust", "tantivy::schema", "src/main.rs", &files, &resolvers),
         Some("crates/tantivy/schema.rs".to_string())
     );
 }

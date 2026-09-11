@@ -245,10 +245,23 @@ pub fn resolve_module_to_file(
     file_paths: &[&str],
     resolvers: &[Box<dyn ModuleResolver>],
 ) -> Option<String> {
+    // The workspace resolver consumes neutral slash path evidence. Keep the
+    // original source spelling for every language-specific resolver: those
+    // adapters own their import grammar.
+    let workspace_specifier = crate::languages::default_registry()
+        .profile_for(language)
+        .workspace_specifier_path(specifier);
     resolvers
         .iter()
         .filter(|r| r.language_ids().is_empty() || r.language_ids().contains(&language))
-        .find_map(|r| r.resolve_to_file(specifier, importing_file, file_paths))
+        .find_map(|r| {
+            let specifier = if r.language_ids().is_empty() {
+                workspace_specifier.as_ref()
+            } else {
+                specifier
+            };
+            r.resolve_to_file(specifier, importing_file, file_paths)
+        })
 }
 
 /// Indexed variant of `resolve_module_to_file`. Uses `FilePathIndex` for O(1)
@@ -260,8 +273,20 @@ pub fn resolve_module_to_file_indexed(
     index: &FilePathIndex,
     resolvers: &[Box<dyn ModuleResolver>],
 ) -> Option<String> {
+    // See `resolve_module_to_file`: only the universal workspace boundary
+    // receives a normalized path, while language adapters receive source text.
+    let workspace_specifier = crate::languages::default_registry()
+        .profile_for(language)
+        .workspace_specifier_path(specifier);
     resolvers
         .iter()
         .filter(|r| r.language_ids().is_empty() || r.language_ids().contains(&language))
-        .find_map(|r| r.resolve_to_file_indexed(specifier, importing_file, index))
+        .find_map(|r| {
+            let specifier = if r.language_ids().is_empty() {
+                workspace_specifier.as_ref()
+            } else {
+                specifier
+            };
+            r.resolve_to_file_indexed(specifier, importing_file, index)
+        })
 }

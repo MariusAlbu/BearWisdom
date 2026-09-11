@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 
-use super::{rebuild_inherits_by_id, resolve_parent_id_scoped};
+use super::{rebuild_inherits_by_id, resolve_parent_id_scoped, InheritanceEdge};
 use crate::indexer::resolve::engine::contract::{
     Symbol as ContractSymbol, SymbolLookup, SymbolSet,
 };
@@ -80,17 +80,17 @@ fn homonym_lookup() -> FakeLookup {
     let internal = sym(
         1,
         "TestCase",
-        "Illuminate\\Foundation\\Testing.TestCase",
+        "Illuminate.Foundation.Testing.TestCase",
         "class",
         Some(7),
     );
-    let external = sym(2, "TestCase", "PHPUnit\\Framework.TestCase", "class", None);
+    let external = sym(2, "TestCase", "PHPUnit.Framework.TestCase", "class", None);
     l.members.insert(
         1,
         vec![sym(
             11,
             "seed",
-            "Illuminate\\Foundation\\Testing.TestCase.seed",
+            "Illuminate.Foundation.Testing.TestCase.seed",
             "method",
             Some(7),
         )],
@@ -100,7 +100,7 @@ fn homonym_lookup() -> FakeLookup {
         vec![sym(
             21,
             "assertTrue",
-            "PHPUnit\\Framework.TestCase.assertTrue",
+            "PHPUnit.Framework.TestCase.assertTrue",
             "method",
             None,
         )],
@@ -122,7 +122,7 @@ fn import_evidence_beats_member_bearing_homonym() {
             "Tests.AuthTest",
             Some(9),
             Some("PHPUnit\\Framework"),
-            "\\"
+            crate::languages::default_registry().profile_for("php")
         ),
         Some(2),
         "the imported module's declaration must win over an earlier homonym"
@@ -135,12 +135,26 @@ fn without_evidence_the_heuristic_ladder_holds() {
     // No import evidence, child in package 7: the same-package member-bearing
     // candidate wins.
     assert_eq!(
-        resolve_parent_id_scoped(&l, "TestCase", "App.SomeTest", Some(7), None, "."),
+        resolve_parent_id_scoped(
+            &l,
+            "TestCase",
+            "App.SomeTest",
+            Some(7),
+            None,
+            crate::languages::default_registry().profile_for("php"),
+        ),
         Some(1)
     );
     // Foreign package, no evidence: first member-bearing candidate.
     assert_eq!(
-        resolve_parent_id_scoped(&l, "TestCase", "App.SomeTest", Some(9), None, "."),
+        resolve_parent_id_scoped(
+            &l,
+            "TestCase",
+            "App.SomeTest",
+            Some(9),
+            None,
+            crate::languages::default_registry().profile_for("php"),
+        ),
         Some(1)
     );
 }
@@ -155,7 +169,7 @@ fn evidence_with_no_matching_candidate_falls_through_to_ladder() {
             "App.SomeTest",
             Some(7),
             Some("Some\\Other\\Ns"),
-            "\\"
+            crate::languages::default_registry().profile_for("php")
         ),
         Some(1),
         "unmatchable evidence must not lose the edge entirely"
@@ -165,14 +179,14 @@ fn evidence_with_no_matching_candidate_falls_through_to_ladder() {
 #[test]
 fn same_namespace_sibling_beats_foreign_member_bearing_homonym() {
     let mut l = FakeLookup::default();
-    let foreign = sym(1, "Assert", "Illuminate\\Testing.Assert", "class", Some(7));
-    let sibling = sym(2, "Assert", "PHPUnit\\Framework.Assert", "class", None);
+    let foreign = sym(1, "Assert", "Illuminate.Testing.Assert", "class", Some(7));
+    let sibling = sym(2, "Assert", "PHPUnit.Framework.Assert", "class", None);
     l.members.insert(
         1,
         vec![sym(
             11,
             "assertJson",
-            "Illuminate\\Testing.Assert.assertJson",
+            "Illuminate.Testing.Assert.assertJson",
             "method",
             Some(7),
         )],
@@ -182,7 +196,7 @@ fn same_namespace_sibling_beats_foreign_member_bearing_homonym() {
         vec![sym(
             21,
             "assertTrue",
-            "PHPUnit\\Framework.Assert.assertTrue",
+            "PHPUnit.Framework.Assert.assertTrue",
             "method",
             None,
         )],
@@ -197,10 +211,10 @@ fn same_namespace_sibling_beats_foreign_member_bearing_homonym() {
         resolve_parent_id_scoped(
             &l,
             "Assert",
-            "PHPUnit\\Framework.TestCase",
+            "PHPUnit.Framework.TestCase",
             None,
             None,
-            "\\"
+            crate::languages::default_registry().profile_for("php")
         ),
         Some(2)
     );
@@ -210,17 +224,67 @@ fn same_namespace_sibling_beats_foreign_member_bearing_homonym() {
 fn rebuild_threads_evidence_per_edge() {
     let mut l = homonym_lookup();
     let child = sym(30, "AuthTest", "Tests.AuthTest", "class", Some(9));
-    l.by_qname.insert(child.qualified_name.clone(), child);
-    let mut inherits: FxHashMap<String, Vec<String>> = FxHashMap::default();
-    inherits.insert("Tests.AuthTest".into(), vec!["TestCase".into()]);
-    let mut evidence: FxHashMap<(String, String), String> = FxHashMap::default();
-    evidence.insert(
-        ("Tests.AuthTest".into(), "TestCase".into()),
-        "PHPUnit\\Framework".into(),
+    l.by_qname
+        .insert(child.qualified_name.clone(), child.clone());
+    let mut children = FxHashMap::default();
+    children.insert(child.id, child);
+    let mut edges = FxHashMap::default();
+    edges.insert(
+        30,
+        vec![InheritanceEdge {
+            head: "TestCase".into(),
+            import_module: Some("PHPUnit\\Framework".into()),
+            profile: crate::languages::default_registry().profile_for("php"),
+            arg_ids: Vec::new(),
+        }],
     );
-    let mut separators: FxHashMap<String, String> = FxHashMap::default();
-    separators.insert("Tests.AuthTest".into(), "\\".into());
-    let (map, _args) =
-        rebuild_inherits_by_id(&l, &inherits, &evidence, &separators, &FxHashMap::default());
+    let (map, _args) = rebuild_inherits_by_id(&l, &children, &edges, &FxHashMap::default());
     assert_eq!(map.get(&30), Some(&vec![2]));
+}
+
+#[test]
+fn same_qname_children_keep_their_own_source_profiles() {
+    let mut l = FakeLookup::default();
+    let rust_parent = sym(10, "RustBase", "crate.base.RustBase", "class", None);
+    let php_parent = sym(11, "TestCase", "PHPUnit.Framework.TestCase", "class", None);
+    l.by_name
+        .insert("RustBase".into(), vec![rust_parent.clone()]);
+    l.by_name
+        .insert("TestCase".into(), vec![php_parent.clone()]);
+    l.by_qname
+        .insert(rust_parent.qualified_name.clone(), rust_parent);
+    l.by_qname
+        .insert(php_parent.qualified_name.clone(), php_parent);
+
+    // Two packages may expose the same canonical child qname. Their raw
+    // parent heads must still be interpreted by the profile of the file that
+    // emitted each edge.
+    let rust_child = sym(30, "Child", "shared.Child", "class", Some(1));
+    let php_child = sym(31, "Child", "shared.Child", "class", Some(2));
+    let mut children = FxHashMap::default();
+    children.insert(rust_child.id, rust_child);
+    children.insert(php_child.id, php_child);
+    let mut edges = FxHashMap::default();
+    edges.insert(
+        30,
+        vec![InheritanceEdge {
+            head: "crate::base::RustBase".into(),
+            import_module: None,
+            profile: crate::languages::default_registry().profile_for("rust"),
+            arg_ids: Vec::new(),
+        }],
+    );
+    edges.insert(
+        31,
+        vec![InheritanceEdge {
+            head: "PHPUnit\\Framework\\TestCase".into(),
+            import_module: None,
+            profile: crate::languages::default_registry().profile_for("php"),
+            arg_ids: Vec::new(),
+        }],
+    );
+
+    let (map, _args) = rebuild_inherits_by_id(&l, &children, &edges, &FxHashMap::default());
+    assert_eq!(map.get(&30), Some(&vec![10]));
+    assert_eq!(map.get(&31), Some(&vec![11]));
 }

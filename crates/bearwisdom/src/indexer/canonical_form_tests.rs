@@ -113,10 +113,10 @@ fn clean_file_produces_no_violations() {
 
 #[test]
 fn nested_symbol_with_parent_is_clean() {
-    let parent = make_sym("Foo", "ns::Foo", SymbolKind::Class);
-    let mut child = make_sym("bar", "ns::Foo::bar", SymbolKind::Method);
+    let parent = make_sym("Foo", "ns.Foo", SymbolKind::Class);
+    let mut child = make_sym("bar", "ns.Foo.bar", SymbolKind::Method);
     child.parent_index = Some(0);
-    child.scope_path = Some("ns::Foo".to_string());
+    child.scope_path = Some("ns.Foo".to_string());
     let pf = make_pf(vec![parent, child], Vec::new());
     let v = validate(&pf);
     assert!(v.is_empty(), "unexpected violations: {v:?}");
@@ -164,14 +164,15 @@ fn sym_001_accepts_top_level_symbol() {
 }
 
 #[test]
-fn sym_001_accepts_known_separators() {
-    for qname in ["a.b.Foo", "a::b::Foo", "a/b/Foo", "a\\b\\Foo", "pkg$Foo"] {
+fn sym_001_accepts_only_the_canonical_dot_boundary() {
+    let sym = make_sym("Foo", "a.b.Foo", SymbolKind::Class);
+    assert!(validate(&make_pf(vec![sym], Vec::new())).is_empty());
+
+    for qname in ["a::b::Foo", "a/b/Foo", "a\\b\\Foo", "pkg$Foo"] {
         let sym = make_sym("Foo", qname, SymbolKind::Class);
-        let pf = make_pf(vec![sym], Vec::new());
-        let v = validate(&pf);
-        assert!(
-            v.is_empty(),
-            "qname '{qname}' should be accepted, got {v:?}"
+        assert_eq!(
+            codes(&validate(&make_pf(vec![sym], Vec::new()))),
+            vec!["SYM-001"]
         );
     }
 }
@@ -309,6 +310,24 @@ fn ref_003_allows_bare_call_with_no_chain() {
     let sym = make_sym("caller", "caller", SymbolKind::Function);
     let r = make_ref(0, "save", EdgeKind::Calls);
     let pf = make_pf(vec![sym], vec![r]);
+    assert!(validate(&pf).is_empty());
+}
+
+#[test]
+fn ref_003_uses_the_ref_origin_language_marker_policy() {
+    let sym = make_sym("caller", "caller", SymbolKind::Function);
+    let r = make_ref(0, "request->save", EdgeKind::Calls);
+    let mut pf = make_pf(vec![sym], vec![r]);
+    pf.ref_origin_languages = vec![Some("php".to_string())];
+    assert_eq!(codes(&validate(&pf)), vec!["REF-003"]);
+}
+
+#[test]
+fn ref_003_fails_closed_for_an_unknown_language() {
+    let sym = make_sym("caller", "caller", SymbolKind::Function);
+    let r = make_ref(0, "repo.save", EdgeKind::Calls);
+    let mut pf = make_pf(vec![sym], vec![r]);
+    pf.language = "unknown-source".to_string();
     assert!(validate(&pf).is_empty());
 }
 

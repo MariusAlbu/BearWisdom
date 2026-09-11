@@ -1,6 +1,19 @@
 use super::*;
 
 #[test]
+fn workspace_package_lookup_accepts_only_neutral_slash_paths() {
+    let mut ctx = ProjectContext::default();
+    ctx.workspace_pkg_by_declared_name
+        .insert("tantivy".to_string(), 1);
+    ctx.workspace_pkg_by_declared_name
+        .insert("@scope/pkg".to_string(), 2);
+
+    assert_eq!(ctx.workspace_package_id("tantivy/schema"), Some(1));
+    assert_eq!(ctx.workspace_package_id("tantivy::schema"), None);
+    assert_eq!(ctx.workspace_package_id("@scope/pkg/sub"), Some(2));
+}
+
+#[test]
 fn test_parse_sdk_type_web() {
     let csproj = r#"<Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
