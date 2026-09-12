@@ -13174,7 +13174,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 66
+        "min_resolution_rate": 65
       },
       "code_chunks": 424944,
       "drained_refs": 489,
@@ -13184,8 +13184,8 @@
       },
       "flow_edges": 458,
       "generated_files_reclassified": 340,
-      "internal_edges": 433021,
-      "internal_unresolved": 222953,
+      "internal_edges": 431627,
+      "internal_unresolved": 224347,
       "languages": {
         "c": 1,
         "css": 644,
@@ -13212,16 +13212,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-nextjs",
       "perf": {
-        "end_ws_mb": 204,
-        "files_per_sec": 12,
-        "index_duration_ms": 1909142
+        "end_ws_mb": 196,
+        "files_per_sec": 14,
+        "index_duration_ms": 1690326
       },
       "project": "ts-nextjs",
       "rate_by_language": {
         "dockerfile": 73.53,
         "graphql": 84.85,
         "html": 0.0,
-        "javascript": 55.26,
+        "javascript": 54.21,
         "markdown": 82.82,
         "mdx": 42.86,
         "php": 100.0,
@@ -13230,10 +13230,10 @@
         "rust": 67.1,
         "scss": 2.5,
         "shell": 51.85,
-        "tsx": 76.06,
-        "typescript": 65.92
+        "tsx": 75.24,
+        "typescript": 65.83
       },
-      "resolution_rate": 66.01,
+      "resolution_rate": 65.8,
       "routes": 458,
       "symbols": 261466,
       "unresolved_by_lang_kind": {
@@ -13242,7 +13242,7 @@
         "graphql.type_ref": 5,
         "html.calls": 1,
         "html.imports": 11,
-        "javascript.calls": 14978,
+        "javascript.calls": 15689,
         "javascript.imports": 6577,
         "javascript.inherits": 32,
         "javascript.type_ref": 8889,
@@ -13262,17 +13262,17 @@
         "scss.imports": 99,
         "scss.inherits": 1,
         "shell.calls": 13,
-        "tsx.calls": 7246,
+        "tsx.calls": 7656,
         "tsx.imports": 393,
         "tsx.inherits": 11,
         "tsx.instantiates": 70,
-        "tsx.type_ref": 4461,
-        "typescript.calls": 76326,
+        "tsx.type_ref": 4469,
+        "typescript.calls": 76581,
         "typescript.implements": 7,
         "typescript.imports": 979,
         "typescript.inherits": 15,
         "typescript.instantiates": 294,
-        "typescript.type_ref": 21760
+        "typescript.type_ref": 21770
       },
       "vendored_files_reclassified": 673
     },
