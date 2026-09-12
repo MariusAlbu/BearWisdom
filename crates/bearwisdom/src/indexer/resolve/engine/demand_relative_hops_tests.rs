@@ -1,5 +1,6 @@
 // =============================================================================
-// engine/demand_reexports_tests — relative re-export hops join the frontier
+// engine/demand_relative_hops_tests — relative import and re-export hops join
+// the frontier
 // =============================================================================
 
 use std::collections::HashSet;
@@ -22,6 +23,14 @@ fn import_ref(target: &str, module: &str) -> ExtractedRef {
     let mut r = testkit::call_ref(target);
     r.kind = EdgeKind::Imports;
     r.is_import_binding = true;
+    r.module = Some(module.to_string());
+    r
+}
+
+/// `import './global';` — no binding, only the module it loads.
+fn side_effect_import(module: &str) -> ExtractedRef {
+    let mut r = testkit::call_ref(module);
+    r.kind = EdgeKind::Imports;
     r.module = Some(module.to_string());
     r
 }
@@ -68,16 +77,28 @@ fn relative_star_and_named_reexports_resolve_to_directory_index_and_sibling_file
 }
 
 #[test]
-fn bare_package_reexports_and_plain_imports_are_not_followed_here() {
+fn relative_imports_and_side_effect_imports_are_hops_too() {
+    let (_root, entry) = seed_package();
+    let dir = entry.parent().unwrap();
+    let refs = [import_ref("T", "./types"), side_effect_import("./dist")];
+    assert_eq!(
+        collect(&entry, &refs),
+        vec![dir.join("types.d.ts"), dir.join("dist").join("index.d.ts")],
+        "a declaration file's imports carry the types its surface mentions and the augmentations it loads"
+    );
+}
+
+#[test]
+fn bare_package_specifiers_and_body_calls_are_not_followed_here() {
     let (_root, entry) = seed_package();
     let refs = [
         reexport_ref("*", "other-pkg"),
-        import_ref("T", "./types"),
+        import_ref("x", "lodash"),
         testkit::call_ref("Baz"),
     ];
     assert!(
         collect(&entry, &refs).is_empty(),
-        "a bare specifier belongs to the package-entry pull and a plain import is not a forwarded surface"
+        "a bare specifier belongs to the package-entry pull; a call names no module"
     );
 }
 

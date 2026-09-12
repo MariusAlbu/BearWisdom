@@ -327,3 +327,111 @@ fn barrel_forwarded_imports_bind_calls_to_the_declaring_leaf() {
         .unwrap();
     assert_eq!(unlinked, 0, "no import through the barrel chain may stay unlinked");
 }
+
+/// A package whose published entry (`exports["."].types`) sits deeper than a
+/// shallow sibling declaration file that also re-exports (vitest's
+/// `config.d.ts` beside `dist/index.d.ts`): the ecosystem's entry wins over any
+/// depth pick, so `import { expect } from 'vt'` reaches the real surface.
+fn seed_deep_entry_node_modules() -> TempDir {
+    let nm = TempDir::new().unwrap();
+    let pkg = nm.path().join("vt");
+    fs::create_dir_all(pkg.join("dist").join("chunks")).unwrap();
+    fs::write(
+        pkg.join("package.json"),
+        r#"{"name":"vt","version":"1.0.0","main":"./dist/index.js","types":"./dist/index.d.ts","exports":{".":{"types":"./dist/index.d.ts","default":"./dist/index.js"},"./config":{"types":"./config.d.ts"}}}"#,
+    )
+    .unwrap();
+    fs::write(pkg.join("config.d.ts"), "export * from './dist/config.js';
+").unwrap();
+    fs::write(
+        pkg.join("dist").join("config.d.ts"),
+        "export declare function defineConfig(c: object): object;
+",
+    )
+    .unwrap();
+    fs::write(
+        pkg.join("dist").join("index.d.ts"),
+        "import './chunks/global.d.AbCd.js';
+export { e as expect } from './chunks/expect.d.ts';
+export * from './chunks/runner.js';
+",
+    )
+    .unwrap();
+    fs::write(
+        pkg.join("dist").join("chunks").join("expect.d.ts"),
+        "declare function e(value: unknown): { toBe(v: unknown): void };
+export { e };
+",
+    )
+    .unwrap();
+    fs::write(
+        pkg.join("dist").join("chunks").join("runner.d.ts"),
+        "export declare function it(name: string, fn: () => void): void;
+",
+    )
+    .unwrap();
+    // A side-effect import carries augmentations; a compiler loads it too.
+    fs::write(
+        pkg.join("dist").join("chunks").join("global.d.AbCd.d.ts"),
+        "declare global {
+    const vtGlobal: number;
+}
+export {};
+",
+    )
+    .unwrap();
+    nm
+}
+
+#[test]
+fn a_published_package_entry_outranks_a_shallower_declaration_file() {
+    let node_modules = seed_deep_entry_node_modules();
+    let project = TestProject {
+        dir: TempDir::new().unwrap(),
+    };
+    project.add_file(
+        "package.json",
+        r#"{"name":"consumer","version":"0.0.1","devDependencies":{"vt":"^1.0.0"}}"#,
+    );
+    project.add_file(
+        "src/a.test.ts",
+        "import { expect, it } from 'vt';
+
+it('works', () => {
+  expect(1).toBe(1);
+});
+",
+    );
+    let db = index_with_node_modules(node_modules.path(), &project);
+
+    let entries: String = db
+        .query_row(
+            "SELECT value FROM _bearwisdom_meta WHERE key = 'module_entries_v1'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(
+        entries.contains("[\"vt\",\"ext:ts:vt/dist/index.d.ts\"]"),
+        "the ecosystem's entry is the module entry: {entries}"
+    );
+    let loaded: i64 = db
+        .query_row(
+            "SELECT COUNT(*) FROM files WHERE path = 'ext:ts:vt/dist/chunks/global.d.AbCd.d.ts'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(loaded, 1, "a side-effect import of the entry is materialized like any relative hop");
+    let found = external_edges(&db, "calls");
+    for expected in [
+        edge("a.test", "calls", "it", "ext:ts:vt/dist/chunks/runner.d.ts"),
+        // `export { e as expect }`: the binding is the declaration `e`.
+        edge("a.test", "calls", "e", "ext:ts:vt/dist/chunks/expect.d.ts"),
+    ] {
+        assert!(
+            found.iter().any(|e| e.1 == expected.1 && e.2 == expected.2 && e.3 == expected.3),
+            "missing {expected:?} in {found:?}"
+        );
+    }
+}

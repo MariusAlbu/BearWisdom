@@ -27,6 +27,13 @@ pub(super) fn bind_lexical_call(
         return None;
     }
     let local = lookup.local_reference(reference.byte_offset)?;
+    crate::tracef!(
+        "  LEXICAL '{}' @{} declaration={:?} kind={:?}",
+        reference.target_name,
+        reference.byte_offset,
+        local.declaration,
+        local.kind
+    );
     let Some(target_symbol_id) = local.declaration else {
         if let Some(info) = bind_import_overload(reference, &local, lookup) {
             return Some(SolveOutcome::Resolved(info));

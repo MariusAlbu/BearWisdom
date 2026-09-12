@@ -133,6 +133,13 @@ impl SymbolLocationIndex {
         self.module_entries.get(module_path).map(PathBuf::as_path)
     }
 
+    /// Every `(module_path, entry file)` this index published.
+    pub fn module_entries(&self) -> impl Iterator<Item = (&str, &Path)> {
+        self.module_entries
+            .iter()
+            .map(|(module, file)| (module.as_str(), file.as_path()))
+    }
+
     /// Record a cross-package re-export bridge: `module` binds `name`, whose
     /// declaration is `target_name` in `target_file` (another package). Skipped
     /// when `(module, name)` already has a located definition — a real local

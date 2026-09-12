@@ -3,6 +3,8 @@
 //! relative ones and configured alias targets by the importing file's own
 //! path rules.
 use super::Compilation;
+use crate::indexer::symbol_ids::SymbolIds;
+use crate::types::ParsedFile;
 use crate::indexer::resolve::engine::contract::SymbolLookup;
 
 impl Compilation {
@@ -22,5 +24,28 @@ impl Compilation {
             .resolve_module_alias(spec)?;
         self.modules
             .resolve_base(source_file, &super::super::module_paths::normalize(&alias))
+    }
+
+    /// Install ecosystem-published package entries. An entry names an ingested
+    /// file; it replaces whatever the batch's own barrel/depth pick chose, and
+    /// the module bindings are refreshed so imports link through it.
+    pub(crate) fn apply_package_entries(
+        &mut self,
+        entries: &[(String, String)],
+        files: &[ParsedFile],
+        ids: &SymbolIds,
+    ) {
+        let mut changed = false;
+        for (module, path) in entries {
+            if self.by_file.contains_key(path)
+                && self.module_entry.get(module) != Some(path)
+            {
+                self.module_entry.insert(module.clone(), path.clone());
+                changed = true;
+            }
+        }
+        if changed {
+            self.refresh_module_bindings(files, ids);
+        }
     }
 }

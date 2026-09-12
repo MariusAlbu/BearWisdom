@@ -178,29 +178,8 @@ pub(super) fn materialize_externals(
         tree.apply_module_augmentations(&augmentations);
     }
 
-    // Cross-package re-export aliases: `{importing_module}.{name}` resolves to
-    // the sibling package's declaration now that both sides are ingested. The
-    // alias qname is assembled here; the target qname derives from the
-    // declaring file's virtual-path package prefix — the same prefix its
-    // materialized symbols carry.
-    let aliases: Vec<(String, String, String)> = loc
-        .reexport_aliases()
-        .filter_map(|(module, name, target_file, target_name)| {
-            let lang = language_from_file_ext(target_file)?;
-            let vpath = virtual_path_for_indexed_file(target_file, lang);
-            let target_qname = crate::languages::default_registry()
-                .get(lang)
-                .external_reexport_target_qname(&vpath, target_name)?;
-            Some((
-                crate::indexer::resolve::engine::support::join_index_qname(module, name),
-                target_qname,
-                vpath,
-            ))
-        })
-        .collect();
-    if !aliases.is_empty() {
-        tree.apply_external_reexport_aliases(&aliases);
-    }
+    super::externals_demand_entries::apply_package_entries(tree, loc, &ext_parsed, &ext_id_map);
+    super::externals_demand_entries::apply_reexport_aliases(tree, loc);
     Ok((ext_parsed, ext_id_map))
 }
 
@@ -389,13 +368,13 @@ fn parse_external_file_full(
 
 /// Language id for a pulled file via the registry's extension table. The
 /// fallback dispatch when no ecosystem `tag_language` hint claimed the file.
-fn language_from_file_ext(path: &Path) -> Option<&'static str> {
+pub(super) fn language_from_file_ext(path: &Path) -> Option<&'static str> {
     let name = path.file_name().and_then(|n| n.to_str())?;
     crate::languages::default_registry().language_by_extension(name)
 }
 
 /// Virtual path under which a pulled external file is indexed.
-fn virtual_path_for_indexed_file(path: &Path, language: &str) -> String {
+pub(super) fn virtual_path_for_indexed_file(path: &Path, language: &str) -> String {
     crate::indexer::ext_virtual_path::virtual_path_for_pulled(path, language)
         .unwrap_or_else(|| format!("ext:idx:{}", path.to_string_lossy().replace('\\', "/")))
 }

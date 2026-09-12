@@ -6,7 +6,7 @@
 
 // Extraction sub-modules
 mod alias_classify;
-mod angular_module_reachables;
+mod declaration_reachables;
 pub(crate) mod alias_intrinsics;
 mod alias_type_text;
 mod alias_union;
@@ -436,7 +436,7 @@ impl LanguagePlugin for TypeScriptPlugin {
     }
 
     fn external_declaration_reachables(&self, file_path: &str, content: &str) -> Vec<String> {
-        angular_module_reachables::reachables(file_path, content)
+        declaration_reachables::reachables(file_path, content)
     }
 
     fn source_module_path_policy(

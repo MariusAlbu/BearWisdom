@@ -10222,17 +10222,17 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 94
+        "min_resolution_rate": 67
       },
-      "code_chunks": 48207,
+      "code_chunks": 51372,
       "drained_refs": 78,
       "files": 1989,
       "flow_edge_types": {
         "http_call": 7
       },
       "flow_edges": 7,
-      "internal_edges": 88471,
-      "internal_unresolved": 4806,
+      "internal_edges": 62598,
+      "internal_unresolved": 30343,
       "languages": {
         "angular_template": 17,
         "astro": 2,
@@ -10242,48 +10242,54 @@
         "json": 254,
         "markdown": 527,
         "svelte": 75,
-        "typescript": 855,
+        "tsx": 307,
+        "typescript": 548,
         "vue": 20,
         "xml": 20,
         "yaml": 3
       },
       "path": "F:/Work/Projects/TestProjects/react-tanstack-query",
       "perf": {
-        "end_ws_mb": 437,
-        "files_per_sec": 14,
-        "index_duration_ms": 143502
+        "end_ws_mb": 115,
+        "files_per_sec": 18,
+        "index_duration_ms": 109988
       },
       "project": "react-tanstack-query",
       "rate_by_language": {
         "angular_template": 83.33,
         "astro": 100.0,
         "html": 27.27,
-        "javascript": 59.41,
-        "markdown": 67.75,
+        "javascript": 49.93,
+        "markdown": 69.02,
         "svelte": 91.18,
-        "typescript": 95.48,
+        "tsx": 64.29,
+        "typescript": 71.41,
         "vue": 68.75
       },
-      "resolution_rate": 94.85,
+      "resolution_rate": 67.35,
       "routes": 7,
-      "symbols": 28432,
+      "symbols": 32582,
       "unresolved_by_lang_kind": {
         "angular_template.calls": 2,
         "html.imports": 32,
-        "javascript.calls": 163,
+        "javascript.calls": 244,
         "javascript.imports": 76,
         "javascript.inherits": 3,
         "javascript.type_ref": 60,
-        "markdown.calls": 225,
+        "markdown.calls": 228,
         "markdown.instantiates": 12,
-        "markdown.type_ref": 82,
+        "markdown.type_ref": 67,
         "svelte.calls": 5,
         "svelte.type_ref": 1,
-        "typescript.calls": 2484,
-        "typescript.imports": 39,
-        "typescript.inherits": 23,
-        "typescript.instantiates": 47,
-        "typescript.type_ref": 1542,
+        "tsx.calls": 15136,
+        "tsx.imports": 2,
+        "tsx.instantiates": 557,
+        "tsx.type_ref": 2237,
+        "typescript.calls": 9956,
+        "typescript.imports": 72,
+        "typescript.inherits": 24,
+        "typescript.instantiates": 268,
+        "typescript.type_ref": 1351,
         "vue.calls": 10
       }
     },
@@ -13149,9 +13155,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-nestjs-realworld",
       "perf": {
-        "end_ws_mb": 73,
+        "end_ws_mb": 118,
         "files_per_sec": 4,
-        "index_duration_ms": 12270
+        "index_duration_ms": 11495
       },
       "project": "ts-nestjs-realworld",
       "rate_by_language": {
