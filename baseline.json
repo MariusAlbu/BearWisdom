@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-11T00:00:00Z",
+  "captured_at": "2026-09-12T00:00:00Z",
   "engine": "resolution-engine",
   "note": "Fresh new-engine baseline; grows as projects are added. Old baseline-all.json (pre-cutover) retired.",
   "projects": [
@@ -13168,7 +13168,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 62
+        "min_resolution_rate": 64
       },
       "code_chunks": 423749,
       "drained_refs": 489,
@@ -13178,8 +13178,8 @@
       },
       "flow_edges": 458,
       "generated_files_reclassified": 340,
-      "internal_edges": 410493,
-      "internal_unresolved": 245415,
+      "internal_edges": 425854,
+      "internal_unresolved": 230085,
       "languages": {
         "c": 1,
         "css": 644,
@@ -13205,9 +13205,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-nextjs",
       "perf": {
-        "end_ws_mb": 191,
+        "end_ws_mb": 198,
         "files_per_sec": 12,
-        "index_duration_ms": 2034380
+        "index_duration_ms": 1990796
       },
       "project": "ts-nextjs",
       "rate_by_language": {
@@ -13223,9 +13223,9 @@
         "rust": 67.1,
         "scss": 2.5,
         "shell": 51.85,
-        "typescript": 61.28
+        "typescript": 65.75
       },
-      "resolution_rate": 62.58,
+      "resolution_rate": 64.92,
       "routes": 458,
       "symbols": 260026,
       "unresolved_by_lang_kind": {
@@ -13234,7 +13234,7 @@
         "graphql.type_ref": 5,
         "html.calls": 1,
         "html.imports": 11,
-        "javascript.calls": 16236,
+        "javascript.calls": 16232,
         "javascript.imports": 6719,
         "javascript.inherits": 32,
         "javascript.type_ref": 8890,
@@ -13254,12 +13254,12 @@
         "scss.imports": 99,
         "scss.inherits": 1,
         "shell.calls": 13,
-        "typescript.calls": 102853,
+        "typescript.calls": 88231,
         "typescript.implements": 7,
         "typescript.imports": 1373,
         "typescript.inherits": 26,
-        "typescript.instantiates": 849,
-        "typescript.type_ref": 27513
+        "typescript.instantiates": 425,
+        "typescript.type_ref": 27233
       },
       "vendored_files_reclassified": 673
     },
