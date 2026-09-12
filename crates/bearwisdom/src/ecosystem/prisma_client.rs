@@ -28,7 +28,7 @@ use crate::walker::WalkedFile;
 
 pub const ID: EcosystemId = EcosystemId::new("prisma-client");
 const ECOSYSTEM_TAG: &str = "prisma-client";
-const LANGUAGES: &[&str] = &["typescript", "javascript"];
+const LANGUAGES: &[&str] = &["typescript", "tsx", "javascript"];
 
 pub struct PrismaClientEcosystem;
 

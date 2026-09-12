@@ -10,8 +10,9 @@ fn detect_csharp() {
 #[test]
 fn detect_typescript() {
     assert_eq!(detect_language(Path::new("api.ts")), Some("typescript"));
-    // .tsx maps to the "typescript" language in bearwisdom-profile
-    assert_eq!(detect_language(Path::new("App.tsx")), Some("typescript"));
+    // The profile describes `.tsx` as TypeScript; the plugin routes it to the
+    // TSX grammar's own id so JSX parses without errors.
+    assert_eq!(detect_language(Path::new("App.tsx")), Some("tsx"));
 }
 
 #[test]

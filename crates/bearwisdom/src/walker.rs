@@ -54,6 +54,27 @@ pub fn walk(project_root: &Path) -> Result<Vec<WalkedFile>> {
         .collect())
 }
 
+/// The plugin owning a profile-detected language may route one of its
+/// extensions to a sibling id that selects a different grammar (`.tsx` parses
+/// with the TSX grammar under the id `tsx`). The id must be one the plugin
+/// registers, so the profile's own id stands when the plugin names nothing.
+fn grammar_language_id(id: &'static str, path: &Path) -> &'static str {
+    let Some(ext) = path.extension().and_then(|ext| ext.to_str()) else {
+        return id;
+    };
+    let ext = format!(".{}", ext.to_ascii_lowercase());
+    let plugin = crate::languages::default_registry().get(id);
+    let Some(routed) = plugin.language_id_for_extension(&ext) else {
+        return id;
+    };
+    plugin
+        .language_ids()
+        .iter()
+        .copied()
+        .find(|&registered| registered == routed)
+        .unwrap_or(id)
+}
+
 /// Map a file path to a language identifier.
 ///
 /// Returns `None` for paths we don't support so the caller can skip the file.
@@ -82,7 +103,7 @@ pub fn walk(project_root: &Path) -> Result<Vec<WalkedFile>> {
 ///   `@include ` the profile's "css" verdict is upgraded to "scss" so
 ///   the SCSS extractor runs and emits mixin/function symbols.
 pub fn detect_language(path: &Path) -> Option<&'static str> {
-    let lang = profile_detect_language(path).map(|desc| desc.id);
+    let lang = profile_detect_language(path).map(|desc| grammar_language_id(desc.id, path));
     // RBI and RBS declarations share Ruby's project profile (SDK, package
     // manager, exclusions), but each has a dedicated extractor. RBI uses the
     // Ruby grammar for its restricted Sorbet AST; RBS remains grammar-free.

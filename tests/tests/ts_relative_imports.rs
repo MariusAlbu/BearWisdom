@@ -28,6 +28,33 @@ fn seed_project() -> TestProject {
         "export class Tag {\n  name: string;\n}\n",
     );
     project.add_file(
+        "src/ui/link-accordion.tsx",
+        "export default function LinkAccordion({ href }: { href: string }) {
+  return <a href={href}>x</a>;
+}
+
+export function Helper(): number {
+  return 1;
+}
+",
+    );
+    project.add_file(
+        "src/ui/pages/page.tsx",
+        "import LinkAccordion, { Helper } from '../link-accordion';
+import { Tag } from '../../article/tag';
+
+export default function Page() {
+  Helper();
+  const tag = new Tag();
+  return (
+    <div>
+      <LinkAccordion href=\"/a\" />
+    </div>
+  );
+}
+",
+    );
+    project.add_file(
         "src/article/article.entity.ts",
         "import { UserEntity, UserData } from '../user/user.entity';\nimport { slugify } from '../shared';\nimport { Tag } from './tag';\n\nexport class ArticleEntity {\n  author: UserEntity;\n  data: UserData;\n  tag: Tag;\n  make(): UserEntity {\n    slugify('x');\n    return new UserEntity();\n  }\n}\n",
     );
@@ -70,6 +97,11 @@ fn relative_imports_bind_type_positions_and_calls_across_directories() {
         edge("make", "calls", "slugify", "src/shared/index.ts"),
         edge("make", "instantiates", "UserEntity", user),
         edge("make", "type_ref", "UserEntity", user),
+        // A `.tsx` file parses with the TSX grammar: its module input is
+        // complete, so its imports bind like any `.ts` file's.
+        edge("Page", "calls", "Helper", "src/ui/link-accordion.tsx"),
+        edge("Page", "calls", "LinkAccordion", "src/ui/link-accordion.tsx"),
+        edge("Page", "instantiates", "Tag", "src/article/tag.ts"),
     ] {
         assert!(
             cross_file.contains(&expected),
