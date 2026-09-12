@@ -92,10 +92,10 @@ fn workspace_protocol_helper_recognizes_variants() {
 fn paths_via(start: &Path, files: Vec<(PathBuf, &str)>) -> Vec<(String, String)> {
     let map: HashMap<PathBuf, String> =
         files.into_iter().map(|(p, c)| (p, c.to_string())).collect();
-    let mut out = Vec::new();
+    let mut out = TsconfigAliases::default();
     let mut seen = HashSet::new();
-    collect_tsconfig_paths(start, &|p| map.get(p).cloned(), &mut out, &mut seen, 0);
-    out
+    tsconfig_paths::collect_tsconfig_paths(start, &|p| map.get(p).cloned(), &mut out, &mut seen, 0);
+    out.prefixes
 }
 
 #[test]

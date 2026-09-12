@@ -7,6 +7,7 @@ use super::{ManifestData, ManifestKind};
 #[derive(Clone, Default)]
 pub(crate) struct ResolverManifestPolicy {
     module_rewrites: Vec<(String, String)>,
+    exact_module_rewrites: Vec<(String, String)>,
     package_aliases: Vec<(String, String)>,
     implicit_namespaces: Vec<String>,
 }
@@ -18,6 +19,14 @@ impl ResolverManifestPolicy {
         rewrites: impl IntoIterator<Item = (String, String)>,
     ) {
         self.module_rewrites.extend(rewrites);
+    }
+
+    /// Add rewrites that apply to one exact specifier, never to a prefix of it.
+    pub(crate) fn add_exact_module_rewrites(
+        &mut self,
+        rewrites: impl IntoIterator<Item = (String, String)>,
+    ) {
+        self.exact_module_rewrites.extend(rewrites);
     }
 
     /// Add consumer-scoped package aliases supplied by their owning ecosystem.
@@ -33,8 +42,16 @@ impl ResolverManifestPolicy {
     }
 
     /// Return the canonical module spelling selected by the owning resolver
-    /// policy. Longest matching source prefix wins.
+    /// policy. An exact rewrite of the whole specifier wins; otherwise the
+    /// longest matching source prefix does.
     pub(crate) fn resolve_module_alias(&self, specifier: &str) -> Option<String> {
+        if let Some((_, target)) = self
+            .exact_module_rewrites
+            .iter()
+            .find(|(alias, _)| alias == specifier)
+        {
+            return Some(target.clone());
+        }
         let (alias, target) = self
             .module_rewrites
             .iter()
@@ -67,58 +84,5 @@ pub(crate) fn from_manifests(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ecosystem_contributors_supply_only_owned_fields() {
-        let manifests = HashMap::from([
-            (
-                ManifestKind::Npm,
-                ManifestData {
-                    path_aliases: vec![("@/".into(), "src/".into())],
-                    ..Default::default()
-                },
-            ),
-            (
-                ManifestKind::Cargo,
-                ManifestData {
-                    dep_renames: vec![("local".into(), "shared".into())],
-                    ..Default::default()
-                },
-            ),
-            (
-                ManifestKind::NuGet,
-                ManifestData {
-                    global_usings: vec!["System".into()],
-                    ..Default::default()
-                },
-            ),
-        ]);
-
-        let policy = from_manifests(&manifests);
-        assert_eq!(
-            policy.resolve_module_alias("@/feature"),
-            Some("src/feature".into())
-        );
-        assert_eq!(policy.resolve_package_alias("local"), Some("shared"));
-        assert_eq!(policy.implicit_namespaces(), ["System"]);
-    }
-
-    #[test]
-    fn non_owner_manifest_cannot_supply_resolver_fields() {
-        let manifests = HashMap::from([(
-            ManifestKind::PyProject,
-            ManifestData {
-                path_aliases: vec![("@/".into(), "wrong".into())],
-                dep_renames: vec![("wrong".into(), "wrong".into())],
-                global_usings: vec!["Wrong".into()],
-                ..Default::default()
-            },
-        )]);
-        let policy = from_manifests(&manifests);
-        assert!(policy.resolve_module_alias("@/feature").is_none());
-        assert!(policy.resolve_package_alias("wrong").is_none());
-        assert!(policy.implicit_namespaces().is_empty());
-    }
-}
+#[path = "resolver_policy_tests.rs"]
+mod tests;

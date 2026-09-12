@@ -64,3 +64,12 @@ fn bare_specifiers_unknown_sources_and_unspelled_bases_resolve_to_nothing() {
         "a source without a module input supplies no path rules"
     );
 }
+
+#[test]
+fn an_alias_target_resolves_as_a_project_relative_base() {
+    let graph = graph();
+    let from = "src/article/article.entity.ts";
+    assert_eq!(graph.resolve_base(from, "src/tag"), Some("src/tag/index.ts"));
+    assert_eq!(graph.resolve_base(from, "src/store"), Some("src/store.ts"));
+    assert_eq!(graph.resolve_base(from, "src/missing"), None);
+}

@@ -4,6 +4,13 @@ use std::path::{Path, PathBuf};
 
 use super::{ManifestData, ManifestKind, ManifestReader, ReaderEntry};
 
+#[path = "tsconfig_paths.rs"]
+pub mod tsconfig_paths;
+pub use tsconfig_paths::{
+    parse_tsconfig_aliases, parse_tsconfig_aliases_with_extends, parse_tsconfig_paths,
+    parse_tsconfig_paths_with_extends, TsconfigAliases,
+};
+
 pub struct NpmManifest;
 
 impl ManifestReader for NpmManifest {
@@ -69,7 +76,9 @@ impl ManifestReader for NpmManifest {
             if let Ok(ts_content) = std::fs::read_to_string(&tsconfig_path) {
                 // Follow `extends` so monorepo / preset base configs that hold
                 // the `paths` map still contribute aliases.
-                data.path_aliases = parse_tsconfig_paths_with_extends(&tsconfig_path);
+                let aliases = parse_tsconfig_aliases_with_extends(&tsconfig_path);
+                data.path_aliases = aliases.prefixes;
+                data.exact_path_aliases = aliases.exact;
                 data.tsconfig_types = parse_tsconfig_types(&ts_content);
             }
 
@@ -147,155 +156,6 @@ impl ManifestReader for NpmManifest {
     }
 }
 
-/// Parse `compilerOptions.paths` from a tsconfig.json file.
-///
-/// Returns `(alias_prefix, target_prefix)` tuples with trailing `*` stripped.
-/// Exact-match entries (no wildcard) come through with empty-string sentinels
-/// reserved via a trailing `=` — here we only surface prefix-mapped entries
-/// because those are what the resolver rewrites. Exact alias matches are a
-/// rare special case and not worth the extra bookkeeping today.
-///
-/// Strips `//` line comments and `/* */` block comments before JSON parsing
-/// so valid JSONC tsconfigs don't fail. Does not follow `extends`.
-pub fn parse_tsconfig_paths(content: &str) -> Vec<(String, String)> {
-    let stripped = strip_json_comments(content);
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(&stripped) else {
-        return Vec::new();
-    };
-    let Some(paths) = value
-        .get("compilerOptions")
-        .and_then(|co| co.get("paths"))
-        .and_then(|p| p.as_object())
-    else {
-        return Vec::new();
-    };
-
-    let mut out = Vec::new();
-    for (key, targets) in paths {
-        // Only wildcard-mapped aliases: `"@/*": ["src/*"]`. Strip the
-        // trailing `*` on both sides to get bare prefix strings.
-        let Some(alias_prefix) = key.strip_suffix('*') else {
-            continue;
-        };
-        let Some(arr) = targets.as_array() else {
-            continue;
-        };
-        let Some(first) = arr.first().and_then(|v| v.as_str()) else {
-            continue;
-        };
-        let Some(target_prefix) = first.strip_suffix('*') else {
-            continue;
-        };
-        if alias_prefix.is_empty() {
-            continue;
-        }
-        out.push((alias_prefix.to_string(), target_prefix.to_string()));
-    }
-    out
-}
-
-/// Like `parse_tsconfig_paths` but follows the `extends` chain, so a package
-/// that declares its `paths` in a shared base config (common in monorepos and
-/// `@tsconfig/*` presets) still contributes aliases. Resolves both relative
-/// (`./base.json`, `../tsconfig.base.json`) and package
-/// (`@org/cfg/web.json`, `@tsconfig/node18/tsconfig.json`) `extends` targets.
-/// Child entries win over inherited ones on key conflict. Bounded depth with a
-/// visited-set cycle guard.
-pub fn parse_tsconfig_paths_with_extends(tsconfig_path: &Path) -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    collect_tsconfig_paths(
-        tsconfig_path,
-        &|p| std::fs::read_to_string(p).ok(),
-        &mut out,
-        &mut seen,
-        0,
-    );
-    out
-}
-
-const MAX_TSCONFIG_EXTENDS_DEPTH: usize = 8;
-
-/// Walk a tsconfig and its `extends` ancestors, accumulating path aliases.
-/// `read` returns a file's content or `None` when it doesn't exist — folding
-/// existence and content into one closure keeps the extends-resolution logic
-/// testable without touching the filesystem.
-fn collect_tsconfig_paths(
-    path: &Path,
-    read: &dyn Fn(&Path) -> Option<String>,
-    out: &mut Vec<(String, String)>,
-    seen: &mut std::collections::HashSet<PathBuf>,
-    depth: usize,
-) {
-    if depth >= MAX_TSCONFIG_EXTENDS_DEPTH || !seen.insert(path.to_path_buf()) {
-        return;
-    }
-    let Some(content) = read(path) else { return };
-    // First-writer-wins: the current (more derived) config's aliases are pushed
-    // before its ancestors', so a child key shadows the parent's.
-    for entry in parse_tsconfig_paths(&content) {
-        if !out.iter().any(|(k, _)| *k == entry.0) {
-            out.push(entry);
-        }
-    }
-    let base_dir = path.parent().unwrap_or_else(|| Path::new(""));
-    for target in tsconfig_extends_targets(&content) {
-        for candidate in extends_candidate_paths(&target, base_dir) {
-            if read(&candidate).is_some() {
-                collect_tsconfig_paths(&candidate, read, out, seen, depth + 1);
-                break;
-            }
-        }
-    }
-}
-
-/// Extract the `extends` field as a list of targets. TS 5.0+ allows an array;
-/// older configs use a single string.
-fn tsconfig_extends_targets(content: &str) -> Vec<String> {
-    let stripped = strip_json_comments(content);
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(&stripped) else {
-        return Vec::new();
-    };
-    match value.get("extends") {
-        Some(serde_json::Value::String(s)) => vec![s.clone()],
-        Some(serde_json::Value::Array(a)) => a
-            .iter()
-            .filter_map(|v| v.as_str().map(str::to_string))
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
-/// Candidate on-disk locations for an `extends` target, in priority order.
-/// Relative targets resolve against `base_dir` (a missing `.json` is appended);
-/// package targets resolve under `node_modules`, walking up from `base_dir`,
-/// trying `<pkg>.json` then `<pkg>/tsconfig.json`.
-fn extends_candidate_paths(target: &str, base_dir: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    if target.starts_with('.') {
-        let rel = target.trim_start_matches("./");
-        let joined = base_dir.join(rel);
-        if joined.extension().is_some() {
-            out.push(joined);
-        } else {
-            out.push(base_dir.join(format!("{rel}.json")));
-        }
-        return out;
-    }
-    let mut dir = Some(base_dir);
-    while let Some(d) = dir {
-        let nm = d.join("node_modules").join(target);
-        if target.ends_with(".json") {
-            out.push(nm);
-        } else {
-            out.push(nm.with_extension("json"));
-            out.push(nm.join("tsconfig.json"));
-        }
-        dir = d.parent();
-    }
-    out
-}
-
 /// Parse `compilerOptions.types` from a tsconfig.json file.
 ///
 /// `types` is a TypeScript-native mechanism declaring which packages
@@ -308,8 +168,7 @@ fn extends_candidate_paths(target: &str, base_dir: &Path) -> Vec<PathBuf> {
 /// them against external file paths (`node_modules/<name>/...`) to
 /// classify which candidates supply ambient globals.
 ///
-/// Same JSONC tolerance as `parse_tsconfig_paths` — strips `//` and
-/// `/* */` comments before parsing. Does not follow `extends`.
+/// Strips `//` and `/* */` comments before parsing. Does not follow `extends`.
 pub fn parse_tsconfig_types(content: &str) -> Vec<String> {
     let stripped = strip_json_comments(content);
     let Ok(value) = serde_json::from_str::<serde_json::Value>(&stripped) else {
@@ -330,7 +189,7 @@ pub fn parse_tsconfig_types(content: &str) -> Vec<String> {
 
 /// Strip `//` line comments and `/* */` block comments, respecting strings
 /// so we don't mangle URLs or paths that happen to contain `//`.
-fn strip_json_comments(src: &str) -> String {
+pub(super) fn strip_json_comments(src: &str) -> String {
     let mut out = String::with_capacity(src.len());
     let bytes = src.as_bytes();
     let mut i = 0;

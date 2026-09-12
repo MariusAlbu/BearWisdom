@@ -13,7 +13,18 @@ impl ModuleGraph {
     ) -> Option<&str> {
         let input = self.inputs.get(&module_paths::normalize(source_file))?;
         let base = module_paths::relative_base(&input.path, spec)?;
-        module_paths::find(&base, &input.paths, |path| {
+        self.resolve_base(source_file, &base)
+    }
+
+    /// The indexed file a project-relative `base` (an alias target, already
+    /// normalized) spells under `source_file`'s path rules.
+    pub(in crate::indexer::resolve::engine) fn resolve_base(
+        &self,
+        source_file: &str,
+        base: &str,
+    ) -> Option<&str> {
+        let input = self.inputs.get(&module_paths::normalize(source_file))?;
+        module_paths::find(base, &input.paths, |path| {
             self.paths
                 .get_key_value(path)
                 .map(|(key, _)| key.as_str())

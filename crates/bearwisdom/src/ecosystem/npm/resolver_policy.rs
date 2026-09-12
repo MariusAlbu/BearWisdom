@@ -11,5 +11,6 @@ pub(crate) fn contribute(
 ) {
     if let Some(manifest) = manifests.get(&ManifestKind::Npm) {
         policy.add_module_rewrites(manifest.path_aliases.clone());
+        policy.add_exact_module_rewrites(manifest.exact_path_aliases.clone());
     }
 }

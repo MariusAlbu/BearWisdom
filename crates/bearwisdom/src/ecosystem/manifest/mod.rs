@@ -17,6 +17,7 @@
 // NOTE: `go_mod` manifest reader migrated to `crate::ecosystem::go_mod` in Phase 2+3.
 pub mod ansible;
 pub(crate) mod declared_deps;
+pub(crate) mod fold;
 pub mod gradle;
 pub mod js_config_aliases;
 pub mod maven;
@@ -148,6 +149,11 @@ pub struct ManifestData {
     /// `*` stripped — e.g. `("@/", "src/")` lets `@/utils` resolve to
     /// `src/utils`. Other manifest kinds leave this empty.
     pub path_aliases: Vec<(String, String)>,
+    /// Exact import aliases for the JS/TS ecosystem: tsconfig `paths` entries
+    /// without a wildcard, `(specifier, target)` — `("next-test-utils",
+    /// "./test/lib/next-test-utils")` rewrites that one specifier and nothing
+    /// that merely starts with it.
+    pub exact_path_aliases: Vec<(String, String)>,
     /// Cargo dependency renames: (alias, target_package_name) for each
     /// alias = { package = "X" } entry. In a crate declaring the rename,
     /// use alias::... refers to the workspace member named X. Per-consumer.
@@ -303,42 +309,7 @@ pub fn read_all_manifests(project_root: &Path) -> HashMap<ManifestKind, Manifest
     let mut result: HashMap<ManifestKind, ManifestData> = HashMap::new();
     for pm in per_package {
         let entry = result.entry(pm.kind).or_default();
-        entry.module_packages.extend(pm.data.module_packages);
-        entry.dependencies.extend(pm.data.dependencies);
-        // module_path: last non-None wins. Legacy behavior is undefined when
-        // multiple packages declare one (never happened pre-M1 — only go.mod
-        // and Swift PM set this, both single-manifest), so last-write is safe.
-        if pm.data.module_path.is_some() {
-            entry.module_path = pm.data.module_path;
-        }
-        entry.global_usings.extend(pm.data.global_usings);
-        if pm.data.sdk_type.is_some() {
-            entry.sdk_type = pm.data.sdk_type;
-        }
-        // The package's own declared name — so a `package:<self>/...` URI is
-        // recognized as project-local rather than external.
-        if !pm.name.is_empty() && !entry.package_names.contains(&pm.name) {
-            entry.package_names.push(pm.name);
-        }
-        // tsconfig-style aliases (from tsconfig.json + vite/vue/webpack
-        // configs) must propagate into the union or single-package projects
-        // — those that don't trigger the per-package builder — will never
-        // see any alias rewrite. Deduplicate so repeat runs stay idempotent.
-        for alias in pm.data.path_aliases {
-            if !entry.path_aliases.contains(&alias) {
-                entry.path_aliases.push(alias);
-            }
-        }
-        for t in pm.data.tsconfig_types {
-            if !entry.tsconfig_types.contains(&t) {
-                entry.tsconfig_types.push(t);
-            }
-        }
-        for pr in pm.data.project_refs {
-            if !entry.project_refs.contains(&pr) {
-                entry.project_refs.push(pr);
-            }
-        }
+        fold::absorb(entry, &pm.name, &pm.data);
     }
     result
 }
