@@ -460,6 +460,7 @@ pub(crate) static TS_LEXICAL_SYNTAX: crate::indexer::lexical::LexicalSyntax =
             export_clause: "export_clause",
             export_specifier: "export_specifier",
             namespace_export: "namespace_export",
+            global_alias_tokens: &["as", "namespace"],
             selections: &[
                 ("member_expression", "object", "property", false),
                 ("nested_type_identifier", "module", "name", true),

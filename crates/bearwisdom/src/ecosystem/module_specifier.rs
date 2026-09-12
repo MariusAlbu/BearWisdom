@@ -33,10 +33,16 @@ struct Adapter {
     relative_entry_key: RelativeEntryKey,
 }
 
-const ADAPTERS: &[Adapter] = &[Adapter {
-    entry_aliases: super::pub_pkg::module_specifier::entry_aliases,
-    relative_entry_key: super::pub_pkg::module_specifier::relative_entry_key,
-}];
+const ADAPTERS: &[Adapter] = &[
+    Adapter {
+        entry_aliases: super::npm::module_specifier::entry_aliases,
+        relative_entry_key: super::npm::module_specifier::relative_entry_key,
+    },
+    Adapter {
+        entry_aliases: super::pub_pkg::module_specifier::entry_aliases,
+        relative_entry_key: super::pub_pkg::module_specifier::relative_entry_key,
+    },
+];
 
 const PACKAGE_ENTRY_ADAPTERS: &[PackageEntryKey] = &[
     super::npm::module_specifier::package_entry_key,

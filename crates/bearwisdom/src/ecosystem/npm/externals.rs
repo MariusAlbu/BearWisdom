@@ -156,20 +156,9 @@ pub(crate) fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot>
         //   (d) the project has no scannable source (manifest-only
         //       checkouts, generators) — fall back to "keep all".
         if !user_imports.is_empty() {
-            let companion = dep.strip_prefix("@types/");
             let user_imports_dep = user_imports.contains(dep);
-            let user_imports_companion = companion
-                .and_then(|c| {
-                    // `@types/foo` is consumed when user imports `foo`.
-                    // `@types/scope__pkg` is consumed when user imports `@scope/pkg`.
-                    if let Some((scope, name)) = c.split_once("__") {
-                        Some(format!("@{scope}/{name}"))
-                    } else {
-                        Some(c.to_string())
-                    }
-                })
-                .map(|expanded| user_imports.contains(&expanded))
-                .unwrap_or(false);
+            let user_imports_companion = super::types_companion::owner_of_types_package(dep)
+                .is_some_and(|owner| user_imports.contains(&owner));
             let any_install_declares_globals = node_modules_roots.iter().any(|nm| {
                 let primary = nm.join(dep);
                 if primary.is_dir() && package_declares_globals(&primary) {
@@ -587,18 +576,9 @@ pub(crate) fn discover_ts_externals_scoped(
         // packages that contribute globals via `declare global` / top-level
         // `declare namespace`.
         if !user_imports.is_empty() {
-            let companion = dep.strip_prefix("@types/");
             let user_imports_dep = user_imports.contains(dep);
-            let user_imports_companion = companion
-                .map(|c| {
-                    if let Some((scope, name)) = c.split_once("__") {
-                        format!("@{scope}/{name}")
-                    } else {
-                        c.to_string()
-                    }
-                })
-                .map(|expanded| user_imports.contains(&expanded))
-                .unwrap_or(false);
+            let user_imports_companion = super::types_companion::owner_of_types_package(dep)
+                .is_some_and(|owner| user_imports.contains(&owner));
             let any_install_declares_globals = node_modules_roots.iter().any(|nm| {
                 let primary = nm.join(dep);
                 if primary.is_dir() && package_declares_globals(&primary) {

@@ -116,6 +116,21 @@ pub(crate) fn declines_directory_match(module: &str) -> bool {
 
 /// Package-entry key for an npm external virtual path. Scoped package grammar
 /// belongs here, so callers only receive the canonical bare package key.
+/// A DefinitelyTyped path also offers its owner's specifier: an import of
+/// `react` reaches `@types/react`'s entry when `react` itself publishes no
+/// declaration entry. The owner key never displaces a real one.
+pub(crate) fn entry_aliases(path: &str) -> Vec<String> {
+    package_entry_key(path)
+        .and_then(|package| super::types_companion::owner_of_types_package(&package))
+        .into_iter()
+        .collect()
+}
+
+/// npm keys relative specifiers through the module graph, not the entry map.
+pub(crate) fn relative_entry_key(_source_file: &str, _specifier: &str) -> Option<String> {
+    None
+}
+
 pub(crate) fn package_entry_key(path: &str) -> Option<String> {
     let package_path = path.strip_prefix("ext:ts:")?;
     npm_package_root(package_path).map(str::to_string)

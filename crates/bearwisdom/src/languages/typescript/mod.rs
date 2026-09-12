@@ -10,7 +10,7 @@ mod angular_module_reachables;
 pub(crate) mod alias_intrinsics;
 mod alias_type_text;
 mod alias_union;
-mod ambient_modules;
+pub(crate) mod ambient_modules;
 mod annotation_members;
 mod annotation_named_type;
 mod calls;

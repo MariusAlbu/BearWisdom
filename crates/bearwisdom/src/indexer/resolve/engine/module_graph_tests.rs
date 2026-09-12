@@ -248,3 +248,54 @@ fn star_modules(ids: &[Option<usize>]) -> Vec<(Target, ExportDomain)> {
         })
         .collect()
 }
+
+/// `import { useState } from './react'` where `react.d.ts` is
+/// `export = React; declare namespace React { function useState }`: the
+/// assigned namespace's members are the module's named exports.
+#[test]
+fn a_named_import_from_an_export_assignment_reads_the_assigned_namespace() {
+    use super::super::{
+        module_input::{InputBinding, InputExport, InputUnit},
+        testkit::{sym, Lookup},
+    };
+    let lookup = Lookup::new().with(sym(71, "useState", "React.useState", "function", "react.d.ts"));
+    let mut graph = ModuleGraph::default();
+    graph.inputs.insert(
+        "react.d.ts".into(),
+        ModuleInput {
+            path: "react.d.ts".into(),
+            assignments: vec![(InputTarget::LocalNamespace(SourceModuleId(1)), ExportDomain::Value)],
+            units: vec![InputUnit {
+                id: SourceModuleId(1),
+                parent: SourceModuleId(0),
+                exports: vec![InputExport {
+                    name: "useState".into(),
+                    domain: ExportDomain::Value,
+                    target: InputTarget::Declaration(71),
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+    );
+    graph.inputs.insert(
+        "consumer.ts".into(),
+        ModuleInput {
+            path: "consumer.ts".into(),
+            imports: vec![InputBinding {
+                binding: 0,
+                domain: ExportDomain::Value,
+                target: InputTarget::From {
+                    module: "./react.d.ts".into(),
+                    name: "useState".into(),
+                },
+            }],
+            ..Default::default()
+        },
+    );
+    graph.rebuild(&lookup);
+    assert_eq!(
+        graph.binding("consumer.ts", BindingId(0), false),
+        BindingResult::Bound(71)
+    );
+}

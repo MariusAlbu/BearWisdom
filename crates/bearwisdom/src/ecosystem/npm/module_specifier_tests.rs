@@ -62,3 +62,15 @@ fn npm_reexport_candidates_keep_js_family_suffixes_in_the_adapter() {
     assert!(candidates.contains(&"packages/q/src/member.vue".to_string()));
     assert!(candidates.contains(&"packages/q/src/member".to_string()));
 }
+
+#[test]
+fn a_definitely_typed_path_offers_its_owner_as_an_entry_alias() {
+    assert_eq!(entry_aliases("ext:ts:@types/react/index.d.ts"), vec!["react"]);
+    assert_eq!(
+        entry_aliases("ext:ts:@types/babel__core/index.d.ts"),
+        vec!["@babel/core"]
+    );
+    assert!(entry_aliases("ext:ts:react/index.d.ts").is_empty());
+    assert!(entry_aliases("src/app.ts").is_empty());
+    assert_eq!(relative_entry_key("src/app.ts", "./x"), None);
+}

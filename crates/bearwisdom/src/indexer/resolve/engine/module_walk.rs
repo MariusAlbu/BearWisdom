@@ -240,10 +240,12 @@ impl ModuleGraph {
                     result = result.merge(candidate.with_competitor(explicit.len() > 1));
                 }
             } else if !data.wildcard_exclusions.contains(&name) {
+                let mut forwarded = false;
                 for &(target, star_domain) in &data.stars {
                     if star_domain != domain {
                         continue;
                     }
+                    forwarded = true;
                     // Legacy wildcard exports promise public visibility. A
                     // caller's private access must not pass through a barrel.
                     if requester.is_some() {
@@ -273,6 +275,23 @@ impl ModuleGraph {
                             }
                             _ => result = result.merge(BindingResult::Incomplete),
                         },
+                    }
+                }
+                // An export assignment publishes the assigned namespace's own
+                // members as this module's named exports.
+                if !forwarded && data.assignments.contains_key(&domain) {
+                    match self.assigned(module, domain, depth + 1, state) {
+                        BindingResult::Namespace(target)
+                        | BindingResult::Entity {
+                            namespace: target, ..
+                        } => pending.push((target, name)),
+                        BindingResult::Ambiguous => {
+                            result = result.merge(BindingResult::Ambiguous)
+                        }
+                        BindingResult::Incomplete | BindingResult::Unconfigured => {
+                            result = result.merge(BindingResult::Incomplete)
+                        }
+                        _ => {}
                     }
                 }
             }

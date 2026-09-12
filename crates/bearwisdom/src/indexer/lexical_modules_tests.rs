@@ -131,3 +131,31 @@ fn default_exports_use_the_adapter_owned_public_name() {
             .default_export_name
     );
 }
+
+#[test]
+fn an_export_assignment_with_a_global_alias_is_a_complete_module() {
+    let source = "export = React;
+export as namespace React;
+declare namespace React {
+    function useState<S>(initial: S): S;
+}
+";
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into())
+        .unwrap();
+    let tree = parser.parse(source, None).unwrap();
+    let graph = super::super::capture(
+        tree.root_node(),
+        source.as_bytes(),
+        Some(&crate::languages::typescript::flow::TS_LEXICAL_SYNTAX),
+        "ts",
+        &mut vec![],
+        &[],
+        crate::indexer::flow_bindings::BindingSymbols::CorrelateOnly,
+    )
+    .unwrap();
+    assert!(graph.module.complete, "{}", tree.root_node().to_sexp());
+    assert_eq!(graph.module.assignments.len(), 1);
+    assert!(graph.module.exports.is_empty(), "a global alias exports nothing itself");
+}

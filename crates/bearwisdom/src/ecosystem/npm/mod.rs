@@ -798,6 +798,7 @@ mod secondary_scan;
 mod symbol_index;
 mod ts_scan;
 mod ts_scan_ambient;
+mod types_companion;
 mod walk;
 
 pub(crate) use externals::*;

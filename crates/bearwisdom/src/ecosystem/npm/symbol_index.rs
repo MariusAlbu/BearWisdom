@@ -84,7 +84,7 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
         .collect();
     for dep in dep_roots {
         if let Some(entry) = resolve_package_entry_path(dep) {
-            pkg_entry.insert(dep.module_path.clone(), entry);
+            super::types_companion::insert_package_entry(&mut pkg_entry, &dep.module_path, entry);
         }
         let walked = if package_declares_globals(&dep.root) {
             union_entry_and_globals(dep)
@@ -92,7 +92,7 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
             walk_ts_dep_entry_only(dep)
         };
         for wf in walked {
-            work.push((dep.module_path.clone(), wf));
+            work.extend(super::types_companion::module_keys(&dep.module_path).into_iter().map(|m| (m, wf.clone())));
         }
         // Concrete subpath exports (`preact/hooks`, `rxjs/ajax`) ship their own
         // declaration entry the package-root walk never reaches. Index each

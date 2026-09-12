@@ -9,6 +9,9 @@ use tree_sitter::Node;
 mod aliases;
 #[path = "lexical_module_scopes.rs"]
 pub(crate) mod scopes;
+#[path = "lexical_module_declarations.rs"]
+mod declarations;
+use declarations::declaration_exports;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum ImportForm {
@@ -35,6 +38,10 @@ pub(crate) struct ModuleForms {
     pub export_clause: &'static str,
     pub export_specifier: &'static str,
     pub namespace_export: &'static str,
+    /// Anonymous tokens of the export statement that publishes the module's
+    /// export assignment under a global name for script consumers; it adds
+    /// nothing to the module's own surface.
+    pub global_alias_tokens: &'static [&'static str],
     pub selections: &'static [(&'static str, &'static str, &'static str, bool)],
     pub extensions: &'static [&'static str],
     pub substitutions: &'static [(&'static str, &'static [&'static str])],
@@ -250,6 +257,11 @@ fn capture_exports(
             result
                 .assignments
                 .push(target.unwrap_or(ExportTarget::Unknown));
+            continue;
+        }
+        if !forms.global_alias_tokens.is_empty()
+            && forms.global_alias_tokens.iter().all(|kind| token(node, kind))
+        {
             continue;
         }
         let source_node = node.child_by_field_name(forms.source_field);
@@ -473,101 +485,6 @@ fn import_children(
         );
     }
     complete
-}
-
-fn declaration_exports(
-    node: Node,
-    source: &[u8],
-    forms: &ModuleForms,
-    graph: &LexicalBindings,
-    output: &mut ModuleSyntax,
-    default: bool,
-    type_only: bool,
-    units: &[(scopes::Unit, Node)],
-) {
-    if node.kind() == forms.import_alias {
-        if let Some(name) = (forms.first_named_child)(node).and_then(|n| text(n, source, forms)) {
-            output.exports.push(Export {
-                target: local_target(graph, graph.name_id(&name), node.start_byte() as u32),
-                name,
-                type_only,
-            });
-        } else {
-            output.complete = false;
-        }
-        return;
-    }
-    let module_kind = scopes::kind(node, forms);
-    if let Some((unit, _)) = units.iter().find(|(unit, _)| {
-        module_kind == Some(unit.kind)
-            && unit.range.start == node.start_byte() as u32
-            && unit.range.end == node.end_byte() as u32
-    }) {
-        if unit.kind == scopes::Kind::Namespace {
-            if let Some(name) = node
-                .child_by_field_name(forms.declaration_name_field)
-                .filter(|n| forms.identifier_names.contains(&n.kind()))
-                .and_then(|n| text(n, source, forms))
-            {
-                output.exports.push(Export {
-                    name,
-                    target: ExportTarget::Module(unit.id),
-                    type_only,
-                });
-            } else {
-                output.complete = false;
-            }
-        }
-        return;
-    }
-    if forms.declaration_wrappers.contains(&node.kind()) {
-        let mut cursor = node.walk();
-        let children: Vec<_> = node
-            .named_children(&mut cursor)
-            .filter(|n| !n.is_extra())
-            .collect();
-        if let [child] = children.as_slice() {
-            if scopes::kind(*child, forms).is_some() {
-                declaration_exports(
-                    *child, source, forms, graph, output, default, type_only, units,
-                );
-                return;
-            }
-        }
-        output.complete = false;
-        return;
-    }
-    if let Some(name) = node.child_by_field_name(forms.declaration_name_field) {
-        if let Some(local) = text(name, source, forms) {
-            let target = local_target(graph, graph.name_id(&local), name.start_byte() as u32);
-            output.exports.push(Export {
-                name: if default {
-                    forms.default_export_name.into()
-                } else {
-                    local
-                },
-                target,
-                type_only,
-            });
-        }
-        return;
-    }
-    if !forms.declaration_lists.contains(&node.kind()) {
-        if default {
-            output.exports.push(Export {
-                name: forms.default_export_name.into(),
-                target: ExportTarget::Unknown,
-                type_only,
-            });
-        }
-        return;
-    }
-    let mut cursor = node.walk();
-    for child in node.named_children(&mut cursor) {
-        declaration_exports(
-            child, source, forms, graph, output, default, type_only, units,
-        );
-    }
 }
 
 fn local_target(graph: &LexicalBindings, name: Option<NameId>, byte: u32) -> ExportTarget {

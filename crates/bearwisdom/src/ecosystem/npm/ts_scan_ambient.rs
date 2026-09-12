@@ -23,6 +23,11 @@ pub(super) fn scan_ambient_modules(
     imports: &HashMap<String, (String, String)>,
 ) -> Vec<(String, Vec<String>)> {
     let mut out: Vec<(String, Vec<String>)> = Vec::new();
+    // A module file's string-named blocks augment modules declared
+    // elsewhere; only a script file declares one.
+    if crate::languages::typescript::ambient_modules::is_module_file(*root) {
+        return out;
+    }
     let mut cursor = root.walk();
     for child in root.children(&mut cursor) {
         match child.kind() {
@@ -78,3 +83,7 @@ fn push_string_named_module(
     names.sort();
     out.push((name, names));
 }
+
+#[cfg(test)]
+#[path = "ts_scan_ambient_tests.rs"]
+mod tests;
