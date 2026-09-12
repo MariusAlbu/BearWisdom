@@ -38,7 +38,13 @@ impl Compilation {
             .find_map(|base| self.modules.resolve_base(source_file, base))
     }
 
+    /// Only the exact package specifier claims the package's `.` entries; a
+    /// subpath (`next/link`) names an export the manifest would have to
+    /// declare separately and falls through to the other links.
     pub(super) fn workspace_entry_candidates(&self, specifier: &str) -> &[String] {
+        if !self.is_workspace_declared_name(specifier) {
+            return &[];
+        }
         self.workspace_package_id(specifier)
             .and_then(|id| self.module_specifier.workspace_entries.get(&id))
             .map(Vec::as_slice)

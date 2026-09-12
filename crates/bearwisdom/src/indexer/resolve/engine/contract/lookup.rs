@@ -401,9 +401,9 @@ pub trait SymbolLookup: FlowCacheLookup + IncludeLookup {
         None
     }
 
-    /// The project-relative entry candidates the workspace package named by
-    /// `specifier` declares, in priority order; empty when `specifier` is not
-    /// a workspace package or declares none.
+    /// The project-relative entry candidates the workspace package named
+    /// exactly by `specifier` declares, in priority order; empty for a subpath
+    /// of a package, a non-workspace specifier, or a package declaring none.
     fn workspace_package_entries(&self, _specifier: &str) -> &[String] {
         &[]
     }

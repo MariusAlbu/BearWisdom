@@ -10250,9 +10250,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/react-tanstack-query",
       "perf": {
-        "end_ws_mb": 115,
-        "files_per_sec": 17,
-        "index_duration_ms": 115188
+        "end_ws_mb": 114,
+        "files_per_sec": 18,
+        "index_duration_ms": 109052
       },
       "project": "react-tanstack-query",
       "rate_by_language": {
@@ -13155,9 +13155,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/ts-nestjs-realworld",
       "perf": {
-        "end_ws_mb": 109,
+        "end_ws_mb": 108,
         "files_per_sec": 4,
-        "index_duration_ms": 11688
+        "index_duration_ms": 11125
       },
       "project": "ts-nestjs-realworld",
       "rate_by_language": {

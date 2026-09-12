@@ -356,3 +356,50 @@ fn a_workspace_package_import_links_through_its_first_indexed_entry_candidate() 
         "the build output was never indexed; the source entry is the package"
     );
 }
+
+/// A subpath of a workspace package (`next/link`) is not the package's `.`
+/// entry: it falls through to whatever else links it.
+#[test]
+fn a_workspace_package_subpath_does_not_claim_the_root_entry() {
+    use super::super::{
+        module_input::{InputBinding, InputExport},
+        testkit::{sym, Lookup},
+    };
+    let lookup = Lookup::new()
+        .with(sym(71, "sleep", "sleep", "function", "packages/utils/src/index.ts"))
+        .with_workspace_pkg("@acme/utils", 7)
+        .with_workspace_entries("@acme/utils", &["packages/utils/src/index.ts"]);
+    let mut graph = ModuleGraph::default();
+    graph.inputs.insert(
+        "packages/utils/src/index.ts".into(),
+        ModuleInput {
+            path: "packages/utils/src/index.ts".into(),
+            exports: vec![InputExport {
+                name: "sleep".into(),
+                domain: ExportDomain::Value,
+                target: InputTarget::Declaration(71),
+            }],
+            ..Default::default()
+        },
+    );
+    graph.inputs.insert(
+        "packages/core/src/a.ts".into(),
+        ModuleInput {
+            path: "packages/core/src/a.ts".into(),
+            imports: vec![InputBinding {
+                binding: 0,
+                domain: ExportDomain::Value,
+                target: InputTarget::From {
+                    module: "@acme/utils/deep".into(),
+                    name: "sleep".into(),
+                },
+            }],
+            ..Default::default()
+        },
+    );
+    graph.rebuild(&lookup);
+    assert_eq!(
+        graph.binding("packages/core/src/a.ts", BindingId(0), false),
+        BindingResult::Missing
+    );
+}
