@@ -67,6 +67,9 @@ pub(crate) struct Lookup {
     /// Declared workspace-package specifier → package id, backing
     /// `workspace_package_id` / `is_workspace_declared_name`.
     workspace_pkgs: FxHashMap<String, i64>,
+    /// Declared workspace-package specifier → its project-relative entry
+    /// candidates, backing `workspace_package_entries`.
+    workspace_entries: FxHashMap<String, Vec<String>>,
     /// Manifest-declared implicit namespace imports, backing
     /// `implicit_wildcard_namespaces` (workspace-wide only in tests).
     implicit_namespaces: Vec<String>,
@@ -256,6 +259,13 @@ impl SymbolLookup for Lookup {
     fn implicit_wildcard_namespaces(&self, _package_id: Option<i64>) -> &[String] {
         &self.implicit_namespaces
     }
+    fn workspace_package_entries(&self, specifier: &str) -> &[String] {
+        self.workspace_entries
+            .get(specifier)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
     fn workspace_package_id(&self, specifier: &str) -> Option<i64> {
         if let Some(&id) = self.workspace_pkgs.get(specifier) {
             return Some(id);

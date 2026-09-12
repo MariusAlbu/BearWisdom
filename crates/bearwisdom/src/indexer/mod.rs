@@ -48,6 +48,7 @@ mod watch_filter;
 pub use plugin_state::PluginStateBag;
 pub mod programs;
 pub mod project_context;
+mod project_workspace;
 pub mod ref_cache;
 pub mod resolve;
 pub mod scip;

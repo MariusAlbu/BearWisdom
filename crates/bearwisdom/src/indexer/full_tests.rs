@@ -97,6 +97,7 @@ fn m3_collect_package_dep_rows_emits_one_row_per_declared_dep() {
         by_package,
         workspace_pkg_by_declared_name: HashMap::new(),
         workspace_pkg_paths: HashMap::new(),
+        workspace_pkg_entries: HashMap::new(),
         active_ecosystems: Vec::new(),
         active_ecosystems_by_package: HashMap::new(),
         language_presence_by_package: HashMap::new(),

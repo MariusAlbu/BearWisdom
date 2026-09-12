@@ -2438,16 +2438,11 @@ impl SymbolLookup for Compilation {
         source_file: &str,
         spec: &str,
     ) -> Option<String> {
-        module_specifier::resolve_via_module_resolver(
-            language,
-            source_file,
-            spec,
-            self.package_id_for_file(source_file),
-            &self.workspace_pkg_by_declared_name,
-            &self.module_specifier.resolver_inputs,
-            &self.module_specifier.workspace_packages,
-            &self.module_specifier.file_paths,
-        )
+        self.resolve_via_language_resolver(language, source_file, spec)
+    }
+
+    fn workspace_package_entries(&self, specifier: &str) -> &[String] {
+        self.workspace_entry_candidates(specifier)
     }
 
     fn in_module_from(&self, source_file: &str, spec: &str) -> SymbolSet<'_> {

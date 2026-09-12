@@ -48,6 +48,7 @@ impl ManifestReader for NpmManifest {
             };
 
             let mut data = ManifestData::default();
+            data.package_entries = super::npm_entry::package_entries(&content);
             let (name, deps) = parse_package_json(&content);
             for pkg in deps {
                 if pkg.starts_with('@') {

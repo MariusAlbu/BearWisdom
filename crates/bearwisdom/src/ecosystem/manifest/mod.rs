@@ -18,6 +18,7 @@
 pub mod ansible;
 pub(crate) mod declared_deps;
 pub(crate) mod fold;
+pub mod npm_entry;
 pub mod gradle;
 pub mod js_config_aliases;
 pub mod maven;
@@ -154,6 +155,11 @@ pub struct ManifestData {
     /// "./test/lib/next-test-utils")` rewrites that one specifier and nothing
     /// that merely starts with it.
     pub exact_path_aliases: Vec<(String, String)>,
+    /// The files a bare import of this package resolves to, relative to the
+    /// package directory, in declared priority (npm: `exports["."]` leaves,
+    /// then `types`/`typings`/`main`/`module`). A consumer takes the first
+    /// candidate that names a file it holds.
+    pub package_entries: Vec<String>,
     /// Cargo dependency renames: (alias, target_package_name) for each
     /// alias = { package = "X" } entry. In a crate declaring the rename,
     /// use alias::... refers to the workspace member named X. Per-consumer.

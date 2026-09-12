@@ -401,6 +401,13 @@ pub trait SymbolLookup: FlowCacheLookup + IncludeLookup {
         None
     }
 
+    /// The project-relative entry candidates the workspace package named by
+    /// `specifier` declares, in priority order; empty when `specifier` is not
+    /// a workspace package or declares none.
+    fn workspace_package_entries(&self, _specifier: &str) -> &[String] {
+        &[]
+    }
+
     /// Exact declared_name match without the deep-import prefix walk.
     /// Returns true when `name` is literally a workspace package's
     /// `declared_name`. Used to tell deep imports apart from bare imports.

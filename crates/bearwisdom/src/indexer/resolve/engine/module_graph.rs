@@ -692,36 +692,9 @@ fn intern_path(
     Target::Path(id)
 }
 
-fn link(
-    paths: &FxHashMap<String, ModuleId>,
-    input: &ModuleInput,
-    spec: &str,
-    lookup: &dyn SymbolLookup,
-    providers: &FxHashMap<String, ModuleId>,
-    redirects: &FxHashMap<ModuleId, ModuleId>,
-) -> Option<ModuleId> {
-    let redirect = |module| redirects.get(&module).copied().unwrap_or(module);
-    if let Some(&module) = providers.get(spec) {
-        return Some(module);
-    }
-    if let Some(base) = module_paths::relative_base(&input.path, spec) {
-        return module_paths::find(&base, &input.paths, |path| paths.get(path).copied())
-            .map(redirect);
-    }
-    // Only configured package entries/module aliases are candidates. The global
-    // declaration-name and file-suffix indexes are not module evidence.
-    if let Some(path) = lookup.resolve_module_from(&input.path, spec) {
-        return paths
-            .get(&module_paths::normalize(path))
-            .copied()
-            .map(redirect);
-    }
-    let alias = lookup.resolve_module_alias(lookup.package_id_for_file(&input.path), spec)?;
-    module_paths::find(&module_paths::normalize(&alias), &input.paths, |path| {
-        paths.get(path).copied()
-    })
-    .map(redirect)
-}
+#[path = "module_link.rs"]
+mod link_site;
+use link_site::link;
 
 #[cfg(test)]
 #[path = "module_graph_tests.rs"]

@@ -32,6 +32,7 @@ pub(crate) fn absorb(entry: &mut ManifestData, name: &str, data: &ManifestData) 
     push_unique(&mut entry.project_refs, &data.project_refs);
     push_unique(&mut entry.path_aliases, &data.path_aliases);
     push_unique(&mut entry.exact_path_aliases, &data.exact_path_aliases);
+    push_unique(&mut entry.package_entries, &data.package_entries);
     push_unique(&mut entry.dep_renames, &data.dep_renames);
     push_unique(&mut entry.tsconfig_types, &data.tsconfig_types);
 }

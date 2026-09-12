@@ -13,7 +13,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::ecosystem::manifest::{self, ManifestData, ManifestKind, PackageManifest};
 use crate::ecosystem::{self, EcosystemActivation, EcosystemId, EcosystemRegistry, Platform};
@@ -112,6 +112,11 @@ pub struct ProjectContext {
     /// workspace root.
     pub workspace_pkg_paths: HashMap<i64, String>,
 
+    /// Map from `package_id` → the project-relative entry candidates its
+    /// manifest declares, in declared priority (see
+    /// `ManifestData::package_entries`).
+    pub workspace_pkg_entries: HashMap<i64, Vec<String>>,
+
     /// Ecosystems whose `activation()` returned true for this project.
     ///
     /// Populated by `ProjectContext::initialize`. For polyglot monorepos,
@@ -185,6 +190,7 @@ pub fn build_project_context(project_root: &Path) -> ProjectContext {
         by_package: HashMap::new(),
         workspace_pkg_by_declared_name: HashMap::new(),
         workspace_pkg_paths: HashMap::new(),
+        workspace_pkg_entries: HashMap::new(),
         active_ecosystems: Vec::new(),
         active_ecosystems_by_package: HashMap::new(),
         language_presence: HashSet::new(),
@@ -242,43 +248,9 @@ pub fn build_project_context_with_packages(
     // ecosystem because that's what import statements key on. When they do,
     // the first wins (deterministic given the input ordering) and a warning
     // is logged so the user sees why imports may be routing oddly.
-    let mut workspace_pkg_by_declared_name: HashMap<String, i64> = HashMap::new();
-    let mut workspace_pkg_paths: HashMap<i64, String> = HashMap::new();
-    for pkg in packages {
-        let Some(id) = pkg.id else { continue };
-        workspace_pkg_paths.insert(id, pkg.path.clone());
-        let Some(declared) = &pkg.declared_name else {
-            continue;
-        };
-        if declared.is_empty() {
-            continue;
-        }
-        if let Some(existing) = workspace_pkg_by_declared_name.get(declared) {
-            warn!(
-                "Duplicate declared_name {:?} for packages id={} (kept) and id={} (path={:?}); \
-                 imports keyed on this name will route to the first.",
-                declared, existing, id, pkg.path,
-            );
-            continue;
-        }
-        workspace_pkg_by_declared_name.insert(declared.clone(), id);
-    }
-    // Ecosystems may contribute source-name aliases after every package's
-    // exact manifest spelling has claimed its slot. An alias therefore never
-    // pre-empts another package that genuinely declares that exact spelling.
-    let ecosystems = crate::ecosystem::default_registry();
-    for pkg in packages {
-        let Some(id) = pkg.id else { continue };
-        let Some(declared) = &pkg.declared_name else {
-            continue;
-        };
-        let Some(kind) = pkg.kind.as_deref() else {
-            continue;
-        };
-        for alias in ecosystems.workspace_package_name_aliases(kind, declared) {
-            workspace_pkg_by_declared_name.entry(alias).or_insert(id);
-        }
-    }
+    let workspace = super::project_workspace::indexes(packages, &by_package);
+    let (workspace_pkg_by_declared_name, workspace_pkg_paths, workspace_pkg_entries) =
+        (workspace.by_declared_name, workspace.paths, workspace.entries);
 
     log_manifests(&manifests);
     info!(
@@ -295,6 +267,7 @@ pub fn build_project_context_with_packages(
         by_package,
         workspace_pkg_by_declared_name,
         workspace_pkg_paths,
+        workspace_pkg_entries,
         active_ecosystems: Vec::new(),
         active_ecosystems_by_package: HashMap::new(),
         language_presence: HashSet::new(),

@@ -37,6 +37,7 @@ impl Lookup {
             ambient: Default::default(),
             by_package: Default::default(),
             workspace_pkgs: Default::default(),
+            workspace_entries: Default::default(),
             arena: TypeArena::new(),
         }
     }
@@ -81,6 +82,15 @@ impl Lookup {
     pub(crate) fn with_workspace_pkg(mut self, specifier: &str, package_id: i64) -> Self {
         self.workspace_pkgs
             .insert(specifier.to_string(), package_id);
+        self
+    }
+
+    /// The entry candidates a workspace package declares, project-relative.
+    pub(crate) fn with_workspace_entries(mut self, specifier: &str, entries: &[&str]) -> Self {
+        self.workspace_entries.insert(
+            specifier.to_string(),
+            entries.iter().map(|e| e.to_string()).collect(),
+        );
         self
     }
 

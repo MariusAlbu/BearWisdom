@@ -1,7 +1,7 @@
 //! Source-module specifier → indexed file for the module-scoped rungs. Package
 //! entries answer bare and adapter-keyed specifiers; the module graph answers
-//! relative ones and configured alias targets by the importing file's own
-//! path rules.
+//! relative ones, configured alias targets and sibling workspace packages by
+//! the importing file's own path rules.
 use super::Compilation;
 use crate::indexer::symbol_ids::SymbolIds;
 use crate::types::ParsedFile;
@@ -9,6 +9,12 @@ use crate::indexer::resolve::engine::contract::SymbolLookup;
 
 impl Compilation {
     pub(super) fn resolve_module_path(&self, source_file: &str, spec: &str) -> Option<&str> {
+        // A sibling workspace package is its own source: the first declared
+        // entry candidate an indexed file spells wins over any copy of the
+        // package pulled from a dependency directory.
+        if let Some(entry) = self.workspace_package_entry(source_file, spec) {
+            return Some(entry);
+        }
         if let Some(key) = crate::ecosystem::module_specifier::relative_entry_key(source_file, spec)
         {
             return self.module_entry.get(&key).map(String::as_str);
@@ -24,6 +30,37 @@ impl Compilation {
             .resolve_module_alias(spec)?;
         self.modules
             .resolve_base(source_file, &super::super::module_paths::normalize(&alias))
+    }
+
+    fn workspace_package_entry(&self, source_file: &str, spec: &str) -> Option<&str> {
+        self.workspace_entry_candidates(spec)
+            .iter()
+            .find_map(|base| self.modules.resolve_base(source_file, base))
+    }
+
+    pub(super) fn workspace_entry_candidates(&self, specifier: &str) -> &[String] {
+        self.workspace_package_id(specifier)
+            .and_then(|id| self.module_specifier.workspace_entries.get(&id))
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    pub(super) fn resolve_via_language_resolver(
+        &self,
+        language: &str,
+        source_file: &str,
+        spec: &str,
+    ) -> Option<String> {
+        super::module_specifier::resolve_via_module_resolver(
+            language,
+            source_file,
+            spec,
+            self.package_id_for_file(source_file),
+            &self.workspace_pkg_by_declared_name,
+            &self.module_specifier.resolver_inputs,
+            &self.module_specifier.workspace_packages,
+            &self.module_specifier.file_paths,
+        )
     }
 
     /// Install ecosystem-published package entries. An entry names an ingested

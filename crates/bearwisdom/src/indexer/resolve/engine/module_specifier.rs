@@ -19,6 +19,9 @@ pub(crate) struct Context {
     pub(crate) file_paths: Vec<String>,
     pub(crate) resolver_inputs: crate::ecosystem::module_specifier::ResolverInputs,
     pub(crate) workspace_packages: Vec<(String, String)>,
+    /// Workspace package id → its manifest's project-relative entry
+    /// candidates, in declared priority.
+    pub(crate) workspace_entries: FxHashMap<i64, Vec<String>>,
 }
 
 impl Context {
@@ -39,6 +42,11 @@ impl Context {
                 let root = ctx.workspace_pkg_paths.get(id)?;
                 Some((name.clone(), root.trim_end_matches('/').to_string()))
             })
+            .collect();
+        self.workspace_entries = ctx
+            .workspace_pkg_entries
+            .iter()
+            .map(|(id, entries)| (*id, entries.clone()))
             .collect();
     }
 }

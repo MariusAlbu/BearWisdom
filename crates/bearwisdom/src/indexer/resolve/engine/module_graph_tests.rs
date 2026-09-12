@@ -299,3 +299,60 @@ fn a_named_import_from_an_export_assignment_reads_the_assigned_namespace() {
         BindingResult::Bound(71)
     );
 }
+
+/// `import { sleep } from '@acme/utils'` inside a monorepo: the sibling
+/// package's first declared entry an indexed file spells wins, even when a
+/// dependency-directory copy of the package registered the entry.
+#[test]
+fn a_workspace_package_import_links_through_its_first_indexed_entry_candidate() {
+    use super::super::{
+        module_input::{InputBinding, InputExport},
+        testkit::{sym, Lookup},
+    };
+    let lookup = Lookup::new()
+        .with(sym(71, "sleep", "sleep", "function", "packages/utils/src/index.ts"))
+        .with_workspace_pkg("@acme/utils", 7)
+        .with_workspace_entries(
+            "@acme/utils",
+            &["packages/utils/build/index.d.ts", "packages/utils/src/index.ts"],
+        );
+    let mut graph = ModuleGraph::default();
+    for (path, exports) in [
+        (
+            "packages/utils/src/index.ts",
+            vec![InputExport {
+                name: "sleep".into(),
+                domain: ExportDomain::Value,
+                target: InputTarget::Declaration(71),
+            }],
+        ),
+        ("packages/core/src/a.ts", vec![]),
+    ] {
+        graph.inputs.insert(
+            path.into(),
+            ModuleInput {
+                path: path.into(),
+                exports,
+                imports: if path.ends_with("a.ts") {
+                    vec![InputBinding {
+                        binding: 0,
+                        domain: ExportDomain::Value,
+                        target: InputTarget::From {
+                            module: "@acme/utils".into(),
+                            name: "sleep".into(),
+                        },
+                    }]
+                } else {
+                    vec![]
+                },
+                ..Default::default()
+            },
+        );
+    }
+    graph.rebuild(&lookup);
+    assert_eq!(
+        graph.binding("packages/core/src/a.ts", BindingId(0), false),
+        BindingResult::Bound(71),
+        "the build output was never indexed; the source entry is the package"
+    );
+}
