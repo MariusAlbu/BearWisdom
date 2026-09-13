@@ -549,7 +549,7 @@ fn lookup_member_on_deref_target(
 /// declaration that type names when one is indexed. The id is the identity spine
 /// of the walk — member lookup and the supertype climb key on it so two
 /// declarations sharing a qname string never collide.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct Receiver {
     pub(crate) ty: TypeId,
     pub(crate) id: Option<i64>,
