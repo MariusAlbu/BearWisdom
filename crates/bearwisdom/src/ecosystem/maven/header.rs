@@ -312,3 +312,7 @@ pub(crate) fn collect_groovy_top_level_name(node: &Node, bytes: &[u8], out: &mut
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+#[path = "header_tests.rs"]
+mod tests;

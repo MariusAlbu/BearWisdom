@@ -131,6 +131,26 @@ impl LookupRule for WorkspacePackageRule {
         // `index` barrels to the declaring symbol, which may live in another
         // workspace package. (The bare specifier has no `resolve_module_from`
         // mapping, so the barrel is recovered from the package's own symbol set.)
+        // A specifier that spells the package's file (`pkg/lib.dart`) names the
+        // barrel directly; a barrel of nothing but re-exports declares no symbol
+        // the package's symbol set could surface it through.
+        if let Some(file) = ctx
+            .lookup
+            .resolve_module_from(ctx.file_ctx.file_path.as_str(), specifier)
+            .map(str::to_string)
+        {
+            if let Some(res) = follow_reexports(
+                &file,
+                target,
+                edge_kind,
+                ctx.kind,
+                ctx.lookup,
+                0,
+                ctx.profile,
+            ) {
+                return LookupResult::Resolved(res);
+            }
+        }
         let stems = ctx.profile.imports.reexport_barrel_stems;
         for barrel in workspace_pkg_barrels(ctx.lookup, workspace_specifier.as_ref(), stems) {
             if let Some(res) = follow_reexports(

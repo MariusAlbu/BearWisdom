@@ -23,7 +23,11 @@ fn seed_pub_workspace() -> TestProject {
     );
     project.add_file(
         "packages/core_client/lib/core_client.dart",
-        "export 'package:core_serialization/core_serialization.dart';\n\nabstract class SerializationManager {\n  String encode(Object value);\n}\n",
+        "export 'src/manager.dart';\nexport 'package:core_serialization/core_serialization.dart';\n",
+    );
+    project.add_file(
+        "packages/core_client/lib/src/manager.dart",
+        "abstract class SerializationManager {\n  String encode(Object value);\n}\n",
     );
     project.add_file(
         "packages/core_serialization/pubspec.yaml",
@@ -125,7 +129,7 @@ fn a_package_uri_binds_to_the_sibling_workspace_package_source() {
     full_index(&mut db, project.path(), None, None, None).unwrap();
 
     let found = cross_file_edges(&db);
-    const DECLARING_FILE: &str = "packages/core_client/lib/core_client.dart";
+    const DECLARING_FILE: &str = "packages/core_client/lib/src/manager.dart";
     const PLAIN_IMPORT: &str = "packages/app_server/lib/endpoint.dart";
     const PREFIXED_IMPORT: &str = "packages/app_server/lib/client.dart";
     for expected in [
