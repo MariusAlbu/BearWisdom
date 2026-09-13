@@ -90,9 +90,14 @@ fn inaccessible_members_and_owners_remain_barriers_to_base_and_outer_fallbacks()
     }
     lookup.denied = 0;
     assert_eq!(select(&lookup, 1, name, &|_| true), Selection::Unique(71));
+    // A second callable row on the SAME owner is that member's other
+    // signature, so the level resolves — and every row of the group still
+    // passes the accessibility check before the group may represent it.
     lookup.inner = lookup
         .inner
         .with_member_id(1, sym(73, "read", "Doc.read", "method", "other.rs"));
+    assert_eq!(select(&lookup, 1, name, &|_| true), Selection::Unique(71));
+    lookup.denied = 73;
     assert!(matches!(
         super::super::implicit_root::walk_member(
             &lookup,
@@ -102,7 +107,7 @@ fn inaccessible_members_and_owners_remain_barriers_to_base_and_outer_fallbacks()
             &crate::type_checker::profile::language_profile::DEFAULT_PROFILE,
             &|_| true,
         ),
-        Err(Selection::Ambiguous)
+        Err(Selection::Inaccessible)
     ));
 }
 
@@ -122,14 +127,21 @@ fn diamonds_deduplicate_identity_and_direct_declarations_hide_bases() {
 
 #[test]
 fn direct_conflicts_and_kind_rejections_do_not_expose_a_base_member() {
+    // Two callable rows on the child are that member's signatures: the level
+    // answers with one of them, never the base's row.
     let lookup = Lookup::new()
         .with_parent_id(1, 2)
         .with_member_id(2, sym(70, "read", "Doc.read", "method", "base.rs"))
         .with_member_id(1, sym(71, "read", "Doc.read", "method", "child.rs"))
         .with_member_id(1, sym(72, "read", "Doc.read", "method", "child.rs"));
     let name = lookup.member_index().unwrap().name("read").unwrap();
-    assert_eq!(select(&lookup, 1, name, &|_| true), Selection::Ambiguous);
+    assert_eq!(select(&lookup, 1, name, &|_| true), Selection::Unique(71));
     assert_eq!(select(&lookup, 1, name, &|_| false), Selection::Missing);
+
+    // A property beside them is a homonym the level cannot separate — it
+    // declines there too, rather than falling through to the base.
+    let mixed = lookup.with_member_id(1, sym(73, "read", "Doc.read", "property", "child.rs"));
+    assert_eq!(select(&mixed, 1, name, &|_| true), Selection::Ambiguous);
 }
 
 #[test]
