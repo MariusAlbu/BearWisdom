@@ -324,3 +324,48 @@ fn a_default_import_of_an_export_assigned_module_is_the_assigned_value() {
     );
     assert_eq!(select(&graph), BindingResult::Bound(72));
 }
+
+#[test]
+fn a_module_read_only_in_part_answers_the_exports_it_declared_and_no_others() {
+    let mut graph = ModuleGraph::default();
+    graph.modules = (0..2).map(|_| Module::default()).collect();
+    let declared = ExportNameId(1);
+    let absent = ExportNameId(2);
+    graph.modules[0]
+        .exports
+        .insert((declared, ExportDomain::Type), vec![Target::Declaration(71)]);
+    graph.modules[0]
+        .stars
+        .push((Target::Namespace(ModuleId(1)), ExportDomain::Type));
+    graph.modules[1]
+        .exports
+        .insert((absent, ExportDomain::Type), vec![Target::Declaration(72)]);
+    let select = |graph: &ModuleGraph, name| {
+        graph.resolve_target(Target::Export(ModuleId(0), name), ExportDomain::Type, 0)
+    };
+    assert_eq!(select(&graph, declared), BindingResult::Bound(71));
+    assert_eq!(select(&graph, absent), BindingResult::Bound(72));
+
+    graph.modules[0].incomplete = true;
+    assert_eq!(
+        select(&graph, declared),
+        BindingResult::Bound(71),
+        "an entry the binder read is evidence, whatever else it could not read"
+    );
+    assert_eq!(
+        select(&graph, absent),
+        BindingResult::Incomplete,
+        "a name with no entry cannot fall through an unread surface"
+    );
+
+    // A cleanly read module whose wildcard reaches an unread one still cannot
+    // conclude absence through it.
+    graph.modules[0].incomplete = false;
+    graph.modules[1].incomplete = true;
+    assert_eq!(select(&graph, declared), BindingResult::Bound(71));
+    assert_eq!(select(&graph, absent), BindingResult::Bound(72));
+    graph.modules[1]
+        .exports
+        .remove(&(absent, ExportDomain::Type));
+    assert_eq!(select(&graph, absent), BindingResult::Incomplete);
+}
