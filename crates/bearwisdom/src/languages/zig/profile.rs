@@ -140,6 +140,7 @@ pub const ZIG_PROFILE: LanguageProfile = LanguageProfile {
     visibility_keywords: &[],
     function_prototype_types: &[],
     external_contract_reduction: true,
+    root_namespace_fallback: &[],
 };
 
 #[cfg(test)]

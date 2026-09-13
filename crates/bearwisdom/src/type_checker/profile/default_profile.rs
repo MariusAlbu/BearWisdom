@@ -83,6 +83,7 @@ pub const DEFAULT_PROFILE: LanguageProfile = LanguageProfile {
     doc_comment_kinds: &[],
     visibility_keywords: &[],
     external_contract_reduction: true,
+    root_namespace_fallback: &[],
 };
 
 #[cfg(test)]

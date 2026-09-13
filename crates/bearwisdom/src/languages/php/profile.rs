@@ -203,6 +203,11 @@ pub const PHP_PROFILE: LanguageProfile = LanguageProfile {
     ],
     function_prototype_types: &[],
     external_contract_reduction: true,
+    // A bare function or constant falls back to the ROOT namespace when the
+    // file's own namespace has no such declaration; a bare CLASS never does.
+    // File-level `const X = 1;` is emitted as a `Field`, and a class field
+    // carries an owner-qualified qname, so it can never answer a bare probe.
+    root_namespace_fallback: &[SymbolKind::Function, SymbolKind::Field],
 };
 
 #[cfg(test)]

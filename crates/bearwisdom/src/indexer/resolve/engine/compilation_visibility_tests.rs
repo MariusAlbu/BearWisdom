@@ -108,3 +108,44 @@ fn reloaded_private_rows_are_hidden_from_roots_but_keep_id_member_lookup() {
         "a removed restriction must not survive reload"
     );
 }
+
+#[test]
+fn external_supply_is_scoped_to_the_languages_the_receiver_may_bind() {
+    let db = crate::Database::open_in_memory().unwrap();
+    db.conn()
+        .execute_batch(
+            "INSERT INTO files (id,path,hash,language,last_indexed)
+        VALUES (10,'ext:ts:__ts_lib__/lib.dom.d.ts','a','typescript',0),
+               (20,'src/helpers.php','b','php',0);
+        INSERT INTO symbols (id,file_id,name,qualified_name,kind,line,col)
+        VALUES (1,10,'config','config','property',0,0),
+               (2,20,'config','config','function',0,0);",
+        )
+        .unwrap();
+    // Two active ecosystems with disjoint language sets: one serves php, the
+    // other the typescript family.
+    let ctx = ProjectContext {
+        active_ecosystems: vec![
+            crate::ecosystem::EcosystemId::new("composer"),
+            crate::ecosystem::EcosystemId::new("ts-lib-dom"),
+        ],
+        ..Default::default()
+    };
+    let mut tree = Compilation::build_with_context(
+        &[],
+        &SymbolIds::default(),
+        Arc::new(TypeArena::new()),
+        Some(&ctx),
+        &HashSet::new(),
+    );
+    tree.ingest_from_db(db.conn());
+
+    assert!(
+        !tree.external_supply_visible("config", "php"),
+        "a typescript external must not attribute a php helper to external supply"
+    );
+    assert!(
+        tree.external_supply_visible("config", "typescript"),
+        "the same declaration stays visible to a language that may bind it"
+    );
+}

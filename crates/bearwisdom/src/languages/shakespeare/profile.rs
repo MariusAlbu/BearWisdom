@@ -78,6 +78,7 @@ const fn minimal(id: &'static str) -> LanguageProfile {
         visibility_keywords: &[],
         function_prototype_types: &[],
         external_contract_reduction: true,
+        root_namespace_fallback: &[],
     }
 }
 

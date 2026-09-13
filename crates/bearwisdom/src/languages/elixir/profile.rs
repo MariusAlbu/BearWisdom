@@ -141,6 +141,7 @@ pub const ELIXIR_PROFILE: LanguageProfile = LanguageProfile {
     // `defmacro __using__` injects members into using code, and macro-body
     // call refs are how supply chains reach the next package's files.
     external_contract_reduction: false,
+    root_namespace_fallback: &[],
 };
 
 #[cfg(test)]

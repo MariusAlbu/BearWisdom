@@ -42,6 +42,7 @@ pub mod reexport_chain;
 pub mod reexport_following;
 pub mod ref_module;
 pub mod relative_module_wildcard;
+pub mod root_namespace;
 pub mod same_file;
 pub mod same_namespace;
 pub mod scope_visible;
@@ -86,6 +87,7 @@ use reexport_chain::ReexportChainRule;
 use reexport_following::ReexportFollowingRule;
 use ref_module::RefModuleRule;
 use relative_module_wildcard::RelativeModuleWildcardRule;
+use root_namespace::RootNamespaceRule;
 use same_file::SameFileRule;
 use same_namespace::SameNamespaceRule;
 use scope_visible::ScopeVisibleRule;
@@ -146,6 +148,7 @@ pub fn default_rules() -> Vec<Box<dyn LookupRule>> {
         Box::new(ImplicitPreludeRule),
         Box::new(GenericParamRule),
         Box::new(AmbientScopeRule),
+        Box::new(RootNamespaceRule),
         Box::new(NamespacelessGlobalRule),
         Box::new(RankedCandidatesRule),
     ]

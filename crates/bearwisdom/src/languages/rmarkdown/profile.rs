@@ -78,6 +78,7 @@ pub const RMARKDOWN_PROFILE: LanguageProfile = LanguageProfile {
     visibility_keywords: &[],
     function_prototype_types: &[],
     external_contract_reduction: true,
+    root_namespace_fallback: &[],
 };
 
 pub const QUARTO_PROFILE: LanguageProfile = LanguageProfile {
@@ -156,6 +157,7 @@ pub const QUARTO_PROFILE: LanguageProfile = LanguageProfile {
     visibility_keywords: &[],
     function_prototype_types: &[],
     external_contract_reduction: true,
+    root_namespace_fallback: &[],
 };
 
 #[cfg(test)]

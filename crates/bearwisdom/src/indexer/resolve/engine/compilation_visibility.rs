@@ -71,6 +71,27 @@ impl Compilation {
                 .collect(),
         )
     }
+
+    /// Whether supply under `name` exists outside the project AND a file
+    /// written in `language` may bind it: an external declaration or an ambient
+    /// global that survives the same cross-language visibility filter every
+    /// candidate probe applies. Without that filter a name declared only in an
+    /// unrelated ecosystem's externals would answer for any language.
+    ///
+    /// Cause-attribution evidence only — no binding decision reads it.
+    pub(in crate::indexer::resolve::engine) fn external_supply_visible(
+        &self,
+        name: &str,
+        language: &str,
+    ) -> bool {
+        let allowed = self.ext_lang_allowed(language);
+        self.filter_ext_langs(self.by_name(name), allowed)
+            .iter()
+            .any(|s| self.is_external_file(&s.file_path))
+            || !self
+                .filter_ext_langs(self.ambient_symbols(name), allowed)
+                .is_empty()
+    }
 }
 
 impl crate::indexer::resolve::engine::contract::FlowCacheLookup for Compilation {

@@ -247,6 +247,7 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     // declared on lib.es5's callable interfaces.
     function_prototype_types: &["CallableFunction", "Function"],
     external_contract_reduction: true,
+    root_namespace_fallback: &[],
 };
 
 #[cfg(test)]

@@ -11,6 +11,8 @@ pub mod import_axes;
 pub mod import_specs;
 pub mod language_policy;
 pub mod language_profile;
+pub mod name_spelling;
+pub mod receiver_specs;
 pub mod registry;
 pub(crate) mod signature_parser;
 pub mod syntax_specs;
