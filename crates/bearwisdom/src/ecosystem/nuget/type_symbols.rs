@@ -3,9 +3,9 @@
 //
 // One emission path shared by the eager whole-DLL parse and the demanded
 // single-type crack: the type row, its public methods (source-name
-// projected), Property rows recovered from get_/set_ accessors, and public
-// static fields. Base-class / interface refs ride along so the inheritance
-// map can climb DLL types.
+// projected), a Constructor row per public instance `.ctor`, Property rows
+// recovered from get_/set_ accessors, and public static fields. Base-class /
+// interface refs ride along so the inheritance map can climb DLL types.
 // =============================================================================
 
 use dotscope::metadata::method::MethodAccessFlags;
@@ -16,7 +16,8 @@ use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibili
 
 use super::clr_projection::SourceNameProjection;
 use super::signature_format::{
-    format_generic_suffix, format_method_signature, strip_backtick_arity,
+    format_constructor_signature, format_generic_suffix, format_method_signature,
+    strip_backtick_arity,
 };
 use super::type_qname::qualified_type_name;
 
@@ -53,10 +54,52 @@ pub(super) fn projected_type_identity(
     (display, qualified, scope_path)
 }
 
+/// Role of one IL MethodDef name in the emitted API surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum MethodRole {
+    /// Runtime bookkeeping or compiler-emitted machinery (`.cctor`, `<>c`,
+    /// lambda display methods) — never source-level API.
+    CompilerGenerated,
+    /// An instance constructor: the callable a construction site binds to.
+    InstanceConstructor,
+    /// A named method, projected to its source name.
+    Ordinary,
+}
+
+/// Classify one IL MethodDef name.
+pub(super) fn method_role(name: &str) -> MethodRole {
+    if name == ".ctor" {
+        MethodRole::InstanceConstructor
+    } else if name.starts_with('<') || name.starts_with('.') {
+        MethodRole::CompilerGenerated
+    } else {
+        MethodRole::Ordinary
+    }
+}
+
+/// The Constructor row for one public instance `.ctor`: named after its
+/// declaring type so a bare construction site binds by name, and parented to
+/// the type row so the member index keeps it under that type.
+pub(super) fn constructor_symbol(
+    display: &str,
+    qualified: &str,
+    type_sym_idx: usize,
+    signature: String,
+) -> ExtractedSymbol {
+    bare_symbol(
+        display.to_string(),
+        format!("{qualified}.{display}"),
+        SymbolKind::Constructor,
+        Some(signature),
+        Some(qualified.to_string()),
+        Some(type_sym_idx),
+    )
+}
+
 /// Emit the symbol rows for one public type definition: the type itself, its
-/// public methods, accessor-derived Property rows, and public static Field
-/// rows — all parented to the type — plus Inherits/Implements refs for its
-/// supertype list.
+/// public methods, its public instance constructors, accessor-derived Property
+/// rows, and public static Field rows — all parented to the type — plus
+/// Inherits/Implements refs for its supertype list.
 pub(super) fn emit_type_symbols(
     type_def: &CilType,
     assembly: &CilObject,
@@ -100,11 +143,28 @@ pub(super) fn emit_type_symbols(
         let Some(method) = method_ref.upgrade() else {
             continue;
         };
-        if method.name.starts_with('<') || method.name.starts_with('.') {
-            continue;
-        }
         if method.flags_access != MethodAccessFlags::PUBLIC {
             continue;
+        }
+        match method_role(&method.name) {
+            MethodRole::CompilerGenerated => continue,
+            MethodRole::InstanceConstructor => {
+                let signature = format_constructor_signature(
+                    &display,
+                    &method.signature,
+                    &type_generic_names,
+                    &qualified,
+                    assembly,
+                );
+                symbols.push(constructor_symbol(
+                    &display,
+                    &qualified,
+                    type_sym_idx,
+                    signature,
+                ));
+                continue;
+            }
+            MethodRole::Ordinary => {}
         }
         if let Some(prop) = accessor_property_name(&method.name) {
             if !properties.iter().any(|p| p == prop) {

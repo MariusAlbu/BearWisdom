@@ -62,16 +62,22 @@ pub(crate) fn generic_params(
     signature: &str,
     name: &str,
 ) -> Vec<(String, Option<String>, Option<String>)> {
-    let Some(name_at) = signature.rfind(name) else {
-        return Vec::new();
-    };
-    let after_name = name_at + name.len();
-    let tail = &signature[after_name..];
-    if !tail.starts_with('<') {
-        return Vec::new();
-    }
-    let Some(close) =
-        crate::type_checker::profile::signature_parser::find_matching_bracket(tail, '<', '>')
+    // The declaration's own spelling is the one whose type-parameter list is
+    // followed by the parameter list; a result type that repeats the name
+    // (`Dictionary<K, V>(int): System.Collections.Generic.Dictionary`) is not.
+    let Some((tail, close)) = signature
+        .match_indices(name)
+        .map(|(at, _)| &signature[at + name.len()..])
+        .filter(|tail| tail.starts_with('<'))
+        .find_map(|tail| {
+            let close = crate::type_checker::profile::signature_parser::find_matching_bracket(
+                tail, '<', '>',
+            )?;
+            tail[close + 1..]
+                .trim_start()
+                .starts_with('(')
+                .then_some((tail, close))
+        })
     else {
         return Vec::new();
     };

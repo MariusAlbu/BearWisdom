@@ -1,7 +1,8 @@
-// Accessor-property recovery and static-field emission over a synthetic
-// metadata fixture: `get_X` yields Property `X`, a public static field is
-// emitted as a Field row parented to the type, non-public / instance /
-// special-name rows stay out.
+// Accessor-property recovery, MethodDef role routing and static-field
+// emission over a synthetic metadata fixture: `get_X` yields Property `X`,
+// `.ctor` yields a Constructor row named after its type, a public static
+// field is emitted as a Field row parented to the type, and compiler-
+// generated / non-public / instance / special-name rows stay out.
 
 use std::sync::{Arc, OnceLock};
 
@@ -22,6 +23,35 @@ fn get_accessor_yields_property_name() {
     assert_eq!(accessor_property_name("get_"), None);
     assert_eq!(accessor_property_name("GetHashCode"), None);
     assert_eq!(accessor_property_name("Zero"), None);
+}
+
+#[test]
+fn method_role_routes_ctor_and_skips_compiler_names() {
+    assert_eq!(method_role(".ctor"), MethodRole::InstanceConstructor);
+    assert_eq!(method_role(".cctor"), MethodRole::CompilerGenerated);
+    assert_eq!(method_role("<>c"), MethodRole::CompilerGenerated);
+    assert_eq!(method_role("<Greet>b__0"), MethodRole::CompilerGenerated);
+    assert_eq!(method_role("Add"), MethodRole::Ordinary);
+    assert_eq!(method_role("get_Item"), MethodRole::Ordinary);
+}
+
+#[test]
+fn constructor_row_is_named_after_its_type() {
+    let row = constructor_symbol(
+        "TimeSpan",
+        "System.TimeSpan",
+        0,
+        "TimeSpan(int): System.TimeSpan".to_string(),
+    );
+    assert_eq!(row.name, "TimeSpan");
+    assert_eq!(row.qualified_name, "System.TimeSpan.TimeSpan");
+    assert_eq!(row.kind, crate::types::SymbolKind::Constructor);
+    assert_eq!(row.parent_index, Some(0));
+    assert_eq!(row.scope_path.as_deref(), Some("System.TimeSpan"));
+    assert_eq!(
+        row.signature.as_deref(),
+        Some("TimeSpan(int): System.TimeSpan")
+    );
 }
 
 #[test]

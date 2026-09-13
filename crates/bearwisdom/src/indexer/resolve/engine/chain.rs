@@ -41,6 +41,9 @@ mod bound_method;
 mod call;
 #[path = "chain_qualified_call.rs"]
 mod qualified_call;
+#[path = "chain_callee_root.rs"]
+mod callee_root;
+use callee_root::resolve_callee_return_and_id;
 use super::arg_types::resolve_arg_types;
 use super::cause::{value_binding_cause, Cause, CauseKind};
 use super::composite_members;
@@ -274,71 +277,69 @@ pub fn bind_member_access(
                     kind,
                 )
         };
-        let member =
-            match bound_method::member(lookup, arena, current, seg, profile, &accept).map_err(
-                |denied| {
-                    crate::tracef!(
-                        "  MEMBER '{}' (is_call={}) on receiver={} (recv.id={:?}) -> DECLINED {:?}",
-                        seg.name,
-                        seg.is_call,
-                        arena.format_type(current.ty),
-                        current.id,
-                        denied
-                    );
-                    None
-                },
-            )? {
-                Some(m) => m,
-                None => {
-                    // Container-Deref rehead: retry the miss with the head rewritten
-                    // to the profile's Deref target (`Vec<T>` → `slice<T>`), args
-                    // kept. The reheaded receiver replaces `current` so the yield
-                    // step substitutes the member's generics through it.
-                    if let Some((m, reheaded)) = lookup_member_on_deref_target(
-                        lookup,
-                        arena,
-                        current,
-                        &seg.name,
-                        Some(file_ctx),
-                        Some(profile),
-                        profile.container_deref_targets,
-                    ) {
-                        current = reheaded;
-                        borrowed = None;
-                        m
-                    } else if let Some(m) = super::extension_method::lookup_extension_method(
-                        lookup, arena, current, &seg.name, profile,
-                    ) {
-                        m
-                    } else if let Some((m, alt)) = super::overload_alts::member_on_alt_yields(
-                        lookup,
-                        arena,
-                        &alt_yields,
-                        &seg.name,
-                        profile,
-                    ) {
-                        current = alt;
-                        borrowed = None;
-                        m
-                    } else if was_uncalled_callable {
-                        // A method accessed WITHOUT a call is a function VALUE
-                        // (`this.m.bind(this)`) — the members it carries are the
-                        // function prototype's, declared on the profile's
-                        // function-prototype types. Tried only after the ordinary
-                        // walk missed, so a real member of the yielded type wins.
-                        match profile
-                            .function_prototype_types
-                            .iter()
-                            .find_map(|t| lookup_member(lookup, t, &seg.name, &|_k| true))
-                        {
-                            Some(m) => m,
-                            None => return Err(member_miss_cause(lookup, arena, current)),
-                        }
-                    } else {
-                        return Err(member_miss_cause(lookup, arena, current));
+        let member = match bound_method::member(lookup, arena, current, seg, profile, &accept)
+            .map_err(|denied| {
+                crate::tracef!(
+                    "  MEMBER '{}' (is_call={}) on receiver={} (recv.id={:?}) -> DECLINED {:?}",
+                    seg.name,
+                    seg.is_call,
+                    arena.format_type(current.ty),
+                    current.id,
+                    denied
+                );
+                None
+            })? {
+            Some(m) => m,
+            None => {
+                // Container-Deref rehead: retry the miss with the head rewritten
+                // to the profile's Deref target (`Vec<T>` → `slice<T>`), args
+                // kept. The reheaded receiver replaces `current` so the yield
+                // step substitutes the member's generics through it.
+                if let Some((m, reheaded)) = lookup_member_on_deref_target(
+                    lookup,
+                    arena,
+                    current,
+                    &seg.name,
+                    Some(file_ctx),
+                    Some(profile),
+                    profile.container_deref_targets,
+                ) {
+                    current = reheaded;
+                    borrowed = None;
+                    m
+                } else if let Some(m) = super::extension_method::lookup_extension_method(
+                    lookup, arena, current, &seg.name, profile,
+                ) {
+                    m
+                } else if let Some((m, alt)) = super::overload_alts::member_on_alt_yields(
+                    lookup,
+                    arena,
+                    &alt_yields,
+                    &seg.name,
+                    profile,
+                ) {
+                    current = alt;
+                    borrowed = None;
+                    m
+                } else if was_uncalled_callable {
+                    // A method accessed WITHOUT a call is a function VALUE
+                    // (`this.m.bind(this)`) — the members it carries are the
+                    // function prototype's, declared on the profile's
+                    // function-prototype types. Tried only after the ordinary
+                    // walk missed, so a real member of the yielded type wins.
+                    match profile
+                        .function_prototype_types
+                        .iter()
+                        .find_map(|t| lookup_member(lookup, t, &seg.name, &|_k| true))
+                    {
+                        Some(m) => m,
+                        None => return Err(member_miss_cause(lookup, arena, current)),
                     }
+                } else {
+                    return Err(member_miss_cause(lookup, arena, current));
                 }
-            };
+            }
+        };
         prev_uncalled_callable = !seg.is_call && is_callable(&member.kind);
         if i == last {
             // The final member's yield type (with the receiver's type arguments
@@ -1879,10 +1880,9 @@ pub(super) fn import_scoped_external_root(
                     &root,
                 )
                 .unwrap_or(false)
-                    || (profile.source_module_path_policy(spec).bare_module_matches_file)(
-                        &s.file_path,
-                        spec,
-                    )
+                    || (profile
+                        .source_module_path_policy(spec)
+                        .bare_module_matches_file)(&s.file_path, spec)
             }
         })
         .collect();
@@ -2483,128 +2483,6 @@ pub(crate) fn callee_return_type_in_scope(
         .map(|(ret, _)| ret)
 }
 
-/// The return type the callable `name` resolves to in this file's import scope,
-/// paired with the SYMBOL ID of the declaration it was read from. The id lets a
-/// caller read that declaration's generic params (to bind a call's type
-/// arguments). See `callee_return_type` for the resolution order — this is its
-/// id-carrying form.
-fn resolve_callee_return_and_id(
-    lookup: &dyn SymbolLookup,
-    arena: &TypeArena,
-    file_ctx: &FileContext,
-    name: &str,
-    enclosing_scope: Option<&str>,
-) -> Result<(TypeId, i64), Option<Cause>> {
-    let candidates = lookup.by_name(name);
-    // The most specific callable candidate found so far whose own return type
-    // was never captured — the diagnosable near-miss if every strategy below
-    // falls through without a typed return.
-    let mut untyped_callee: Option<i64> = None;
-
-    // Scope preference: a callee declared INSIDE `enclosing` — a nested
-    // `function inner(){…}` whose qname is `{enclosing}.{name}` — is the one a
-    // factory's `return inner()` means, resolved before the unscoped name
-    // fallback picks an arbitrary namesake. Its `$Ret` (object-literal return)
-    // is authoritative, same as the general path below.
-    if let Some(scoped_qname) = enclosing_scope.map(|e| join_index_qname(e, name)) {
-        if let Some(cand) = candidates
-            .iter()
-            .find(|s| is_callable(&s.kind) && s.qualified_name == scoped_qname)
-        {
-            let ret_qname = index_return_qname(&cand.qualified_name);
-            if lookup.by_qualified_name(&ret_qname).is_some() {
-                return Ok((arena.class(&ret_qname), cand.id));
-            }
-            if let Some(id) = super::type_slots::return_type_by_identity(lookup, cand) {
-                return Ok((id, cand.id));
-            }
-            if let Some(id) = lookup
-                .return_type_str(&cand.qualified_name)
-                .and_then(|text| intern_lookup_type_text(lookup, arena, &text))
-            {
-                return Ok((id, cand.id));
-            }
-            // Scoped callee exists but carries no recorded return — fall through.
-            untyped_callee = Some(cand.id);
-        }
-    }
-    // An object-literal return synthesized as `{qname}$Ret` (the flow-return-object
-    // pass) IS the function's structural return — authoritative over any stored
-    // return inferred from a param annotation (`Record`) or a body expression
-    // (`Promise`). Prefer it before reading the stored slot.
-    for cand in candidates.iter().filter(|s| is_callable(&s.kind)) {
-        let ret_qname = index_return_qname(&cand.qualified_name);
-        if lookup.by_qualified_name(&ret_qname).is_some() {
-            return Ok((arena.class(&ret_qname), cand.id));
-        }
-    }
-    // Import-scoped overload set: when `name` is imported from a specific
-    // package, the chain heads on THAT package's declaration. An OVERLOADED
-    // function records its return on ONE specific signature (often the
-    // implementation, not the first overload), so scan the scoped callables for
-    // the one carrying a per-id return rather than blindly taking the first —
-    // the root-typing parity the call-ref path gets by binding the arg-matched
-    // overload. Prefer the id-keyed return over the qname slot, which a
-    // same-named declaration in another package may have won.
-    if let Some(pkg) = import_scoped_package_id(file_ctx, lookup, name) {
-        let scoped: Vec<_> = candidates
-            .iter()
-            .filter(|s| is_callable(&s.kind) && s.package_id == Some(pkg))
-            .collect();
-        for s in &scoped {
-            if let Some(id) = lookup.return_type_id_of(s.id) {
-                return Ok((id, s.id));
-            }
-        }
-        if let Some(callee) = scoped.first() {
-            if let Some(id) = super::type_slots::return_type_by_identity(lookup, callee) {
-                return Ok((id, callee.id));
-            }
-            if let Some(id) = lookup
-                .return_type_str(&callee.qualified_name)
-                .and_then(|text| intern_lookup_type_text(lookup, arena, &text))
-            {
-                return Ok((id, callee.id));
-            }
-            untyped_callee.get_or_insert(callee.id);
-        }
-    }
-    // No import attribution (or the scoped set yielded no return): the first
-    // free-function declaration of this name. Methods require an explicit receiver
-    // and must not root a bare unscoped call — they are excluded here so an
-    // unrelated method named the same as an ambient callable-interface const does
-    // not shadow the const's call-signature path.
-    let Some(callee) = candidates.iter().find(|s| s.kind == "function") else {
-        // Not a callable declaration — the name may bind a VALUE whose declared
-        // type is an inline function type (`declare const make: (opts) =>
-        // Client<…>`); calling it yields the signature's return.
-        for cand in candidates.iter().filter(|s| is_value_kind(&s.kind)) {
-            let Some(vty) = field_type_of(lookup, arena, cand.id, &cand.qualified_name) else {
-                continue;
-            };
-            if let Some(r) = function_typed_value_call_yield(arena, vty) {
-                return Ok((r, cand.id));
-            }
-        }
-        return Err(untyped_callee.map(|id| Cause::new(Some(id), CauseKind::UncapturedReturn)));
-    };
-    if let Some(id) = lookup.return_type_id_of(callee.id) {
-        return Ok((id, callee.id));
-    }
-    if let Some(id) = lookup.return_type_id(&callee.qualified_name) {
-        return Ok((id, callee.id));
-    }
-    if let Some(id) = lookup
-        .return_type_str(&callee.qualified_name)
-        .and_then(|text| intern_lookup_type_text(lookup, arena, &text))
-    {
-        return Ok((id, callee.id));
-    }
-    Err(Some(Cause::new(
-        Some(callee.id),
-        CauseKind::UncapturedReturn,
-    )))
-}
 
 /// The return type of a call `name<args>(…)`, with the call's explicit type
 /// arguments bound to the callee's generic parameters and substituted into the

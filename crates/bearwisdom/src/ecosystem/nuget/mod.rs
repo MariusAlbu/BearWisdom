@@ -36,6 +36,7 @@ mod dll_metadata;
 mod dotscope_worker;
 mod manifest;
 pub(crate) mod resolver_policy;
+pub(crate) mod signature;
 mod signature_format;
 mod source_discovery;
 mod symbol_index;

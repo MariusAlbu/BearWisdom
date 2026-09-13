@@ -6,6 +6,9 @@
 // declared parameter names, metadata token references (`class[hex]` /
 // `valuetype[hex]`) resolved to namespace-qualified type names, and the
 // synthesized `this ` receiver marker for extension-method candidates.
+//
+// Methods and constructors share the parameter-list renderer and the line
+// shape; they differ only in what stands in the return slot.
 // =============================================================================
 
 pub(crate) fn strip_backtick_arity(name: &str) -> &str {
@@ -31,31 +34,109 @@ pub(super) fn format_method_signature(
     assembly: &dotscope::prelude::CilObject,
     mark_extension_receiver: bool,
 ) -> String {
-    let gp_suffix = format_generic_suffix(method_generic_names);
+    let params_str = format_parameter_list(
+        sig,
+        type_generic_names,
+        method_generic_names,
+        assembly,
+        mark_extension_receiver,
+    );
+    let return_str = render_signature_element(
+        &sig.return_type,
+        type_generic_names,
+        method_generic_names,
+        assembly,
+    );
+    compose_signature_line(
+        method_name,
+        &format_generic_suffix(method_generic_names),
+        &params_str,
+        &return_str,
+    )
+}
+
+/// An instance constructor's display signature. The return slot carries the
+/// declaring type because construction yields that type, and the return slot is
+/// what a callable row's yield is decoded from. A `.ctor` declares no method
+/// generics of its own and is never an extension candidate, so the generic
+/// suffix comes from the declaring type and the receiver marker is off.
+pub(super) fn format_constructor_signature(
+    display: &str,
+    sig: &dotscope::metadata::signatures::SignatureMethod,
+    type_generic_names: &[String],
+    declaring_qname: &str,
+    assembly: &dotscope::prelude::CilObject,
+) -> String {
+    let params_str = format_parameter_list(sig, type_generic_names, &[], assembly, false);
+    compose_signature_line(
+        display,
+        &format_generic_suffix(type_generic_names),
+        &params_str,
+        declaring_qname,
+    )
+}
+
+/// The `Name<GP>(params): Ret` one-line display shape of a callable.
+pub(super) fn compose_signature_line(
+    name: &str,
+    gp_suffix: &str,
+    params: &str,
+    return_text: &str,
+) -> String {
+    format!("{name}{gp_suffix}{params}: {return_text}")
+}
+
+/// The parenthesised parameter list of one signature, every parameter rendered
+/// to display text.
+pub(super) fn format_parameter_list(
+    sig: &dotscope::metadata::signatures::SignatureMethod,
+    type_generic_names: &[String],
+    method_generic_names: &[String],
+    assembly: &dotscope::prelude::CilObject,
+    mark_extension_receiver: bool,
+) -> String {
+    let rendered: Vec<String> = sig
+        .params
+        .iter()
+        .map(|p| render_signature_element(p, type_generic_names, method_generic_names, assembly))
+        .collect();
+    join_parameter_list(&rendered, mark_extension_receiver)
+}
+
+/// Joins already-rendered parameter texts into the `(a, b)` list.
+///
+/// A static method of a STATIC class reads as an extension candidate: IL
+/// carries no textual `this`, so the marker the extension-dispatch rung keys
+/// on is synthesized on the first parameter here. The rung's own gates
+/// (instance-member miss + receiver-head match + single qname) bound the
+/// over-admission of ordinary static helpers.
+pub(super) fn join_parameter_list(rendered: &[String], mark_extension_receiver: bool) -> String {
     let mut params_str = String::from("(");
-    for (i, p) in sig.params.iter().enumerate() {
+    for (i, text) in rendered.iter().enumerate() {
         if i > 0 {
             params_str.push_str(", ");
         }
         if i == 0 && mark_extension_receiver {
-            // A static method of a STATIC class reads as an extension
-            // candidate: IL carries no textual `this`, so the marker the
-            // extension-dispatch rung keys on is synthesized here. The rung's
-            // own gates (instance-member miss + receiver-head match + single
-            // qname) bound the over-admission of ordinary static helpers.
             params_str.push_str("this ");
         }
-        let rendered = format!("{}", p);
-        let substituted =
-            substitute_generic_placeholders(&rendered, type_generic_names, method_generic_names);
-        params_str.push_str(&resolve_signature_tokens(&substituted, assembly));
+        params_str.push_str(text);
     }
     params_str.push(')');
-    let return_rendered = format!("{}", sig.return_type);
-    let return_substituted =
-        substitute_generic_placeholders(&return_rendered, type_generic_names, method_generic_names);
-    let return_str = resolve_signature_tokens(&return_substituted, assembly);
-    format!("{method_name}{gp_suffix}{params_str}: {return_str}")
+    params_str
+}
+
+/// One parameter or return element rendered to display text: ECMA-335 generic
+/// placeholders substituted, metadata-token references resolved.
+fn render_signature_element(
+    element: &impl std::fmt::Display,
+    type_generic_names: &[String],
+    method_generic_names: &[String],
+    assembly: &dotscope::prelude::CilObject,
+) -> String {
+    let rendered = format!("{element}");
+    let substituted =
+        substitute_generic_placeholders(&rendered, type_generic_names, method_generic_names);
+    resolve_signature_tokens(&substituted, assembly)
 }
 
 fn resolve_signature_tokens(rendered: &str, assembly: &dotscope::prelude::CilObject) -> String {
@@ -146,3 +227,7 @@ pub(crate) fn substitute_generic_placeholders(
     }
     out
 }
+
+#[cfg(test)]
+#[path = "signature_format_tests.rs"]
+mod tests;
