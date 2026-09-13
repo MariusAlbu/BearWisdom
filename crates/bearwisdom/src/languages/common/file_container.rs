@@ -48,6 +48,37 @@ pub fn materialize(result: &mut ExtractionResult, container: FileContainer<'_>) 
     result.symbols.insert(0, container_symbol(&container));
 }
 
+/// Materialize `container` as the only symbol of a result whose extractor
+/// declared nothing, and point every index link in the result at it.
+///
+/// Distinct from [`materialize`], which re-roots declarations that already
+/// exist: here there is nothing to re-root, and every index link the extractor
+/// emitted names a symbol that does not exist — so the links are re-seated on
+/// the container rather than shifted.
+///
+/// Returns whether the container was inserted. It is not inserted for an empty
+/// container name, for a result that already declares a symbol, or for one
+/// carrying no index link for the container to own.
+pub fn materialize_as_sole_owner(
+    result: &mut ExtractionResult,
+    container: FileContainer<'_>,
+) -> bool {
+    if container.name.is_empty() || !result.symbols.is_empty() || !has_index_links(result) {
+        return false;
+    }
+    result.symbols.push(container_symbol(&container));
+    for r in &mut result.refs {
+        r.source_symbol_index = 0;
+    }
+    for route in &mut result.routes {
+        route.handler_symbol_index = 0;
+    }
+    for db_set in &mut result.db_sets {
+        db_set.property_symbol_index = 0;
+    }
+    true
+}
+
 /// Basename of `file_path` without its extension, for either path separator.
 pub fn file_stem(file_path: &str) -> String {
     let norm = file_path.replace('\\', "/");
@@ -72,6 +103,11 @@ pub fn path_stem(file_path: &str) -> String {
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
+
+/// Whether the result carries any link that names a symbol by index.
+fn has_index_links(result: &ExtractionResult) -> bool {
+    !result.refs.is_empty() || !result.routes.is_empty() || !result.db_sets.is_empty()
+}
 
 /// Move every index link in `result` up by one slot, freeing index 0.
 fn shift_index_links(result: &mut ExtractionResult) {

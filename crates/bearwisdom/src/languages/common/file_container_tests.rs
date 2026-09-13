@@ -162,3 +162,65 @@ fn routes_and_db_set_indices_shift() {
     assert_eq!(result.routes[0].handler_symbol_index, 2);
     assert_eq!(result.db_sets[0].property_symbol_index, 3);
 }
+
+// ---------------------------------------------------------------------------
+// Sole-owner materialization
+// ---------------------------------------------------------------------------
+
+/// A result the extractor left without declarations: index links only, each
+/// naming a symbol slot that does not exist.
+fn declaration_less() -> ExtractionResult {
+    let mut result = ExtractionResult {
+        refs: vec![plain_ref(0), plain_ref(0)],
+        ..Default::default()
+    };
+    result.routes.push(ExtractedRoute {
+        handler_symbol_index: 0,
+        http_method: "GET".to_string(),
+        template: "/x".to_string(),
+    });
+    result.db_sets.push(ExtractedDbSet {
+        property_symbol_index: 0,
+        entity_type: "Row".to_string(),
+        table_name: "rows".to_string(),
+        source: DbMappingSource::Convention,
+    });
+    result
+}
+
+#[test]
+fn sole_owner_is_the_only_symbol_and_owns_every_index_link() {
+    let mut result = declaration_less();
+    assert!(materialize_as_sole_owner(&mut result, container(CONTAINER)));
+
+    assert_eq!(result.symbols.len(), 1);
+    assert_eq!(result.symbols[0].name, CONTAINER);
+    assert_eq!(result.symbols[0].qualified_name, CONTAINER_QNAME);
+    assert_eq!(result.symbols[0].parent_index, None);
+    assert_eq!(result.symbols[0].scope_path, None);
+
+    assert!(result.refs.iter().all(|r| r.source_symbol_index == 0));
+    assert_eq!(result.routes[0].handler_symbol_index, 0);
+    assert_eq!(result.db_sets[0].property_symbol_index, 0);
+}
+
+#[test]
+fn sole_owner_declines_when_a_symbol_already_exists() {
+    let mut result = seeded();
+    assert!(!materialize_as_sole_owner(&mut result, container(CONTAINER)));
+
+    assert_eq!(result.symbols.len(), 3);
+    assert_eq!(result.symbols[0].name, "Inner");
+    assert_eq!(result.refs[0].source_symbol_index, 2);
+}
+
+#[test]
+fn sole_owner_declines_without_index_links_or_a_name() {
+    let mut empty = ExtractionResult::default();
+    assert!(!materialize_as_sole_owner(&mut empty, container(CONTAINER)));
+    assert!(empty.symbols.is_empty());
+
+    let mut unnamed = declaration_less();
+    assert!(!materialize_as_sole_owner(&mut unnamed, container("")));
+    assert!(unnamed.symbols.is_empty());
+}

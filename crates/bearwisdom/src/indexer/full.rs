@@ -403,28 +403,15 @@ fn full_index_inner(
             pf.package_id = package_id_for_path(&pf.path);
 
             // Language-owned vendored-source admission uses content — do it before slim-down.
-            // Wrapped in catch_unwind because this is the drain loop's only
-            // content-sensitive call site: if the scanner ever panics again
-            // the pipeline must not hang waiting for workers that can no
-            // longer deliver to a vanished receiver (see panic_hook.rs).
-            let is_language_vendored =
-                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    is_vendored_source_file(
-                        &pf.language,
-                        &pf.path,
-                        pf.content.as_deref().unwrap_or(""),
-                    )
-                })) {
-                    Ok(flag) => flag,
-                    Err(e) => {
-                        let msg = panic_message(&e);
-                        warn!(
-                        "is_vendored_source_file panicked on {}: {msg} — treating as non-vendored",
-                        pf.path,
-                    );
-                        false
-                    }
-                };
+            // This is the drain loop's only content-sensitive call site, so the
+            // scan runs behind the admission panic guard: an escaping panic
+            // would hang the pipeline waiting for workers that can no longer
+            // deliver to a vanished receiver (see panic_hook.rs).
+            let is_language_vendored = super::source_admission::is_vendored_guarded(
+                &pf.language,
+                &pf.path,
+                pf.content.as_deref().unwrap_or(""),
+            );
             if is_language_vendored {
                 let original = pf.path.clone();
                 pf.path = format!("ext:source:{original}");
@@ -1116,19 +1103,14 @@ pub(crate) use super::stage_discover::{
     collect_package_dep_rows, detect_packages, log_language_breakdown,
 };
 
-// Single-file parsing helpers live in `parse_file.rs`. Re-export the
-// public surface (`parse_file`, `parse_file_with_demand`,
-// `is_vendored_source_file`) so other indexer submodules and tests keep the
-// `crate::indexer::full::*` import path they had before the carve.
+// Single-file parsing helpers live in `parse_file.rs`; the source-admission
+// predicates they share live in `source_admission.rs`. Both surfaces are
+// re-exported under the `crate::indexer::full::*` import path.
 pub(crate) use super::parse_file::{
     is_vendored_source_file, parse_file, parse_file_with_arena_and_demand, parse_file_with_demand,
 };
-// `panic_message` is consumed by `full_index`'s catch_unwind guards;
-// `is_generated_source_file` is re-exported so `full_tests.rs` can
-// keep referring to it via `super::*` after the carve.
 #[cfg(test)]
 pub(super) use super::parse_file::is_generated_source_file;
-use super::parse_file::panic_message;
 
 // External-source discovery and external virtual-path plumbing live in
 // `stage_link.rs`.

@@ -14,7 +14,7 @@ use crate::walker::WalkedFile;
 use anyhow::{Context, Result};
 use once_cell::sync::Lazy;
 use sha2::{Digest, Sha256};
-use tracing::{debug, warn};
+use tracing::debug;
 
 /// Per-thread stack for parse pools. Sized large because the extractors walk
 /// the tree-sitter CST recursively, and generated sources nest CST nodes far
@@ -176,20 +176,11 @@ fn parse_file_internal(
     // LPCWSTR, BEGIN_INTERFACE, …). These files are valid C but semantically
     // uninteresting and have no cross-project consumers. Record the file row
     // for hash tracking but emit zero symbols/refs.
-    let is_generated = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        is_generated_source_file(walked.language, &content)
-    })) {
-        Ok(flag) => flag,
-        Err(e) => {
-            let msg = panic_message(&e);
-            warn!(
-                "is_generated_source_file panicked on {}: {msg} — treating as non-generated",
-                walked.relative_path,
-            );
-            false
-        }
-    };
-    if is_generated {
+    if super::source_admission::is_generated_guarded(
+        walked.language,
+        &walked.relative_path,
+        &content,
+    ) {
         return Ok(ParsedFile {
             path: walked.relative_path.clone(),
             language: walked.language.to_string(),
@@ -406,6 +397,13 @@ fn parse_file_internal(
     //     guessing.
     let component_selectors = plugin.component_selectors(&content, &r.symbols);
 
+    // Every index link names a real symbol: a file whose extractor declared
+    // nothing gets one file-scope owner for the links it emitted, otherwise
+    // they name a slot that does not exist and every stage after this one
+    // drops them. Runs after flow typing so binding synthesis keeps attaching
+    // only under enclosing declarations.
+    super::file_scope_owner::materialize(&mut r, &walked.relative_path, line_count);
+
     let mut parsed = ParsedFile {
         path: walked.relative_path.clone(),
         language: walked.language.to_string(),
@@ -457,35 +455,6 @@ fn parse_file_internal(
 // Source-admission policy
 // ---------------------------------------------------------------------------
 
-/// Returns whether the owning language classifies source as generated.
-/// Languages without an admission policy fail closed.
-pub(super) fn is_generated_source_file(language: &str, content: &str) -> bool {
-    crate::languages::default_registry()
-        .get(language)
-        .is_generated_source_file(content)
-}
-
-// ---------------------------------------------------------------------------
-// Vendored-source admission
-// ---------------------------------------------------------------------------
-
-/// Returns whether the owning language classifies source as vendored.
-/// Languages without an admission policy fail closed.
-pub(crate) fn is_vendored_source_file(language: &str, path: &str, content: &str) -> bool {
-    crate::languages::default_registry()
-        .get(language)
-        .is_vendored_source_file(path, content)
-}
-
-/// Extract a short human-readable description from a `catch_unwind` payload.
-/// Used by the pipeline's panic guards so a scanner that misbehaves still
-/// produces a legible warning instead of `<opaque Any>`.
-pub(super) fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
-    if let Some(s) = payload.downcast_ref::<&'static str>() {
-        return (*s).to_string();
-    }
-    if let Some(s) = payload.downcast_ref::<String>() {
-        return s.clone();
-    }
-    "<non-string panic payload>".to_string()
-}
+// Whether the owning language classifies a file as generated or vendored is
+// decided in `source_admission.rs`, guarded and raw.
+pub(crate) use super::source_admission::{is_generated_source_file, is_vendored_source_file};

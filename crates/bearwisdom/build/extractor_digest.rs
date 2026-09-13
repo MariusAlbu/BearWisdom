@@ -19,6 +19,7 @@ pub(crate) fn emit(manifest: &Path) {
     }
     for file in [
         "indexer/external_parse_payload.rs",
+        "indexer/file_scope_owner.rs",
         "indexer/parse_file.rs",
         "ecosystem/external_policy.rs",
         "types.rs",
