@@ -610,3 +610,33 @@ fn cov_arrow_method_body_produces_member_call() {
         "the call carries its `manager` receiver"
     );
 }
+
+/// A member call passed as an argument to another call is its own call ref,
+/// with its receiver chain, in both body forms.
+#[test]
+fn cov_call_nested_in_an_argument_produces_member_call() {
+    for src in [
+        "class Endpoint {\n  final Manager manager;\n  final Model model;\n  String run() => manager.encode(model.serialize());\n}\n",
+        "class Endpoint {\n  final Manager manager;\n  final Model model;\n  String run() {\n    return manager.encode(model.serialize());\n  }\n}\n",
+    ] {
+        let r = super::extract::extract(src);
+        let run = r
+            .symbols
+            .iter()
+            .position(|s| s.name == "run")
+            .expect("the method");
+        let inner = r
+            .refs
+            .iter()
+            .find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "serialize")
+            .unwrap_or_else(|| panic!("the argument call is extracted in {src:?}: {:?}", r.refs));
+        assert_eq!(inner.source_symbol_index, run);
+        assert!(inner.chain.is_some(), "the call carries its `model` receiver");
+        let outer = r
+            .refs
+            .iter()
+            .filter(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "encode")
+            .count();
+        assert_eq!(outer, 1, "the enclosing call is extracted exactly once");
+    }
+}

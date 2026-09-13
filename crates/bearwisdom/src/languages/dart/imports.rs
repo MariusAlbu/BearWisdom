@@ -116,23 +116,14 @@ fn extract_import_spec_recursive(
                     .unwrap_or(&module)
                     .trim_end_matches(".dart")
                     .to_string();
-                // A wildcard entry's `module` carries the wildcard's PACKAGE
-                // identity when the URI names one (`package:flutter/…` →
-                // `flutter`, `dart:async` → `async`) — `WildcardMatch::
-                // PackageRoot` compares it against a candidate's external
-                // `ext:<lang>:<pkg>/…` package segment, reaching through a
-                // barrel library to the file that actually declares a
-                // member. A schemeless (relative, same-project) URI has no
-                // package identity, so it falls back to the bare library
-                // STEM instead — `PackageRoot` falls back to the same
-                // file-stem check `FileStem` used before it. A non-wildcard
-                // entry keeps the raw URI for the module-anchor and
-                // reexport rungs, which resolve it as a real specifier.
+                // A wildcard entry keeps the URI as written — the wildcard rung
+                // reads the package identity and the library stem out of it
+                // through the Dart package-specifier adapter, and the
+                // re-export follower resolves it to the library file. A
+                // non-wildcard entry names the library by its stem and keeps
+                // the URI for the module-anchor and re-export rungs.
                 let (target, ref_module) = if wildcard_worthy {
-                    let pkg = dart_package_identity(&module)
-                        .map(str::to_string)
-                        .unwrap_or_else(|| stem.clone());
-                    ("*".to_string(), pkg)
+                    ("*".to_string(), module.clone())
                 } else {
                     (stem, module)
                 };
@@ -198,19 +189,6 @@ fn push_export_refs(
             call_args: Vec::new(),
         });
     }
-}
-
-/// The bare package identity a `WildcardMatch::PackageRoot` wildcard compares
-/// against a candidate's `ext:<lang>:<pkg>/…` segment: the segment right
-/// after a `package:` or `dart:` scheme, up to the next `/` (`package:
-/// flutter/material.dart` → `flutter`; `dart:async` → `async`). `None` for a
-/// relative or otherwise schemeless URI, which carries no package identity.
-fn dart_package_identity(uri: &str) -> Option<&str> {
-    let rest = uri
-        .strip_prefix("package:")
-        .or_else(|| uri.strip_prefix("dart:"))?;
-    let pkg = rest.split('/').next().unwrap_or(rest);
-    (!pkg.is_empty()).then_some(pkg)
 }
 
 // ---------------------------------------------------------------------------

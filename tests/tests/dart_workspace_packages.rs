@@ -23,7 +23,17 @@ fn seed_pub_workspace() -> TestProject {
     );
     project.add_file(
         "packages/core_client/lib/core_client.dart",
-        "abstract class SerializationManager {\n  String encode(Object value);\n}\n",
+        "export 'package:core_serialization/core_serialization.dart';\n\nabstract class SerializationManager {\n  String encode(Object value);\n}\n",
+    );
+    project.add_file(
+        "packages/core_serialization/pubspec.yaml",
+        "name: core_serialization\nversion: 1.0.0\n\nenvironment:\n  sdk: '^3.8.0'\n",
+    );
+    // The client library re-exports the serialization package wholesale, the
+    // way a generated client forwards its shared model library.
+    project.add_file(
+        "packages/core_serialization/lib/core_serialization.dart",
+        "abstract class SerializableModel {\n  String serialize();\n}\n",
     );
     project.add_file(
         "packages/app_server/pubspec.yaml",
@@ -35,13 +45,13 @@ fn seed_pub_workspace() -> TestProject {
     );
     project.add_file(
         "packages/app_server/lib/endpoint.dart",
-        "import 'package:core_client/core_client.dart';\n\nclass Endpoint {\n  final SerializationManager manager;\n  Endpoint(this.manager);\n\n  String run(Object value) => manager.encode(value);\n}\n",
+        "import 'package:core_client/core_client.dart';\n\nclass Endpoint {\n  final SerializationManager manager;\n  final SerializableModel model;\n  Endpoint(this.manager, this.model);\n\n  String run() => manager.encode(model.serialize());\n}\n",
     );
     // The prefixed form generated Dart clients emit: the import binds no name
     // directly, so every use carries the raw URI on the ref itself.
     project.add_file(
         "packages/app_server/lib/client.dart",
-        "import 'package:core_client/core_client.dart' as _i1;\n\nclass Client {\n  final _i1.SerializationManager codec;\n  Client(this.codec);\n}\n",
+        "import 'package:core_client/core_client.dart' as _i1;\n\nclass Client implements _i1.SerializableModel {\n  final _i1.SerializationManager codec;\n  Client(this.codec);\n\n  @override\n  String serialize() => '';\n}\n",
     );
     // A packaging template that declares the same name but ships no sources.
     // It must never win the declared name away from the real package.
@@ -78,7 +88,12 @@ fn edge(
     target: &str,
     target_file: &str,
 ) -> (String, String, String, String) {
-    (source_file.into(), kind.into(), target.into(), target_file.into())
+    (
+        source_file.into(),
+        kind.into(),
+        target.into(),
+        target_file.into(),
+    )
 }
 
 /// Every live unresolved ref in the consuming package other than the import
@@ -129,8 +144,31 @@ fn a_package_uri_binds_to_the_sibling_workspace_package_source() {
             DECLARING_FILE,
         ),
         edge(PLAIN_IMPORT, "calls", "encode", DECLARING_FILE),
+        // A name the client library only re-exports from a third workspace
+        // package binds to that package's declaration.
+        edge(
+            PREFIXED_IMPORT,
+            "implements",
+            "SerializableModel",
+            "packages/core_serialization/lib/core_serialization.dart",
+        ),
+        edge(
+            PLAIN_IMPORT,
+            "type_ref",
+            "SerializableModel",
+            "packages/core_serialization/lib/core_serialization.dart",
+        ),
+        edge(
+            PLAIN_IMPORT,
+            "calls",
+            "serialize",
+            "packages/core_serialization/lib/core_serialization.dart",
+        ),
     ] {
-        assert!(found.contains(&expected), "missing {expected:?} in {found:?}");
+        assert!(
+            found.contains(&expected),
+            "missing {expected:?} in {found:?}"
+        );
     }
 
     let unresolved = live_unresolved_in_app_server(&db);

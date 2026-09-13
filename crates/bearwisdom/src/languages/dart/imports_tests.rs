@@ -16,10 +16,9 @@ fn import_directive_produces_import_ref() {
 #[test]
 fn plain_whole_library_import_is_wildcard() {
     // A bare `import 'uri';` — no `as`, no `show`/`hide` — brings every
-    // declaration into unqualified scope: the wildcard sentinel target, the
-    // `package:` URI's bare PACKAGE identity on `module` (not the library
-    // file's stem) — `WildcardMatch::PackageRoot` compares it against a
-    // candidate's external `ext:<lang>:<pkg>/…` segment.
+    // declaration into unqualified scope: the wildcard sentinel target with
+    // the URI as written on `module`; the wildcard rung reads the package
+    // identity and the library stem out of it.
     let src = "import 'package:flutter/material.dart';\n";
     let r = extract::extract(src);
     let imp = r
@@ -28,14 +27,13 @@ fn plain_whole_library_import_is_wildcard() {
         .find(|r| r.kind == EdgeKind::Imports)
         .expect("import ref");
     assert_eq!(imp.target_name, "*");
-    assert_eq!(imp.module.as_deref(), Some("flutter"));
+    assert_eq!(imp.module.as_deref(), Some("package:flutter/material.dart"));
 }
 
 #[test]
-fn dart_scheme_wildcard_import_carries_library_name() {
-    // `dart:async` has no `/` segment — the whole post-scheme string is the
-    // package identity, matching the Dart-SDK ecosystem's `ext:dart-sdk:
-    // async/…` virtual-path segment.
+fn dart_scheme_wildcard_import_keeps_the_scheme() {
+    // A `dart:` URI is kept whole; the SDK library name is read out of it
+    // where the package identity is needed.
     let src = "import 'dart:async';\n";
     let r = extract::extract(src);
     let imp = r
@@ -44,15 +42,13 @@ fn dart_scheme_wildcard_import_carries_library_name() {
         .find(|r| r.kind == EdgeKind::Imports)
         .expect("import ref");
     assert_eq!(imp.target_name, "*");
-    assert_eq!(imp.module.as_deref(), Some("async"));
+    assert_eq!(imp.module.as_deref(), Some("dart:async"));
 }
 
 #[test]
-fn relative_wildcard_import_falls_back_to_file_stem() {
-    // A schemeless (project-relative) wildcard URI carries no package
-    // identity — `module` falls back to the bare library stem, same as
-    // before, so `WildcardMatch::PackageRoot`'s internal-candidate fallback
-    // still lines up against a same-project file's basename.
+fn relative_wildcard_import_keeps_the_file_uri() {
+    // A schemeless (project-relative) wildcard URI is kept as written; the
+    // library stem the wildcard rung compares against is read out of it.
     let src = "import 'widgets.dart';\n";
     let r = extract::extract(src);
     let imp = r
@@ -61,7 +57,7 @@ fn relative_wildcard_import_falls_back_to_file_stem() {
         .find(|r| r.kind == EdgeKind::Imports)
         .expect("import ref");
     assert_eq!(imp.target_name, "*");
-    assert_eq!(imp.module.as_deref(), Some("widgets"));
+    assert_eq!(imp.module.as_deref(), Some("widgets.dart"));
 }
 
 #[test]

@@ -11,6 +11,7 @@ type ExternalFileMatch = fn(&str, &str, &str) -> Option<bool>;
 type ExternalPackageKey = fn(&str, &str) -> Option<String>;
 type ExternalPackageKeyFromPath = fn(&str) -> Option<String>;
 type ExternalPackageImportMatch = fn(&str, &str, &str) -> Option<bool>;
+type SpecifierFileStem = fn(&str, &str) -> Option<String>;
 
 struct Adapter {
     package_root: PackageRoot,
@@ -18,6 +19,10 @@ struct Adapter {
     external_package_key: ExternalPackageKey,
     external_package_key_from_path: ExternalPackageKeyFromPath,
     external_package_matches_import: ExternalPackageImportMatch,
+    /// The basename stem of the file a source specifier names, for an
+    /// ecosystem whose specifiers spell files. `None` leaves the specifier
+    /// as the stem.
+    specifier_file_stem: Option<SpecifierFileStem>,
 }
 
 const ADAPTERS: &[Adapter] = &[
@@ -27,6 +32,7 @@ const ADAPTERS: &[Adapter] = &[
         external_package_key: npm::external_package_key,
         external_package_key_from_path: npm::external_package_key_from_path,
         external_package_matches_import: npm::external_package_matches_import,
+        specifier_file_stem: None,
     },
     Adapter {
         package_root: crate::languages::ruby::package_specifier::package_root,
@@ -37,6 +43,7 @@ const ADAPTERS: &[Adapter] = &[
             crate::languages::ruby::package_specifier::external_package_key_from_path,
         external_package_matches_import:
             crate::languages::ruby::package_specifier::external_package_matches_import,
+        specifier_file_stem: None,
     },
     Adapter {
         package_root: crate::languages::dart::package_specifier::package_root,
@@ -47,6 +54,7 @@ const ADAPTERS: &[Adapter] = &[
             crate::languages::dart::package_specifier::external_package_key_from_path,
         external_package_matches_import:
             crate::languages::dart::package_specifier::external_package_matches_import,
+        specifier_file_stem: Some(crate::languages::dart::package_specifier::specifier_file_stem),
     },
 ];
 
@@ -54,6 +62,16 @@ pub(crate) fn package_root(language: &str, specifier: &str) -> Option<String> {
     ADAPTERS
         .iter()
         .find_map(|adapter| (adapter.package_root)(language, specifier))
+}
+
+/// The basename stem of the file an import specifier names, when the owning
+/// ecosystem spells files in its specifiers (`package:a/b/c.dart` → `c`).
+pub(crate) fn import_file_stem(language: &str, specifier: &str) -> Option<String> {
+    ADAPTERS.iter().find_map(|adapter| {
+        adapter
+            .specifier_file_stem
+            .and_then(|stem| stem(language, specifier))
+    })
 }
 
 /// The import-side package root, when an ecosystem adapter owns this language.

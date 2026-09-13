@@ -3,9 +3,9 @@
 //! relative ones, configured alias targets and sibling workspace packages by
 //! the importing file's own path rules.
 use super::Compilation;
+use crate::indexer::resolve::engine::contract::SymbolLookup;
 use crate::indexer::symbol_ids::SymbolIds;
 use crate::types::ParsedFile;
-use crate::indexer::resolve::engine::contract::SymbolLookup;
 
 impl Compilation {
     pub(super) fn resolve_module_path(&self, source_file: &str, spec: &str) -> Option<&str> {
@@ -38,7 +38,17 @@ impl Compilation {
     fn workspace_package_entry(&self, source_file: &str, spec: &str) -> Option<&str> {
         self.workspace_entry_candidates(spec)
             .iter()
-            .find_map(|base| self.modules.resolve_base(source_file, base))
+            .find_map(|base| self.indexed_base(source_file, base))
+    }
+
+    /// The indexed file a project-relative `base` names: completed by the
+    /// importing file's path rules when it omits its extension, or spelled in
+    /// full — the only rule a source without a module input (a language whose
+    /// modules are files and nothing more) can offer.
+    fn indexed_base(&self, source_file: &str, base: &str) -> Option<&str> {
+        self.modules
+            .resolve_base(source_file, base)
+            .or_else(|| self.indexed_file_spelled(base))
     }
 
     /// A workspace package that publishes from a declared source root maps a
@@ -54,7 +64,16 @@ impl Compilation {
             return None;
         }
         let root = self.module_specifier.pkg_source_root.get(&pkg_id)?;
-        self.modules.resolve_base(source_file, &format!("{root}/{sub}"))
+        self.indexed_base(source_file, &format!("{root}/{sub}"))
+    }
+
+    /// The indexed file whose project-relative path is exactly `path`, in the
+    /// spelling the symbol table keys it by.
+    fn indexed_file_spelled(&self, path: &str) -> Option<&str> {
+        let normalized = super::super::module_paths::normalize(path);
+        self.by_file
+            .get_key_value(normalized.as_str())
+            .map(|(key, _)| key.as_str())
     }
 
     /// Only the exact package specifier claims the package's `.` entries; a
@@ -99,9 +118,7 @@ impl Compilation {
     ) {
         let mut changed = false;
         for (module, path) in entries {
-            if self.by_file.contains_key(path)
-                && self.module_entry.get(module) != Some(path)
-            {
+            if self.by_file.contains_key(path) && self.module_entry.get(module) != Some(path) {
                 self.module_entry.insert(module.clone(), path.clone());
                 changed = true;
             }
