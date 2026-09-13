@@ -36,6 +36,7 @@ mod symbols;
 mod symbols_casts;
 mod symbols_fields;
 mod symbols_variables;
+mod type_text;
 mod types;
 
 mod expressions;
@@ -65,10 +66,6 @@ mod calls_tests;
 #[cfg(test)]
 #[path = "module_augmentations_tests.rs"]
 mod module_augmentations_tests;
-
-#[cfg(test)]
-#[path = "type_text_tests.rs"]
-mod type_text_tests;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -144,30 +141,15 @@ impl LanguagePlugin for TypeScriptPlugin {
     }
 
     fn type_text_policy(&self) -> crate::languages::TypeTextPolicy {
-        crate::languages::TypeTextPolicy {
-            fat_arrow_function: true,
-            readonly_modifier: true,
-            array_suffix: true,
-            union_intersection: true,
-            bracket_tuple: true,
-            angle_application: true,
-            ..crate::languages::TypeTextPolicy::OPAQUE
-        }
+        type_text::policy()
     }
 
     fn primitive_member_head(&self, head: &str) -> Option<String> {
-        match head {
-            "string" => Some("String".to_string()),
-            "number" => Some("Number".to_string()),
-            "bigint" => Some("BigInt".to_string()),
-            "boolean" => Some("Boolean".to_string()),
-            "symbol" => Some("Symbol".to_string()),
-            _ => None,
-        }
+        type_text::primitive_member_head(head)
     }
 
     fn has_homogeneous_computed_access(&self, head: &str) -> bool {
-        matches!(head, "Array" | "ReadonlyArray")
+        type_text::has_homogeneous_computed_access(head)
     }
     fn signature_return_type(&self, signature: &str) -> Option<String> {
         signature::return_type(signature)

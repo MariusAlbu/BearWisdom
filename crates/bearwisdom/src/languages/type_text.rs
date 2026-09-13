@@ -6,90 +6,9 @@
 
 use crate::type_checker::core::types::{Type, TypeArena, TypeId};
 
-/// Explicit source-syntax features a language elects to parse.
-///
-/// The default is deliberately opaque.  A plugin must opt into every surface
-/// form it owns; this prevents a type annotation from one language being
-/// interpreted according to another language's grammar.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TypeTextPolicy {
-    pub reference_sigil: bool,
-    pub pointer_sigil: bool,
-    pub opaque_existential_prefix: bool,
-    pub python_callable: bool,
-    pub dart_function: bool,
-    pub go_function: bool,
-    pub fat_arrow_function: bool,
-    pub thin_arrow_function: bool,
-    pub bare_arrow_parameter: bool,
-    pub readonly_modifier: bool,
-    pub nullable_prefix: bool,
-    pub nullable_suffix: bool,
-    pub array_suffix: bool,
-    pub union_intersection: bool,
-    pub parenthesized_tuple: bool,
-    pub bracket_tuple: bool,
-    pub bracket_array: bool,
-    pub rust_array_or_slice: bool,
-    pub angle_application: bool,
-    pub bracket_application: bool,
-    pub lifetime_arguments: bool,
-}
-
-impl TypeTextPolicy {
-    /// Accept no source grammar; preserve the complete spelling as an opaque
-    /// nominal. This is the `LanguagePlugin` default.
-    pub const OPAQUE: Self = Self {
-        reference_sigil: false,
-        pointer_sigil: false,
-        opaque_existential_prefix: false,
-        python_callable: false,
-        dart_function: false,
-        go_function: false,
-        fat_arrow_function: false,
-        thin_arrow_function: false,
-        bare_arrow_parameter: false,
-        readonly_modifier: false,
-        nullable_prefix: false,
-        nullable_suffix: false,
-        array_suffix: false,
-        union_intersection: false,
-        parenthesized_tuple: false,
-        bracket_tuple: false,
-        bracket_array: false,
-        rust_array_or_slice: false,
-        angle_application: false,
-        bracket_application: false,
-        lifetime_arguments: false,
-    };
-
-    /// Compatibility policy for a plugin that explicitly owns every source
-    /// spelling supported by the former generic parser. It is intentionally
-    /// not the default.
-    pub const ALL_LEGACY_FORMS: Self = Self {
-        reference_sigil: true,
-        pointer_sigil: true,
-        opaque_existential_prefix: true,
-        python_callable: true,
-        dart_function: true,
-        go_function: true,
-        fat_arrow_function: true,
-        thin_arrow_function: true,
-        bare_arrow_parameter: true,
-        readonly_modifier: true,
-        nullable_prefix: true,
-        nullable_suffix: true,
-        array_suffix: true,
-        union_intersection: true,
-        parenthesized_tuple: true,
-        bracket_tuple: true,
-        bracket_array: true,
-        rust_array_or_slice: true,
-        angle_application: true,
-        bracket_application: true,
-        lifetime_arguments: true,
-    };
-}
+#[path = "type_text_policy.rs"]
+mod policy;
+pub use policy::TypeTextPolicy;
 
 /// Intern one source-language type spelling according to an explicit policy.
 /// The resulting value is always a normalized `TypeId`; source syntax is never
@@ -172,6 +91,12 @@ impl TypeTextParser<'_> {
         let trimmed = text.trim();
         if trimmed.is_empty() {
             return self.arena.class(text);
+        }
+        // An atomic spelling denotes a semantic atom, never a nominal. Asked
+        // before every syntax rule: an atom is a whole spelling, so no rule can
+        // decompose it into something else.
+        if let Some(atom) = self.policy.atom(trimmed) {
+            return self.arena.intern(Type::Intrinsic(atom));
         }
         if self.policy.reference_sigil {
             if let Some(referent) = strip_reference_sigil(trimmed) {
