@@ -1866,41 +1866,7 @@ impl Compilation {
                 .unwrap_or(&crate::type_checker::profile::language_profile::DEFAULT_PROFILE);
             let async_wrappers = profile.async_wrappers;
             let file_ctx = init_pass_file_ctx(pf);
-            // Syntax-migrated files identify the whole initializer by source
-            // address. Class fields need not emit a separate TypeRef marker.
-            // Only the legacy path below uses leftmost-call attribution.
-            let mut field_init: FxHashMap<usize, &crate::types::ExtractedRef> =
-                source_call_initializers(pf)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .collect();
-            if pf.flow.lexical.is_none() {
-                for r in &pf.refs {
-                    if !matches!(r.kind, EdgeKind::Calls | EdgeKind::Instantiates) {
-                        continue;
-                    }
-                    if r.chain.as_ref().is_some_and(|c| c.segments.len() > 1) {
-                        continue;
-                    }
-                    let Some(sym) = pf.symbols.get(r.source_symbol_index) else {
-                        continue;
-                    };
-                    if !matches!(
-                        sym.kind,
-                        SymbolKind::Property | SymbolKind::Field | SymbolKind::Variable
-                    ) {
-                        continue;
-                    }
-                    field_init
-                        .entry(r.source_symbol_index)
-                        .and_modify(|cur| {
-                            if r.byte_offset < cur.byte_offset {
-                                *cur = r;
-                            }
-                        })
-                        .or_insert(r);
-                }
-            }
+            let field_init = super::field_init_sources::field_initializers(pf);
             if field_init.is_empty() {
                 continue;
             }
@@ -2031,7 +1997,8 @@ impl Compilation {
             let Some(profile) = profiles.get(pf.language.as_str()) else {
                 continue;
             };
-            let mut candidates = source_call_initializers(pf).unwrap_or_default();
+            let mut candidates =
+                super::field_init_sources::lexical_call_initializers(pf).unwrap_or_default();
             candidates.retain(|(slot, r)| {
                 r.kind == EdgeKind::Calls
                     && r.chain.as_ref().is_some_and(|c| c.segments.len() > 1)
@@ -2127,43 +2094,6 @@ impl Compilation {
             }
         }
     }
-}
-
-/// The syntax-owned initializer can be attributed to an enclosing function by
-/// the legacy call extractor. Join its physical occurrence to the captured
-/// declaration slot, never recover ownership from the call's source symbol.
-fn source_call_initializers(pf: &ParsedFile) -> Option<Vec<(usize, &crate::types::ExtractedRef)>> {
-    let graph = pf.flow.lexical.as_ref()?;
-    let mut calls = FxHashMap::default();
-    for r in &pf.refs {
-        if !matches!(r.kind, EdgeKind::Calls | EdgeKind::Instantiates) {
-            continue;
-        }
-        let selector = r
-            .chain
-            .as_ref()
-            .and_then(|c| c.segments.last())
-            .map(|s| s.byte_offset)
-            .unwrap_or(r.byte_offset);
-        calls.entry((r.byte_offset, selector)).or_insert(r);
-    }
-    Some(
-        graph
-            .types
-            .call_initializers
-            .iter()
-            .filter_map(|(&slot, address)| {
-                let field = pf.symbols.get(slot)?;
-                if !matches!(
-                    field.kind,
-                    SymbolKind::Property | SymbolKind::Field | SymbolKind::Variable
-                ) {
-                    return None;
-                }
-                Some((slot, *calls.get(address)?))
-            })
-            .collect(),
-    )
 }
 
 /// The import surface of one parsed file, as the `FileContext` the

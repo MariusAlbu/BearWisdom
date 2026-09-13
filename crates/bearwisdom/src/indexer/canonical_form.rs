@@ -78,7 +78,7 @@ pub fn validate(file: &ParsedFile) -> Vec<ContractViolation> {
     let mut out = Vec::new();
     let line_starts = file.content.as_deref().map(build_line_starts);
     check_file_parallel_vecs(file, &mut out);
-    check_flow_meta(file, &mut out);
+    super::canonical_form_flow::check_flow_meta(file, &mut out);
     for (idx, sym) in file.symbols.iter().enumerate() {
         check_sym_001(file, idx, sym, &mut out);
         check_sym_002(file, idx, sym, &mut out);
@@ -428,7 +428,7 @@ fn ref_loc(file: &ParsedFile, idx: usize, r: &ExtractedRef) -> ViolationLocation
     }
 }
 
-fn file_loc(file: &ParsedFile) -> ViolationLocation {
+pub(super) fn file_loc(file: &ParsedFile) -> ViolationLocation {
     ViolationLocation::File {
         path: file.path.clone(),
     }
@@ -479,108 +479,6 @@ fn check_file_parallel_vecs(file: &ParsedFile, out: &mut Vec<ContractViolation>)
                 "symbol_from_snippet.len() = {} but symbols.len() = {}",
                 file.symbol_from_snippet.len(),
                 nsym,
-            ),
-            location: file_loc(file),
-        });
-    }
-}
-
-fn check_flow_meta(file: &ParsedFile, out: &mut Vec<ContractViolation>) {
-    let nref = file.refs.len();
-    let nsym = file.symbols.len();
-    for (&ref_idx, &lhs_idx) in &file.flow.flow_binding_lhs {
-        if ref_idx >= nref {
-            out.push(ContractViolation {
-                code: "FILE-004",
-                message: format!(
-                    "flow.flow_binding_lhs key {ref_idx} is out of bounds (refs.len() = {nref})",
-                ),
-                location: file_loc(file),
-            });
-        }
-        if lhs_idx >= nsym {
-            out.push(ContractViolation {
-                code: "FILE-004",
-                message: format!(
-                    "flow.flow_binding_lhs value {lhs_idx} is out of bounds (symbols.len() = {nsym})",
-                ),
-                location: file_loc(file),
-            });
-        }
-    }
-    for (&ref_idx, entries) in &file.flow.flow_binding_destructure {
-        if ref_idx >= nref {
-            out.push(ContractViolation {
-                code: "FILE-004",
-                message: format!(
-                    "flow.flow_binding_destructure key {ref_idx} is out of bounds (refs.len() = {nref})",
-                ),
-                location: file_loc(file),
-            });
-        }
-        for (lhs_idx, _) in entries {
-            if *lhs_idx >= nsym {
-                out.push(ContractViolation {
-                    code: "FILE-004",
-                    message: format!(
-                        "flow.flow_binding_destructure value {lhs_idx} is out of bounds (symbols.len() = {nsym})",
-                    ),
-                    location: file_loc(file),
-                });
-            }
-        }
-    }
-    for (&lhs_idx, _) in &file.flow.flow_binding_decl_type {
-        if lhs_idx >= nsym {
-            out.push(ContractViolation {
-                code: "FILE-004",
-                message: format!(
-                    "flow.flow_binding_decl_type key {lhs_idx} is out of bounds (symbols.len() = {nsym})",
-                ),
-                location: file_loc(file),
-            });
-        }
-    }
-    for &lhs_idx in &file.flow.flow_binding_unwrap {
-        if lhs_idx >= nsym {
-            out.push(ContractViolation {
-                code: "FILE-004",
-                message: format!(
-                    "flow.flow_binding_unwrap entry {lhs_idx} is out of bounds (symbols.len() = {nsym})",
-                ),
-                location: file_loc(file),
-            });
-        }
-    }
-    for &lhs_idx in &file.flow.flow_binding_await {
-        if lhs_idx >= nsym {
-            out.push(ContractViolation {
-                code: "FILE-004",
-                message: format!(
-                    "flow.flow_binding_await entry {lhs_idx} is out of bounds (symbols.len() = {nsym})",
-                ),
-                location: file_loc(file),
-            });
-        }
-    }
-    for &ref_idx in &file.flow.flow_binding_destructure_await {
-        if ref_idx >= nref {
-            out.push(ContractViolation {
-                code: "FILE-004",
-                message: format!(
-                    "flow.flow_binding_destructure_await entry {ref_idx} is out of bounds (refs.len() = {nref})",
-                ),
-                location: file_loc(file),
-            });
-        }
-    }
-    if !file.flow.ref_byte_offsets.is_empty() && file.flow.ref_byte_offsets.len() != nref {
-        out.push(ContractViolation {
-            code: "FILE-004",
-            message: format!(
-                "flow.ref_byte_offsets.len() = {} but refs.len() = {}",
-                file.flow.ref_byte_offsets.len(),
-                nref,
             ),
             location: file_loc(file),
         });

@@ -1,5 +1,6 @@
 pub mod callback_lexical;
 pub mod canonical_form;
+mod canonical_form_flow;
 pub mod changeset;
 mod contract_bindings;
 pub mod contract_filter;

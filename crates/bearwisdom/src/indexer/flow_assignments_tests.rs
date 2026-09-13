@@ -204,3 +204,79 @@ fn unsupported_tuple_bindings_do_not_fall_back_to_object_keys() {
         "unsupported tuple patterns must not record a fallback field key: {meta:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Member-target assignments
+// ---------------------------------------------------------------------------
+
+/// Run the PHP extractor plus the flow pass over `source`, returning the
+/// resulting metadata alongside the symbols and refs it was correlated against.
+fn php_flow(source: &str) -> (FlowMeta, Vec<ExtractedSymbol>, Vec<ExtractedRef>) {
+    use crate::languages::LanguagePlugin;
+    let result = crate::languages::php::extract::extract(source);
+    let mut symbols = result.symbols;
+    let mut refs = result.refs;
+    let grammar = crate::languages::php::PhpPlugin.grammar("php").unwrap();
+    let cfg = crate::languages::php::PhpPlugin.flow_config().unwrap();
+    let meta = crate::indexer::flow::run_flow_queries(
+        source,
+        &grammar,
+        cfg,
+        &mut symbols,
+        &mut refs,
+        BindingSymbols::Synthesize,
+    );
+    (meta, symbols, refs)
+}
+
+const MEMBER_ASSIGNMENT: &str = r#"<?php
+
+namespace Fx;
+
+class AssignCase
+{
+    protected $factory;
+
+    protected function setUp()
+    {
+        $this->factory = new Factory;
+    }
+}
+"#;
+
+#[test]
+fn a_member_assignment_records_a_member_initializer() {
+    let (meta, symbols, refs) = php_flow(MEMBER_ASSIGNMENT);
+    let property = symbols
+        .iter()
+        .position(|s| s.name == "factory" && s.kind == SymbolKind::Property)
+        .expect("property symbol");
+    assert_eq!(
+        meta.flow_member_init.len(),
+        1,
+        "one member initializer: {meta:?}"
+    );
+    let (&ref_idx, &member_idx) = meta.flow_member_init.iter().next().unwrap();
+    assert_eq!(member_idx, property);
+    assert_eq!(refs[ref_idx].target_name, "Factory");
+}
+
+#[test]
+fn a_member_assignment_adds_no_symbol() {
+    let before = crate::languages::php::extract::extract(MEMBER_ASSIGNMENT)
+        .symbols
+        .len();
+    let (_, symbols, _) = php_flow(MEMBER_ASSIGNMENT);
+    assert_eq!(symbols.len(), before);
+}
+
+#[test]
+fn a_plain_local_assignment_is_unaffected() {
+    let source = "<?php\n\nfunction run()\n{\n    $client = make();\n    $client->go();\n}\n";
+    let (meta, _, _) = php_flow(source);
+    assert!(
+        !meta.flow_binding_lhs.is_empty(),
+        "a local assignment still seeds its binding: {meta:?}"
+    );
+    assert!(meta.flow_member_init.is_empty(), "{meta:?}");
+}

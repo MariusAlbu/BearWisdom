@@ -73,6 +73,41 @@ pub(super) fn binding_symbol(
     }
 }
 
+/// The member symbol a `receiver.name = …` assignment targets: the property or
+/// field named `name` declared on the same owner as the declaration enclosing
+/// `line`. Never synthesizes — an assignment to an unknown member is not a
+/// declaration, and a symbol appended here would become the attributed source
+/// of every later ref in the file.
+pub(super) fn correlate_member_symbol(
+    name: &str,
+    line: u32,
+    symbols: &[ExtractedSymbol],
+) -> Option<usize> {
+    let enclosing = enclosing_symbol(line, symbols)?;
+    let owner = if is_owner_kind(symbols[enclosing].kind) {
+        enclosing
+    } else {
+        symbols[enclosing].parent_index?
+    };
+    symbols.iter().position(|s| {
+        s.parent_index == Some(owner)
+            && s.name == name
+            && matches!(s.kind, SymbolKind::Property | SymbolKind::Field)
+    })
+}
+
+/// Whether `kind` declares members of its own.
+fn is_owner_kind(kind: SymbolKind) -> bool {
+    matches!(
+        kind,
+        SymbolKind::Class
+            | SymbolKind::Interface
+            | SymbolKind::Trait
+            | SymbolKind::Enum
+            | SymbolKind::Struct
+    )
+}
+
 /// Append a value symbol for `name` declared at `node`, parented on the
 /// innermost extractor symbol whose line span contains it. `None` when no
 /// declaration encloses the binding.
@@ -203,3 +238,7 @@ pub(super) fn nested_function_ranges(
 #[cfg(test)]
 #[path = "flow_bindings_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "flow_bindings_member_tests.rs"]
+mod member_tests;

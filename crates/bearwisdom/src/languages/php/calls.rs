@@ -826,7 +826,6 @@ pub(super) fn extract_type_refs_from_php_type(
     refs: &mut Vec<crate::types::ExtractedRef>,
     source_symbol_index: usize,
 ) {
-    use crate::types::EdgeKind;
     match node.kind() {
         // `?string` — nullable type: unwrap to inner type.
         "nullable_type" => {
@@ -864,46 +863,18 @@ pub(super) fn extract_type_refs_from_php_type(
                 }
             }
         }
+        // A native hint binds through its simple leaf: the declaration it
+        // names is in scope at the hint, not reached through the spelling.
         "named_type" | "name" | "qualified_name" | "identifier" => {
-            let name = node_text(node, src);
-            let simple = name.rsplit('\\').next().unwrap_or(&name).to_string();
-            // Skip PHP built-in scalar types.
-            if !simple.is_empty()
-                && !matches!(
-                    simple.as_str(),
-                    "string"
-                        | "int"
-                        | "float"
-                        | "bool"
-                        | "array"
-                        | "object"
-                        | "null"
-                        | "void"
-                        | "never"
-                        | "mixed"
-                        | "callable"
-                        | "iterable"
-                        | "self"
-                        | "static"
-                        | "parent"
-                )
-            {
-                refs.push(crate::types::ExtractedRef {
-                    is_include: false,
-                    is_import_binding: false,
-                    is_reexport: false,
-                    source_symbol_index,
-                    target_name: simple,
-                    kind: EdgeKind::TypeRef,
-                    line: node.start_position().row as u32,
-                    col: 0,
-                    module: None,
-                    chain: None,
-                    byte_offset: node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-                });
-            }
+            let raw = node_text(node, src);
+            let simple = raw.rsplit('\\').next().unwrap_or(&raw);
+            super::type_ref_emit::emit_php_type_ref(
+                simple,
+                node.start_position().row as u32,
+                node.start_byte() as u32,
+                refs,
+                source_symbol_index,
+            );
         }
         _ => {}
     }

@@ -14,6 +14,13 @@ pub struct FlowMeta {
     pub narrowings: Vec<Narrowing>,
     pub discriminant_narrowings: Vec<DiscriminantNarrowing>,
     pub flow_binding_lhs: HashMap<usize, usize>,
+    /// Member-target assignments: `this.prop = new X`. Maps the initializer's
+    /// `ref_idx` to the MEMBER symbol index the assignment targets — the
+    /// property declared on the enclosing declaration's owner. Distinct from
+    /// `flow_binding_lhs`, which seeds a per-file local cursor; a member
+    /// target's type belongs to the declaration and is read by every other
+    /// member of the owner.
+    pub flow_member_init: HashMap<usize, usize>,
     /// Destructured bindings of an RHS expression: `const { a, b: c } = f()`.
     /// Maps the RHS `ref_idx` to each binding's `(lhs_symbol_idx, field_key)` —
     /// `a` → `(idx_a, "a")`, `b: c` → `(idx_c, "b")`. Distinct from

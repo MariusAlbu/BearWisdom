@@ -233,7 +233,7 @@ pub(super) fn extract_class_body(
                 extract_method(&child, src, symbols, refs, parent_index, qualified_prefix);
             }
             "property_declaration" => {
-                extract_property_declaration(
+                super::property_decl::extract_property_declaration(
                     &child,
                     src,
                     symbols,
@@ -549,79 +549,6 @@ fn extract_php_return_type_refs(
                         extract_type_refs_from_php_type(&child, src, refs, source_symbol_index);
                     }
                     _ => {}
-                }
-            }
-        }
-    }
-}
-
-pub(super) fn extract_property_declaration(
-    node: &Node,
-    src: &[u8],
-    symbols: &mut Vec<ExtractedSymbol>,
-    refs: &mut Vec<ExtractedRef>,
-    parent_index: Option<usize>,
-    qualified_prefix: &str,
-) {
-    use super::calls::extract_type_refs_from_php_type;
-
-    let visibility = extract_visibility(node, src);
-
-    // The property type hint is a direct child of the property_declaration node.
-    // (Not inside property_element — it's a sibling of property_element.)
-    let type_node_opt: Option<tree_sitter::Node> = {
-        let mut cc = node.walk();
-        let mut found = None;
-        for child in node.children(&mut cc) {
-            match child.kind() {
-                "named_type"
-                | "nullable_type"
-                | "union_type"
-                | "intersection_type"
-                | "disjunctive_normal_form_type" => {
-                    found = Some(child);
-                    break;
-                }
-                _ => {}
-            }
-        }
-        found
-    };
-
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() == "property_element" {
-            let mut vc = child.walk();
-            for var in child.children(&mut vc) {
-                if var.kind() == "variable_name" || var.kind() == "$variable_name" {
-                    let raw = node_text(&var, src);
-                    let name = raw.trim_start_matches('$').to_string();
-                    let qualified_name = qualify(&name, qualified_prefix);
-                    let prop_idx = symbols.len();
-                    symbols.push(ExtractedSymbol {
-                        name,
-                        qualified_name,
-                        kind: SymbolKind::Property,
-                        visibility,
-                        start_line: var.start_position().row as u32,
-                        end_line: node.end_position().row as u32,
-                        start_col: var.start_position().column as u32,
-                        end_col: node.end_position().column as u32,
-                        signature: None,
-                        doc_comment: None,
-                        scope_path: scope_from_prefix(qualified_prefix),
-                        parent_index,
-                        byte_offset: 0,
-                        declared_type: None,
-                        return_type: None,
-                        param_types: Vec::new(),
-                        generic_params: Vec::new(),
-                    });
-                    // Emit TypeRef for the property type hint.
-                    if let Some(tn) = type_node_opt {
-                        extract_type_refs_from_php_type(&tn, src, refs, prop_idx);
-                    }
-                    break;
                 }
             }
         }

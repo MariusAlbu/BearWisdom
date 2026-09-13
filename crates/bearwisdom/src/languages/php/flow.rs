@@ -27,6 +27,11 @@ pub static PHP_FLOW_CONFIG: FlowConfig = FlowConfig {
                 (name) @lhs)
             right: (_) @rhs)
 
+        (assignment_expression
+            left: (member_access_expression
+                name: (name) @lhs.member)
+            right: (_) @rhs)
+
         (simple_parameter
             type: (_) @type
             name: (variable_name (name) @lhs.param))

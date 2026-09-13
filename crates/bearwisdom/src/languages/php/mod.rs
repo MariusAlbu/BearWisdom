@@ -10,7 +10,9 @@ mod helpers;
 pub(crate) mod module_paths;
 mod imports;
 pub(crate) mod keywords;
+mod property_decl;
 mod symbols;
+mod type_ref_emit;
 
 pub mod connectors;
 mod predicates;
@@ -32,6 +34,14 @@ mod coverage_tests;
 #[cfg(test)]
 #[path = "predicates_tests.rs"]
 mod predicates_tests;
+
+#[cfg(test)]
+#[path = "property_decl_tests.rs"]
+mod property_decl_tests;
+
+#[cfg(test)]
+#[path = "type_ref_emit_tests.rs"]
+mod type_ref_emit_tests;
 
 #[cfg(test)]
 #[path = "mod_tests.rs"]

@@ -1,7 +1,8 @@
 //! Assignment-query ingestion, extracted without changing legacy behavior.
 use super::flow::{cached_query, FlowConfig};
 use super::flow_bindings::{
-    binding_symbol, correlate_lhs_symbol, correlate_rhs_ref, BindingSymbols,
+    binding_symbol, correlate_lhs_symbol, correlate_member_symbol, correlate_rhs_ref,
+    BindingSymbols,
 };
 use crate::types::{ExtractedRef, ExtractedSymbol, FlowMeta, SymbolKind};
 use tree_sitter::{Node, QueryCursor, StreamingIterator};
@@ -50,6 +51,10 @@ pub(super) fn run_assignment_query(
     // `@lhs.param` is a binding declared by a parameter list rather than an
     // assignment: correlated on its own line and synthesized as a `Parameter`.
     let param_cap = query.capture_index_for_name("lhs.param");
+    // `@lhs.member` is an assignment whose target is a member access
+    // (`this.prop = …`). It names a declaration that already exists on the
+    // receiver's owner, so it is correlated rather than bound as a local.
+    let member_cap = query.capture_index_for_name("lhs.member");
     // `@rhs` (forward inference from the initializer) and `@type` (explicit
     // annotation) are both optional — a query may capture either or both. A
     // binding with only `@type` (`let x: T;`) seeds a declared type with no
@@ -78,12 +83,15 @@ pub(super) fn run_assignment_query(
         let mut unwrap_node: Option<Node> = None;
         let mut bind_node: Option<Node> = None;
         let mut key_node: Option<Node> = None;
+        let mut member_node: Option<Node> = None;
         for cap in m.captures {
             if cap.index == lhs_cap {
                 lhs_node = Some(cap.node);
             } else if Some(cap.index) == param_cap {
                 lhs_node = Some(cap.node);
                 lhs_is_param = true;
+            } else if Some(cap.index) == member_cap {
+                member_node = Some(cap.node);
             } else if Some(cap.index) == rhs_cap {
                 rhs_node = Some(cap.node);
             } else if Some(cap.index) == type_cap {
@@ -135,6 +143,23 @@ pub(super) fn run_assignment_query(
                         if plugin.is_some_and(|plugin| plugin.flow_is_await_rhs(rhs)) {
                             meta.flow_binding_destructure_await.insert(ref_idx);
                         }
+                    }
+                }
+            }
+            continue;
+        }
+
+        // A member target names a declared property, not a new local: it is
+        // correlated to that declaration or dropped, never synthesized. The
+        // initializer's type belongs to the declaration, so it is recorded
+        // against the member symbol rather than seeding a local cursor.
+        if let Some(member) = member_node {
+            if let (Ok(name), Some(rhs)) = (member.utf8_text(src), rhs_node) {
+                if let Some(member_idx) =
+                    correlate_member_symbol(name, member.start_position().row as u32, symbols)
+                {
+                    if let Some(ref_idx) = correlate_rhs_ref(refs, &rhs, cfg_kinds) {
+                        meta.flow_member_init.insert(ref_idx, member_idx);
                     }
                 }
             }

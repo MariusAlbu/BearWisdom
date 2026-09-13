@@ -52,6 +52,7 @@ pub mod ext_lang_visibility;
 pub mod extension_method;
 pub mod externals_demand;
 mod externals_demand_entries;
+mod field_init_sources;
 mod file_context;
 mod file_lookup;
 mod file_namespace;
