@@ -66,9 +66,10 @@ pub fn extract(source: &str) -> super::ExtractionResult {
     // Second pass: scan the full CST for `constant` and `scope_resolution` nodes,
     // emitting TypeRef for each one found anywhere in the file (including inside
     // method bodies that the main walker does not descend into directly).
-    if !symbols.is_empty() {
-        scan_all_constants(root, src, 0, &mut refs);
-    }
+    // Symbol index 0 owns them: a file whose top level is all blocks (an RSpec
+    // suite, a route table) declares nothing, and the indexer gives it a
+    // file-scope owner at that index.
+    scan_all_constants(root, src, 0, &mut refs);
 
     super::ExtractionResult::new(symbols, refs, has_errors)
 }

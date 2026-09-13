@@ -13,6 +13,7 @@ pub(crate) mod external_parse_payload;
 pub(crate) mod external_parse_types;
 pub(crate) mod external_root_dedup;
 pub(crate) mod external_root_demand;
+mod file_scope_owner;
 pub mod flow;
 pub(crate) mod flow_assignments;
 pub(crate) mod flow_bindings;
@@ -45,6 +46,7 @@ pub mod service;
 #[cfg(test)]
 #[path = "service_tests.rs"]
 mod service_tests;
+mod source_admission;
 pub mod stage_discover;
 pub mod stage_link;
 mod watch_filter;
