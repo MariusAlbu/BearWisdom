@@ -193,6 +193,7 @@ pub fn emit_chain_type_ref(
 
 mod amd;
 pub(crate) mod call_args;
+pub(crate) mod file_container;
 mod handlebars;
 mod html;
 mod jquery;

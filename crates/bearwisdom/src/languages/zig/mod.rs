@@ -27,9 +27,10 @@ pub use profile::ZIG_PROFILE;
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
 
+use crate::languages::common::file_container::{file_stem, materialize, path_stem, FileContainer};
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
-use crate::types::ExtractionResult;
+use crate::types::{ExtractionResult, SymbolKind, Visibility};
 
 pub struct ZigPlugin;
 
@@ -55,8 +56,22 @@ impl LanguagePlugin for ZigPlugin {
     }
 
     fn extract(&self, source: &str, file_path: &str, _lang_id: &str) -> ExtractionResult {
-        let _ = file_path;
-        extract::extract(source)
+        let mut result = extract::extract(source);
+        // Every `.zig` file is itself a struct, and `@import("x.zig")` yields
+        // that struct — so the file needs a symbol for the import to bind to.
+        let stem = file_stem(file_path);
+        let qualified_name = path_stem(file_path);
+        materialize(
+            &mut result,
+            FileContainer {
+                name: &stem,
+                qualified_name: &qualified_name,
+                kind: SymbolKind::Struct,
+                visibility: Visibility::Public,
+                end_line: source.lines().count().saturating_sub(1) as u32,
+            },
+        );
+        result
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {

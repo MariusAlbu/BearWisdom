@@ -139,12 +139,18 @@ fn imports_ref(target: &str) -> ExtractedRef {
     }
 }
 
-fn resolve(lookup: &FileLookup, source_file: &str, target: &str) -> Option<i64> {
+fn apply_rule(
+    profile: &LanguageProfile,
+    language: &str,
+    lookup: &FileLookup,
+    source_file: &str,
+    target: &str,
+) -> LookupResult {
     let r = imports_ref(target);
     let s = source_symbol("template");
     let fc = FileContext {
         file_path: source_file.to_string(),
-        language: "handlebars".to_string(),
+        language: language.to_string(),
         imports: Vec::new(),
         file_namespace: None,
     };
@@ -155,9 +161,13 @@ fn resolve(lookup: &FileLookup, source_file: &str, target: &str) -> Option<i64> 
         ref_ctx: &rc,
         lookup,
         kind: &kind,
-        profile: &HBS_PROFILE,
+        profile,
     };
-    match ImportPathRule.apply(&ctx) {
+    ImportPathRule.apply(&ctx)
+}
+
+fn resolve(lookup: &FileLookup, source_file: &str, target: &str) -> Option<i64> {
+    match apply_rule(&HBS_PROFILE, "handlebars", lookup, source_file, target) {
         LookupResult::Resolved(res) => Some(res.target_symbol_id),
         _ => None,
     }
@@ -225,4 +235,50 @@ fn binds_underscore_variant() {
     // `_header`, so the symbol must be named `_header` to match.
     let lookup = FileLookup::new().with_file_sym("src/views/_header.hbs", 7, "_header", "template");
     assert_eq!(resolve(&lookup, "src/views/page.hbs", "header"), Some(7));
+}
+
+// ---------------------------------------------------------------------------
+// Zig: `@import("../std.zig")` binds the target file's own file-struct.
+// ---------------------------------------------------------------------------
+
+// The shipped zig profile is under test, so loosening `bind_kind`, the
+// extension set or the candidate dirs in `languages/zig/profile.rs` fails here.
+use crate::languages::zig::ZIG_PROFILE;
+
+#[test]
+fn zig_relative_import_binds_the_target_file_struct() {
+    // `lib/std/Build/Step.zig` imports `../std.zig`; the joined path normalizes
+    // to `lib/std/std.zig` under SelfDir, whose file-struct is named `std`.
+    let lookup = FileLookup::new().with_file_sym("lib/std/std.zig", 11, "std", "struct");
+    match apply_rule(
+        &ZIG_PROFILE,
+        "zig",
+        &lookup,
+        "lib/std/Build/Step.zig",
+        "../std.zig",
+    ) {
+        LookupResult::Resolved(res) => {
+            assert_eq!(res.target_symbol_id, 11);
+            assert_eq!(res.strategy, "zig_import_path");
+        }
+        other => panic!("expected a bind to the file struct, got {other:?}"),
+    }
+}
+
+#[test]
+fn zig_import_declines_a_target_with_no_file_struct() {
+    // The candidate file holds only the `const std = @This()` style Variable.
+    // `bind_kind: "struct"` keeps the rule off it — which is why the extractor
+    // has to materialize the file-struct for this cascade to flip at all.
+    let lookup = FileLookup::new().with_file_sym("lib/std/std.zig", 11, "std", "variable");
+    assert!(matches!(
+        apply_rule(
+            &ZIG_PROFILE,
+            "zig",
+            &lookup,
+            "lib/std/Build/Step.zig",
+            "../std.zig",
+        ),
+        LookupResult::Pass
+    ));
 }

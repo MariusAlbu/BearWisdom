@@ -8,7 +8,8 @@
 // ref_node_kinds:    call_expression, builtin_function
 // =============================================================================
 
-use super::extract;
+use super::{extract, ZigPlugin};
+use crate::languages::LanguagePlugin;
 use crate::types::{EdgeKind, SymbolKind};
 
 // ---------------------------------------------------------------------------
@@ -483,5 +484,81 @@ fn cov_arbitrary_width_int_no_typeref() {
     assert!(
         int_typerefs.is_empty(),
         "arbitrary-width int types must not emit TypeRef; got {int_typerefs:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// file-level struct container
+// ---------------------------------------------------------------------------
+
+fn kinds(r: &crate::types::ExtractionResult) -> Vec<(&str, SymbolKind)> {
+    r.symbols
+        .iter()
+        .map(|s| (s.name.as_str(), s.kind))
+        .collect()
+}
+
+/// A `.zig` file IS a struct. The plugin materializes it as symbol 0 so a
+/// relative `@import` has a symbol to bind to, and the file's former
+/// top-level declarations become its members.
+#[test]
+fn zig_file_emits_a_file_struct_named_after_the_stem() {
+    let source = "const std = @import(\"../std.zig\");\n\npub fn make() void {}\n";
+    let r = ZigPlugin.extract(source, "lib/std/Build/Step.zig", "zig");
+
+    assert_eq!(r.symbols[0].name, "Step", "got: {:?}", kinds(&r));
+    assert_eq!(
+        r.symbols[0].qualified_name, "lib/std/Build/Step",
+        "the container is keyed by its path, never by the shared stem"
+    );
+    assert_eq!(r.symbols[0].kind, SymbolKind::Struct);
+    assert_eq!(r.symbols[0].start_line, 0);
+    assert_eq!(r.symbols[0].parent_index, None);
+
+    let (std_idx, std_sym) = r
+        .symbols
+        .iter()
+        .enumerate()
+        .find(|(_, s)| s.name == "std")
+        .expect("the @import binding is still extracted");
+    assert_eq!(std_sym.parent_index, Some(0));
+    assert_eq!(std_sym.scope_path.as_deref(), Some("lib/std/Build/Step"));
+
+    let import = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::Imports)
+        .expect("the @import ref survives");
+    assert_eq!(import.target_name, "../std.zig");
+    assert_eq!(
+        import.source_symbol_index, std_idx,
+        "the ref still points at the binding it was extracted from"
+    );
+}
+
+/// `const Step = @This();` names the file struct from inside the file. The
+/// alias stays a Variable and the container stays a Struct — two symbols of
+/// the same name, separated by kind.
+#[test]
+fn file_struct_coexists_with_the_this_alias() {
+    let source = "const Step = @This();\n\npub fn init() void {}\n";
+    let r = ZigPlugin.extract(source, "lib/std/Build/Step.zig", "zig");
+
+    let structs = r
+        .symbols
+        .iter()
+        .filter(|s| s.name == "Step" && s.kind == SymbolKind::Struct)
+        .count();
+    let variables = r
+        .symbols
+        .iter()
+        .filter(|s| s.name == "Step" && s.kind == SymbolKind::Variable)
+        .count();
+    assert_eq!(structs, 1, "exactly one file struct; got: {:?}", kinds(&r));
+    assert_eq!(
+        variables,
+        1,
+        "the @This() alias is not clobbered; got: {:?}",
+        kinds(&r)
     );
 }

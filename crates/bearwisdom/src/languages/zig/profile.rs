@@ -2,7 +2,8 @@
 
 use crate::type_checker::core::types::PrimKind;
 use crate::type_checker::profile::language_profile::{
-    ChainQualification, DispatchAxis, KindTable, LanguageProfile, SupertypeDiscovery,
+    CandidateDirs, ChainQualification, DispatchAxis, ImportResolution, KindTable, LanguageProfile,
+    StemMatch, SupertypeDiscovery,
 };
 use crate::types::{EdgeKind, SymbolKind};
 
@@ -47,6 +48,22 @@ const ZIG_PRIMITIVES: &[(&str, PrimKind)] = &[
     ("noreturn", PrimKind::Never),
 ];
 
+/// `@import("…zig")` names another file by a path relative to the importing
+/// file's directory; the binding symbol is that file's own file-struct. The
+/// `struct` bind kind keeps the bind off the `const X = @This()` Variable
+/// alias that sits next to it in many files.
+const ZIG_IMPORTS: ImportResolution = ImportResolution {
+    extensions: &["zig"],
+    candidate_dirs: CandidateDirs::SelfDir,
+    index_files: &[],
+    underscore_variant: false,
+    kebab_variant: false,
+    decline_leading_slash: true,
+    stem_match: StemMatch::StemExact,
+    bind_kind: "struct",
+    strategy_tag: "zig_import_path",
+};
+
 pub const ZIG_PROFILE: LanguageProfile = LanguageProfile {
     implicit_root_types: &[],
     implicit_prelude_namespaces: &[],
@@ -78,7 +95,7 @@ pub const ZIG_PROFILE: LanguageProfile = LanguageProfile {
     namespace_decline: None,
     imports: crate::type_checker::profile::language_profile::ImportAxes {
         decline_qualified_when_prefix_imported: false,
-        import_resolution: None,
+        import_resolution: Some(ZIG_IMPORTS),
         import_module_path: crate::type_checker::profile::language_profile::ImportModulePath::None,
         module_anchor: crate::type_checker::profile::language_profile::ModuleAnchor::Off,
         module_anchor_terminal: false,
