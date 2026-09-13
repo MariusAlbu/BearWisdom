@@ -14,6 +14,7 @@ pub(crate) fn kinds_for(id: EcosystemId) -> &'static [ManifestKind] {
             ManifestKind::Sbt,
             ManifestKind::Clojure,
         ],
+        "android-sdk" => &[ManifestKind::AndroidModule],
         "npm" => &[ManifestKind::Npm],
         "pypi" => &[ManifestKind::PyProject],
         "cargo" => &[ManifestKind::Cargo],
