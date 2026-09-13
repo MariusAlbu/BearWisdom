@@ -5372,8 +5372,8 @@
       "files": 1301,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 92963,
-      "internal_unresolved": 35862,
+      "internal_edges": 92993,
+      "internal_unresolved": 35832,
       "languages": {
         "css": 10,
         "groovy": 5,
@@ -5387,22 +5387,22 @@
       },
       "path": "F:/Work/Projects/TestProjects/java-recaf",
       "perf": {
-        "end_ws_mb": 239,
-        "files_per_sec": 4,
-        "index_duration_ms": 304395
+        "end_ws_mb": 113,
+        "files_per_sec": 10,
+        "index_duration_ms": 136421
       },
       "project": "java-recaf",
       "rate_by_language": {
         "groovy": 4.88,
-        "java": 72.27,
+        "java": 72.29,
         "markdown": 100.0
       },
-      "resolution_rate": 72.16,
+      "resolution_rate": 72.19,
       "routes": 0,
       "symbols": 35824,
       "unresolved_by_lang_kind": {
         "groovy.calls": 195,
-        "java.calls": 18619,
+        "java.calls": 18589,
         "java.implements": 23,
         "java.imports": 2308,
         "java.inherits": 95,
@@ -6032,15 +6032,15 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 72
+        "min_resolution_rate": 73
       },
       "code_chunks": 98793,
       "drained_refs": 77,
       "files": 2456,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 159169,
-      "internal_unresolved": 59021,
+      "internal_edges": 159546,
+      "internal_unresolved": 58644,
       "languages": {
         "c": 4,
         "cmake": 6,
@@ -6061,9 +6061,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/kotlin-ktor",
       "perf": {
-        "end_ws_mb": 236,
-        "files_per_sec": 4,
-        "index_duration_ms": 637738
+        "end_ws_mb": 165,
+        "files_per_sec": 5,
+        "index_duration_ms": 492050
       },
       "project": "kotlin-ktor",
       "rate_by_language": {
@@ -6071,12 +6071,12 @@
         "cmake": 21.21,
         "cpp": 92.22,
         "javascript": 0.0,
-        "kotlin": 72.97,
+        "kotlin": 73.15,
         "markdown": 55.56,
         "rust": 63.34,
         "shell": 88.24
       },
-      "resolution_rate": 72.95,
+      "resolution_rate": 73.12,
       "routes": 0,
       "symbols": 60935,
       "unresolved_by_lang_kind": {
@@ -6088,7 +6088,7 @@
         "cpp.type_ref": 14,
         "javascript.calls": 2,
         "javascript.imports": 1,
-        "kotlin.calls": 47096,
+        "kotlin.calls": 46719,
         "kotlin.implements": 31,
         "kotlin.imports": 1733,
         "kotlin.inherits": 173,
@@ -10241,8 +10241,8 @@
         "http_call": 7
       },
       "flow_edges": 7,
-      "internal_edges": 68846,
-      "internal_unresolved": 24620,
+      "internal_edges": 68967,
+      "internal_unresolved": 24499,
       "languages": {
         "angular_template": 17,
         "astro": 2,
@@ -10260,29 +10260,29 @@
       },
       "path": "F:/Work/Projects/TestProjects/react-tanstack-query",
       "perf": {
-        "end_ws_mb": 243,
-        "files_per_sec": 14,
-        "index_duration_ms": 141044
+        "end_ws_mb": 179,
+        "files_per_sec": 18,
+        "index_duration_ms": 110327
       },
       "project": "react-tanstack-query",
       "rate_by_language": {
         "angular_template": 83.33,
         "astro": 100.0,
         "html": 27.27,
-        "javascript": 54.01,
+        "javascript": 54.11,
         "markdown": 69.12,
         "svelte": 91.18,
-        "tsx": 71.58,
-        "typescript": 76.8,
+        "tsx": 71.59,
+        "typescript": 77.08,
         "vue": 68.75
       },
-      "resolution_rate": 73.66,
+      "resolution_rate": 73.79,
       "routes": 7,
       "symbols": 32626,
       "unresolved_by_lang_kind": {
         "angular_template.calls": 2,
         "html.imports": 32,
-        "javascript.calls": 214,
+        "javascript.calls": 213,
         "javascript.imports": 153,
         "javascript.inherits": 3,
         "javascript.type_ref": 83,
@@ -10291,15 +10291,15 @@
         "markdown.type_ref": 67,
         "svelte.calls": 5,
         "svelte.type_ref": 1,
-        "tsx.calls": 12309,
+        "tsx.calls": 12303,
         "tsx.imports": 2,
         "tsx.instantiates": 433,
-        "tsx.type_ref": 1531,
-        "typescript.calls": 8232,
+        "tsx.type_ref": 1530,
+        "typescript.calls": 8127,
         "typescript.imports": 72,
         "typescript.inherits": 24,
         "typescript.instantiates": 101,
-        "typescript.type_ref": 1107,
+        "typescript.type_ref": 1099,
         "vue.calls": 10
       }
     },
