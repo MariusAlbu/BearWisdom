@@ -1868,17 +1868,17 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 38
+        "min_resolution_rate": 39
       },
       "code_chunks": 238435,
       "drained_refs": 153,
       "files": 3856,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "generated_excluded": 105,
+      "generated_excluded": 106,
       "generated_files_reclassified": 450,
-      "internal_edges": 50379,
-      "internal_unresolved": 81313,
+      "internal_edges": 58113,
+      "internal_unresolved": 88345,
       "languages": {
         "css": 6,
         "dart": 2286,
@@ -1896,11 +1896,11 @@
       "perf": {
         "end_ws_mb": 122,
         "files_per_sec": 4,
-        "index_duration_ms": 908948
+        "index_duration_ms": 999869
       },
       "project": "dart-serverpod",
       "rate_by_language": {
-        "dart": 37.03,
+        "dart": 38.61,
         "dockerfile": 51.72,
         "hcl": 98.68,
         "html": 0.0,
@@ -1908,13 +1908,13 @@
         "shell": 85.71,
         "sql": 99.11
       },
-      "resolution_rate": 38.26,
+      "resolution_rate": 39.68,
       "routes": 0,
       "symbols": 111077,
       "unresolved_by_lang_kind": {
-        "dart.calls": 31489,
+        "dart.calls": 40810,
         "dart.implements": 408,
-        "dart.imports": 9069,
+        "dart.imports": 6780,
         "dart.inherits": 84,
         "dart.instantiates": 993,
         "dart.type_ref": 39194,
@@ -6033,15 +6033,15 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 63
+        "min_resolution_rate": 69
       },
       "code_chunks": 98590,
       "drained_refs": 76,
       "files": 2456,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 137915,
-      "internal_unresolved": 78349,
+      "internal_edges": 150492,
+      "internal_unresolved": 65778,
       "languages": {
         "c": 4,
         "cmake": 6,
@@ -6062,21 +6062,21 @@
       },
       "path": "F:/Work/Projects/TestProjects/kotlin-ktor",
       "perf": {
-        "end_ws_mb": 255,
+        "end_ws_mb": 180,
         "files_per_sec": 3,
-        "index_duration_ms": 765449
+        "index_duration_ms": 870643
       },
       "project": "kotlin-ktor",
       "rate_by_language": {
         "c": 91.52,
         "cmake": 21.21,
         "cpp": 92.22,
-        "kotlin": 63.7,
+        "kotlin": 69.57,
         "markdown": 55.56,
         "rust": 63.34,
         "shell": 100.0
       },
-      "resolution_rate": 63.77,
+      "resolution_rate": 69.59,
       "routes": 0,
       "symbols": 60693,
       "unresolved_by_lang_kind": {
@@ -6086,11 +6086,11 @@
         "cmake.type_ref": 21,
         "cpp.imports": 12,
         "cpp.type_ref": 14,
-        "kotlin.calls": 55625,
-        "kotlin.implements": 99,
-        "kotlin.imports": 10671,
-        "kotlin.inherits": 221,
-        "kotlin.type_ref": 11118,
+        "kotlin.calls": 53669,
+        "kotlin.implements": 31,
+        "kotlin.imports": 1929,
+        "kotlin.inherits": 173,
+        "kotlin.type_ref": 9361,
         "markdown.calls": 4,
         "rust.calls": 307,
         "rust.imports": 56,
