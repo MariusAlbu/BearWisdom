@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-12T00:00:00Z",
+  "captured_at": "2026-09-13T00:00:00Z",
   "engine": "resolution-engine",
   "note": "Fresh new-engine baseline; grows as projects are added. Old baseline-all.json (pre-cutover) retired.",
   "projects": [
@@ -8577,8 +8577,8 @@
       },
       "flow_edges": 45,
       "generated_files_reclassified": 3,
-      "internal_edges": 130481,
-      "internal_unresolved": 92134,
+      "internal_edges": 130499,
+      "internal_unresolved": 92116,
       "languages": {
         "blade": 83,
         "css": 1,
@@ -8593,17 +8593,17 @@
       },
       "path": "F:/Work/Projects/TestProjects/php-laravel",
       "perf": {
-        "end_ws_mb": 100,
-        "files_per_sec": 59,
-        "index_duration_ms": 49759
+        "end_ws_mb": 103,
+        "files_per_sec": 45,
+        "index_duration_ms": 64963
       },
       "project": "php-laravel",
       "rate_by_language": {
         "blade": 0.0,
         "markdown": 100.0,
-        "php": 58.64
+        "php": 58.65
       },
-      "resolution_rate": 58.61,
+      "resolution_rate": 58.62,
       "routes": 51,
       "symbols": 71076,
       "unresolved_by_lang_kind": {
@@ -8612,7 +8612,7 @@
         "blade.instantiates": 1,
         "blade.type_ref": 13,
         "php.calls": 86779,
-        "php.implements": 146,
+        "php.implements": 128,
         "php.imports": 639,
         "php.inherits": 73,
         "php.instantiates": 1584,
@@ -14064,14 +14064,14 @@
       "assertions": {
         "min_resolution_rate": 78
       },
-      "code_chunks": 30364,
+      "code_chunks": 31214,
       "drained_refs": 17,
       "files": 1624,
       "flow_edge_types": {},
       "flow_edges": 0,
       "generated_files_reclassified": 4,
-      "internal_edges": 29344,
-      "internal_unresolved": 8084,
+      "internal_edges": 29166,
+      "internal_unresolved": 7942,
       "languages": {
         "css": 13,
         "dockerfile": 1,
@@ -14089,39 +14089,39 @@
       },
       "path": "F:/Work/Projects/TestProjects/vue-vben-admin",
       "perf": {
-        "end_ws_mb": 528,
+        "end_ws_mb": 145,
         "files_per_sec": 6,
-        "index_duration_ms": 289879
+        "index_duration_ms": 291461
       },
       "project": "vue-vben-admin",
       "rate_by_language": {
         "dockerfile": 42.86,
         "html": 0.0,
-        "javascript": 62.5,
-        "markdown": 58.41,
-        "scss": 3.08,
-        "typescript": 77.56,
-        "vue": 96.26
+        "javascript": 25.0,
+        "markdown": 67.24,
+        "scss": 3.59,
+        "typescript": 77.81,
+        "vue": 96.63
       },
-      "resolution_rate": 78.4,
+      "resolution_rate": 78.6,
       "routes": 0,
-      "symbols": 15053,
+      "symbols": 16793,
       "unresolved_by_lang_kind": {
         "dockerfile.imports": 2,
         "dockerfile.inherits": 2,
         "html.imports": 6,
-        "javascript.calls": 19,
+        "javascript.calls": 55,
         "javascript.imports": 5,
         "javascript.type_ref": 12,
-        "markdown.calls": 20,
-        "markdown.type_ref": 27,
-        "scss.calls": 189,
-        "typescript.calls": 3306,
+        "markdown.calls": 32,
+        "markdown.type_ref": 6,
+        "scss.calls": 188,
+        "typescript.calls": 4024,
         "typescript.imports": 263,
         "typescript.inherits": 6,
-        "typescript.instantiates": 9,
-        "typescript.type_ref": 4117,
-        "vue.calls": 101
+        "typescript.instantiates": 3,
+        "typescript.type_ref": 3247,
+        "vue.calls": 91
       }
     },
     {
@@ -14213,15 +14213,15 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 60
+        "min_resolution_rate": 61
       },
-      "code_chunks": 1960698,
-      "drained_refs": 3177,
+      "code_chunks": 2073803,
+      "drained_refs": 3413,
       "files": 3173,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 160187,
-      "internal_unresolved": 104365,
+      "internal_edges": 162641,
+      "internal_unresolved": 101685,
       "languages": {
         "c": 68,
         "cmake": 5,
@@ -14239,38 +14239,39 @@
       },
       "path": "F:/Work/Projects/TestProjects/zig-compiler-fresh",
       "perf": {
-        "end_ws_mb": 4534,
-        "files_per_sec": 3,
-        "index_duration_ms": 963325
+        "end_ws_mb": 4038,
+        "files_per_sec": 2,
+        "index_duration_ms": 1345168
       },
       "project": "zig-compiler-fresh",
       "rate_by_language": {
-        "c": 90.41,
+        "c": 86.26,
         "cmake": 95.05,
-        "cpp": 57.93,
+        "cpp": 57.79,
         "html": 0.0,
-        "javascript": 58.4,
+        "javascript": 54.7,
         "matlab": 0.0,
         "powershell": 37.78,
         "python": 25.94,
         "shell": 10.0,
-        "zig": 60.13
+        "zig": 61.31
       },
-      "resolution_rate": 60.55,
+      "resolution_rate": 61.53,
       "routes": 0,
-      "symbols": 152481,
+      "symbols": 155877,
       "unresolved_by_lang_kind": {
-        "c.calls": 371,
-        "c.type_ref": 103,
+        "c.calls": 369,
+        "c.imports": 191,
+        "c.type_ref": 101,
         "cmake.imports": 6,
         "cmake.type_ref": 15,
-        "cpp.calls": 3813,
-        "cpp.imports": 12,
+        "cpp.calls": 3819,
+        "cpp.imports": 249,
         "cpp.inherits": 2,
         "cpp.instantiates": 10,
-        "cpp.type_ref": 2066,
+        "cpp.type_ref": 1802,
         "html.imports": 2,
-        "javascript.calls": 269,
+        "javascript.calls": 293,
         "javascript.type_ref": 1,
         "matlab.calls": 2,
         "powershell.calls": 26,
@@ -14279,9 +14280,9 @@
         "python.imports": 5,
         "python.type_ref": 31,
         "shell.calls": 9,
-        "zig.calls": 88626,
-        "zig.imports": 2826,
-        "zig.type_ref": 5770
+        "zig.calls": 88627,
+        "zig.imports": 11,
+        "zig.type_ref": 5714
       }
     },
     {

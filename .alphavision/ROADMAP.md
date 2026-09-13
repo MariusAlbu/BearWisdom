@@ -125,8 +125,10 @@ fortran 0, powershell 11, fsharp 124.
 - [ ] route F# to the dotnet stdlib supply that csharp already gets (77k external files)
 - [ ] Maven / Gradle `-sources` jars for the java and kotlin corpora (java 86% of unresolved imports are absent from the index)
 - [ ] dart pub `path:` workspace packages (serverpod monorepo: `package:serverpod_client` absent)
-- [ ] zig `@import("../std.zig")` path resolution as `ImportAxes.import_resolution` profile data
-- [ ] vue-vben-admin −8.9 (pnpm symlink layout vs registered prefixes) — trace, then fix in the npm locator
+- [x] zig `@import("../std.zig")` path resolution as `ImportAxes.import_resolution` profile data
+  - [x] landed `163e7dd6`: profile data alone could not bind (the target file had no symbol) — the zig plugin materializes the implicit file struct through the shared `languages/common/file_container.rs` pass (container at index 0, path-keyed qualified name, former top-levels adopted as members) and turns on `import_resolution`; recapture zig-compiler-fresh 60.1 → 61.53 (zig import edges 0 → 2,744, still-unlinked 2,826 → 11, zig edges 146,640 → 149,510). Not this item: the 55k bare method names from `chain: None` in `zig/extract.rs` (M5)
+- [x] vue-vben-admin −8.9 (pnpm symlink layout vs registered prefixes) — trace, then fix in the npm locator
+  - [x] recaptured at `163e7dd6`: 78.40 → 78.6; the `@vben/types` import-linking half (510 rows) was already flipped by the M3 workspace-entry + barrel-closure work — no `unbound_import_unlinked` rows remain on twinned specifiers. The pnpm twin is still ingested (344 `ext:ts:@vben*` + 310 `ext:idx:` redundant files) and still costs rate as `external_unmaterialized` ×180 on `@vben/common-ui`; the locator guard (`links_into_project_source`: a dep root whose real path lies inside the project with no `node_modules` component is the project's own source) stays open as a small npm-locator item, not an engine one
 - [ ] targeted recapture per ecosystem touched
 
 ## M5 — Extractor attribution gaps (per-language extractor data, no resolver code)
