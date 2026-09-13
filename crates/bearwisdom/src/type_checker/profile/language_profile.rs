@@ -294,6 +294,13 @@ pub struct LanguageProfile {
     /// chain-miss record; the body type is not inferred generically.
     pub scope_functions: &'static [(&'static str, ScopeYield)],
     pub overload_pick_all: bool,
+    /// Whether one owner's same-name callable declarations are ONE member
+    /// (overloading by signature). `false` (the default) keeps a
+    /// multi-row member level ambiguous — a language without overloading
+    /// declares the same name twice only by conflict. `true` lets the
+    /// member step take the set's representative row and leave the pick
+    /// among signatures to the hop's alternative yields.
+    pub member_overload_sets: bool,
     /// Argument-dependent lookup. `false` (the default) leaves the probe inert.
     /// `true` opts a language in (C++): when the regular bare-name ladder
     /// declines a bare `Calls`/`Instantiates` ref, the engine resolves each

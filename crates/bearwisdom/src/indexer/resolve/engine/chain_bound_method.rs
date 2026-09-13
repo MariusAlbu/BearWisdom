@@ -127,7 +127,7 @@ pub(super) fn member(
     profile: &LanguageProfile,
     accept: &dyn Fn(&str) -> bool,
 ) -> Result<Option<Symbol>, super::super::member_selection::Selection> {
-    use super::super::member_selection::{select_typed, Selection};
+    use super::super::member_selection::{select_typed_for, Selection};
     if let Some(member) = lookup.source_object_member(receiver.ty, segment.byte_offset) {
         return member
             .map_err(|_| Selection::Missing)?
@@ -152,21 +152,15 @@ pub(super) fn member(
             .ok_or(Selection::Missing);
     }
     let Some(name) = lookup.source_member_name(segment.byte_offset) else {
-        return implicit_root::walk_member(
-            lookup,
-            arena,
-            receiver,
-            &segment.name,
-            profile,
-            accept,
-        );
+        return implicit_root::walk_member(lookup, arena, receiver, &segment.name, profile, accept);
     };
-    match select_typed(
+    match select_typed_for(
         lookup,
         arena,
         receiver,
         name.map_err(|_| Selection::Missing)?,
         accept,
+        profile,
     ) {
         Selection::Unique(id) => lookup
             .symbol_by_id(id)

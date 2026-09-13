@@ -205,8 +205,7 @@ pub(super) fn resolve_root_impl(
         .iter()
         .filter(|import| !import.is_wildcard)
         .find(|import| {
-            import.alias.as_deref() == Some(seg.name.as_str())
-                && import.imported_name != seg.name
+            import.alias.as_deref() == Some(seg.name.as_str()) && import.imported_name != seg.name
         });
     let probe = renamed.map_or(seg.name.as_str(), |import| import.imported_name.as_str());
     let candidates = lookup.types_by_name(probe);

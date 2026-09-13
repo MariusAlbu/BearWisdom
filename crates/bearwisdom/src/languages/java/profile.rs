@@ -159,6 +159,7 @@ pub const JAVA_PROFILE: LanguageProfile = LanguageProfile {
         ),
     ],
     overload_pick_all: false,
+    member_overload_sets: true,
     argument_dependent_lookup: false,
     associated_type_projection: false,
     blanket_impl_resolution: false,

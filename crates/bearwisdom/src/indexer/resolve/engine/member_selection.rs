@@ -24,6 +24,25 @@ pub(super) fn select(
         accept,
         None,
         &|id| lookup.declaration_accessible(id),
+        Overloads::Report,
+    )
+}
+
+/// [`select`] for a language whose same-owner callable declarations form an
+/// overload set: the set's representative row answers instead of ambiguity.
+pub(super) fn select_representing(
+    lookup: &dyn SymbolLookup,
+    owner: i64,
+    name: MemberNameId,
+    accept: &dyn Fn(&str) -> bool,
+) -> Selection {
+    select_with_receiver(
+        lookup,
+        owner,
+        name,
+        accept,
+        None,
+        &|id| lookup.declaration_accessible(id),
         Overloads::Represent,
     )
 }
@@ -40,10 +59,27 @@ pub(super) fn select_typed(
     })
 }
 
-/// Selection that reports an overload set instead of representing it by one
-/// row — for a caller holding the call's arguments, whose own selection over
-/// the set is stronger evidence than the group's representative.
-pub(super) fn select_typed_exact(
+/// [`select_typed`] under the language's own overloading rule: a profile that
+/// declares overload sets takes the set's representative, any other reports it.
+pub(super) fn select_typed_for(
+    lookup: &dyn SymbolLookup,
+    arena: &crate::type_checker::core::types::TypeArena,
+    receiver: super::chain::Receiver,
+    name: MemberNameId,
+    accept: &dyn Fn(&str) -> bool,
+    profile: &crate::type_checker::profile::language_profile::LanguageProfile,
+) -> Selection {
+    if profile.member_overload_sets {
+        select_typed_representing(lookup, arena, receiver, name, accept)
+    } else {
+        select_typed(lookup, arena, receiver, name, accept)
+    }
+}
+
+/// [`select_typed`] for a language whose same-owner callable declarations
+/// form an overload set: the set's representative row answers instead of
+/// ambiguity.
+pub(super) fn select_typed_representing(
     lookup: &dyn SymbolLookup,
     arena: &crate::type_checker::core::types::TypeArena,
     receiver: super::chain::Receiver,
@@ -57,7 +93,7 @@ pub(super) fn select_typed_exact(
         name,
         accept,
         &|id| lookup.declaration_accessible(id),
-        Overloads::Report,
+        Overloads::Represent,
     )
 }
 
@@ -76,7 +112,7 @@ pub(super) fn select_typed_with_access(
         name,
         accept,
         accessible,
-        Overloads::Represent,
+        Overloads::Report,
     )
 }
 

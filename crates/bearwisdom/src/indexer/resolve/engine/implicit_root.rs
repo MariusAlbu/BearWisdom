@@ -43,7 +43,7 @@ pub(super) fn walk_member(
             return Err(Selection::Inaccessible);
         }
         if let Some(name) = lookup.member_index().and_then(|index| index.name(member)) {
-            match member_selection::select_typed(lookup, arena, recv, name, accept) {
+            match member_selection::select_typed_for(lookup, arena, recv, name, accept, profile) {
                 Selection::Unique(id) => return Ok(lookup.symbol_by_id(id).cloned()),
                 Selection::Missing => {}
                 denied => return Err(denied),
@@ -51,13 +51,14 @@ pub(super) fn walk_member(
         }
     }
     Ok(
-        lookup_member_on_with_profile(lookup, arena, recv, member, accept, Some(profile))
-            .or_else(|| {
+        lookup_member_on_with_profile(lookup, arena, recv, member, accept, Some(profile)).or_else(
+            || {
                 if recv.id.is_none() {
                     return None;
                 }
                 member_on_implicit_root(lookup, member, profile.implicit_root_types)
-            }),
+            },
+        ),
     )
 }
 

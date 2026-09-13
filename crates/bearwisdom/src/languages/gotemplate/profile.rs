@@ -59,6 +59,7 @@ pub const GOTEMPLATE_PROFILE: LanguageProfile = LanguageProfile {
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
     delegate_wrappers: &[],
     overload_pick_all: false,
+    member_overload_sets: false,
     argument_dependent_lookup: false,
     associated_type_projection: false,
     blanket_impl_resolution: false,

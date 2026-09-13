@@ -39,11 +39,10 @@ pub(crate) use receiver_projection::project_receiver;
 mod bound_method;
 #[path = "chain_call.rs"]
 mod call;
-#[path = "chain_qualified_call.rs"]
-mod qualified_call;
 #[path = "chain_callee_root.rs"]
 mod callee_root;
-use callee_root::resolve_callee_return_and_id;
+#[path = "chain_qualified_call.rs"]
+mod qualified_call;
 use super::arg_types::resolve_arg_types;
 use super::cause::{value_binding_cause, Cause, CauseKind};
 use super::composite_members;
@@ -64,6 +63,7 @@ use super::support::{
     pick_ranked_candidate,
 };
 pub(crate) use call::apply_call_args;
+use callee_root::resolve_callee_return_and_id;
 
 /// Strategy tag for a member-chain bind produced by the new engine.
 const STRATEGY: &str = "rule_chain";
@@ -875,7 +875,15 @@ fn lookup_member_on_bounded_with_profile(
         let selected = lookup
             .member_index()
             .and_then(|index| index.name(member))
-            .map(|name| super::member_selection::select_typed(lookup, arena, recv, name, accept))
+            .map(|name| {
+                if profile.is_some_and(|p| p.member_overload_sets) {
+                    super::member_selection::select_typed_representing(
+                        lookup, arena, recv, name, accept,
+                    )
+                } else {
+                    super::member_selection::select_typed(lookup, arena, recv, name, accept)
+                }
+            })
             .unwrap_or(super::member_selection::Selection::Missing);
         let found = match selected {
             super::member_selection::Selection::Unique(id) => lookup.symbol_by_id(id).cloned(),
@@ -2431,7 +2439,6 @@ pub(crate) fn callee_return_type_in_scope(
         .ok()
         .map(|(ret, _)| ret)
 }
-
 
 /// The return type of a call `name<args>(…)`, with the call's explicit type
 /// arguments bound to the callee's generic parameters and substituted into the

@@ -16,13 +16,13 @@ pub(in crate::indexer::resolve::engine) fn select_method(
         chain::Receiver,
         contract::member_applicability,
         head_decl,
-        member_selection::{select_typed_exact, Selection},
+        member_selection::{select_typed, Selection},
     };
     let receiver = member_applicability::expand(lookup, arena, receiver).ok_or(())?;
     let receiver = super::project_intrinsic(lookup, arena, receiver).ok_or(())?;
     let owner = head_decl::head_decl_id(arena, receiver).ok_or(())?;
     let Selection::Unique(declaration) =
-        select_typed_exact(lookup, arena, Receiver::new(receiver, owner), name, &|_| {
+        select_typed(lookup, arena, Receiver::new(receiver, owner), name, &|_| {
             true
         })
     else {

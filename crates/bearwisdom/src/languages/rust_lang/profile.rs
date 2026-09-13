@@ -249,6 +249,7 @@ pub const RUST_PROFILE: LanguageProfile = LanguageProfile {
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
     delegate_wrappers: &[],
     overload_pick_all: false,
+    member_overload_sets: false,
     argument_dependent_lookup: false,
     // `Self::Output` / `<C as Trait>::Item` return strings project through the
     // receiver's impl binding (`type Output = Concrete`, already in field_type as

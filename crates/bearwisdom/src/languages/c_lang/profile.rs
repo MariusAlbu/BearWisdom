@@ -123,6 +123,7 @@ pub const C_LANG_PROFILE: LanguageProfile = LanguageProfile {
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
     delegate_wrappers: &[],
     overload_pick_all: false,
+    member_overload_sets: false,
     // C++ argument-dependent lookup: a bare `swap(a, b)` resolves to a free
     // function `swap` declared in the namespace of an argument's type.
     argument_dependent_lookup: true,

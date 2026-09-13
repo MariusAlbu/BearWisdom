@@ -135,6 +135,7 @@ pub const ADA_PROFILE: LanguageProfile = LanguageProfile {
     ),
     delegate_wrappers: &[],
     overload_pick_all: false,
+    member_overload_sets: false,
     argument_dependent_lookup: false,
     associated_type_projection: false,
     blanket_impl_resolution: false,
