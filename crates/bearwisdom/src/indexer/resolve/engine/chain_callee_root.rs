@@ -109,15 +109,16 @@ pub(super) fn resolve_callee_return_and_id(
         .iter()
         .find(|s| s.kind == "function" || super::super::kinds::is_constructor_kind(&s.kind))
     else {
-        // Not a callable declaration — the name may bind a VALUE whose declared
-        // type is an inline function type (`declare const make: (opts) =>
-        // Client<…>`); calling it yields the signature's return.
+        // Not a callable declaration — the name may bind a VALUE whose own type
+        // carries the call signature (`declare const make: (opts) => Client<…>`,
+        // `declare const check: CheckStatic`); calling it yields that
+        // signature's return.
         for cand in candidates.iter().filter(|s| is_value_kind(&s.kind)) {
             let Some(vty) = field_type_of(lookup, arena, cand.id, &cand.qualified_name) else {
                 continue;
             };
-            if let Some(r) = function_typed_value_call_yield(arena, vty) {
-                return Ok((r, cand.id));
+            if let Some(yielded) = super::callable_value::call_yield(lookup, arena, vty) {
+                return Ok((yielded.ty, cand.id));
             }
         }
         return Err(untyped_callee.map(|id| Cause::new(Some(id), CauseKind::UncapturedReturn)));
