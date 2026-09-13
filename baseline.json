@@ -1868,17 +1868,17 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 39
+        "min_resolution_rate": 41
       },
       "code_chunks": 238435,
-      "drained_refs": 153,
+      "drained_refs": 213,
       "files": 3856,
       "flow_edge_types": {},
       "flow_edges": 0,
       "generated_excluded": 106,
       "generated_files_reclassified": 450,
-      "internal_edges": 58113,
-      "internal_unresolved": 88345,
+      "internal_edges": 61437,
+      "internal_unresolved": 85619,
       "languages": {
         "css": 6,
         "dart": 2286,
@@ -1896,35 +1896,35 @@
       "perf": {
         "end_ws_mb": 122,
         "files_per_sec": 4,
-        "index_duration_ms": 999869
+        "index_duration_ms": 880914
       },
       "project": "dart-serverpod",
       "rate_by_language": {
-        "dart": 38.61,
+        "dart": 40.75,
         "dockerfile": 51.72,
         "hcl": 98.68,
         "html": 0.0,
         "markdown": 50.0,
-        "shell": 85.71,
+        "shell": 71.64,
         "sql": 99.11
       },
-      "resolution_rate": 39.68,
+      "resolution_rate": 41.78,
       "routes": 0,
-      "symbols": 111077,
+      "symbols": 111176,
       "unresolved_by_lang_kind": {
-        "dart.calls": 40810,
+        "dart.calls": 40069,
         "dart.implements": 408,
-        "dart.imports": 6780,
+        "dart.imports": 6891,
         "dart.inherits": 84,
-        "dart.instantiates": 993,
-        "dart.type_ref": 39194,
+        "dart.instantiates": 672,
+        "dart.type_ref": 37408,
         "dockerfile.imports": 17,
         "dockerfile.inherits": 11,
         "hcl.calls": 4,
         "html.calls": 8,
         "html.imports": 6,
         "markdown.type_ref": 2,
-        "shell.calls": 8,
+        "shell.calls": 19,
         "sql.type_ref": 20
       },
       "vendored_files_reclassified": 14
@@ -6033,15 +6033,15 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 69
+        "min_resolution_rate": 72
       },
-      "code_chunks": 98590,
-      "drained_refs": 76,
+      "code_chunks": 98793,
+      "drained_refs": 77,
       "files": 2456,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 150492,
-      "internal_unresolved": 65778,
+      "internal_edges": 158115,
+      "internal_unresolved": 60075,
       "languages": {
         "c": 4,
         "cmake": 6,
@@ -6062,23 +6062,24 @@
       },
       "path": "F:/Work/Projects/TestProjects/kotlin-ktor",
       "perf": {
-        "end_ws_mb": 180,
-        "files_per_sec": 3,
-        "index_duration_ms": 870643
+        "end_ws_mb": 168,
+        "files_per_sec": 4,
+        "index_duration_ms": 664220
       },
       "project": "kotlin-ktor",
       "rate_by_language": {
         "c": 91.52,
         "cmake": 21.21,
         "cpp": 92.22,
-        "kotlin": 69.57,
+        "javascript": 0.0,
+        "kotlin": 72.48,
         "markdown": 55.56,
         "rust": 63.34,
-        "shell": 100.0
+        "shell": 88.24
       },
-      "resolution_rate": 69.59,
+      "resolution_rate": 72.47,
       "routes": 0,
-      "symbols": 60693,
+      "symbols": 60935,
       "unresolved_by_lang_kind": {
         "c.imports": 7,
         "c.type_ref": 12,
@@ -6086,15 +6087,18 @@
         "cmake.type_ref": 21,
         "cpp.imports": 12,
         "cpp.type_ref": 14,
-        "kotlin.calls": 53669,
+        "javascript.calls": 2,
+        "javascript.imports": 1,
+        "kotlin.calls": 48150,
         "kotlin.implements": 31,
-        "kotlin.imports": 1929,
+        "kotlin.imports": 1733,
         "kotlin.inherits": 173,
-        "kotlin.type_ref": 9361,
+        "kotlin.type_ref": 9364,
         "markdown.calls": 4,
         "rust.calls": 307,
         "rust.imports": 56,
-        "rust.type_ref": 177
+        "rust.type_ref": 177,
+        "shell.calls": 6
       }
     },
     {
@@ -9600,14 +9604,15 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 25
+        "min_resolution_rate": 17
       },
-      "code_chunks": 111728,
+      "code_chunks": 146080,
+      "drained_refs": 1,
       "files": 2621,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 33114,
-      "internal_unresolved": 94303,
+      "internal_edges": 54828,
+      "internal_unresolved": 266092,
       "languages": {
         "csharp": 3,
         "erb": 69,
@@ -9622,41 +9627,41 @@
       },
       "path": "F:/Work/Projects/TestProjects/puppet-core",
       "perf": {
-        "end_ws_mb": 3433,
-        "files_per_sec": 64,
-        "index_duration_ms": 40976
+        "end_ws_mb": 3387,
+        "files_per_sec": 85,
+        "index_duration_ms": 30815
       },
       "project": "puppet-core",
       "rate_by_language": {
-        "csharp": 60.61,
-        "erb": 6.9,
-        "markdown": 35.83,
-        "puppet": 30.81,
-        "ruby": 25.99
+        "csharp": 48.48,
+        "erb": 6.83,
+        "markdown": 32.82,
+        "puppet": 32.62,
+        "ruby": 17.07
       },
-      "resolution_rate": 25.99,
+      "resolution_rate": 17.08,
       "routes": 0,
-      "symbols": 30119,
+      "symbols": 43310,
       "unresolved_by_lang_kind": {
-        "csharp.calls": 8,
+        "csharp.calls": 12,
         "csharp.imports": 1,
         "csharp.inherits": 1,
         "csharp.type_ref": 3,
-        "erb.calls": 157,
-        "erb.type_ref": 32,
-        "markdown.calls": 112,
-        "markdown.instantiates": 2,
-        "markdown.type_ref": 6,
-        "puppet.calls": 67,
-        "puppet.imports": 36,
+        "erb.calls": 155,
+        "erb.type_ref": 36,
+        "markdown.calls": 110,
+        "markdown.instantiates": 4,
+        "markdown.type_ref": 17,
+        "puppet.calls": 77,
+        "puppet.imports": 37,
         "puppet.inherits": 2,
         "puppet.type_ref": 41,
-        "ruby.calls": 61412,
-        "ruby.implements": 62,
-        "ruby.imports": 1069,
-        "ruby.inherits": 90,
-        "ruby.instantiates": 1451,
-        "ruby.type_ref": 29751
+        "ruby.calls": 205649,
+        "ruby.implements": 75,
+        "ruby.imports": 2100,
+        "ruby.inherits": 131,
+        "ruby.instantiates": 3922,
+        "ruby.type_ref": 53719
       },
       "vendored_files_reclassified": 1
     },
@@ -9916,10 +9921,10 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 66
+        "min_resolution_rate": 51
       },
-      "code_chunks": 58247,
-      "drained_refs": 3427,
+      "code_chunks": 62243,
+      "drained_refs": 3471,
       "files": 959,
       "flow_edge_types": {
         "django_model": 11,
@@ -9928,8 +9933,8 @@
       },
       "flow_edges": 89,
       "generated_files_reclassified": 2,
-      "internal_edges": 52592,
-      "internal_unresolved": 26521,
+      "internal_edges": 40833,
+      "internal_unresolved": 38702,
       "languages": {
         "angular_template": 100,
         "css": 2,
@@ -9949,41 +9954,43 @@
       },
       "path": "F:/Work/Projects/TestProjects/python-paperless-ngx",
       "perf": {
-        "end_ws_mb": 450,
-        "files_per_sec": 4,
-        "index_duration_ms": 222379
+        "end_ws_mb": 224,
+        "files_per_sec": 5,
+        "index_duration_ms": 197949
       },
       "project": "python-paperless-ngx",
       "rate_by_language": {
-        "angular_template": 75.33,
+        "angular_template": 75.37,
         "dockerfile": 33.33,
         "html": 50.0,
         "javascript": 47.06,
         "markdown": 100.0,
-        "python": 36.06,
+        "python": 35.5,
         "scss": 0.34,
-        "shell": 88.24,
-        "typescript": 91.01
+        "shell": 75.0,
+        "typescript": 62.96
       },
-      "resolution_rate": 66.48,
+      "resolution_rate": 51.34,
       "routes": 29,
-      "symbols": 38069,
+      "symbols": 43165,
       "unresolved_by_lang_kind": {
-        "angular_template.calls": 568,
+        "angular_template.calls": 567,
         "dockerfile.imports": 1,
         "dockerfile.inherits": 1,
         "html.imports": 3,
         "javascript.calls": 5,
         "javascript.imports": 4,
-        "python.calls": 16007,
-        "python.imports": 542,
-        "python.type_ref": 5311,
+        "python.calls": 16233,
+        "python.imports": 512,
+        "python.type_ref": 5318,
         "scss.calls": 285,
         "scss.imports": 4,
-        "shell.calls": 2,
-        "typescript.calls": 3482,
-        "typescript.instantiates": 6,
-        "typescript.type_ref": 300
+        "shell.calls": 5,
+        "typescript.calls": 12902,
+        "typescript.implements": 1,
+        "typescript.inherits": 14,
+        "typescript.instantiates": 141,
+        "typescript.type_ref": 2706
       },
       "vendored_files_reclassified": 6
     },
@@ -10613,18 +10620,18 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 44
+        "min_resolution_rate": 24
       },
-      "code_chunks": 100036,
-      "drained_refs": 27,
+      "code_chunks": 119675,
+      "drained_refs": 34,
       "files": 7201,
       "flow_edge_types": {
         "http_call": 290,
         "service_dependency": 1
       },
       "flow_edges": 291,
-      "internal_edges": 48338,
-      "internal_unresolved": 59437,
+      "internal_edges": 54863,
+      "internal_unresolved": 171339,
       "languages": {
         "c": 1,
         "dockerfile": 1,
@@ -10645,52 +10652,52 @@
       },
       "path": "F:/Work/Projects/TestProjects/ruby-chatwoot",
       "perf": {
-        "end_ws_mb": 440,
-        "files_per_sec": 48,
-        "index_duration_ms": 149259
+        "end_ws_mb": 225,
+        "files_per_sec": 49,
+        "index_duration_ms": 147993
       },
       "project": "ruby-chatwoot",
       "rate_by_language": {
         "c": 0.0,
         "dockerfile": 0.0,
-        "erb": 16.64,
-        "javascript": 57.12,
+        "erb": 2.6,
+        "javascript": 57.51,
         "markdown": 100.0,
-        "ruby": 21.79,
-        "scss": 3.9,
+        "ruby": 7.73,
+        "scss": 13.04,
         "shell": 0.0,
-        "typescript": 71.15,
-        "vue": 81.65
+        "typescript": 53.85,
+        "vue": 81.21
       },
-      "resolution_rate": 44.85,
+      "resolution_rate": 24.25,
       "routes": 443,
-      "symbols": 38112,
+      "symbols": 49180,
       "unresolved_by_lang_kind": {
         "c.calls": 7,
         "c.type_ref": 28,
         "dockerfile.imports": 2,
         "dockerfile.inherits": 2,
-        "erb.calls": 429,
-        "erb.instantiates": 6,
-        "erb.type_ref": 186,
-        "javascript.calls": 14689,
-        "javascript.imports": 6470,
+        "erb.calls": 527,
+        "erb.instantiates": 7,
+        "erb.type_ref": 216,
+        "javascript.calls": 15311,
+        "javascript.imports": 8966,
         "javascript.inherits": 4,
-        "javascript.type_ref": 4646,
-        "ruby.calls": 19102,
-        "ruby.implements": 198,
-        "ruby.imports": 62,
-        "ruby.inherits": 452,
-        "ruby.instantiates": 383,
-        "ruby.type_ref": 11568,
-        "scss.calls": 42,
-        "scss.imports": 32,
+        "javascript.type_ref": 3827,
+        "ruby.calls": 116406,
+        "ruby.implements": 270,
+        "ruby.imports": 64,
+        "ruby.inherits": 690,
+        "ruby.instantiates": 2501,
+        "ruby.type_ref": 21226,
+        "scss.calls": 78,
+        "scss.imports": 42,
         "shell.calls": 3,
-        "typescript.calls": 8,
+        "typescript.calls": 21,
         "typescript.imports": 1,
-        "typescript.type_ref": 6,
-        "vue.calls": 975,
-        "vue.imports": 128,
+        "typescript.type_ref": 2,
+        "vue.calls": 1003,
+        "vue.imports": 127,
         "vue.type_ref": 8
       }
     },
