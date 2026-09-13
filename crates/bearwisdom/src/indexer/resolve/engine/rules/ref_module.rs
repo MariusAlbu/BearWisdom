@@ -3,9 +3,10 @@
 //
 // The extractor recorded an explicit module prefix on the ref. A module
 // spelling denotes either the entity the ref names or the container it lives
-// in, so three probes run in order: the module spelling AS the declaration,
-// the target as a member under the module, then a same-named candidate whose
-// file path stem matches the module name.
+// in, so the probes run in order: a wildcard import row names the module
+// itself, the module spelling AS the declaration, the target as a member
+// under the module, then a same-named candidate whose file path stem matches
+// the module name.
 //
 // Declines immediately when no `module` field is set on the ref.
 // =============================================================================
@@ -13,6 +14,18 @@
 use crate::indexer::resolve::engine::contract::Symbol;
 use crate::indexer::resolve::engine::support::{index_qname_leaf, path_stem_matches};
 use crate::indexer::resolve::engine::{BinderContext, LookupResult, LookupRule};
+use crate::types::EdgeKind;
+
+/// The wildcard sentinel target of an import row (`import a.b.*`,
+/// `from m import *`) names no member: the row refers to the module itself,
+/// so it binds to the declaration the module spelling denotes.
+fn wildcard_probe<'a>(ctx: &'a BinderContext<'_>, indexed_module: &str) -> Option<&'a Symbol> {
+    if ctx.target() != "*" || ctx.edge_kind() != EdgeKind::Imports {
+        return None;
+    }
+    let sym = ctx.lookup.by_qualified_name(indexed_module)?;
+    (ctx.kind)(ctx.edge_kind(), &sym.kind).then_some(sym)
+}
 
 /// The declaration the ref's own module spelling names. The ref's target being
 /// the leaf of a QUALIFIED spelling is the evidence that `module` denotes the
@@ -77,7 +90,8 @@ impl LookupRule for RefModuleRule {
         };
         let indexed_module = ctx.profile.index_qname_from_source(module);
 
-        let hit = entity_probe(ctx, module, &indexed_module)
+        let hit = wildcard_probe(ctx, &indexed_module)
+            .or_else(|| entity_probe(ctx, module, &indexed_module))
             .or_else(|| container_probe(ctx, module))
             .or_else(|| file_stem_probe(ctx, &indexed_module));
 

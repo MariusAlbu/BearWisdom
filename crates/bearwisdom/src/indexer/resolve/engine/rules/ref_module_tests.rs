@@ -264,3 +264,58 @@ fn a_declaration_header_never_binds_to_itself() {
         other => panic!("expected a bind, got {other:?}"),
     }
 }
+
+/// `import a.b.*` is a row whose target is the wildcard sentinel: it names the
+/// package `a.b` itself, not a member called `*`.
+#[test]
+fn wildcard_import_row_binds_to_the_module_declaration() {
+    let lookup = Lookup::new()
+        .with(sym(
+            7,
+            "http",
+            "io.ktor.http",
+            "namespace",
+            "src/io/ktor/http/Http.kt",
+        ))
+        .with(sym(
+            8,
+            "HttpHeaders",
+            "io.ktor.http.HttpHeaders",
+            "class",
+            "src/io/ktor/http/Headers.kt",
+        ));
+    let mut r = module_ref("*", "io.ktor.http");
+    r.kind = EdgeKind::Imports;
+    let s = source_symbol("caller");
+    let fc = file_ctx(vec![], None);
+    let rc = ref_ctx(&r, &s, vec![]);
+    let kind = accept_any;
+    let ctx = BinderContext {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup: &lookup,
+        kind: &kind,
+        profile: &DEFAULT_PROFILE,
+    };
+    match RefModuleRule.apply(&ctx) {
+        LookupResult::Resolved(res) => assert_eq!(res.target_symbol_id, 7),
+        other => panic!("expected the namespace, got {other:?}"),
+    }
+
+    // A wildcard whose module names nothing indexed stays unresolved, and a
+    // wildcard on any other edge kind is not an import row.
+    assert_eq!(
+        resolve_with(
+            &lookup,
+            "*",
+            "io.ktor.missing",
+            &DEFAULT_PROFILE,
+            &accept_any
+        ),
+        None
+    );
+    assert_eq!(
+        resolve_with(&lookup, "*", "io.ktor.http", &DEFAULT_PROFILE, &accept_any),
+        None
+    );
+}
