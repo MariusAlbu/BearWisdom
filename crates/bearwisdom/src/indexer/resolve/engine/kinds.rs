@@ -37,6 +37,12 @@ pub(crate) fn is_value_kind(kind: &str) -> bool {
     )
 }
 
+/// `true` when `kind` names a declaration whose call builds an instance of the
+/// type that declares it.
+pub(crate) fn is_constructor_kind(kind: &str) -> bool {
+    kind == crate::types::SymbolKind::Constructor.as_str()
+}
+
 #[cfg(test)]
 #[path = "kinds_tests.rs"]
 mod tests;

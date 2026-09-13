@@ -1224,7 +1224,7 @@ impl Compilation {
                         }
                     }
                 }
-                SymbolKind::Method | SymbolKind::Function | SymbolKind::Constructor => {
+                SymbolKind::Method | SymbolKind::Function => {
                     // Signature policy belongs to the source plugin or its
                     // owning ecosystem. The generic resolver only consumes the
                     // resulting type evidence.
@@ -1505,21 +1505,20 @@ impl Compilation {
                         }
                     }
                 }
-                SymbolKind::Class => {
-                    // Constructor call yields the class itself.
-                    let class_id = self.arena.class(&sym.qualified_name);
-                    let ti = self
-                        .type_info
-                        .entry(sym.qualified_name.clone())
-                        .or_default();
-                    if ti.return_type_id.is_none() {
-                        ti.return_type_id = Some(class_id);
-                    }
-                    if let Some(id) = symbol_id_map.id_of(&pf.path, sym_idx, &sym.qualified_name) {
-                        let tid = self.type_info_by_id.entry(id).or_default();
-                        if tid.return_type_id.is_none() {
-                            tid.return_type_id = Some(class_id);
-                        }
+                SymbolKind::Class | SymbolKind::Constructor => {
+                    // A construction call yields the declaration it constructs; a
+                    // constructor's own signature names no return to infer from.
+                    if let Some(decl) =
+                        super::construction_yield::constructed_declaration(sym, &pf.symbols)
+                    {
+                        let rid = super::construction_yield::declaration_yield(&self.arena, decl);
+                        super::construction_yield::record_return_type(
+                            &sym.qualified_name,
+                            symbol_id_map.id_of(&pf.path, sym_idx, &sym.qualified_name),
+                            rid,
+                            &mut self.type_info,
+                            &mut self.type_info_by_id,
+                        );
                     }
                 }
                 _ => {}

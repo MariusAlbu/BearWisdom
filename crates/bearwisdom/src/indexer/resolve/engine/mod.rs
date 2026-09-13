@@ -40,6 +40,7 @@ pub mod chain_root;
 pub mod compilation;
 mod compilation_persist;
 pub mod composite_members;
+mod construction_yield;
 pub(crate) mod contract;
 mod demand_reachability;
 mod demand_relative_hops;
