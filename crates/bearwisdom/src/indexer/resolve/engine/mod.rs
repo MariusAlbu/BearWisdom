@@ -98,6 +98,7 @@ mod program_types;
 mod program_view;
 pub mod reexports;
 mod reexports_candidates;
+mod root_declaration_space;
 mod root_import_discipline;
 pub mod rules;
 pub mod segment_args;

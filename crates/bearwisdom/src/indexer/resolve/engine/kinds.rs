@@ -37,6 +37,15 @@ pub(crate) fn is_value_kind(kind: &str) -> bool {
     )
 }
 
+/// `true` when `kind` declares a member set reachable ONLY from a type
+/// position — a shape a name can be annotated with but never evaluated to. A
+/// type kind outside this class also binds in the value space, so its name
+/// alone is a receiver: a class's statics, an enum's members, a namespace's
+/// exports are all reached through the declaration's own name.
+pub(crate) fn is_shape_only_kind(kind: &str) -> bool {
+    matches!(kind, "interface" | "type_alias")
+}
+
 /// `true` when `kind` names a declaration whose call builds an instance of the
 /// type that declares it.
 pub(crate) fn is_constructor_kind(kind: &str) -> bool {
