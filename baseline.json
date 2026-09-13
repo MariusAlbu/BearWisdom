@@ -5372,8 +5372,8 @@
       "files": 1301,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 92993,
-      "internal_unresolved": 35832,
+      "internal_edges": 93347,
+      "internal_unresolved": 35500,
       "languages": {
         "css": 10,
         "groovy": 5,
@@ -5387,27 +5387,28 @@
       },
       "path": "F:/Work/Projects/TestProjects/java-recaf",
       "perf": {
-        "end_ws_mb": 113,
-        "files_per_sec": 10,
-        "index_duration_ms": 136421
+        "end_ws_mb": 100,
+        "files_per_sec": 27,
+        "index_duration_ms": 48592
       },
       "project": "java-recaf",
       "rate_by_language": {
-        "groovy": 4.88,
-        "java": 72.29,
+        "groovy": 2.44,
+        "java": 72.56,
         "markdown": 100.0
       },
-      "resolution_rate": 72.19,
+      "resolution_rate": 72.45,
       "routes": 0,
       "symbols": 35824,
       "unresolved_by_lang_kind": {
-        "groovy.calls": 195,
-        "java.calls": 18589,
+        "groovy.calls": 197,
+        "groovy.imports": 3,
+        "java.calls": 16496,
         "java.implements": 23,
-        "java.imports": 2308,
-        "java.inherits": 95,
-        "java.instantiates": 890,
-        "java.type_ref": 13732
+        "java.imports": 4050,
+        "java.inherits": 103,
+        "java.instantiates": 892,
+        "java.type_ref": 13736
       }
     },
     {
