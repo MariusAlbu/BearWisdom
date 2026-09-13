@@ -425,73 +425,7 @@ pub(crate) static TS_LEXICAL_SYNTAX: crate::indexer::lexical::LexicalSyntax =
         ),
         base_head: ("identifier", "property", "type_arguments"),
         type_bases: (&["interface_declaration"], "extends_type_clause", "type"),
-        modules: &crate::indexer::lexical::modules::ModuleForms {
-            import_require: "import_require_clause",
-            import_alias: "import_alias",
-            assignment_token: "=",
-            containers: &["module", "internal_module"],
-            literal_names: &["string"],
-            identifier_names: &["identifier"],
-            declaration_wrappers: &["expression_statement"],
-            augmentation: ("ambient_declaration", "global", "statement_block"),
-            ambient_token: "declare",
-            import: "import_statement",
-            export: "export_statement",
-            import_forms: &[
-                (
-                    "identifier",
-                    crate::indexer::lexical::modules::ImportForm::Default,
-                ),
-                (
-                    "import_specifier",
-                    crate::indexer::lexical::modules::ImportForm::Named,
-                ),
-                (
-                    "namespace_import",
-                    crate::indexer::lexical::modules::ImportForm::Namespace,
-                ),
-            ],
-            import_containers: &["import_statement", "import_clause", "named_imports"],
-            declaration_lists: &[
-                "lexical_declaration",
-                "variable_declaration",
-                "ambient_declaration",
-            ],
-            export_clause: "export_clause",
-            export_specifier: "export_specifier",
-            namespace_export: "namespace_export",
-            global_alias_tokens: &["as", "namespace"],
-            selections: &[
-                ("member_expression", "object", "property", false),
-                ("nested_type_identifier", "module", "name", true),
-                ("nested_identifier", "object", "property", true),
-            ],
-            extensions: &[".ts", ".tsx", ".d.ts", ".js", ".jsx"],
-            substitutions: &[
-                (".js", &[".ts", ".tsx", ".d.ts", ".js", ".jsx"]),
-                (".mjs", &[".mts", ".d.mts", ".mjs"]),
-                (".cjs", &[".cts", ".d.cts", ".cjs"]),
-            ],
-            directory_entry: "index",
-            wildcard_exclusions: &["default"],
-            source_field: "source",
-            type_token: "type",
-            export_declaration_field: "declaration",
-            export_value_field: "value",
-            export_specifier_name_field: "name",
-            export_specifier_alias_field: "alias",
-            import_specifier_name_field: "name",
-            import_specifier_alias_field: "alias",
-            wildcard_token: "*",
-            default_token: "default",
-            declaration_name_field: "name",
-            container_name_field: "name",
-            container_body_field: "body",
-            literal_kind: "string",
-            decode_literal: decode_module_literal,
-            first_named_child,
-            default_export_name: "default",
-        },
+        modules: &super::module_forms::TS_MODULE_FORMS,
         functions: &[
             "function_declaration",
             "function_signature",
@@ -778,7 +712,7 @@ fn annotation_value(node: tree_sitter::Node, source: &[u8]) -> Option<String> {
 
 /// Decode a TypeScript module-specifier literal at the language boundary.
 /// Generic lexical module capture receives the already-normalized string.
-fn decode_module_literal(raw: &str) -> Option<String> {
+pub(super) fn decode_module_literal(raw: &str) -> Option<String> {
     let quote = raw.chars().next()?;
     if !matches!(quote, '\'' | '"') || !raw.ends_with(quote) || raw.len() < 2 {
         return None;

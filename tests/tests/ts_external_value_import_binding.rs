@@ -120,10 +120,16 @@ fn an_imported_values_cross_package_annotation_types_its_call() {
     assert_call_binds_through_both_packages(&db, "whole");
 }
 
+/// A grammar gap inside a declaration body of the matchers package (a mapped
+/// type modifier written `]? :`) must not make the package's exports
+/// unreadable: the imported value still types through it.
 #[test]
-fn a_partly_read_package_still_types_a_sibling_packages_imported_value() {
-    // One construct the grammar cannot read leaves the file's module surface
-    // partly captured. The exports above it were read and remain evidence.
-    let db = index(&project_with("\ndeclare const unreadable: %;\n"));
-    assert_call_binds_through_both_packages(&db, "partly read");
+fn a_package_with_an_error_inside_a_declaration_body_still_types_the_imported_value() {
+    let db = index(&project_with(
+        "
+type Partialish<T> = { [K in keyof T]? : T[K] };
+export { Partialish };
+",
+    ));
+    assert_call_binds_through_both_packages(&db, "an error confined to a declaration body");
 }

@@ -7,64 +7,13 @@ use tree_sitter::Node;
 
 #[path = "lexical_module_aliases.rs"]
 mod aliases;
-#[path = "lexical_module_scopes.rs"]
-pub(crate) mod scopes;
 #[path = "lexical_module_declarations.rs"]
 mod declarations;
+#[path = "lexical_module_scopes.rs"]
+pub(crate) mod scopes;
 use declarations::declaration_exports;
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum ImportForm {
-    Default,
-    Named,
-    Namespace,
-}
-#[derive(Debug)]
-pub(crate) struct ModuleForms {
-    pub import_require: &'static str,
-    pub import_alias: &'static str,
-    pub assignment_token: &'static str,
-    pub containers: &'static [&'static str],
-    pub literal_names: &'static [&'static str],
-    pub identifier_names: &'static [&'static str],
-    pub declaration_wrappers: &'static [&'static str],
-    pub augmentation: (&'static str, &'static str, &'static str),
-    pub ambient_token: &'static str,
-    pub import: &'static str,
-    pub export: &'static str,
-    pub import_forms: &'static [(&'static str, ImportForm)],
-    pub import_containers: &'static [&'static str],
-    pub declaration_lists: &'static [&'static str],
-    pub export_clause: &'static str,
-    pub export_specifier: &'static str,
-    pub namespace_export: &'static str,
-    /// Anonymous tokens of the export statement that publishes the module's
-    /// export assignment under a global name for script consumers; it adds
-    /// nothing to the module's own surface.
-    pub global_alias_tokens: &'static [&'static str],
-    pub selections: &'static [(&'static str, &'static str, &'static str, bool)],
-    pub extensions: &'static [&'static str],
-    pub substitutions: &'static [(&'static str, &'static [&'static str])],
-    pub directory_entry: &'static str,
-    pub wildcard_exclusions: &'static [&'static str],
-    pub source_field: &'static str,
-    pub type_token: &'static str,
-    pub export_declaration_field: &'static str,
-    pub export_value_field: &'static str,
-    pub export_specifier_name_field: &'static str,
-    pub export_specifier_alias_field: &'static str,
-    pub import_specifier_name_field: &'static str,
-    pub import_specifier_alias_field: &'static str,
-    pub wildcard_token: &'static str,
-    pub default_token: &'static str,
-    pub declaration_name_field: &'static str,
-    pub container_name_field: &'static str,
-    pub container_body_field: &'static str,
-    pub literal_kind: &'static str,
-    pub decode_literal: fn(&str) -> Option<String>,
-    pub first_named_child: for<'a> fn(Node<'a>) -> Option<Node<'a>>,
-    pub default_export_name: &'static str,
-}
+pub(crate) use super::module_forms::{ImportForm, ModuleForms};
 
 #[derive(Debug, Clone)]
 pub(crate) struct Import {
@@ -129,7 +78,7 @@ pub(super) fn capture(
 ) -> ModuleSyntax {
     let mut result = ModuleSyntax {
         forms: Some(forms),
-        complete: !root.has_error(),
+        complete: super::module_completeness::surface_complete(root, forms),
         ..Default::default()
     };
     let mut units = scopes::capture(root, source, forms, graph);
@@ -178,7 +127,7 @@ fn capture_imports(
     graph: &mut LexicalBindings,
     result: &mut ModuleSyntax,
 ) -> bool {
-    let mut complete = !root.has_error();
+    let mut complete = super::module_completeness::surface_complete(root, forms);
     let mut cursor = root.walk();
     // Imports are installed first: exports may rename imported bindings.
     for node in root
@@ -222,7 +171,7 @@ fn capture_exports(
     ambient: bool,
 ) -> ModuleSyntax {
     let mut result = ModuleSyntax {
-        complete: !root.has_error(),
+        complete: super::module_completeness::surface_complete(root, forms),
         ..Default::default()
     };
     let mut cursor = root.walk();
@@ -260,7 +209,10 @@ fn capture_exports(
             continue;
         }
         if !forms.global_alias_tokens.is_empty()
-            && forms.global_alias_tokens.iter().all(|kind| token(node, kind))
+            && forms
+                .global_alias_tokens
+                .iter()
+                .all(|kind| token(node, kind))
         {
             continue;
         }

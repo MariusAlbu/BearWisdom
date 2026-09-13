@@ -6,7 +6,6 @@
 
 // Extraction sub-modules
 mod alias_classify;
-mod declaration_reachables;
 pub(crate) mod alias_intrinsics;
 mod alias_type_text;
 mod alias_union;
@@ -20,6 +19,7 @@ mod connectors_graphql;
 mod connectors_nestjs;
 mod connectors_nextjs;
 mod connectors_react;
+mod declaration_reachables;
 pub(crate) mod decorators;
 mod embedded;
 pub(crate) mod external_virtual_path;
@@ -28,8 +28,10 @@ mod helpers;
 mod imports;
 pub(crate) mod keywords;
 mod module_augmentations;
+mod module_forms;
 pub(crate) mod module_policy;
 mod narrowing;
+mod node_kinds;
 mod params;
 mod qualify_members;
 mod symbols;
@@ -262,45 +264,11 @@ impl LanguagePlugin for TypeScriptPlugin {
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {
-        &[
-            "class_declaration",
-            "abstract_class_declaration",
-            "interface_declaration",
-            "function_declaration",
-            "generator_function_declaration",
-            "method_definition",
-            "abstract_method_signature",
-            "method_signature",
-            "public_field_definition",
-            "property_signature",
-            "field_definition",
-            "type_alias_declaration",
-            "enum_declaration",
-            "lexical_declaration",
-            "variable_declaration",
-            "internal_module",
-            "construct_signature",
-            "call_signature",
-            "index_signature",
-        ]
+        node_kinds::SYMBOL_NODE_KINDS
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
-        &[
-            "call_expression",
-            "new_expression",
-            "import_statement",
-            // jsx_self_closing_element and jsx_opening_element are intentionally excluded:
-            // we only emit refs for PascalCase component tags (~23% of occurrences),
-            // not HTML intrinsics (div, span, etc.), so the 1:1 node→ref assumption breaks.
-            "extends_clause",
-            "implements_clause",
-            "type_annotation",
-            "type_identifier",
-            "as_expression",
-            "satisfies_expression",
-            "tagged_template_expression",
-        ]
+        node_kinds::REF_NODE_KINDS
     }
 
     fn keywords(&self) -> &'static [&'static str] {
