@@ -44,6 +44,11 @@ impl ManifestReader for PubspecManifest {
                 data.dependencies.insert(name);
             }
             let name = parse_pubspec_name(&content);
+            // A Pub package's public library is `lib/<name>.dart`: the file a
+            // bare reference to the package opens.
+            if let Some(name) = name.as_deref() {
+                data.package_entries = vec![format!("{PUB_SOURCE_ROOT}/{name}.dart")];
+            }
             let package_dir = manifest_path
                 .parent()
                 .map(|p| p.to_path_buf())

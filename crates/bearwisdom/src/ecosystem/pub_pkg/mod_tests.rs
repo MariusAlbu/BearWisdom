@@ -35,8 +35,8 @@ fn declared_name_also_answers_to_its_package_uri_spelling() {
 /// selects ecosystems by the kind label on their workspace package file.
 #[test]
 fn the_registry_offers_the_package_uri_alias_for_the_dart_kind_label() {
-    let aliases = crate::ecosystem::default_registry()
-        .workspace_package_name_aliases("dart", "core_client");
+    let aliases =
+        crate::ecosystem::default_registry().workspace_package_name_aliases("dart", "core_client");
     assert!(
         aliases.contains(&"package:core_client".to_string()),
         "dart workspace packages must gain their package-URI spelling: {aliases:?}"
@@ -249,4 +249,43 @@ fn resolve_entry_empty_without_main_file() {
 
     let dep = mkdep(lib, "missing");
     assert!(PubEcosystem.resolve_import(&dep, "missing", &[]).is_empty());
+}
+
+/// A pubspec names the package's public library: `lib/<name>.dart` is its
+/// entry candidate, joined under the package directory by the workspace pass.
+#[test]
+fn pubspec_declares_the_main_library_as_the_package_entry() {
+    use crate::ecosystem::manifest::ManifestReader;
+    let tmp = tempfile::TempDir::new().unwrap();
+    let pkg = tmp.path().join("packages").join("core_client");
+    std::fs::create_dir_all(pkg.join("lib")).unwrap();
+    std::fs::write(
+        pkg.join("pubspec.yaml"),
+        "name: core_client\nversion: 1.0.0\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("pubspec.yaml"),
+        "environment:\n  sdk: '^3.8.0'\n",
+    )
+    .unwrap();
+
+    let entries = super::manifest::PubspecManifest.read_all(tmp.path());
+    let named = entries
+        .iter()
+        .find(|e| e.name.as_deref() == Some("core_client"))
+        .expect("the package manifest is read");
+    assert_eq!(
+        named.data.package_entries,
+        vec!["lib/core_client.dart".to_string()]
+    );
+    assert_eq!(named.data.package_source_root.as_deref(), Some("lib"));
+    let nameless = entries
+        .iter()
+        .find(|e| e.name.is_none())
+        .expect("the root manifest is read");
+    assert!(
+        nameless.data.package_entries.is_empty(),
+        "no name, no library file"
+    );
 }

@@ -22,12 +22,10 @@
 // qualified refs are handled earlier in the ladder.
 // Accepts only when EXACTLY ONE candidate matches — ambiguity stays unresolved.
 //
-// A wildcard's module is the import's own spelling. The file stem it names and
-// its external package identity come from the ecosystem package-specifier
-// adapter; a language without one compares the spelling itself.
+// File-stem comparison stays local; external package identity comes from the
+// ecosystem package-specifier adapter.
 // =============================================================================
 
-use crate::ecosystem::package_specifier::{import_file_stem, import_package_root};
 use crate::indexer::resolve::engine::support::{
     basename_stem_matches, normalize_name, qname_directly_under,
 };
@@ -76,17 +74,6 @@ impl LookupRule for WildcardImportRule {
             return LookupResult::Pass;
         }
 
-        // Per wildcard: the file stem the spelling names and its package
-        // identity, as the owning ecosystem reads them.
-        let language = ctx.file_ctx.language.as_str();
-        let stems: Vec<String> = wildcards
-            .iter()
-            .map(|ns| import_file_stem(language, ns).unwrap_or_else(|| (*ns).to_string()))
-            .collect();
-        let roots: Vec<String> = wildcards
-            .iter()
-            .map(|ns| import_package_root(language, ns).unwrap_or_else(|| (*ns).to_string()))
-            .collect();
         let target_norm = normalize_name(norm, target);
         // Hits are keyed by QUALIFIED NAME: one declaration surfaced as
         // several same-qname rows (arity overloads, partials, merged decls)
@@ -108,9 +95,9 @@ impl LookupRule for WildcardImportRule {
                         false
                     } else {
                         let file_lower = sym.file_path.to_lowercase();
-                        stems.iter().any(|stem| {
-                            let stem_lower = stem.to_lowercase();
-                            wildcard_file_stem_matches(&file_lower, &stem_lower, underscore_prefix)
+                        wildcards.iter().any(|ns| {
+                            let ns_lower = ns.to_lowercase();
+                            wildcard_file_stem_matches(&file_lower, &ns_lower, underscore_prefix)
                         })
                     }
                 }
@@ -128,13 +115,13 @@ impl LookupRule for WildcardImportRule {
                             })
                             .flatten();
                         let file_lower = sym.file_path.to_lowercase();
-                        roots.iter().zip(&stems).any(|(root, stem)| {
+                        wildcards.iter().any(|ns| {
                             if let Some(pkg) = pkg_seg.as_deref() {
-                                if normalize_name(norm, pkg) == normalize_name(norm, root) {
+                                if normalize_name(norm, pkg) == normalize_name(norm, ns) {
                                     return true;
                                 }
                             }
-                            wildcard_file_stem_matches(&file_lower, &stem.to_lowercase(), false)
+                            wildcard_file_stem_matches(&file_lower, &ns.to_lowercase(), false)
                         })
                     }
                 }
