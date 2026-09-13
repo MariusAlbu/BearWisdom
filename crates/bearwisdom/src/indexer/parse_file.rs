@@ -328,6 +328,13 @@ fn parse_file_internal(
         );
     }
 
+    // Every index link names a real symbol: a file whose extractor declared
+    // nothing gets one file-scope owner for the links it emitted, otherwise
+    // they name a slot that does not exist and every stage after this one
+    // drops them. Runs before flow typing so the bindings the file's top-level
+    // code creates synthesize under the owner, the way a method's do under it.
+    super::file_scope_owner::materialize(&mut r, &walked.relative_path, line_count);
+
     // R5 Sprint 2: run flow-typing queries if the plugin provides a FlowConfig.
     // Populates FlowMeta (forward-inference binding map, conditional narrowings,
     // call-site type_args on chain segments). Plugins without flow_config pay
@@ -396,13 +403,6 @@ fn parse_file_internal(
     //     plain-HTML `<tag>` binds to its defined class without kebab→Pascal
     //     guessing.
     let component_selectors = plugin.component_selectors(&content, &r.symbols);
-
-    // Every index link names a real symbol: a file whose extractor declared
-    // nothing gets one file-scope owner for the links it emitted, otherwise
-    // they name a slot that does not exist and every stage after this one
-    // drops them. Runs after flow typing so binding synthesis keeps attaching
-    // only under enclosing declarations.
-    super::file_scope_owner::materialize(&mut r, &walked.relative_path, line_count);
 
     let mut parsed = ParsedFile {
         path: walked.relative_path.clone(),

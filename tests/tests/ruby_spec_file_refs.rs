@@ -18,7 +18,7 @@ fn seed_project() -> TestProject {
     project.add_file(LIB_FILE, "class Widget\n  def spin\n  end\nend\n");
     project.add_file(
         SPEC_FILE,
-        "require 'widget'\n\ndescribe Widget do\n  it 'spins' do\n    Widget.new.spin\n  end\nend\n",
+        "require 'widget'\n\ndescribe Widget do\n  it 'spins' do\n    w = Widget.new\n    w.spin\n  end\nend\n",
     );
     project
 }
@@ -65,14 +65,26 @@ fn a_declaration_less_spec_file_gets_exactly_one_owner_symbol() {
     full_index(&mut db, project.path(), None, None, None).unwrap();
 
     let symbols = symbols_in(&db, SPEC_FILE);
+    let owners: Vec<_> = symbols
+        .iter()
+        .filter(|(_, kind, _)| kind == "module")
+        .collect();
     assert_eq!(
-        symbols,
-        vec![(
+        owners,
+        vec![&(
             "widget_spec".to_string(),
             "module".to_string(),
             "spec/widget_spec".to_string(),
         )],
-        "the suite gets one file-scope owner and nothing else",
+        "the suite gets exactly one file-scope owner: {symbols:?}",
+    );
+    // The suite's own bindings (`w = Widget.new`) synthesize under the owner,
+    // the way a method's bindings do under the method.
+    assert!(
+        symbols
+            .iter()
+            .all(|(_, kind, _)| kind == "module" || kind == "variable"),
+        "nothing but the owner and its bindings is declared: {symbols:?}",
     );
 
     // The declaring file is untouched: it declares its own symbols, so no
@@ -99,11 +111,9 @@ fn the_owner_carries_the_suite_refs_into_the_graph() {
 
     let edges = edges_from(&db, SPEC_FILE);
     assert!(
-        edges
-            .iter()
-            .any(|(kind, target, file)| target == "Widget"
-                && file == LIB_FILE
-                && (kind == "type_ref" || kind == "calls" || kind == "instantiates")),
+        edges.iter().any(|(kind, target, file)| target == "Widget"
+            && file == LIB_FILE
+            && (kind == "type_ref" || kind == "calls" || kind == "instantiates")),
         "the class the suite exercises is reached: {edges:?}",
     );
     assert!(
