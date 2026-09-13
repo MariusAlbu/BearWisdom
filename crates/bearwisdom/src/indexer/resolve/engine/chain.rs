@@ -860,54 +860,12 @@ fn lookup_member_on_bounded_with_profile(
         }
     }
     // Composite receiver: a union / intersection TYPE (not a named alias) has no
-    // nominal head, so the head-keyed walks below cannot see it. Resolve the
-    // member across the arms directly. An INTERSECTION carries every branch's
-    // members (TS `&`), so the member resolves on any one arm. A UNION admits only
-    // members present on every arm (TS union access), so each arm must carry it;
-    // the first arm's resolution is returned once all agree. The depth budget
-    // bounds a cyclic arm that re-expands to the composite.
-    if depth > 0 {
-        match arena.get(recv.ty) {
-            Type::Intersection(arms) => {
-                for arm in arms {
-                    let arm_recv =
-                        expand_receiver(Receiver::untyped(arm), lookup, arena, None, None);
-                    if let Some(m) =
-                        lookup_member_on_bounded(lookup, arena, arm_recv, member, accept, depth - 1)
-                    {
-                        return Some(m);
-                    }
-                }
-                return None;
-            }
-            Type::Union(arms) => {
-                if arms.is_empty() {
-                    return None;
-                }
-                let mut resolved: Option<Symbol> = None;
-                for arm in arms {
-                    let arm_recv =
-                        expand_receiver(Receiver::untyped(arm), lookup, arena, None, None);
-                    match lookup_member_on_bounded(
-                        lookup,
-                        arena,
-                        arm_recv,
-                        member,
-                        accept,
-                        depth - 1,
-                    ) {
-                        None => return None,
-                        Some(m) => {
-                            if resolved.is_none() {
-                                resolved = Some(m);
-                            }
-                        }
-                    }
-                }
-                return resolved;
-            }
-            _ => {}
-        }
+    // nominal head, so the head-keyed walks below cannot see it. Its arms answer
+    // instead, and their answer is final for this receiver.
+    if let composite_members::CompositeLookup::Answered(found) =
+        composite_members::lookup_member_on_arms(lookup, arena, recv, member, accept, depth)
+    {
+        return found;
     }
     let head = head_qname(arena, recv.ty)?;
     if let Some(m) = lookup_member(lookup, &head, member, accept) {
@@ -2102,10 +2060,17 @@ fn value_root_type(
     foreign_fallback.or(primitive_fallback).ok_or(None)
 }
 
-/// `true` when the type's nominal head is a language primitive — a value typed by
-/// one of these is a poor chain root, so a same-name primitive-typed property
-/// must not shadow a richer same-name value.
+/// `true` when the type is a language primitive — a value typed by one of these
+/// is a poor chain root, so a same-name primitive-typed property must not shadow
+/// a richer same-name value.
+///
+/// A semantic atom answers directly; a spelling a language interns as a nominal
+/// instead is recognized by its head. Every atom names one of the heads below,
+/// so the two readings agree.
 fn is_primitive_head(arena: &TypeArena, id: TypeId) -> bool {
+    if matches!(arena.get(id), Type::Intrinsic(_)) {
+        return true;
+    }
     matches!(
         head_qname(arena, id).as_deref(),
         Some(

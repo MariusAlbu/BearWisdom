@@ -1,26 +1,109 @@
 // =============================================================================
-// engine/composite_members — member resolution across a composite alias
+// engine/composite_members — member resolution across a composite type
 //
-// An alias written as `A & B` or `A | B` has no members of its own: the member
-// lives on one of its branches. This module resolves a member across those
-// branches with the receiver's own type arguments substituted in, so a branch
-// written in the alias's vocabulary (`Wrapper<A>` inside
+// A composite — `A & B` or `A | B`, written inline or behind an alias — has no
+// members of its own: the member lives on one of its arms. This module resolves
+// a member across those arms with the receiver's own type arguments substituted
+// in, so an arm written in the alias's vocabulary (`Wrapper<A>` inside
 // `type Shape<A> = … & Wrapper<A>`) is walked as the concrete application the
 // receiver named (`Wrapper<User>` for `Shape<User>`).
 //
-// Intersection is member-ADDITIVE — the first branch carrying the member wins.
-// Union admits only members present on EVERY arm, so a single arm without it
-// makes the access invalid.
+// Intersection is member-ADDITIVE — the first arm carrying the member wins.
+// Union admits only members present on EVERY PARTICIPATING arm, so an arm that
+// carries a member surface and lacks the member makes the access invalid.
 // =============================================================================
 
 use crate::indexer::resolve::engine::contract::{Symbol, SymbolLookup};
-use crate::type_checker::core::types::{Type, TypeArena, TypeId};
+use crate::type_checker::core::types::{Intrinsic, Type, TypeArena, TypeId};
 use crate::types::AliasTargetIds;
 
 use super::chain::{apply_args, expand_receiver, head_qname, lookup_member_on_bounded, Receiver};
 use super::generics::substitute_env;
 use super::substitution::receiver_env;
 use super::support::{index_qname_is_or_ends_with, index_qname_parent};
+
+/// Whether a union arm takes part in deciding whether the union carries a
+/// member.
+///
+/// An ABSENCE atom does not. Such an arm holds no member surface at all, so it
+/// can neither supply a member nor be the one the source means: an access
+/// written on `Widget | null` is written where the source has already narrowed
+/// or optional-chained past the absent arm, and the reference names `Widget`'s
+/// declaration either way. The engine resolves references rather than proving
+/// nullability — declining here would drop a true edge whether or not the
+/// project compiles with strict null checking, while admitting it invents
+/// nothing, because the absent arm declares no member to compete with.
+///
+/// Every other arm participates, so an arm that genuinely lacks the member
+/// still makes the access invalid.
+fn participates_in_union_member(arena: &TypeArena, arm: TypeId) -> bool {
+    !matches!(
+        arena.get(arm),
+        Type::Intrinsic(Intrinsic::Null | Intrinsic::Undefined)
+    )
+}
+
+/// The answer a composite receiver gives to a member lookup.
+pub(crate) enum CompositeLookup {
+    /// The receiver is not a composite type; the caller's other walks apply.
+    NotComposite,
+    /// The receiver is composite and its arms decided: `Some` when they carry
+    /// the member, `None` when the composite does not carry it.
+    Answered(Option<Symbol>),
+}
+
+/// Resolve `member` across the arms of a composite TYPE — a union or
+/// intersection written inline, which has no nominal head for the head-keyed
+/// walks to see.
+///
+/// An INTERSECTION carries every arm's members, so the member resolves on any
+/// one arm. A UNION admits only members present on every participating arm; the
+/// first participating arm's resolution is returned once all of them agree that
+/// the member exists. A union of only absence atoms carries nothing.
+///
+/// The depth budget bounds an arm that re-expands to the composite; a spent
+/// budget reports `NotComposite`, leaving the caller's head-keyed walks (which
+/// find no head on a composite) to decline.
+pub(crate) fn lookup_member_on_arms(
+    lookup: &dyn SymbolLookup,
+    arena: &TypeArena,
+    recv: Receiver,
+    member: &str,
+    accept: &dyn Fn(&str) -> bool,
+    depth: usize,
+) -> CompositeLookup {
+    if depth == 0 {
+        return CompositeLookup::NotComposite;
+    }
+    let arm_member = |arm: TypeId| {
+        let arm_recv = expand_receiver(Receiver::untyped(arm), lookup, arena, None, None);
+        lookup_member_on_bounded(lookup, arena, arm_recv, member, accept, depth - 1)
+    };
+    match arena.get(recv.ty) {
+        Type::Intersection(arms) => {
+            CompositeLookup::Answered(arms.into_iter().find_map(arm_member))
+        }
+        Type::Union(arms) => {
+            let mut resolved: Option<Symbol> = None;
+            let mut participating = 0usize;
+            for arm in arms {
+                if !participates_in_union_member(arena, arm) {
+                    continue;
+                }
+                participating += 1;
+                match arm_member(arm) {
+                    None => return CompositeLookup::Answered(None),
+                    Some(m) => resolved = resolved.or(Some(m)),
+                }
+            }
+            if participating == 0 {
+                return CompositeLookup::Answered(None);
+            }
+            CompositeLookup::Answered(resolved)
+        }
+        _ => CompositeLookup::NotComposite,
+    }
+}
 
 /// Re-root an alias branch on the declaration it resolved to, keeping the
 /// branch's applied arguments: branch `Matchers<void, T>` resolved to the
@@ -110,13 +193,15 @@ pub(crate) fn lookup_member_on_intersection(
 
 /// Resolve `member` on a UNION alias `A | B | …`. TS union member access is
 /// valid only for members present on EVERY arm, so the member resolves on the
-/// union iff every named branch carries it — the canonical shape is a tagged
-/// result union whose arms all `extends` a common base that declares the member.
-/// Each branch head is resolved to its declaration(s) and the member walk
-/// recurses by symbol id (climbing the branch's supertypes); the first arm's
-/// resolution is returned once every arm has agreed it carries the member.
-/// `None` when `head` is not a union alias, a branch is unnameable (a
-/// primitive/literal arm that cannot carry the member), or any arm lacks it.
+/// union iff every PARTICIPATING branch carries it — the canonical shape is a
+/// tagged result union whose arms all `extends` a common base that declares the
+/// member, or a nominal paired with an absence atom. Each branch head is
+/// resolved to its declaration(s) and the member walk recurses by symbol id
+/// (climbing the branch's supertypes); the first participating arm's resolution
+/// is returned once every one of them has agreed it carries the member.
+/// `None` when `head` is not a union alias, a participating branch is
+/// unnameable (a primitive/literal arm that cannot carry the member), any
+/// participating arm lacks it, or no branch participates at all.
 pub(crate) fn lookup_member_on_union(
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
@@ -134,15 +219,20 @@ pub(crate) fn lookup_member_on_union(
         return None;
     }
     let mut resolved: Option<Symbol> = None;
+    let mut participating = 0usize;
     for &raw_branch in &branches {
         let branch_id = branch_in_receiver_terms(lookup, arena, recv_ty, raw_branch);
+        if !participates_in_union_member(arena, branch_id) {
+            continue;
+        }
+        participating += 1;
         // A branch is a NOMINAL type reference, possibly applied; resolve it to
         // its declaration by the head name (`types_by_name`) — the same path
         // every type reference uses.
         let branch = head_qname(arena, branch_id).unwrap_or_default();
         if branch.is_empty() || branch == head {
             // A primitive/literal/self arm cannot carry the member; union access
-            // requires it on every arm, so the access is invalid.
+            // requires it on every participating arm, so the access is invalid.
             return None;
         }
         // A branch scoped under an enclosing declaration (a nested function's
@@ -183,12 +273,11 @@ pub(crate) fn lookup_member_on_union(
         }
         match branch_hit {
             None => return None,
-            Some(m) => {
-                if resolved.is_none() {
-                    resolved = Some(m);
-                }
-            }
+            Some(m) => resolved = resolved.or(Some(m)),
         }
+    }
+    if participating == 0 {
+        return None;
     }
     resolved
 }
@@ -231,3 +320,7 @@ pub(crate) fn declaring_branch_receiver(
     }
     None
 }
+
+#[cfg(test)]
+#[path = "composite_members_tests.rs"]
+mod tests;
