@@ -387,3 +387,37 @@ fn python_typed_and_untyped_parameters() {
     assert_untyped("python", "py", src, "y");
     assert_typed("python", "py", src, "z", "Bar");
 }
+
+#[test]
+fn dart_initializer_call_is_correlated_to_its_binding() {
+    let src = "void f() {\n  var d = Dog();\n  d.bark();\n}\n";
+    let plugin = default_registry()
+        .get_dedicated("dart")
+        .expect("dart plugin");
+    let grammar = plugin.grammar("dart").expect("dart grammar");
+    let mut r = plugin.extract(src, "lib/a.dart", "dart");
+    let cfg = plugin.flow_config().expect("dart flow config");
+    let meta = run_flow_queries(
+        src,
+        &grammar,
+        cfg,
+        &mut r.symbols,
+        &mut r.refs,
+        BindingSymbols::Synthesize,
+    );
+    let dog = r
+        .refs
+        .iter()
+        .position(|rf| rf.target_name == "Dog")
+        .expect("the constructor call ref");
+    let d = r
+        .symbols
+        .iter()
+        .position(|s| s.name == "d")
+        .expect("the binding");
+    assert_eq!(
+        meta.flow_binding_lhs.get(&dog),
+        Some(&d),
+        "the initializer call is the binding's RHS"
+    );
+}
