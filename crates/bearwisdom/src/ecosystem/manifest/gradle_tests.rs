@@ -215,3 +215,35 @@ fn parse_gradle_direct_coords_skips_invalid_lines() {
     assert_eq!(coords.len(), 1);
     assert_eq!(coords[0].artifact_id, "lib");
 }
+
+/// The build-file walker that drives `GradleManifest::read_all` — and with it
+/// per-package ownership detection — stays blind to convention-plugin
+/// sources: only a literal `build.gradle[.kts]` is a package manifest.
+#[test]
+fn collect_gradle_build_files_ignores_convention_sources() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path();
+    for (rel, content) in [
+        ("settings.gradle.kts", "includeBuild(\"build-logic\")\n"),
+        (
+            "build-logic/build.gradle.kts",
+            "plugins {\n    `kotlin-dsl`\n}\n",
+        ),
+        (
+            "build-logic/src/main/kotlin/conv/CommonConfig.kt",
+            "dependencies {\n    api(libs.kotlinx.coroutines.core)\n}\n",
+        ),
+    ] {
+        let full = root.join(rel);
+        std::fs::create_dir_all(full.parent().unwrap()).unwrap();
+        std::fs::write(full, content).unwrap();
+    }
+
+    let files = super::collect_gradle_build_files(root);
+    assert_eq!(files.len(), 1, "unexpected build files: {files:?}");
+    assert!(files[0].ends_with("build.gradle.kts"));
+    assert!(
+        !files[0].to_string_lossy().contains("src"),
+        "a src/main source was treated as a package manifest: {files:?}"
+    );
+}

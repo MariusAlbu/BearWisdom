@@ -9,6 +9,7 @@ use rayon::prelude::*;
 use tracing::{debug, warn};
 use tree_sitter::{Node, Parser};
 
+use super::discovery_scope::JvmDiscoveryScope;
 use super::reachability::{collect_jvm_user_imports, walk_maven_narrowed};
 use super::ID;
 use super::{
@@ -20,6 +21,9 @@ use crate::ecosystem::externals::{
     is_cache_stale, maven_local_repo, resolve_coursier_sources_jar,
     resolve_coursier_submodule_jars, resolve_gradle_sources_jar, resolve_maven_artifact_dir,
     ExternalDepRoot, MAX_WALK_DEPTH,
+};
+use crate::ecosystem::manifest::gradle_coords::{
+    collect_gradle_coords, collect_gradle_coords_scoped,
 };
 use crate::ecosystem::manifest::maven::{
     collect_pom_module_artifact_ids, parse_pom_xml_coords, MavenCoord,
@@ -33,7 +37,8 @@ use crate::walker::WalkedFile;
 // Discovery: walk every JVM manifest, collect coords, resolve against ~/.m2
 // ---------------------------------------------------------------------------
 
-pub(crate) fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
+pub(crate) fn discover_maven_roots(scope: &JvmDiscoveryScope) -> Vec<ExternalDepRoot> {
+    let project_root = scope.package_dir.as_path();
     let m2 = maven_local_repo();
     let gradle_cache = gradle_caches_root();
     let coursier_cache = coursier_cache_root();
@@ -64,7 +69,7 @@ pub(crate) fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> 
     // The workspace's own module ids — coordinates that name one are internal
     // build output, never cached. Skip them so they neither inflate the
     // missing-sources diagnostic nor get probed as externals.
-    let own_modules = collect_workspace_artifact_ids(project_root);
+    let own_modules = collect_workspace_artifact_ids(&scope.build_root);
 
     let mut roots = Vec::new();
     let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
@@ -91,7 +96,7 @@ pub(crate) fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> 
     }
 
     // --- Gradle build.gradle[.kts] + version-catalog coords -------------
-    let gradle_coords = collect_gradle_coords(project_root);
+    let gradle_coords = collect_gradle_coords_scoped(&scope.build_root, project_root);
     debug!(
         "Gradle: {} coords from build.gradle + libs.versions.toml",
         gradle_coords.len()
@@ -262,29 +267,6 @@ fn collect_pom_coords(project_root: &Path) -> Vec<MavenCoord> {
         coords.extend(parse_pom_xml_coords(&content));
     }
     coords
-}
-
-/// Parse every build.gradle[.kts] in the project and resolve catalog
-/// references against any `gradle/*.versions.toml` files. Returns full
-/// `MavenCoord`s — coords that omit `version` (rare in Gradle) get the
-/// version-dir scan fallback the same way pom coords do.
-fn collect_gradle_coords(project_root: &Path) -> Vec<MavenCoord> {
-    let mut catalogs: std::collections::HashMap<String, gradle_manifest::GradleCatalog> =
-        std::collections::HashMap::new();
-    for (name, path) in gradle_manifest::collect_version_catalogs(project_root) {
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            catalogs.insert(name, gradle_manifest::parse_version_catalog(&content));
-        }
-    }
-
-    let mut out = Vec::new();
-    for build_file in gradle_manifest::collect_gradle_build_files(project_root) {
-        let Ok(content) = std::fs::read_to_string(&build_file) else {
-            continue;
-        };
-        out.extend(gradle_manifest::parse_gradle_coords(&content, &catalogs));
-    }
-    out
 }
 
 /// Try ~/.m2 first (preferred — single jar per artifact dir), fall back to

@@ -640,7 +640,7 @@ fn parse_project_name_rename(line: &str) -> Option<String> {
 }
 
 /// Extract every single- or double-quoted literal from a fragment, in order.
-fn extract_quoted_literals(s: &str) -> Vec<String> {
+pub(super) fn extract_quoted_literals(s: &str) -> Vec<String> {
     let mut out = Vec::new();
     let bytes = s.as_bytes();
     let mut i = 0;

@@ -32,8 +32,9 @@ use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
     SymbolLocationIndex,
 };
-use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
+use crate::ecosystem::externals::{ExternalDepRoot, MAX_WALK_DEPTH};
 use crate::ecosystem::manifest::maven::{parse_pom_xml_coords, MavenCoord};
+use discovery_scope::JvmDiscoveryScope;
 
 pub mod signature;
 use crate::ecosystem::manifest::{
@@ -107,7 +108,7 @@ impl Ecosystem for MavenEcosystem {
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
-        discover_maven_roots(ctx.project_root)
+        discover_maven_roots(&JvmDiscoveryScope::whole(ctx.project_root))
     }
 
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
@@ -140,39 +141,14 @@ impl Ecosystem for MavenEcosystem {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Legacy ExternalSourceLocator impl — adapter for the existing indexer
-// pipeline. Dropped in Phase 4 when the indexer consumes Ecosystem directly.
-// ---------------------------------------------------------------------------
-
-impl ExternalSourceLocator for MavenEcosystem {
-    fn ecosystem(&self) -> &'static str {
-        ID.as_str()
-    }
-
-    fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
-        discover_maven_roots(project_root)
-    }
-
-    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
-        walk_maven_root(dep)
-    }
-}
-
-/// Process-wide shared instance. The ecosystem registry holds one of these
-/// in `default_registry()`; the legacy-locator bridge in
-/// `ecosystem::default_locator` exposes the same type through
-/// `ExternalSourceLocator` for per-package attribution overrides.
-pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
-    use std::sync::OnceLock;
-    static LOCATOR: OnceLock<Arc<MavenEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(MavenEcosystem)).clone()
-}
-
 mod discovery;
+mod discovery_scope;
+mod header;
+mod locator;
 mod reachability;
 mod symbol_index;
 pub(crate) use discovery::*;
+pub use locator::shared_locator;
 pub(crate) use reachability::*;
 pub(crate) use symbol_index::*;
 
@@ -284,15 +260,16 @@ pub(crate) fn detect_jvm_language(name: &str) -> Option<(&'static str, &'static 
 
 #[cfg(test)]
 mod tests {
-    use super::reachability::{
-        extract_clojure_imports, extract_jvm_imports_from_source, jvm_import_to_package_prefix,
-    };
-    use super::symbol_index::{
+    use super::header::{
         collect_groovy_top_level_name, collect_java_top_level_name, collect_kotlin_top_level_name,
         collect_scala_pattern_names, collect_scala_top_level_name, scan_clojure_header,
         scan_groovy_header, scan_java_header, scan_kotlin_header, scan_scala_header,
     };
+    use super::reachability::{
+        extract_clojure_imports, extract_jvm_imports_from_source, jvm_import_to_package_prefix,
+    };
     use super::*;
+    use crate::ecosystem::externals::ExternalSourceLocator;
 
     #[test]
     fn ecosystem_identity() {
