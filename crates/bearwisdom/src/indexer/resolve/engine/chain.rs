@@ -39,6 +39,8 @@ pub(crate) use receiver_projection::project_receiver;
 mod bound_method;
 #[path = "chain_call.rs"]
 mod call;
+#[path = "chain_callable_value.rs"]
+mod callable_value;
 #[path = "chain_callee_root.rs"]
 mod callee_root;
 #[path = "chain_qualified_call.rs"]
@@ -1720,6 +1722,19 @@ pub(crate) fn member_yield_type(
                 return Some(rt);
             }
         }
+        // A field type naming a declaration that carries a CALL SIGNATURE
+        // (`soft: CheckStatic` where `CheckStatic` declares `(x): R`) yields
+        // that signature's return — calling the property calls the value it
+        // holds, not the type that describes it. An inline function type is
+        // left whole here; `yield_through` peels its one call layer. A call
+        // signature is excluded from its own probe: it is what the probe
+        // reads, so a self-referential one would not terminate.
+        let nominal = !matches!(arena.get(ft), Type::Function { .. });
+        if nominal && !callable_value::is_call_signature(&member.name) {
+            if let Some(yielded) = callable_value::call_yield(lookup, arena, ft) {
+                return Some(yielded.ty);
+            }
+        }
         return Some(ft);
     }
     if let Some(id) = super::type_slots::field_type_by_identity(lookup, member) {
@@ -1904,19 +1919,8 @@ pub(super) fn import_scoped_external_root(
             let Some(vty) = field_type_of(lookup, arena, s.id, &s.qualified_name) else {
                 continue;
             };
-            if let Some(r) = function_typed_value_call_yield(arena, vty) {
-                return Some(Receiver::untyped(r));
-            }
-            let recv = expand_receiver(Receiver::untyped(vty), lookup, arena, None, None);
-            if let Some(r) = function_typed_value_call_yield(arena, recv.ty) {
-                return Some(Receiver::untyped(r));
-            }
-            if let Some(call) =
-                lookup_member_on(lookup, arena, recv, CALL_SIGNATURE_MEMBER, &|_| true)
-            {
-                if let Some(r) = yield_through(lookup, arena, &call, true, recv.ty, recv.id) {
-                    return Some(Receiver::untyped(r));
-                }
+            if let Some(yielded) = callable_value::call_yield(lookup, arena, vty) {
+                return Some(Receiver::untyped(yielded.ty));
             }
         }
         return None;
@@ -2274,14 +2278,9 @@ fn deref_value_typed(
     current
 }
 
-/// Type a call root whose callee is a VALUE of a callable-interface type, by the
-/// return of that interface's call signature: `const v: I` where `I` carries
-/// `(x): R` types `v(x)` as `R`. The
-/// extractor synthesises that call signature as a member named `call` on the
-/// interface; this types the value to its declared interface, then yields the
-/// `call` member's return with the receiver's type arguments substituted — the
-/// same member-walk and substitution every chain hop uses, so any callable
-/// interface's value types its call result generically.
+/// Type a call root whose callee is a VALUE: the value's own declared type
+/// supplies the call signature, so `const v: I` where `I` carries `(x): R`
+/// types `v(x)` as `R`. See `callable_value` for the shapes that qualify.
 fn call_value_root_type(
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
@@ -2301,32 +2300,8 @@ fn call_value_root_type(
         profile,
     )
     .ok()?;
-    if let Some(r) = function_typed_value_call_yield(arena, value_ty) {
-        return Some(r);
-    }
-    let recv = expand_receiver(Receiver::untyped(value_ty), lookup, arena, None, None);
-    if let Some(r) = function_typed_value_call_yield(arena, recv.ty) {
-        return Some(r);
-    }
-    let call = lookup_member_on(lookup, arena, recv, CALL_SIGNATURE_MEMBER, &|_kind| true)?;
-    yield_through(lookup, arena, &call, true, recv.ty, recv.id)
+    Some(callable_value::call_yield(lookup, arena, value_ty)?.ty)
 }
-
-/// The call yield of a value typed by an INLINE function type: `declare const
-/// make: <G>(opts) => Client` yields `Client` when called. `None` when the
-/// value's type is not a `Type::Function` — a nominal callable interface takes
-/// the call-signature-member path instead.
-fn function_typed_value_call_yield(arena: &TypeArena, value_ty: TypeId) -> Option<TypeId> {
-    match arena.get(value_ty) {
-        Type::Function { return_, .. } => Some(return_),
-        _ => None,
-    }
-}
-
-/// The name the extractor synthesises for an interface's call signature
-/// (`interface F { (x): R }`), surfaced as a member so a value of that interface
-/// type yields `R` when called.
-const CALL_SIGNATURE_MEMBER: &str = "call";
 
 /// Type a call root by the callee's return type: `makeRepo()` where
 /// `makeRepo(): Repository<User>` types the chain head as `Repository<User>`.
