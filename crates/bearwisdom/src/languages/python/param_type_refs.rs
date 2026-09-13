@@ -85,10 +85,11 @@ fn annotated_parameter_type(function: &Node, name: &str, source: &str) -> Option
         let declared = match child.kind() {
             "typed_parameter" => {
                 let mut inner = child.walk();
-                child
+                let named = child
                     .children(&mut inner)
                     .find(|c| c.kind() == "identifier")
-                    .map(|c| node_text(&c, source))
+                    .map(|c| node_text(&c, source));
+                named
             }
             _ => child
                 .child_by_field_name("name")
@@ -138,9 +139,10 @@ fn binds_name(target: &Node, name: &str, source: &str) -> bool {
         "identifier" => node_text(target, source) == name,
         "pattern_list" | "tuple_pattern" | "list_pattern" | "as_pattern_target" => {
             let mut cursor = target.walk();
-            target
+            let bound = target
                 .named_children(&mut cursor)
-                .any(|c| binds_name(&c, name, source))
+                .any(|c| binds_name(&c, name, source));
+            bound
         }
         _ => false,
     }
