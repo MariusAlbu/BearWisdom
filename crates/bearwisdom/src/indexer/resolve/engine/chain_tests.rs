@@ -4410,3 +4410,45 @@ fn an_explicit_type_argument_wins_over_argument_inference() {
         "explicit <Admin> must pin T before argument inference can suggest otherwise"
     );
 }
+
+/// An import specifier spelled in the language's own qname separator still
+/// names a file: the profile-aware path match normalizes `com.fakeext.data.X`
+/// to `com/fakeext/data/X` before comparing, so explicit-import evidence
+/// decides the root instead of falling through to the scored ranker — which
+/// declines here, the homonym sitting beside the caller scoring higher.
+#[test]
+fn a_dotted_import_specifier_binds_the_root_to_its_own_file() {
+    let imported = sym(
+        1,
+        "Repository",
+        "com.fakeext.data.Repository",
+        "class",
+        "pkg/com/fakeext/data/Repository.java",
+    );
+    let homonym = sym(
+        2,
+        "Repository",
+        "app.Repository",
+        "class",
+        "src/main/java/app/Repository.java",
+    );
+    let lookup = Lookup::new().with(imported.clone()).with(homonym.clone());
+    let arena = lookup.type_arena().unwrap();
+    let file_ctx = FileContext {
+        file_path: "src/main/java/app/App.java".into(),
+        language: "java".into(),
+        imports: vec![import("Repository", Some("com.fakeext.data.Repository"))],
+        file_namespace: None,
+    };
+    let r = call_ref("findOne");
+    let src = source_symbol("App.run");
+    let rc = ref_ctx(&r, &src, Vec::new());
+    let profile = crate::languages::default_registry().profile_for("java");
+    let head = arena.class("Repository");
+
+    assert_eq!(
+        import_scoped_decl_id(&rc, &file_ctx, &lookup, arena, profile, head),
+        Some(imported.id),
+        "the explicit import names the file the candidate declares"
+    );
+}

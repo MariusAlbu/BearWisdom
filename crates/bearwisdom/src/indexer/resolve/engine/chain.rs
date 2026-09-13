@@ -113,7 +113,7 @@ pub fn bind_member_access(
     // writer. Only the root needs it — yielded receivers carry qualified types.
     if root.id.is_none() {
         root.id = super::head_decl::head_decl_id(arena, root.ty)
-            .or_else(|| import_scoped_decl_id(ref_ctx, file_ctx, lookup, arena, root.ty));
+            .or_else(|| import_scoped_decl_id(ref_ctx, file_ctx, lookup, arena, profile, root.ty));
         // A head bound by import evidence keeps its source spelling (`Blueprint`)
         // while the declaration is indexed under its canonical qname
         // (`App.Blueprint`); the walk compares heads by qname, so the root must
@@ -663,6 +663,7 @@ fn import_scoped_decl_id(
     file_ctx: &FileContext,
     lookup: &dyn SymbolLookup,
     arena: &TypeArena,
+    profile: &LanguageProfile,
     ty: TypeId,
 ) -> Option<i64> {
     let head = head_qname(arena, ty)?;
@@ -683,7 +684,7 @@ fn import_scoped_decl_id(
             .unwrap_or_else(|| module.to_string());
         let mut matched: Option<&Symbol> = None;
         for cand in &candidates {
-            if file_matches_module(&cand.file_path, &resolved) {
+            if super::path_match::file_path_matches_module(&cand.file_path, &resolved, profile) {
                 if matched.is_some() {
                     matched = None; // two files match — defer to scored ranking
                     break;
@@ -696,23 +697,6 @@ fn import_scoped_decl_id(
         }
     }
     pick_ranked_candidate(file_ctx, ref_ctx.file_package_id, lookup, &candidates).map(|s| s.id)
-}
-
-/// A candidate file satisfies an import module specifier when the file path —
-/// extension and a trailing `/index` dropped — matches the specifier's path tail
-/// (`./` / `../` / leading `/` trimmed). `apps/web/utils/logger.ts` matches
-/// `./utils/logger` (a `@/utils/logger` import post path-alias rewrite).
-fn file_matches_module(file_path: &str, module: &str) -> bool {
-    let fp = file_path.replace('\\', "/");
-    let fp = fp.rsplit_once('.').map(|(b, _)| b).unwrap_or(&fp);
-    let fp = fp.strip_suffix("/index").unwrap_or(fp);
-    let tail = module
-        .replace('\\', "/")
-        .trim_start_matches("./")
-        .trim_start_matches("../")
-        .trim_start_matches('/')
-        .to_string();
-    !tail.is_empty() && (fp == tail || fp.ends_with(&format!("/{tail}")))
 }
 
 /// Find `member` on a receiver, preferring the identity path: when the receiver

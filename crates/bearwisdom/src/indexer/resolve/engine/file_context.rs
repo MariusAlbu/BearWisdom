@@ -163,7 +163,7 @@ pub(crate) fn build_file_context(
         file_path: file.path.clone(),
         language: language.to_string(),
         imports,
-        file_namespace: None,
+        file_namespace: super::file_namespace::declared_namespace(file).map(str::to_string),
     }
 }
 

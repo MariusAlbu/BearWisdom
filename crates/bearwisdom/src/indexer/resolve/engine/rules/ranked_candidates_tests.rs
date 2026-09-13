@@ -274,4 +274,4 @@ fn resolves_closer_path_candidate() {
     }
 }
 
-// path_proximity_score (used by score_candidate) is exercised in support_tests.rs.
+// path_proximity_score (used by score_candidate) is exercised in candidate_rank_tests.rs.
