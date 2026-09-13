@@ -52,6 +52,7 @@ pub use plugin_state::PluginStateBag;
 pub mod programs;
 pub mod project_context;
 mod project_workspace;
+pub use project_workspace::WorkspaceIndexes;
 pub mod ref_cache;
 pub mod resolve;
 pub mod scip;

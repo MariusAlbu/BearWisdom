@@ -22,6 +22,11 @@ pub(crate) struct Context {
     /// Workspace package id → its manifest's project-relative entry
     /// candidates, in declared priority.
     pub(crate) workspace_entries: FxHashMap<i64, Vec<String>>,
+    /// Workspace package id → the one name that package declared for itself.
+    pub(crate) pkg_declared_name: FxHashMap<i64, String>,
+    /// Workspace package id → the project-relative directory its module
+    /// sub-paths are rooted at, for packages that declare one.
+    pub(crate) pkg_source_root: FxHashMap<i64, String>,
 }
 
 impl Context {
@@ -36,19 +41,31 @@ impl Context {
         self.resolver_inputs =
             crate::ecosystem::module_specifier::ResolverInputs::from_project_context(ctx);
         self.workspace_packages = ctx
-            .workspace_pkg_by_declared_name
+            .workspace
+            .by_declared_name
             .iter()
             .filter_map(|(name, id)| {
-                let root = ctx.workspace_pkg_paths.get(id)?;
+                let root = ctx.workspace.paths.get(id)?;
                 Some((name.clone(), root.trim_end_matches('/').to_string()))
             })
             .collect();
         self.workspace_entries = ctx
-            .workspace_pkg_entries
+            .workspace
+            .entries
             .iter()
             .map(|(id, entries)| (*id, entries.clone()))
             .collect();
+        self.pkg_declared_name = clone_by_id(&ctx.workspace.declared_name);
+        self.pkg_source_root = clone_by_id(&ctx.workspace.source_roots);
     }
+}
+
+/// Re-key a package-id-keyed project map into the resolver's own map type.
+fn clone_by_id(source: &std::collections::HashMap<i64, String>) -> FxHashMap<i64, String> {
+    source
+        .iter()
+        .map(|(id, value)| (*id, value.clone()))
+        .collect()
 }
 
 /// The internal (non-`ext:`) file paths from a parsed batch — the candidate
@@ -64,24 +81,23 @@ pub(crate) fn internal_file_paths(parsed: &[ParsedFile]) -> Vec<String> {
 
 /// Resolve `spec` (as written in `source_file`'s import) through `language`'s
 /// registered `ModuleResolver`. `source_package_name` is the importing file's
-/// own declared package name — recovered from `package_id` rather than guessed
-/// project-wide, since a workspace can contain several package roots.
+/// own declared package name — read from `package_id` rather than guessed
+/// project-wide, since a workspace can contain several package roots. It is
+/// the package's CANONICAL spelling, so a resolver that reconstructs the
+/// source's own specifier gets the name its manifest declared rather than an
+/// ecosystem alias of it.
 pub(crate) fn resolve_via_module_resolver(
     language: &str,
     source_file: &str,
     spec: &str,
     package_id: Option<i64>,
-    workspace_pkg_by_declared_name: &FxHashMap<String, i64>,
+    pkg_declared_name: &FxHashMap<i64, String>,
     resolver_inputs: &crate::ecosystem::module_specifier::ResolverInputs,
     workspace_packages: &[(String, String)],
     file_paths: &[String],
 ) -> Option<String> {
-    let source_package_name = package_id.and_then(|pid| {
-        workspace_pkg_by_declared_name
-            .iter()
-            .find(|(_, &id)| id == pid)
-            .map(|(name, _)| name.as_str())
-    });
+    let source_package_name =
+        package_id.and_then(|pid| pkg_declared_name.get(&pid).map(String::as_str));
     let resolvers = crate::ecosystem::module_specifier::language_resolvers(
         resolver_inputs,
         source_package_name,

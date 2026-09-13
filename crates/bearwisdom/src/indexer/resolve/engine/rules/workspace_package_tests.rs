@@ -420,3 +420,70 @@ fn bare_declared_name_picks_the_package_def_over_a_sibling() {
     let imports = vec![import("QueryClient", "@tanstack/query-core")];
     assert_eq!(resolve(&lookup, "QueryClient", imports), Some(13168));
 }
+
+// ---------------------------------------------------------------------------
+// A Pub package URI reaches the rule through the ecosystem's name alias: the
+// declared name `core_client` also answers to `package:core_client`, so the
+// existing deep-specifier peel is the whole binding path.
+// ---------------------------------------------------------------------------
+
+fn resolve_dart(lookup: &WsLookup, target: &str, module: &str) -> Option<i64> {
+    let mut r = call_ref(target);
+    r.kind = crate::types::EdgeKind::TypeRef;
+    r.module = Some(module.to_string());
+    let s = source_symbol("Endpoint");
+    let fc = FileContext {
+        file_path: "packages/app_server/lib/endpoint.dart".to_string(),
+        language: "dart".to_string(),
+        imports: Vec::new(),
+        file_namespace: None,
+    };
+    let rc = ref_ctx(&r, &s, vec![]);
+    let kind = accept_any;
+    let ctx = BinderContext {
+        file_ctx: &fc,
+        ref_ctx: &rc,
+        lookup,
+        kind: &kind,
+        profile: &crate::languages::dart::DART_PROFILE,
+    };
+    match WorkspacePackageRule.apply(&ctx) {
+        LookupResult::Resolved(res) => Some(res.target_symbol_id),
+        _ => None,
+    }
+}
+
+fn dart_workspace() -> WsLookup {
+    WsLookup::new()
+        .with_pkg("core_client", 1)
+        .with_pkg("package:core_client", 1)
+        .with_sym(
+            1,
+            77,
+            "SerializationManager",
+            "class",
+            "packages/core_client/lib/core_client.dart",
+        )
+}
+
+#[test]
+fn package_uri_binds_a_sibling_workspace_package_declaration() {
+    let lookup = dart_workspace();
+    assert_eq!(
+        resolve_dart(
+            &lookup,
+            "SerializationManager",
+            "package:core_client/core_client.dart"
+        ),
+        Some(77)
+    );
+}
+
+#[test]
+fn package_uri_of_an_undeclared_package_declines() {
+    let lookup = dart_workspace();
+    assert_eq!(
+        resolve_dart(&lookup, "SerializationManager", "package:other_pkg/x.dart"),
+        None
+    );
+}

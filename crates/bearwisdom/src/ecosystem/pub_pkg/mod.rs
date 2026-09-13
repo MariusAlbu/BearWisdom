@@ -54,6 +54,16 @@ impl Ecosystem for PubEcosystem {
         &[("pubspec.yaml", "dart")]
     }
 
+    /// Source imports spell a Pub package as a `package:` URI, never as the
+    /// bare manifest name, so the URI head is a second spelling of the same
+    /// declared package.
+    fn workspace_package_name_aliases(&self, declared_name: &str) -> Vec<String> {
+        vec![format!(
+            "{}{declared_name}",
+            module_specifier::PACKAGE_URI_PREFIX
+        )]
+    }
+
     fn workspace_package_metadata(&self, dir: &Path) -> Option<WorkspacePackageMetadata> {
         let content = std::fs::read_to_string(dir.join("pubspec.yaml")).ok()?;
         Some(WorkspacePackageMetadata {

@@ -6,6 +6,7 @@ use super::calls::extract_dart_calls;
 use super::helpers::{
     first_child_text_of_kind, get_field_text, node_text, qualify, scope_from_prefix,
 };
+use super::heritage::extract_dart_heritage;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::Node;
 
@@ -306,13 +307,28 @@ pub(super) fn extract_class_body(
                 extract_getter_setter(&child, src, symbols, refs, parent_index, qualified_prefix);
             }
             "static_final_declaration_list" | "declaration" => {
-                // A `declaration` may contain `type_identifier` (the field/variable
-                // declared type) plus `initialized_identifier_list` or
-                // `function_signature` etc.  Route through extract_dart_calls
-                // first to capture type refs, then recurse for symbols.
-                let sym_idx = parent_index.unwrap_or(0);
+                // A `declaration` carries either a field list (`final T name;`
+                // with its declared type as a sibling `type_identifier`) or a
+                // signature (`constructor_signature`, `function_signature`).
+                // A field list declares the fields and owns the type refs; a
+                // signature is handled by the recursion.
+                let mut lists = child.walk();
+                let field_list = child
+                    .children(&mut lists)
+                    .find(|inner| inner.kind() == "initialized_identifier_list");
+                let pre_len = symbols.len();
+                if let Some(list) = field_list {
+                    extract_field(&list, src, symbols, parent_index, qualified_prefix);
+                }
+                let sym_idx = if symbols.len() > pre_len {
+                    pre_len
+                } else {
+                    parent_index.unwrap_or(0)
+                };
                 extract_dart_calls(&child, src, sym_idx, refs);
-                extract_class_body(&child, src, symbols, refs, parent_index, qualified_prefix);
+                if field_list.is_none() {
+                    extract_class_body(&child, src, symbols, refs, parent_index, qualified_prefix);
+                }
             }
             _ => {
                 extract_class_body(&child, src, symbols, refs, parent_index, qualified_prefix);
@@ -795,136 +811,6 @@ fn emit_field_type_refs(
                     }
                     emit_field_type_refs_inner(&child, src, source_symbol_index, refs, found);
                 }
-            }
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Heritage
-// ---------------------------------------------------------------------------
-
-pub(super) fn extract_dart_heritage(
-    node: &Node,
-    src: &str,
-    source_idx: usize,
-    refs: &mut Vec<ExtractedRef>,
-) {
-    // `superclass`, `interfaces`, and `mixins` are named FIELDS on class_definition /
-    // mixin_declaration, NOT plain children.  node.children() skips named fields —
-    // they must be accessed via child_by_field_name().
-
-    // `: extends Foo` → Inherits
-    // Grammar: superclass node has a `type` field containing type_identifier.
-    if let Some(superclass_node) = node.child_by_field_name("superclass") {
-        if let Some(type_node) = superclass_node.child_by_field_name("type") {
-            let name = node_text(type_node, src);
-            if !name.is_empty() {
-                refs.push(ExtractedRef {
-                    is_include: false,
-                    is_import_binding: false,
-                    is_reexport: false,
-                    source_symbol_index: source_idx,
-                    target_name: name,
-                    kind: EdgeKind::Inherits,
-                    line: type_node.start_position().row as u32,
-                    col: 0,
-                    module: None,
-                    chain: None,
-                    byte_offset: type_node.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-                });
-            }
-        } else {
-            // Fallback: scan children of superclass for type_identifier.
-            let mut c = superclass_node.walk();
-            for n in superclass_node.children(&mut c) {
-                if n.kind() == "type_identifier" || n.kind() == "identifier" {
-                    refs.push(ExtractedRef {
-                        is_include: false,
-                        is_import_binding: false,
-                        is_reexport: false,
-                        source_symbol_index: source_idx,
-                        target_name: node_text(n, src),
-                        kind: EdgeKind::Inherits,
-                        line: n.start_position().row as u32,
-                        col: 0,
-                        module: None,
-                        chain: None,
-                        byte_offset: n.start_byte() as u32,
-                        namespace_segments: Vec::new(),
-                        call_args: Vec::new(),
-                    });
-                }
-            }
-        }
-    }
-
-    // `implements Foo, Bar` → Implements (one edge per interface)
-    // Grammar: interfaces node has children() of type_identifier (no named fields).
-    if let Some(interfaces_node) = node.child_by_field_name("interfaces") {
-        let mut c = interfaces_node.walk();
-        for n in interfaces_node.children(&mut c) {
-            if n.kind() == "type_identifier" || n.kind() == "identifier" {
-                refs.push(ExtractedRef {
-                    is_include: false,
-                    is_import_binding: false,
-                    is_reexport: false,
-                    source_symbol_index: source_idx,
-                    target_name: node_text(n, src),
-                    kind: EdgeKind::Implements,
-                    line: n.start_position().row as u32,
-                    col: 0,
-                    module: None,
-                    chain: None,
-                    byte_offset: n.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-                });
-            }
-        }
-    }
-
-    // `with Mixin1, Mixin2` → TypeRef (mixins are applied, not inherited)
-    // The mixins field may live directly on the class node or as a child of the
-    // superclass node (when `class C extends Base with Mixin {}`).
-    let mut emit_mixin_refs = |mixins_node: Node| {
-        let mut c = mixins_node.walk();
-        for n in mixins_node.children(&mut c) {
-            if n.kind() == "type_identifier" || n.kind() == "identifier" {
-                refs.push(ExtractedRef {
-                    is_include: false,
-                    is_import_binding: false,
-                    is_reexport: false,
-                    source_symbol_index: source_idx,
-                    target_name: node_text(n, src),
-                    kind: EdgeKind::TypeRef,
-                    line: n.start_position().row as u32,
-                    col: 0,
-                    module: None,
-                    chain: None,
-                    byte_offset: n.start_byte() as u32,
-                    namespace_segments: Vec::new(),
-                    call_args: Vec::new(),
-                });
-            }
-        }
-    };
-
-    if let Some(mixins_node) = node.child_by_field_name("mixins") {
-        emit_mixin_refs(mixins_node);
-    }
-    if let Some(sc) = node.child_by_field_name("superclass") {
-        if let Some(mixins_node) = sc.child_by_field_name("mixins") {
-            emit_mixin_refs(mixins_node);
-        } else {
-            // Fallback: scan sc children for a `mixins` node.
-            // Collect first to avoid TreeCursor lifetime issues.
-            let mut c = sc.walk();
-            let sc_children: Vec<Node> = sc.children(&mut c).collect();
-            if let Some(mixins_node) = sc_children.iter().find(|n| n.kind() == "mixins") {
-                emit_mixin_refs(*mixins_node);
             }
         }
     }

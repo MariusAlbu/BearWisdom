@@ -3,7 +3,7 @@
 // =============================================================================
 
 const EXTERNAL_PATH_PREFIX: &str = "ext:dart:";
-const PACKAGE_URI_PREFIX: &str = "package:";
+pub(super) const PACKAGE_URI_PREFIX: &str = "package:";
 
 /// The package root a Pub external library exposes to a bare module-entry
 /// lookup. Pub owns both the `ext:dart:` envelope and this package spelling.

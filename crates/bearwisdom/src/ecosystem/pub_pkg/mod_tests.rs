@@ -23,6 +23,26 @@ fn legacy_locator_tag_is_dart() {
     assert_eq!(ExternalSourceLocator::ecosystem(&PubEcosystem), "dart");
 }
 
+#[test]
+fn declared_name_also_answers_to_its_package_uri_spelling() {
+    assert_eq!(
+        Ecosystem::workspace_package_name_aliases(&PubEcosystem, "core_client"),
+        vec!["package:core_client".to_string()]
+    );
+}
+
+/// The alias only reaches the workspace index through the registry, which
+/// selects ecosystems by the kind label on their workspace package file.
+#[test]
+fn the_registry_offers_the_package_uri_alias_for_the_dart_kind_label() {
+    let aliases = crate::ecosystem::default_registry()
+        .workspace_package_name_aliases("dart", "core_client");
+    assert!(
+        aliases.contains(&"package:core_client".to_string()),
+        "dart workspace packages must gain their package-URI spelling: {aliases:?}"
+    );
+}
+
 fn make_dart_fixture(root: &Path, deps: &[&str]) {
     std::fs::create_dir_all(root).unwrap();
     let mut pubspec = "name: test_app\ndependencies:\n".to_string();

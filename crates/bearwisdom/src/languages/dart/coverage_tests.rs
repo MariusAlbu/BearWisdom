@@ -560,3 +560,53 @@ fn ref_cascade_section_call() {
         "expected symbols from cascade test; got none"
     );
 }
+
+/// `final T name;` inside a class parses as a `declaration` whose declared
+/// type is a sibling of the identifier list: the field is a Property of the
+/// class and its type ref is attributed to the field, not to the class.
+#[test]
+fn cov_typed_final_field_in_class_produces_property() {
+    let src = "class Endpoint {\n  final SerializationManager manager;\n}\n";
+    let r = super::extract::extract(src);
+    let (idx, field) = r
+        .symbols
+        .iter()
+        .enumerate()
+        .find(|(_, s)| s.name == "manager")
+        .expect("the field is a symbol");
+    assert_eq!(field.kind, SymbolKind::Property);
+    assert_eq!(field.parent_index, Some(0), "parented to the class");
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::TypeRef
+            && rf.target_name == "SerializationManager"
+            && rf.source_symbol_index == idx),
+        "the declared type is the field's own type ref: {:?}",
+        r.refs
+            .iter()
+            .map(|rf| (rf.target_name.clone(), rf.source_symbol_index))
+            .collect::<Vec<_>>()
+    );
+}
+
+/// An arrow-bodied method keeps its call as siblings directly under
+/// `function_body`; the member call is extracted with its receiver chain.
+#[test]
+fn cov_arrow_method_body_produces_member_call() {
+    let src = "class Endpoint {\n  final Manager manager;\n  String run(Object value) => manager.encode(value);\n}\n";
+    let r = super::extract::extract(src);
+    let run = r
+        .symbols
+        .iter()
+        .position(|s| s.name == "run")
+        .expect("the method");
+    let call = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "encode")
+        .expect("the member call is extracted");
+    assert_eq!(call.source_symbol_index, run);
+    assert!(
+        call.chain.is_some(),
+        "the call carries its `manager` receiver"
+    );
+}

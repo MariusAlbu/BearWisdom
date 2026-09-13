@@ -3,9 +3,9 @@ use super::*;
 #[test]
 fn workspace_package_lookup_accepts_only_neutral_slash_paths() {
     let mut ctx = ProjectContext::default();
-    ctx.workspace_pkg_by_declared_name
+    ctx.workspace.by_declared_name
         .insert("tantivy".to_string(), 1);
-    ctx.workspace_pkg_by_declared_name
+    ctx.workspace.by_declared_name
         .insert("@scope/pkg".to_string(), 2);
 
     assert_eq!(ctx.workspace_package_id("tantivy/schema"), Some(1));
@@ -254,7 +254,7 @@ mod m2_tests {
         // Cargo's convention: a hyphenated package name (`loco-rs`) is
         // referenced in source under its identifier-safe form (`use
         // loco_rs::...` — Rust identifiers can't contain `-`).
-        // `workspace_pkg_by_declared_name` must expose both spellings so a
+        // The declared-name index must expose both spellings so a
         // bare specifier lookup finds the package under either.
         let tmp = TempDir::new().unwrap();
         let root = tmp.path();
@@ -270,8 +270,8 @@ mod m2_tests {
         }];
 
         let ctx = build_project_context_with_packages(root, &packages);
-        assert_eq!(ctx.workspace_pkg_by_declared_name.get("loco-rs"), Some(&1));
-        assert_eq!(ctx.workspace_pkg_by_declared_name.get("loco_rs"), Some(&1));
+        assert_eq!(ctx.workspace.by_declared_name.get("loco-rs"), Some(&1));
+        assert_eq!(ctx.workspace.by_declared_name.get("loco_rs"), Some(&1));
     }
 
     #[test]
@@ -303,8 +303,8 @@ mod m2_tests {
         ];
 
         let ctx = build_project_context_with_packages(root, &packages);
-        assert_eq!(ctx.workspace_pkg_by_declared_name.get("loco-rs"), Some(&1));
-        assert_eq!(ctx.workspace_pkg_by_declared_name.get("loco_rs"), Some(&2));
+        assert_eq!(ctx.workspace.by_declared_name.get("loco-rs"), Some(&1));
+        assert_eq!(ctx.workspace.by_declared_name.get("loco_rs"), Some(&2));
     }
 
     #[test]
@@ -363,11 +363,11 @@ fn non_cargo_hyphenated_name_keeps_only_its_manifest_spelling() {
 
     let ctx = build_project_context_with_packages(root, &packages);
     assert_eq!(
-        ctx.workspace_pkg_by_declared_name.get("web-client"),
+        ctx.workspace.by_declared_name.get("web-client"),
         Some(&1)
     );
     assert!(
-        !ctx.workspace_pkg_by_declared_name
+        !ctx.workspace.by_declared_name
             .contains_key("web_client"),
         "only Cargo contributes underscore aliases"
     );

@@ -18,6 +18,7 @@ use tracing::{debug, info};
 use crate::ecosystem::manifest::{self, ManifestData, ManifestKind, PackageManifest};
 use crate::ecosystem::{self, EcosystemActivation, EcosystemId, EcosystemRegistry, Platform};
 use crate::indexer::plugin_state::PluginStateBag;
+use crate::indexer::WorkspaceIndexes;
 use crate::types::PackageInfo;
 
 // ---------------------------------------------------------------------------
@@ -92,30 +93,16 @@ pub struct ProjectContext {
     /// union when the package isn't in the map.
     pub by_package: HashMap<i64, HashMap<ManifestKind, ManifestData>>,
 
-    /// Workspace packages keyed by `declared_name` (the manifest-reported
-    /// name, e.g. `@myorg/utils` from `package.json`).
+    /// The workspace's package identity indexes: declared name → package id
+    /// (a hit means a module specifier names a sibling workspace package),
+    /// the canonical spelling back from an id, each package's relative path,
+    /// its declared entry candidates, and its module source root.
     ///
-    /// Populated only by `build_project_context_with_packages`. A hit means
-    /// the module specifier refers to a sibling workspace package — the
-    /// TypeScript (and other) resolvers use this to produce confidence-1.0
-    /// cross-package edges instead of classifying as external.
-    ///
-    /// Packages with no `declared_name` (e.g. .csproj without AssemblyName
-    /// metadata, or manifests that couldn't be parsed) are absent from
-    /// this map.
-    pub workspace_pkg_by_declared_name: HashMap<String, i64>,
-
-    /// Map from `package_id` → package's relative path (e.g. `apps/landing`).
-    /// Populated alongside `workspace_pkg_by_declared_name`. Used to resolve
-    /// package-relative paths like tsconfig `paths` targets, which are
-    /// specified relative to each package's own directory, not the
-    /// workspace root.
-    pub workspace_pkg_paths: HashMap<i64, String>,
-
-    /// Map from `package_id` → the project-relative entry candidates its
-    /// manifest declares, in declared priority (see
-    /// `ManifestData::package_entries`).
-    pub workspace_pkg_entries: HashMap<i64, Vec<String>>,
+    /// Populated only by `build_project_context_with_packages`; empty for
+    /// single-project contexts. Packages with no `declared_name` (e.g. .csproj
+    /// without AssemblyName metadata, or manifests that couldn't be parsed)
+    /// are absent from the name indexes.
+    pub workspace: WorkspaceIndexes,
 
     /// Ecosystems whose `activation()` returned true for this project.
     ///
@@ -188,9 +175,7 @@ pub fn build_project_context(project_root: &Path) -> ProjectContext {
         programs: None,
         manifests,
         by_package: HashMap::new(),
-        workspace_pkg_by_declared_name: HashMap::new(),
-        workspace_pkg_paths: HashMap::new(),
-        workspace_pkg_entries: HashMap::new(),
+        workspace: WorkspaceIndexes::default(),
         active_ecosystems: Vec::new(),
         active_ecosystems_by_package: HashMap::new(),
         language_presence: HashSet::new(),
@@ -249,15 +234,13 @@ pub fn build_project_context_with_packages(
     // the first wins (deterministic given the input ordering) and a warning
     // is logged so the user sees why imports may be routing oddly.
     let workspace = super::project_workspace::indexes(packages, &by_package);
-    let (workspace_pkg_by_declared_name, workspace_pkg_paths, workspace_pkg_entries) =
-        (workspace.by_declared_name, workspace.paths, workspace.entries);
 
     log_manifests(&manifests);
     info!(
         "ProjectContext: per-package contexts for {}/{} workspace packages, {} declared names indexed",
         by_package.len(),
         packages.len(),
-        workspace_pkg_by_declared_name.len(),
+        workspace.by_declared_name.len(),
     );
 
     ProjectContext {
@@ -265,9 +248,7 @@ pub fn build_project_context_with_packages(
         programs: None,
         manifests,
         by_package,
-        workspace_pkg_by_declared_name,
-        workspace_pkg_paths,
-        workspace_pkg_entries,
+        workspace,
         active_ecosystems: Vec::new(),
         active_ecosystems_by_package: HashMap::new(),
         language_presence: HashSet::new(),
@@ -872,15 +853,15 @@ impl ProjectContext {
     /// `@myorg/utils/sub/mod` → `@myorg/utils` → `@myorg`.
     ///
     /// Returns `None` if no workspace package declared that name, including
-    /// single-project contexts where `workspace_pkg_by_declared_name` is empty.
+    /// single-project contexts where the workspace name index is empty.
     pub fn workspace_package_id(&self, specifier: &str) -> Option<i64> {
-        if let Some(&id) = self.workspace_pkg_by_declared_name.get(specifier) {
+        if let Some(&id) = self.workspace.by_declared_name.get(specifier) {
             return Some(id);
         }
         let mut path = specifier;
         while let Some(slash) = path.rfind('/') {
             path = &path[..slash];
-            if let Some(&id) = self.workspace_pkg_by_declared_name.get(path) {
+            if let Some(&id) = self.workspace.by_declared_name.get(path) {
                 return Some(id);
             }
         }
@@ -905,11 +886,7 @@ impl ProjectContext {
         let under = crate_name.replace('-', "_");
         let matches = |s: &str| s == crate_name || s == hyphen || s == under;
 
-        if self
-            .workspace_pkg_by_declared_name
-            .keys()
-            .any(|k| matches(k))
-        {
+        if self.workspace.by_declared_name.keys().any(|k| matches(k)) {
             return true;
         }
         self.manifests.values().any(|m| {

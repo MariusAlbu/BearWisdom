@@ -72,6 +72,28 @@ pub(crate) fn package_entry_key(path: &str) -> Option<String> {
         .find_map(|adapter| adapter(path))
 }
 
+/// Match an import spelling to a declared workspace package and split off the
+/// part of the spelling below the package name. The remainder is empty when
+/// the spelling is the package name itself; the longest declared name wins, so
+/// a package whose name prefixes another's does not claim its specifiers.
+pub(crate) fn workspace_package_sub_path<'a>(
+    specifier: &'a str,
+    declared_names: &rustc_hash::FxHashMap<String, i64>,
+) -> Option<(i64, &'a str)> {
+    if let Some(&id) = declared_names.get(specifier) {
+        return Some((id, ""));
+    }
+    declared_names
+        .iter()
+        .filter(|(name, _)| {
+            specifier
+                .strip_prefix(name.as_str())
+                .is_some_and(|suffix| suffix.starts_with('/'))
+        })
+        .max_by_key(|(name, _)| name.len())
+        .map(|(name, &id)| (id, &specifier[name.len() + 1..]))
+}
+
 /// Match an import spelling to a declared workspace package. Ecosystem
 /// adapters own the spelling normalization; the generic resolver only consumes
 /// the matched package id.
@@ -79,17 +101,7 @@ pub(crate) fn workspace_package_id(
     specifier: &str,
     declared_names: &rustc_hash::FxHashMap<String, i64>,
 ) -> Option<i64> {
-    declared_names.get(specifier).copied().or_else(|| {
-        declared_names
-            .iter()
-            .filter(|(name, _)| {
-                specifier
-                    .strip_prefix(name.as_str())
-                    .is_some_and(|suffix| suffix.starts_with('/'))
-            })
-            .max_by_key(|(name, _)| name.len())
-            .map(|(_, &id)| id)
-    })
+    workspace_package_sub_path(specifier, declared_names).map(|(id, _)| id)
 }
 
 /// Construct module resolvers from opaque ecosystem inputs plus neutral
@@ -108,23 +120,5 @@ pub(crate) fn language_resolvers(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::package_entry_key;
-
-    #[test]
-    fn delegates_scoped_and_unscoped_external_package_keys() {
-        assert_eq!(
-            package_entry_key("ext:ts:@scope/pkg/dist/index.d.ts").as_deref(),
-            Some("@scope/pkg")
-        );
-        assert_eq!(
-            package_entry_key("ext:ruby:devise/lib/devise.rb").as_deref(),
-            Some("devise")
-        );
-        assert_eq!(
-            package_entry_key("ext:unknown:pkg/file"),
-            None,
-            "an unowned virtual-path scheme must not receive package semantics"
-        );
-    }
-}
+#[path = "module_specifier_tests.rs"]
+mod tests;

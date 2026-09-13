@@ -160,6 +160,11 @@ pub struct ManifestData {
     /// then `types`/`typings`/`main`/`module`). A consumer takes the first
     /// candidate that names a file it holds.
     pub package_entries: Vec<String>,
+    /// Package-relative directory the ecosystem's module sub-paths are rooted
+    /// at, so a deep specifier `<package>/<sub>` names the file
+    /// `<package dir>/<source root>/<sub>`. `None` when a package publishes
+    /// from its own root (npm export maps).
+    pub package_source_root: Option<String>,
     /// Cargo dependency renames: (alias, target_package_name) for each
     /// alias = { package = "X" } entry. In a crate declaring the rename,
     /// use alias::... refers to the workspace member named X. Per-consumer.

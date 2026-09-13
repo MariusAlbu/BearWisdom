@@ -1345,7 +1345,10 @@ fn symbols_absent_from_id_map_are_skipped() {
 fn workspace_package_id_resolves_declared_name_and_deep_import() {
     let arena = Arc::new(TypeArena::new());
     let ctx = ProjectContext {
-        workspace_pkg_by_declared_name: [("@org/utils".to_string(), 42)].into_iter().collect(),
+        workspace: crate::indexer::WorkspaceIndexes {
+            by_declared_name: [("@org/utils".to_string(), 42)].into_iter().collect(),
+            ..Default::default()
+        },
         ..Default::default()
     };
     let tree = Compilation::build_with_context(
@@ -1405,9 +1408,9 @@ fn dart_bare_relative_specifier_resolves_via_language_resolver() {
 }
 
 /// A same-project `package:<self>/...` URI resolves through the OWNING file's
-/// own pubspec-declared package name (`package_id_for_file` → the inverted
-/// `workspace_pkg_by_declared_name`), not a single project-wide guess — proving
-/// the per-file self-package plumbing, not just a hardcoded value.
+/// own pubspec-declared package name (`package_id_for_file` → the workspace's
+/// canonical id → name index), not a single project-wide guess — proving the
+/// per-file self-package plumbing, not just a hardcoded value.
 #[test]
 fn dart_package_self_specifier_resolves_via_language_resolver() {
     let arena = Arc::new(TypeArena::new());
@@ -1432,7 +1435,11 @@ fn dart_package_self_specifier_resolves_via_language_resolver() {
     id_map.insert(("lib/main.dart".to_string(), "Main".to_string()), 2);
 
     let ctx = ProjectContext {
-        workspace_pkg_by_declared_name: [("app".to_string(), 1)].into_iter().collect(),
+        workspace: crate::indexer::WorkspaceIndexes {
+            by_declared_name: [("app".to_string(), 1)].into_iter().collect(),
+            declared_name: [(1, "app".to_string())].into_iter().collect(),
+            ..Default::default()
+        },
         ..Default::default()
     };
     let tree = Compilation::build_with_context(

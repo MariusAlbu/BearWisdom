@@ -196,8 +196,8 @@ pub struct Compilation {
     /// use site that resolves `Logger` to a specific declaration expands the right
     /// target. See `alias_target_by_id`.
     alias_target_by_id: FxHashMap<i64, AliasTargetIds>,
-    /// Workspace-package declared name → package id. Snapshot of
-    /// `ProjectContext::workspace_pkg_by_declared_name`.
+    /// Workspace-package declared name → package id. Snapshot of the
+    /// project's workspace name index.
     workspace_pkg_by_declared_name: FxHashMap<String, i64>,
     /// Resolver facts supplied by ecosystem adapters. A package present here is
     /// isolated: its policy applies even when it contains no aliases.
@@ -279,11 +279,9 @@ impl Compilation {
 
     /// Copy the workspace identity map and ecosystem-normalized resolver facts.
     fn snapshot_project_context(&mut self, ctx: &ProjectContext) {
-        self.workspace_pkg_by_declared_name = ctx
-            .workspace_pkg_by_declared_name
-            .iter()
-            .map(|(k, v)| (k.clone(), *v))
-            .collect();
+        let declared_names = &ctx.workspace.by_declared_name;
+        self.workspace_pkg_by_declared_name =
+            declared_names.iter().map(|(k, v)| (k.clone(), *v)).collect();
         self.module_specifier.snapshot_manifests(ctx);
         self.modules.snapshot_configuration(ctx);
         // One policy per isolated package (so a package with no aliases does not

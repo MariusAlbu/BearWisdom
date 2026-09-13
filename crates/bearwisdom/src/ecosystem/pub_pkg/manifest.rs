@@ -6,6 +6,10 @@ use std::path::{Path, PathBuf};
 
 use crate::ecosystem::manifest::{ManifestData, ManifestKind, ManifestReader, ReaderEntry};
 
+/// The directory a Pub package publishes its libraries from: `package:<pkg>/x.dart`
+/// names `<package dir>/lib/x.dart`.
+const PUB_SOURCE_ROOT: &str = "lib";
+
 pub struct PubspecManifest;
 
 impl ManifestReader for PubspecManifest {
@@ -35,6 +39,7 @@ impl ManifestReader for PubspecManifest {
                 continue;
             };
             let mut data = ManifestData::default();
+            data.package_source_root = Some(PUB_SOURCE_ROOT.to_string());
             for name in parse_pubspec_deps(&content) {
                 data.dependencies.insert(name);
             }

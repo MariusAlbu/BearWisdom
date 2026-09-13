@@ -24,6 +24,9 @@ pub(crate) fn absorb(entry: &mut ManifestData, name: &str, data: &ManifestData) 
     if data.sdk_type.is_some() {
         entry.sdk_type = data.sdk_type.clone();
     }
+    if data.package_source_root.is_some() {
+        entry.package_source_root = data.package_source_root.clone();
+    }
     // The package's own declared name — so a `package:<self>/...` URI is
     // recognized as project-local rather than external.
     if !name.is_empty() && !entry.package_names.iter().any(|n| n == name) {

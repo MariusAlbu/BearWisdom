@@ -15,6 +15,9 @@ impl Compilation {
         if let Some(entry) = self.workspace_package_entry(source_file, spec) {
             return Some(entry);
         }
+        if let Some(entry) = self.workspace_source_root_entry(source_file, spec) {
+            return Some(entry);
+        }
         if let Some(key) = crate::ecosystem::module_specifier::relative_entry_key(source_file, spec)
         {
             return self.module_entry.get(&key).map(String::as_str);
@@ -36,6 +39,22 @@ impl Compilation {
         self.workspace_entry_candidates(spec)
             .iter()
             .find_map(|base| self.modules.resolve_base(source_file, base))
+    }
+
+    /// A workspace package that publishes from a declared source root maps a
+    /// deep specifier structurally: `<pkg>/<sub>` names the indexed file
+    /// `<package root>/<source root>/<sub>`. A package that declares no source
+    /// root publishes from its own root and is left to the other links.
+    fn workspace_source_root_entry(&self, source_file: &str, spec: &str) -> Option<&str> {
+        let (pkg_id, sub) = crate::ecosystem::module_specifier::workspace_package_sub_path(
+            spec,
+            &self.workspace_pkg_by_declared_name,
+        )?;
+        if sub.is_empty() {
+            return None;
+        }
+        let root = self.module_specifier.pkg_source_root.get(&pkg_id)?;
+        self.modules.resolve_base(source_file, &format!("{root}/{sub}"))
     }
 
     /// Only the exact package specifier claims the package's `.` entries; a
@@ -62,7 +81,7 @@ impl Compilation {
             source_file,
             spec,
             self.package_id_for_file(source_file),
-            &self.workspace_pkg_by_declared_name,
+            &self.module_specifier.pkg_declared_name,
             &self.module_specifier.resolver_inputs,
             &self.module_specifier.workspace_packages,
             &self.module_specifier.file_paths,
@@ -92,3 +111,7 @@ impl Compilation {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "compilation_module_resolution_tests.rs"]
+mod tests;

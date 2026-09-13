@@ -10,12 +10,16 @@ use crate::type_checker::profile::language_profile::{
 use crate::types::{EdgeKind, SymbolKind, Visibility};
 
 const DART_KIND_TABLE: KindTable = &[
+    // `Ctor(args)` spells construction as a call; a class with no declared
+    // constructor is constructed through its implicit one, so the class row
+    // itself is a callable target.
     (
         EdgeKind::Calls,
         &[
             SymbolKind::Function,
             SymbolKind::Method,
             SymbolKind::Constructor,
+            SymbolKind::Class,
         ],
     ),
     (EdgeKind::Inherits, &[SymbolKind::Class]),
@@ -119,10 +123,15 @@ pub const DART_PROFILE: LanguageProfile = LanguageProfile {
         alias_module_qname: false,
         module_prefix_rewrites:
             crate::type_checker::profile::language_profile::ModulePrefixRewrites::Off,
-        workspace_packages: false,
+        // A `package:` URI names a Pub package and a library path under it, so
+        // both the explicit and the wildcard form scope to a sibling workspace
+        // package's symbol set. The Pub ecosystem contributes the `package:`
+        // spelling of each declared name, which is what makes the URI's head
+        // match a declared package.
+        workspace_packages: true,
         reexport_barrel_stems: &["index"],
         self_package_root: None,
-        wildcard_workspace_scope: false,
+        wildcard_workspace_scope: true,
     },
     module_skip: None,
     ambient_namespace_prefixes: &[],

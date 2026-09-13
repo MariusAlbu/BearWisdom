@@ -44,7 +44,7 @@ fn internal_file_paths_excludes_ext_prefixed() {
 #[test]
 fn resolve_via_module_resolver_bare_relative_dart() {
     let file_paths = vec!["lib/foo.dart".to_string(), "lib/main.dart".to_string()];
-    let names: FxHashMap<String, i64> = FxHashMap::default();
+    let names: FxHashMap<i64, String> = FxHashMap::default();
     let inputs = resolver_inputs();
     assert_eq!(
         resolve_via_module_resolver(
@@ -67,7 +67,7 @@ fn resolve_via_module_resolver_package_self_uses_owning_package_name() {
         "lib/src/models/user.dart".to_string(),
         "lib/main.dart".to_string(),
     ];
-    let names: FxHashMap<String, i64> = [("app".to_string(), 1)].into_iter().collect();
+    let names: FxHashMap<i64, String> = [(1, "app".to_string())].into_iter().collect();
     let inputs = resolver_inputs();
     assert_eq!(
         resolve_via_module_resolver(
@@ -87,7 +87,7 @@ fn resolve_via_module_resolver_package_self_uses_owning_package_name() {
 #[test]
 fn resolve_via_module_resolver_declines_when_package_id_unmatched() {
     let file_paths = vec!["lib/src/models/user.dart".to_string()];
-    let names: FxHashMap<String, i64> = [("app".to_string(), 1)].into_iter().collect();
+    let names: FxHashMap<i64, String> = [(1, "app".to_string())].into_iter().collect();
     let inputs = resolver_inputs();
     assert_eq!(
         resolve_via_module_resolver(
@@ -101,5 +101,31 @@ fn resolve_via_module_resolver_declines_when_package_id_unmatched() {
             &file_paths,
         ),
         None
+    );
+}
+
+/// The canonical id → name map is alias-free by construction, so an ecosystem
+/// that also spells a package name as a URI (`package:app`) never hands the
+/// language resolver a spelling it cannot strip from its own specifiers.
+#[test]
+fn resolve_via_module_resolver_uses_the_canonical_spelling_not_an_alias() {
+    let file_paths = vec![
+        "packages/app/lib/x.dart".to_string(),
+        "packages/app/lib/main.dart".to_string(),
+    ];
+    let names: FxHashMap<i64, String> = [(1, "app".to_string())].into_iter().collect();
+    let inputs = resolver_inputs();
+    assert_eq!(
+        resolve_via_module_resolver(
+            "dart",
+            "packages/app/lib/main.dart",
+            "package:app/x.dart",
+            Some(1),
+            &names,
+            &inputs,
+            &[],
+            &file_paths,
+        ),
+        Some("packages/app/lib/x.dart".to_string())
     );
 }

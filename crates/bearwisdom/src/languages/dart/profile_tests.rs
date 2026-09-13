@@ -58,3 +58,21 @@ fn dart_wildcard_match_is_package_root() {
         WildcardMatch::PackageRoot
     );
 }
+
+#[test]
+fn dart_scopes_both_import_forms_to_workspace_packages() {
+    // A `package:` URI names a sibling workspace package, whether the import
+    // binds names explicitly or as a whole-library glob; both rungs are
+    // reachable only while these gates are on.
+    assert!(DART_PROFILE.imports.workspace_packages);
+    assert!(DART_PROFILE.imports.wildcard_workspace_scope);
+}
+
+#[test]
+fn dart_package_uri_is_a_bare_module_specifier() {
+    // The workspace rungs require a BARE specifier; a `package:` URI must not
+    // be read as a relative path (its second byte is not the drive-letter
+    // colon that marks one).
+    let policy = DART_PROFILE.source_module_path_policy("package:core_client/core_client.dart");
+    assert!(policy.is_bare("package:core_client/core_client.dart"));
+}
