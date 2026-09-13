@@ -213,6 +213,9 @@ impl ModuleGraph {
             }
             state.remaining -= 1;
             let data = &self.modules[module.0];
+            if data.incomplete {
+                return BindingResult::Incomplete;
+            }
             if let Some(explicit) = data.exports.get(&(name, domain)) {
                 // An explicit missing entry also blocks wildcard fallthrough.
                 for &target in explicit {
@@ -236,12 +239,6 @@ impl ModuleGraph {
                         };
                     result = result.merge(candidate.with_competitor(explicit.len() > 1));
                 }
-            } else if data.incomplete {
-                // A surface the binder could not read whole still answers for
-                // every name it did read above. It cannot answer for any other
-                // name: its silence is not absence, so no fallback below may
-                // conclude one from it.
-                return BindingResult::Incomplete;
             } else if data.default_name == Some(name) && data.assignments.contains_key(&domain) {
                 // A default import of an export-assigned module names the
                 // assigned value itself, not a member of it.
