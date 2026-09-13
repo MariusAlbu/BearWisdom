@@ -59,6 +59,22 @@ pub(super) fn select_typed(
     })
 }
 
+/// [`select_typed_for`] where the profile may be absent: no profile, no
+/// overload sets.
+pub(super) fn select_typed_under(
+    lookup: &dyn SymbolLookup,
+    arena: &crate::type_checker::core::types::TypeArena,
+    receiver: super::chain::Receiver,
+    name: MemberNameId,
+    accept: &dyn Fn(&str) -> bool,
+    profile: Option<&crate::type_checker::profile::language_profile::LanguageProfile>,
+) -> Selection {
+    match profile {
+        Some(profile) => select_typed_for(lookup, arena, receiver, name, accept, profile),
+        None => select_typed(lookup, arena, receiver, name, accept),
+    }
+}
+
 /// [`select_typed`] under the language's own overloading rule: a profile that
 /// declares overload sets takes the set's representative, any other reports it.
 pub(super) fn select_typed_for(

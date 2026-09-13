@@ -876,13 +876,9 @@ fn lookup_member_on_bounded_with_profile(
             .member_index()
             .and_then(|index| index.name(member))
             .map(|name| {
-                if profile.is_some_and(|p| p.member_overload_sets) {
-                    super::member_selection::select_typed_representing(
-                        lookup, arena, recv, name, accept,
-                    )
-                } else {
-                    super::member_selection::select_typed(lookup, arena, recv, name, accept)
-                }
+                super::member_selection::select_typed_under(
+                    lookup, arena, recv, name, accept, profile,
+                )
             })
             .unwrap_or(super::member_selection::Selection::Missing);
         let found = match selected {
