@@ -3,10 +3,12 @@ mod callback_lexical;
 
 pub(crate) mod callback_contract;
 mod calls;
+mod chain;
 mod external_virtual_path;
 pub mod extract;
 pub(crate) mod flow;
 mod helpers;
+mod instance_attrs;
 pub(crate) mod keywords;
 pub(crate) mod package_specifier;
 mod params;
