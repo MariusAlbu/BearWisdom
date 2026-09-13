@@ -3220,7 +3220,12 @@ fn same_qname_across_files_never_merges() {
 /// fully qualified spelling (`\App\Column`) must canonicalize the same way.
 #[test]
 fn php_return_types_resolve_in_the_declaring_namespace() {
-    fn parse(dir: &std::path::Path, name: &str, source: &str, arena: &Arc<TypeArena>) -> crate::types::ParsedFile {
+    fn parse(
+        dir: &std::path::Path,
+        name: &str,
+        source: &str,
+        arena: &Arc<TypeArena>,
+    ) -> crate::types::ParsedFile {
         let path = dir.join(name);
         std::fs::write(&path, source).unwrap();
         crate::indexer::parse_file::parse_file_with_arena(
@@ -3262,11 +3267,18 @@ class Column {
         ),
     ];
     let db = crate::Database::open_in_memory().unwrap();
-    let (_, ids) =
-        crate::indexer::write::write_parsed_files_with_origin(&db, &files, "internal", Some(&arena))
-            .unwrap();
+    let (_, ids) = crate::indexer::write::write_parsed_files_with_origin(
+        &db,
+        &files,
+        "internal",
+        Some(&arena),
+    )
+    .unwrap();
     let tree = Compilation::build(&files, &ids, Arc::clone(&arena));
-    let column = tree.by_qualified_name("App.Column").expect("App.Column indexed").id;
+    let column = tree
+        .by_qualified_name("App.Column")
+        .expect("App.Column indexed")
+        .id;
     for method in ["App.Blueprint.string", "App.Blueprint.qualified"] {
         let rt = tree
             .return_type_id(method)
@@ -3287,8 +3299,14 @@ class Column {
         );
         let receiver = arena.class("App.Blueprint");
         let lookup: &dyn SymbolLookup = &tree;
-        assert!(lookup.accepts_type_context(&arena, receiver), "{method}: receiver accepted");
-        assert!(lookup.accepts_type_context(&arena, rt), "{method}: yield accepted");
+        assert!(
+            lookup.accepts_type_context(&arena, receiver),
+            "{method}: receiver accepted"
+        );
+        assert!(
+            lookup.accepts_type_context(&arena, rt),
+            "{method}: yield accepted"
+        );
         assert!(
             lookup.member_pattern(member).is_none(),
             "{method}: a plain PHP method carries no receiver pattern"

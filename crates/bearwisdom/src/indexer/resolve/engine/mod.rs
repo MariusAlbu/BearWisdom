@@ -39,6 +39,7 @@ pub mod cause;
 pub mod chain;
 pub mod chain_root;
 pub mod compilation;
+mod declared_type_slots;
 mod compilation_persist;
 pub mod composite_members;
 mod construction_yield;

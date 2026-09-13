@@ -47,8 +47,9 @@ fn module_graph() -> ModuleGraph {
 fn workspace(source_root: Option<&str>) -> Compilation {
     let mut compilation = Compilation::empty(Arc::new(TypeArena::new()));
     compilation.modules = module_graph();
-    compilation.workspace_pkg_by_declared_name =
-        [("package:core_client".to_string(), 1)].into_iter().collect();
+    compilation.workspace_pkg_by_declared_name = [("package:core_client".to_string(), 1)]
+        .into_iter()
+        .collect();
     compilation.module_specifier.pkg_source_root = source_root
         .map(|root| (1_i64, root.to_string()))
         .into_iter()

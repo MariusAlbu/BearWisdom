@@ -33,18 +33,18 @@ use super::contract::flow_cache::FlowCacheLookup;
 use super::contract::is_type_like_kind as is_type_like;
 #[path = "compilation_extensions.rs"]
 mod extensions;
+#[path = "compilation_includes.rs"]
+mod includes;
 #[path = "compilation_type_bindings.rs"]
 mod lexical_types;
 #[path = "compilation_visibility.rs"]
 mod lexical_visibility;
+#[path = "compilation_module_resolution.rs"]
+mod module_resolution;
 #[path = "compilation_merges.rs"]
 mod scoped_merges;
 #[path = "compilation_wrappers.rs"]
 mod wrappers;
-#[path = "compilation_includes.rs"]
-mod includes;
-#[path = "compilation_module_resolution.rs"]
-mod module_resolution;
 
 // ---------------------------------------------------------------------------
 // PendingModuleValue — a deferred module-tagged value TypeRef
@@ -81,7 +81,7 @@ pub struct Compilation {
     /// copy. `all_by_qualified_name` reads `by_qname_all` for
     /// declaration-merged overloads.
     pub(super) by_qname: BTreeMap<String, Symbol>,
-    by_qname_all: FxHashMap<String, Vec<Symbol>>,
+    pub(super) by_qname_all: FxHashMap<String, Vec<Symbol>>,
     by_file: FxHashMap<String, Vec<Symbol>>,
     members_by_parent: FxHashMap<String, Vec<Symbol>>,
     /// Id spine: symbol id → its record. The id-keyed counterpart to `by_qname`
@@ -280,8 +280,10 @@ impl Compilation {
     /// Copy the workspace identity map and ecosystem-normalized resolver facts.
     fn snapshot_project_context(&mut self, ctx: &ProjectContext) {
         let declared_names = &ctx.workspace.by_declared_name;
-        self.workspace_pkg_by_declared_name =
-            declared_names.iter().map(|(k, v)| (k.clone(), *v)).collect();
+        self.workspace_pkg_by_declared_name = declared_names
+            .iter()
+            .map(|(k, v)| (k.clone(), *v))
+            .collect();
         self.module_specifier.snapshot_manifests(ctx);
         self.modules.snapshot_configuration(ctx);
         // One policy per isolated package (so a package with no aliases does not
@@ -313,7 +315,7 @@ impl Compilation {
     }
 
     /// An empty store sharing `arena`. Symbols are added via `ingest`.
-    fn empty(arena: Arc<TypeArena>) -> Self {
+    pub(super) fn empty(arena: Arc<TypeArena>) -> Self {
         Self {
             by_name: FxHashMap::default(),
             by_qname: BTreeMap::new(),
@@ -703,32 +705,9 @@ impl Compilation {
             }
         }
 
-        // Extractor-set declared types. A value whose qname is ALSO a type
-        // declaration — the merged `declare var Date: DateConstructor` +
-        // `interface Date` global pair — must not write its declared type into
-        // either field slot: the qname slot types INSTANCES of the type, and
-        // the id map cannot tell the two same-qname symbols apart. Same rule
-        // as the ref-derived guard in Phase B; applied here after every file's
-        // symbols are indexed so the check sees the whole batch.
-        for (qname, id, type_id) in pending_field_types {
-            let qname_owned_by_type = self
-                .by_qname_all
-                .get(&qname)
-                .is_some_and(|cands| cands.iter().any(|c| is_type_like(&c.kind)));
-            if qname_owned_by_type {
-                continue;
-            }
-            let ti = self
-                .type_info
-                .entry(qname)
-                .or_insert_with(TypeInfo::default);
-            ti.field_type_id = Some(type_id);
-            let tid = self
-                .type_info_by_id
-                .entry(id)
-                .or_insert_with(TypeInfo::default);
-            tid.field_type_id = Some(type_id);
-        }
+        // Extractor-set declared types land after every file's symbols are
+        // indexed so the type-ownership check sees the whole batch.
+        super::declared_type_slots::write(self, pending_field_types);
 
         // Module-entry map — package entries and declared ambient-module names
         // key module specifiers to the file re-export following starts from.
