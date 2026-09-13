@@ -239,6 +239,11 @@ impl ModuleGraph {
                         };
                     result = result.merge(candidate.with_competitor(explicit.len() > 1));
                 }
+            } else if data.default_name == Some(name) && data.assignments.contains_key(&domain) {
+                // A default import of an export-assigned module names the
+                // assigned value itself, not a member of it.
+                let candidate = self.assigned(module, domain, depth + 1, state);
+                result = result.merge(candidate);
             } else if !data.wildcard_exclusions.contains(&name) {
                 let mut forwarded = false;
                 for &(target, star_domain) in &data.stars {
@@ -292,6 +297,11 @@ impl ModuleGraph {
                             result = result.merge(BindingResult::Incomplete)
                         }
                         _ => {}
+                    }
+                    // An assigned VALUE additionally publishes the members of
+                    // its declared type, alongside any namespace it carries.
+                    if let Some(&surface) = data.assigned_surface.get(&domain) {
+                        pending.push((surface, name));
                     }
                 }
             }

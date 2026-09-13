@@ -1,11 +1,10 @@
 //! Configured source selection and literal-provider allocation are ingestion.
 //! The resulting shared module graph traverses only numeric targets.
 use super::*;
-use crate::indexer::lexical::modules::scopes::Kind;
 
 #[derive(Default)]
 pub(super) struct Provider {
-    parts: Vec<(String, SourceModuleId)>,
+    pub(super) parts: Vec<(String, SourceModuleId)>,
 }
 
 impl ModuleGraph {
@@ -24,27 +23,21 @@ impl ModuleGraph {
             let input = self.inputs.get(&path)?;
             let isolated = self.programs.isolated(source)?;
             for unit in &input.units {
-                let Some(scope) = &unit.source_scope else {
-                    continue;
-                };
-                if scope.kind != Kind::Literal {
+                if !declarations::is_literal(unit) {
                     continue;
                 }
-                if unit.parent.0 != 0 || !scope.complete || !scope.container_valid || !scope.ambient
-                {
-                    return None;
-                }
-                let name = unit.source_name.as_ref()?;
+                // A selected source whose declaration is not admissible leaves
+                // the program unresolvable, not partially resolved.
+                let name = declarations::admitted_specifier(unit)?;
                 if isolated {
-                    augmentations.push((name.clone(), path.clone(), unit.id));
-                } else {
+                    augmentations.push((name.to_owned(), path.clone(), unit.id));
+                } else if module_paths::relative_base(&path, name).is_some() {
                     // A relative ambient declaration cannot create a provider.
-                    if module_paths::relative_base(&path, name).is_some() {
-                        return None;
-                    }
+                    return None;
+                } else {
                     graph
                         .providers
-                        .entry(name.clone())
+                        .entry(name.to_owned())
                         .or_default()
                         .parts
                         .push((path.clone(), unit.id));

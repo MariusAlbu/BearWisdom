@@ -65,6 +65,7 @@ pub(super) fn capture(
                 })
                 .collect(),
             wildcard_exclusions: input.wildcard_exclusions.clone(),
+            default_name: input.default_name.clone(),
             ..Default::default()
         })
         .collect();

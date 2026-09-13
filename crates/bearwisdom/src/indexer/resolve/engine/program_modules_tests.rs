@@ -74,9 +74,11 @@ fn configured_fixture() -> (ModuleGraph, Lookup) {
 #[test]
 fn same_physical_consumer_gets_different_provider_ids_in_overlapping_programs() {
     let (graph, lookup) = configured_fixture();
+    // Unconfigured, all three declarations of the name compete; only a
+    // program's own source selection picks one.
     assert_eq!(
         graph.binding("shared.ts", BindingId(1), false),
-        BindingResult::Missing
+        BindingResult::Ambiguous
     );
     for (key, row) in [("a", 71), ("b", 72)] {
         let selected = graph
@@ -124,7 +126,7 @@ fn assigned_entities_keep_overlapping_program_facets_separate_after_reload() {
     let check = |graph: &ModuleGraph| {
         assert_eq!(
             graph.binding("shared.ts", BindingId(1), false),
-            BindingResult::Missing
+            BindingResult::Ambiguous
         );
         for (key, row) in [("a", 71), ("b", 72)] {
             let selected = graph
@@ -298,7 +300,7 @@ fn program_provider_groups_preserve_competing_targets_and_missing_parts() {
     assert_eq!(
         graph.binding("main.ts", BindingId(1), false),
         BindingResult::Missing,
-        "workspace graphs do not infer literal providers"
+        "a unit without literal-declaration evidence is not a provider"
     );
 }
 

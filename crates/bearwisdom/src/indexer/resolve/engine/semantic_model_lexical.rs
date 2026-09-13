@@ -65,6 +65,39 @@ pub(super) fn bind_lexical_call(
     }))
 }
 
+/// Bind an import-attributed type reference — the `import { x }` site itself,
+/// or a use site's type-position twin that names its import — to the
+/// declaration the file's lexical binding resolved that identifier to. `None`
+/// when the reference carries no import attribution, has no lexical binding,
+/// or the binding resolved to no single declaration: the ladder's own import
+/// evidence runs.
+pub(super) fn bind_lexical_import_binding(
+    ref_ctx: &RefContext,
+    lookup: &dyn SymbolLookup,
+) -> Option<SolveOutcome> {
+    let reference = ref_ctx.extracted_ref;
+    let import_attributed = reference.is_import_binding
+        || (reference.kind == EdgeKind::TypeRef && reference.module.is_some());
+    if !import_attributed {
+        return None;
+    }
+    let local = lookup.local_reference(reference.byte_offset)?;
+    let target_symbol_id = local.declaration?;
+    crate::tracef!(
+        "  LEXICAL import '{}' @{} declaration={}",
+        reference.target_name,
+        reference.byte_offset,
+        target_symbol_id
+    );
+    Some(SolveOutcome::Resolved(SymbolInfo {
+        target_symbol_id,
+        confidence: super::super::contract::RESOLVED_CONFIDENCE,
+        strategy: "lexical_binding",
+        resolved_yield_type: None,
+        flow_emit: None,
+    }))
+}
+
 /// A binding whose import names an overload group has no single declaration;
 /// the call's typed arguments select one signature, and that signature's row
 /// is the target. Anything short of a selection leaves the miss diagnosed.

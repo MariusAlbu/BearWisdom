@@ -21,6 +21,7 @@ impl Lookup {
             generics: Default::default(),
             field_types: Default::default(),
             field_type_ids: Default::default(),
+            field_types_by_id: Default::default(),
             return_types: Default::default(),
             return_types_by_id: Default::default(),
             parents: Default::default(),
@@ -150,6 +151,13 @@ impl Lookup {
     /// Phase A records for a declared annotation (`Ctor: typeof C`).
     pub(crate) fn with_field_type_id(mut self, qname: &str, id: TypeId) -> Self {
         self.field_type_ids.insert(qname.to_string(), id);
+        self
+    }
+
+    /// Register the declared type of one field/value declaration by SYMBOL ID
+    /// — the id-keyed counterpart of `with_field_type_id`.
+    pub(crate) fn with_field_type_id_of(mut self, symbol_id: i64, id: TypeId) -> Self {
+        self.field_types_by_id.insert(symbol_id, id);
         self
     }
 

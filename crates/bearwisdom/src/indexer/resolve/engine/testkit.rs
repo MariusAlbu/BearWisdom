@@ -40,6 +40,9 @@ pub(crate) struct Lookup {
     generics: FxHashMap<String, Vec<String>>,
     field_types: FxHashMap<String, String>,
     field_type_ids: FxHashMap<String, TypeId>,
+    /// Id-keyed field types — the collision-free counterpart of
+    /// `field_type_ids`, for a declaration reached by resolved identity.
+    field_types_by_id: FxHashMap<i64, TypeId>,
     return_types: FxHashMap<String, String>,
     /// Id-keyed return types — the collision-free counterpart of
     /// `return_types`, for same-qname overload rows with distinct yields.
@@ -166,6 +169,9 @@ impl SymbolLookup for Lookup {
     }
     fn field_type_id(&self, qname: &str) -> Option<TypeId> {
         self.field_type_ids.get(qname).copied()
+    }
+    fn field_type_id_of(&self, symbol_id: i64) -> Option<TypeId> {
+        self.field_types_by_id.get(&symbol_id).copied()
     }
     fn return_type_name(&self, qname: &str) -> Option<&str> {
         self.return_types.get(qname).map(|s| s.as_str())

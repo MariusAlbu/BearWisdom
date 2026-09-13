@@ -98,12 +98,16 @@ type Selector = (ExportNameId, Option<ExportDomain>);
 #[derive(Default)]
 struct Module {
     assignments: FxHashMap<ExportDomain, Vec<Target>>,
+    /// The assigned value's declared-type members, materialized per domain.
+    assigned_surface: FxHashMap<ExportDomain, ModuleId>,
     assignment_parts: Vec<ModuleId>,
     incomplete: bool,
     exports: FxHashMap<(ExportNameId, ExportDomain), Vec<Target>>,
     imports: FxHashMap<(BindingId, ExportDomain), Vec<Target>>,
     stars: Vec<(Target, ExportDomain)>,
     wildcard_exclusions: FxHashSet<ExportNameId>,
+    /// The name a default import of this module asks for.
+    default_name: Option<ExportNameId>,
     parent: Option<ModuleId>,
 }
 #[derive(Default)]
@@ -178,75 +182,10 @@ impl ModuleGraph {
         }
     }
 
-    pub(super) fn persist(&self, conn: &rusqlite::Connection) -> rusqlite::Result<()> {
-        self.programs.persist(conn)?;
-        let config = serde_json::to_string(&self.configuration)
-            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-        conn.execute("INSERT OR REPLACE INTO _bearwisdom_meta (key,value) VALUES ('module_configuration_v1',?1)", [config])?;
-        let payload = serde_json::to_string(&self.inputs.values().collect::<Vec<_>>())
-            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-        conn.execute(
-            "INSERT OR REPLACE INTO _bearwisdom_meta (key,value) VALUES ('module_bindings_v1',?1)",
-            [payload],
-        )?;
-        Ok(())
-    }
-
-    pub(super) fn load(&mut self, conn: &rusqlite::Connection) -> rusqlite::Result<()> {
-        self.programs.load(conn)?;
-        use rusqlite::OptionalExtension;
-        if self.configuration.is_none() {
-            let config: Option<String> = conn
-                .query_row(
-                    "SELECT value FROM _bearwisdom_meta WHERE key='module_configuration_v1'",
-                    [],
-                    |r| r.get(0),
-                )
-                .optional()?;
-            if let Some(config) = config {
-                self.configuration = serde_json::from_str(&config).map_err(|e| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        0,
-                        rusqlite::types::Type::Text,
-                        Box::new(e),
-                    )
-                })?;
-            }
-        }
-        let payload: Option<String> = conn
-            .query_row(
-                "SELECT value FROM _bearwisdom_meta WHERE key='module_bindings_v1'",
-                [],
-                |r| r.get(0),
-            )
-            .optional()?;
-        let Some(payload) = payload else {
-            return Ok(());
-        };
-        let stored: Vec<ModuleInput> = serde_json::from_str(&payload).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
-        })?;
-        let mut statement = conn.prepare("SELECT path,hash FROM files")?;
-        let live: FxHashSet<(String, String)> = statement
-            .query_map([], |r| {
-                Ok((module_paths::normalize(&r.get::<_, String>(0)?), r.get(1)?))
-            })?
-            .collect::<rusqlite::Result<_>>()?;
-        // A source fingerprint fences stale BindingIds, even when a barrel has
-        // no declaration rows. Freshly parsed module environments always win.
-        for input in stored {
-            if input.binding_epoch == super::module_input::BINDING_EPOCH
-                && live.contains(&(input.path.clone(), input.content_hash.clone()))
-            {
-                self.inputs.entry(input.path.clone()).or_insert(input);
-            }
-        }
-        Ok(())
-    }
-
     pub(super) fn rebuild(&mut self, lookup: &dyn SymbolLookup) {
         self.programs.rebuild(&self.inputs, lookup);
         self.paths = self.source_paths();
+        declarations::seed_providers(&mut self.providers, &self.inputs);
         self.names.clear();
         self.modules.clear();
         self.units.clear();
@@ -348,6 +287,10 @@ impl ModuleGraph {
                 .iter()
                 .map(|name| intern(&mut self.names, name))
                 .collect();
+            module.default_name = input
+                .default_name
+                .as_deref()
+                .map(|name| intern(&mut self.names, name));
             self.modules[root.0] = module;
             for unit in &input.units {
                 if unit.id == SourceModuleId(0) {
@@ -434,10 +377,15 @@ impl ModuleGraph {
                     .iter()
                     .map(|name| intern(&mut self.names, name))
                     .collect();
+                module.default_name = unit
+                    .default_name
+                    .as_deref()
+                    .map(|name| intern(&mut self.names, name));
                 self.modules[id.0] = module;
             }
         }
         self.capture_visibility();
+        self.install_assigned_surfaces(lookup);
         let mut exports = FxHashMap::default();
         for (index, module) in self.modules.iter().enumerate() {
             for (&(binding, domain), targets) in &module.imports {
@@ -461,6 +409,12 @@ impl ModuleGraph {
 
 #[path = "module_access.rs"]
 mod access;
+#[path = "module_assigned_surface.rs"]
+mod assigned_surface;
+#[path = "module_declarations.rs"]
+mod declarations;
+#[path = "module_persist.rs"]
+mod persist;
 #[path = "module_sources.rs"]
 mod source_ids;
 #[path = "module_units.rs"]

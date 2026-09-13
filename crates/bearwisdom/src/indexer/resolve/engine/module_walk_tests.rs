@@ -49,6 +49,46 @@ fn assigned_entities_keep_default_exports_separate_and_stop_cycles_or_unknown_co
 }
 
 #[test]
+fn an_assigned_values_member_surface_answers_names_the_assignment_alone_cannot() {
+    let mut graph = ModuleGraph::default();
+    graph.modules = (0..3).map(|_| Module::default()).collect();
+    let member = ExportNameId(1);
+    let exported = ExportNameId(2);
+    // 0 assigns a value; 1 is the namespace it carries; 2 is the value's
+    // declared-type member surface.
+    graph.modules[1].exports.insert(
+        (exported, ExportDomain::Value),
+        vec![Target::Declaration(71)],
+    );
+    graph.modules[2]
+        .exports
+        .insert((member, ExportDomain::Value), vec![Target::Declaration(72)]);
+    graph.modules[0]
+        .assignments
+        .insert(ExportDomain::Value, vec![Target::Declaration(73)]);
+    let select = |graph: &ModuleGraph, name| {
+        graph.resolve_target(Target::Export(ModuleId(0), name), ExportDomain::Value, 0)
+    };
+    assert_eq!(select(&graph, member), BindingResult::Missing);
+
+    graph.modules[0]
+        .assigned_surface
+        .insert(ExportDomain::Value, ModuleId(2));
+    assert_eq!(select(&graph, member), BindingResult::Bound(72));
+
+    graph
+        .targets
+        .entities
+        .push((Target::Declaration(73), Target::Namespace(ModuleId(1))));
+    graph.modules[0]
+        .assignments
+        .insert(ExportDomain::Value, vec![Target::Entity(0)]);
+    assert_eq!(select(&graph, exported), BindingResult::Bound(71));
+    assert_eq!(select(&graph, member), BindingResult::Bound(72));
+    assert_eq!(select(&graph, ExportNameId(3)), BindingResult::Missing);
+}
+
+#[test]
 fn entity_facets_preserve_callable_and_namespace_targets_without_discarding_barriers() {
     let mut graph = ModuleGraph::default();
     graph.modules.push(Module::default());
@@ -254,4 +294,33 @@ fn access_context_does_not_escape_through_public_barrels_or_hide_competitors() {
         graph.resolve_target(Target::Path(2), ExportDomain::Type, 0),
         BindingResult::Incomplete
     );
+}
+
+#[test]
+fn a_default_import_of_an_export_assigned_module_is_the_assigned_value() {
+    let mut graph = ModuleGraph::default();
+    graph.modules = vec![Module::default()];
+    let default = ExportNameId(0);
+    graph.modules[0]
+        .assignments
+        .insert(ExportDomain::Value, vec![Target::Declaration(71)]);
+    graph.modules[0].wildcard_exclusions.insert(default);
+    let select = |graph: &ModuleGraph| {
+        graph.resolve_target(Target::Export(ModuleId(0), default), ExportDomain::Value, 0)
+    };
+    assert_eq!(
+        select(&graph),
+        BindingResult::Missing,
+        "a name the module never spelled as its default stays excluded"
+    );
+
+    graph.modules[0].default_name = Some(default);
+    assert_eq!(select(&graph), BindingResult::Bound(71));
+
+    // An explicit default export still wins over the assignment.
+    graph.modules[0].exports.insert(
+        (default, ExportDomain::Value),
+        vec![Target::Declaration(72)],
+    );
+    assert_eq!(select(&graph), BindingResult::Bound(72));
 }
