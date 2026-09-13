@@ -19,11 +19,22 @@ pub static PY_FLOW_CONFIG: FlowConfig = FlowConfig {
 
     // `x = <expr>` — Python's `assignment` node has `left` and `right` fields.
     // Annotated form `x: T = <expr>` uses the same assignment node with a
-    // `type` field present.
+    // `type` field present. An attribute target on the instance receiver
+    // (`self.x = <expr>`) names a declared member instead of a new local, so it
+    // is captured as `@lhs.member`; the receiver predicate keeps assignments
+    // through any other object out — those name members of a declaration this
+    // file does not own.
     assignment_query: r#"
         (assignment
             left: (identifier) @lhs
             right: (_) @rhs)
+
+        (assignment
+            left: (attribute
+                object: (identifier) @_recv
+                attribute: (identifier) @lhs.member)
+            right: (_) @rhs
+            (#any-of? @_recv "self" "cls"))
 
         (typed_parameter
             (identifier) @lhs.param

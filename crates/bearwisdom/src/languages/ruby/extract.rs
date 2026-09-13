@@ -107,6 +107,19 @@ pub(super) fn extract_from_node(
                     qualified_prefix,
                     inside_class,
                 );
+                // The instance variables the body assigns are members of the
+                // declaration the method hangs off, not of the method. A method
+                // with no enclosing declaration assigns members of `main`,
+                // which nothing else in the file can read.
+                if let Some(owner) = parent_index {
+                    super::instance_attrs::declare_from_method(
+                        &child,
+                        src,
+                        symbols,
+                        owner,
+                        qualified_prefix,
+                    );
+                }
             }
 
             "singleton_method" => {

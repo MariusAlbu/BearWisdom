@@ -1,12 +1,10 @@
 // =============================================================================
-// ruby/calls.rs  —  Call extraction and member chain builder for Ruby
+// ruby/calls.rs  —  Call and argument extraction for Ruby
 // =============================================================================
 
+use super::chain::build_chain;
 use super::helpers::{get_call_method_name, node_text};
-use crate::types::{
-    CallArg, ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind,
-    SourceSpan, SymbolKind,
-};
+use crate::types::{CallArg, EdgeKind, ExtractedRef, ExtractedSymbol, SourceSpan, SymbolKind};
 use tree_sitter::Node;
 
 /// Maximum nesting depth for recursive `CallArg` construction. Arguments
@@ -723,97 +721,5 @@ fn extract_case_calls(
                 }
             }
         }
-    }
-}
-
-pub(super) fn build_chain(node: &Node, src: &[u8]) -> Option<MemberChain> {
-    let mut segments = Vec::new();
-    build_chain_inner(node, src, &mut segments)?;
-    if segments.is_empty() {
-        return None;
-    }
-    Some(MemberChain { segments })
-}
-
-fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) -> Option<()> {
-    match node.kind() {
-        "self" => {
-            segments.push(ChainSegment {
-                name: "self".to_string(),
-                node_kind: "self".to_string(),
-                kind: SegmentKind::SelfRef,
-                declared_type: None,
-                type_args: vec![],
-                optional_chaining: false,
-                byte_offset: 0,
-                declared_type_id: None,
-                is_call: false,
-                call_args: Vec::new(),
-                type_arg_ids: Vec::new(),
-            });
-            Some(())
-        }
-
-        "identifier" | "constant" => {
-            segments.push(ChainSegment {
-                name: node_text(node, src),
-                node_kind: node.kind().to_string(),
-                kind: SegmentKind::Identifier,
-                declared_type: None,
-                type_args: vec![],
-                optional_chaining: false,
-                byte_offset: 0,
-                declared_type_id: None,
-                is_call: false,
-                call_args: Vec::new(),
-                type_arg_ids: Vec::new(),
-            });
-            Some(())
-        }
-
-        "call" => {
-            // `receiver.method(...)` — recurse into receiver, then push method.
-            if let Some(receiver) = node.child_by_field_name("receiver") {
-                build_chain_inner(&receiver, src, segments)?;
-                if let Some(method) = node.child_by_field_name("method") {
-                    segments.push(ChainSegment {
-                        name: node_text(&method, src),
-                        node_kind: "call".to_string(),
-                        kind: SegmentKind::Property,
-                        declared_type: None,
-                        type_args: vec![],
-                        optional_chaining: false,
-                        byte_offset: 0,
-                        declared_type_id: None,
-                        is_call: false,
-                        call_args: Vec::new(),
-                        type_arg_ids: Vec::new(),
-                    });
-                }
-                Some(())
-            } else {
-                // Bare call (no receiver) — treat the method name as Identifier.
-                if let Some(method) = node.child_by_field_name("method") {
-                    segments.push(ChainSegment {
-                        name: node_text(&method, src),
-                        node_kind: "call".to_string(),
-                        kind: SegmentKind::Identifier,
-                        declared_type: None,
-                        type_args: vec![],
-                        optional_chaining: false,
-                        byte_offset: 0,
-                        declared_type_id: None,
-                        is_call: false,
-                        call_args: Vec::new(),
-                        type_arg_ids: Vec::new(),
-                    });
-                    Some(())
-                } else {
-                    None
-                }
-            }
-        }
-
-        _ => None,
     }
 }

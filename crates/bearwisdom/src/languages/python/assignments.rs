@@ -4,6 +4,7 @@
 
 use super::calls::{build_chain, extract_calls_from_body};
 use super::helpers::{detect_python_visibility, node_text, qualify, scope_from_prefix};
+use super::{instance_attrs, param_type_refs};
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
 use std::collections::HashMap;
 use tree_sitter::Node;
@@ -67,24 +68,43 @@ fn extract_assignment_node(
                 infer_python_variable_type(&rhs, source, sym_idx, refs);
             }
         }
-        // `self.x = value` — attribute assignment defining an instance field.
-        // Extract the attribute name (last component after '.').
+        // `self.x = value` — an attribute assignment on the instance receiver
+        // declares a member of the enclosing class. On any other receiver the
+        // target is a member of something this file does not declare, so the
+        // assignment keeps its own scoped binding.
         "attribute" => {
             if let Some(attr_node) = left.child_by_field_name("attribute") {
                 let name = node_text(&attr_node, source);
                 if !name.is_empty() {
-                    let sym_idx = symbols.len();
-                    push_variable_symbol(
+                    let declared = instance_attrs::declare(
                         node,
+                        &left,
                         &attr_node,
                         &name,
-                        SymbolKind::Variable,
+                        source,
                         symbols,
                         parent_index,
-                        qualified_prefix,
                     );
+                    let sym_idx = declared.unwrap_or_else(|| {
+                        let idx = symbols.len();
+                        push_variable_symbol(
+                            node,
+                            &attr_node,
+                            &name,
+                            SymbolKind::Variable,
+                            symbols,
+                            parent_index,
+                            qualified_prefix,
+                        );
+                        idx
+                    });
                     if let Some(rhs) = node.child_by_field_name("right") {
                         infer_python_variable_type(&rhs, source, sym_idx, refs);
+                        if declared.is_some() {
+                            param_type_refs::emit_for_identifier_rhs(
+                                &rhs, source, sym_idx, refs,
+                            );
+                        }
                     }
                 }
             }

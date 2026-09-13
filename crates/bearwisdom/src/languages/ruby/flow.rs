@@ -21,9 +21,20 @@ pub static RUBY_FLOW_CONFIG: FlowConfig = FlowConfig {
     strategy_prefix: "ruby",
 
     // `x = <expr>` — Ruby uses `assignment` node with `left` and `right`.
+    // `@x = <expr>` / `@x ||= <expr>` target a member of the object the
+    // enclosing method runs on, so they are captured as `@lhs.member`: the
+    // initializer's type belongs to the declaration, not to a new local.
     assignment_query: r#"
         (assignment
             left: (identifier) @lhs
+            right: (_) @rhs)
+
+        (assignment
+            left: (instance_variable) @lhs.member
+            right: (_) @rhs)
+
+        (operator_assignment
+            left: (instance_variable) @lhs.member
             right: (_) @rhs)
     "#,
 
