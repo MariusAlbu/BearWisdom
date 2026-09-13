@@ -113,7 +113,7 @@ pub const JAVASCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     name_normalization: crate::type_checker::profile::language_profile::NameNormalization::None,
     delegate_wrappers: &[],
     overload_pick_all: true,
-    member_overload_sets: false,
+    member_overload_sets: true,
     argument_dependent_lookup: false,
     associated_type_projection: false,
     blanket_impl_resolution: false,

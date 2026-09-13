@@ -219,7 +219,7 @@ pub const TYPESCRIPT_PROFILE: LanguageProfile = LanguageProfile {
     delegate_wrappers: &[],
     // Declaration merging: interface + variable under one qname.
     overload_pick_all: true,
-    member_overload_sets: false,
+    member_overload_sets: true,
     argument_dependent_lookup: false,
     associated_type_projection: false,
     blanket_impl_resolution: false,
