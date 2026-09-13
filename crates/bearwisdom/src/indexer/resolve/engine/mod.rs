@@ -88,6 +88,7 @@ mod namespace_input;
 mod occurrence_census;
 mod output_lifetimes;
 pub mod overload_alts;
+mod overload_group;
 mod parallel_pass;
 mod parent_resolution;
 pub mod path_match;

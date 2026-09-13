@@ -1,5 +1,5 @@
 //! ID-only nominal member traversal. Candidate order never selects a declaration.
-use super::{contract::SymbolLookup, member_index::MemberNameId};
+use super::{contract::SymbolLookup, member_index::MemberNameId, overload_group::Overloads};
 use rustc_hash::FxHashSet;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,9 +17,15 @@ pub(super) fn select(
     name: MemberNameId,
     accept: &dyn Fn(&str) -> bool,
 ) -> Selection {
-    select_with_receiver(lookup, owner, name, accept, None, &|id| {
-        lookup.declaration_accessible(id)
-    })
+    select_with_receiver(
+        lookup,
+        owner,
+        name,
+        accept,
+        None,
+        &|id| lookup.declaration_accessible(id),
+        Overloads::Represent,
+    )
 }
 
 pub(super) fn select_typed(
@@ -34,6 +40,27 @@ pub(super) fn select_typed(
     })
 }
 
+/// Selection that reports an overload set instead of representing it by one
+/// row — for a caller holding the call's arguments, whose own selection over
+/// the set is stronger evidence than the group's representative.
+pub(super) fn select_typed_exact(
+    lookup: &dyn SymbolLookup,
+    arena: &crate::type_checker::core::types::TypeArena,
+    receiver: super::chain::Receiver,
+    name: MemberNameId,
+    accept: &dyn Fn(&str) -> bool,
+) -> Selection {
+    typed(
+        lookup,
+        arena,
+        receiver,
+        name,
+        accept,
+        &|id| lookup.declaration_accessible(id),
+        Overloads::Report,
+    )
+}
+
 pub(super) fn select_typed_with_access(
     lookup: &dyn SymbolLookup,
     arena: &crate::type_checker::core::types::TypeArena,
@@ -41,6 +68,26 @@ pub(super) fn select_typed_with_access(
     name: MemberNameId,
     accept: &dyn Fn(&str) -> bool,
     accessible: &dyn Fn(i64) -> bool,
+) -> Selection {
+    typed(
+        lookup,
+        arena,
+        receiver,
+        name,
+        accept,
+        accessible,
+        Overloads::Represent,
+    )
+}
+
+fn typed(
+    lookup: &dyn SymbolLookup,
+    arena: &crate::type_checker::core::types::TypeArena,
+    receiver: super::chain::Receiver,
+    name: MemberNameId,
+    accept: &dyn Fn(&str) -> bool,
+    accessible: &dyn Fn(i64) -> bool,
+    overloads: Overloads,
 ) -> Selection {
     if !lookup.accepts_type_context(arena, receiver.ty) {
         return Selection::Incomplete;
@@ -55,6 +102,7 @@ pub(super) fn select_typed_with_access(
         accept,
         Some((arena, receiver.ty)),
         accessible,
+        overloads,
     )
 }
 
@@ -68,6 +116,7 @@ fn select_with_receiver(
         crate::type_checker::core::types::TypeId,
     )>,
     accessible: &dyn Fn(i64) -> bool,
+    overloads: Overloads,
 ) -> Selection {
     let Some(index) = lookup.member_index() else {
         return Selection::Incomplete;
@@ -79,6 +128,12 @@ fn select_with_receiver(
         let mut next = Vec::new();
         let mut candidates = FxHashSet::default();
         let mut declared = false;
+        // The owner every candidate so far was declared on, and whether that
+        // has held. A level can draw from several owners at once (a receiver
+        // reaching two supertypes), and only a level drawn from ONE owner can
+        // be an overload set.
+        let mut declaring_owner: Option<i64> = None;
+        let mut one_owner = true;
         for owner in frontier {
             let owner = lookup.canonical_decl_id(owner);
             if !accessible(owner) {
@@ -122,6 +177,10 @@ fn select_with_receiver(
                     if !accessible(member.id) {
                         return Selection::Inaccessible;
                     }
+                    match declaring_owner {
+                        None => declaring_owner = Some(owner),
+                        Some(seen) => one_owner &= seen == owner,
+                    }
                     candidates.insert(lookup.canonical_decl_id(member.id));
                 }
             }
@@ -131,7 +190,13 @@ fn select_with_receiver(
             return match candidates.len() {
                 0 => Selection::Missing,
                 1 => Selection::Unique(*candidates.iter().next().unwrap()),
-                _ => Selection::Ambiguous,
+                _ => match overloads {
+                    Overloads::Report => Selection::Ambiguous,
+                    Overloads::Represent => {
+                        super::overload_group::select(lookup, &candidates, one_owner)
+                            .map_or(Selection::Ambiguous, Selection::Unique)
+                    }
+                },
             };
         }
         if next.is_empty() {
