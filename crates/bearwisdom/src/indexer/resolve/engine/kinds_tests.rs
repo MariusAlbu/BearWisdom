@@ -1,4 +1,4 @@
-use super::{is_constructor_kind, is_type_kind, is_value_kind};
+use super::{is_constructor_kind, is_shape_only_kind, is_type_kind, is_value_kind};
 
 #[test]
 fn type_kinds_are_class_like_declarations() {
@@ -45,6 +45,21 @@ fn type_and_value_kinds_are_disjoint() {
         "parameter",
     ] {
         assert!(!is_type_kind(kind), "{kind} is a value kind");
+    }
+}
+
+/// A shape-only kind is a type kind whose name reaches no value: it can be
+/// annotated with, never evaluated. Every other type kind binds a receiver its
+/// own name denotes.
+#[test]
+fn shape_only_kinds_are_type_kinds_that_bind_no_value() {
+    assert!(is_shape_only_kind("interface"));
+    assert!(is_shape_only_kind("type_alias"));
+    assert!(!is_shape_only_kind("class"));
+    assert!(!is_shape_only_kind("enum"));
+    assert!(!is_shape_only_kind("namespace"));
+    for kind in ["variable", "constant", "const", "field", "property", "parameter"] {
+        assert!(!is_shape_only_kind(kind), "{kind} is a value kind");
     }
 }
 
