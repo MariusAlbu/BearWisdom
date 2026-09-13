@@ -9,12 +9,19 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::contract::{FileContext, Symbol, SymbolLookup};
+use crate::type_checker::profile::language_profile::LanguageProfile;
 
-use super::support::symbol_under_index_namespace;
+use super::support::{qname_under_module, symbol_under_index_namespace};
 
 /// Minimum score margin the top candidate must beat the runner-up by for
 /// `pick_ranked_candidate` to commit; a smaller margin is too ambiguous to guess.
 pub(crate) const RANK_MARGIN: i32 = 100;
+
+/// An import line whose module path names the candidate's own index qname, or
+/// the namespace it is declared under, is the use site stating which
+/// same-simple-name declaration it means. Weighed like the workspace-package
+/// term: both are an import naming the candidate's home.
+const IMPORT_NAMES_CANDIDATE: i32 = 500;
 
 /// The use site's own namespace outranks every build-unit and import term:
 /// an unqualified name resolves against the enclosing namespace before any
@@ -25,11 +32,13 @@ pub(crate) const RANK_MARGIN: i32 = 100;
 const SAME_SOURCE_NAMESPACE: i32 = 1200;
 
 /// Score a same-name candidate for import-scoped selection — higher is better.
-/// Reads only the candidate row and the use site's file context (its namespace,
-/// package, imports, path): the file's own declared namespace +1200, same
-/// workspace package +1000, an import naming the candidate's package +500 or its
-/// namespace +300, ambient +200, shared path prefix +10/segment, an
-/// external-depth penalty, and a visibility hint.
+/// Reads only the candidate row, the use site's file context (its namespace,
+/// package, imports, path) and the language's profile: the file's own declared
+/// namespace +1200, same workspace package +1000, an import naming the
+/// candidate's package or its own namespace +500, an implicit namespace the
+/// manifest or the language prelude brings into scope +300, ambient +200,
+/// shared path prefix +10/segment, an external-depth penalty, and a
+/// visibility hint.
 pub(crate) fn score_candidate(
     file_ctx: &FileContext,
     file_package_id: Option<i64>,
@@ -61,11 +70,23 @@ pub(crate) fn score_candidate(
             }
         }
     }
-    // An implicit/global wildcard namespace (manifest- or SDK-declared, never
-    // written in the file) scopes a candidate exactly like a written namespace
-    // import: the file sees that namespace's members with no import line, so a
-    // candidate under it outranks a same-named type no scope names.
-    for ns in lookup.implicit_wildcard_namespaces(file_package_id) {
+    // Scored once per candidate: the evidence is that an import names it, not
+    // how many imports do.
+    if any_import_names(file_ctx, profile, sym) {
+        s += IMPORT_NAMES_CANDIDATE;
+    }
+    // An implicit/global wildcard namespace scopes a candidate exactly like a
+    // written namespace import: the file sees that namespace's members with no
+    // import line, so a candidate under it outranks a same-named type no scope
+    // names. Two sources declare one: the manifest or SDK
+    // (`implicit_wildcard_namespaces`) and the language's own compiler prelude
+    // (`LanguageProfile::implicit_prelude_namespaces`).
+    let implicit = lookup
+        .implicit_wildcard_namespaces(file_package_id)
+        .iter()
+        .map(String::as_str)
+        .chain(profile.implicit_prelude_namespaces.iter().copied());
+    for ns in implicit {
         if symbol_under_index_namespace(sym, ns) {
             s += 300;
             break;
@@ -85,6 +106,19 @@ pub(crate) fn score_candidate(
         _ => {}
     }
     s
+}
+
+/// `true` when some import line's module path names `sym`: either the
+/// candidate's own index qname (a single-type import) or the namespace it is
+/// declared under (a namespace import). The profile owns the source-to-index
+/// spelling of the module path.
+fn any_import_names(file_ctx: &FileContext, profile: &LanguageProfile, sym: &Symbol) -> bool {
+    file_ctx.imports.iter().any(|import| {
+        import
+            .module_path
+            .as_deref()
+            .is_some_and(|module| qname_under_module(profile, &sym.qualified_name, module))
+    })
 }
 
 /// The shared import-scoped candidate chokepoint. Returns the top scorer when it
