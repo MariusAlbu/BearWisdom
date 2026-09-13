@@ -18,16 +18,17 @@
 pub mod ansible;
 pub(crate) mod declared_deps;
 pub(crate) mod fold;
-pub mod npm_entry;
 pub mod gradle;
 pub(crate) mod gradle_build_logic;
 pub(crate) mod gradle_build_root;
 pub(crate) mod gradle_coords;
+pub(crate) mod gradle_plugins;
 pub mod js_config_aliases;
 pub mod maven;
 pub mod mix;
 pub mod module_config;
 pub mod npm;
+pub mod npm_entry;
 pub(crate) mod ownership;
 pub mod pip_requirements;
 pub mod rebar;
@@ -115,6 +116,11 @@ pub enum ManifestKind {
     /// `{deps, [{name, ...}]}` tuples. Closes the bulk of erlang
     /// AMQP/record-type refs in rabbitmq-style projects.
     Rebar,
+    /// One Gradle module that applies the Android Gradle Plugin. Dependency
+    /// names are the AGP-namespace plugin ids the module's build script
+    /// applies. Present only for the packages that build an Android
+    /// component, so the platform SDK activates for those and no others.
+    AndroidModule,
 }
 
 /// Normalized data extracted from a project manifest.
@@ -281,6 +287,7 @@ fn all_readers() -> Vec<Box<dyn ManifestReader>> {
         Box::new(crate::ecosystem::go_mod::GoModManifest),
         Box::new(crate::ecosystem::pypi::PyProjectManifest),
         Box::new(gradle::GradleManifest),
+        Box::new(crate::ecosystem::android_module::AndroidModuleManifest),
         Box::new(maven::MavenManifest),
         Box::new(crate::ecosystem::rubygems::GemfileManifest),
         Box::new(crate::ecosystem::composer::ComposerManifest),

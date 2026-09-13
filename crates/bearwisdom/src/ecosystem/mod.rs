@@ -40,6 +40,8 @@ pub mod symbol_index;
 pub use symbol_index::SymbolLocationIndex;
 
 pub mod alire;
+pub mod android_compile_sdk;
+pub mod android_module;
 pub mod android_sdk;
 pub mod bazel_central_registry;
 pub mod bicep_runtime;
