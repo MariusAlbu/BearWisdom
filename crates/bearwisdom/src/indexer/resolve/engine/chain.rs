@@ -53,6 +53,7 @@ use super::head_decl::{
 use super::kinds::{is_type_kind, is_value_kind};
 use super::lambda_seed::seed_lambda_params;
 use super::mapped_members;
+use super::member_miss_cause;
 use super::root_declaration_space;
 use super::root_import_discipline::RootImportOutcome;
 use super::segment_args::{bind_explicit_type_args, with_segment_args};
@@ -218,7 +219,8 @@ pub fn bind_member_access(
                 (i == last).then_some(&ref_ctx.extracted_ref.call_args),
                 profile,
             ) {
-                let info = selection.map_err(|_| member_miss_cause(lookup, arena, current))?;
+                let info =
+                    selection.map_err(|_| member_miss_cause::classify(lookup, arena, current))?;
                 if i == last {
                     return Ok(info);
                 }
@@ -334,10 +336,10 @@ pub fn bind_member_access(
                         .find_map(|t| lookup_member(lookup, t, &seg.name, &|_k| true))
                     {
                         Some(m) => m,
-                        None => return Err(member_miss_cause(lookup, arena, current)),
+                        None => return Err(member_miss_cause::classify(lookup, arena, current)),
                     }
                 } else {
-                    return Err(member_miss_cause(lookup, arena, current));
+                    return Err(member_miss_cause::classify(lookup, arena, current));
                 }
             }
         };
@@ -539,45 +541,6 @@ fn lookup_member_on_deref_target(
     );
     let m = lookup_member_on(lookup, arena, reheaded, member, &|_kind| true)?;
     Some((m, reheaded))
-}
-
-/// Classify why `lookup_member_on` found nothing on `recv`, using only the
-/// receiver state the chain walker already holds — no re-resolution.
-///
-/// A bound declaration id is decisive: an external declaration with zero
-/// materialized members means the externals pipeline never exposed this
-/// type's surface (`ExternalUnmaterialized`); any other bound declaration
-/// with no matching member genuinely lacks it (`MemberMissing`). With no
-/// bound id, the receiver's head may still name a capture-only alias arm
-/// (Union / Intersection / Keyof / Other) that member lookup can never
-/// expand into a member set (`AliasOpaque`); anything else is indeterminate
-/// and left uncaused rather than guessed.
-fn member_miss_cause(
-    lookup: &dyn SymbolLookup,
-    arena: &TypeArena,
-    recv: Receiver,
-) -> Option<Cause> {
-    if let Some(id) = recv.id {
-        let sym = lookup.symbol_by_id(id)?;
-        let has_members = !lookup.members_of_id(id).is_empty()
-            || !lookup.members_of(&sym.qualified_name).is_empty();
-        return Some(if sym.file_path.starts_with("ext:") && !has_members {
-            Cause::new(Some(id), CauseKind::ExternalUnmaterialized)
-        } else {
-            Cause::new(Some(id), CauseKind::MemberMissing)
-        });
-    }
-    let head = head_qname(arena, recv.ty)?;
-    match lookup.alias_target(&head) {
-        Some(AliasTargetIds::Union(_))
-        | Some(AliasTargetIds::Intersection(_))
-        | Some(AliasTargetIds::Keyof(_))
-        | Some(AliasTargetIds::Other) => Some(Cause::new(
-            lookup.by_qualified_name(&head).map(|s| s.id),
-            CauseKind::AliasOpaque,
-        )),
-        _ => None,
-    }
 }
 
 /// A chain receiver: the type a segment evaluates to, plus the symbol id of the

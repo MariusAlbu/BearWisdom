@@ -73,6 +73,7 @@ mod lexical_type_ids;
 mod lexical_value;
 pub mod mapped_members;
 pub mod member_index;
+mod member_miss_cause;
 mod member_selection;
 mod merge_canonical;
 mod module_entry;
