@@ -469,3 +469,33 @@ end
         "bare call 'helper()' SHOULD emit Calls with no module; got {calls:?}"
     );
 }
+
+#[test]
+fn a_module_declaration_names_itself_without_referring_to_itself() {
+    let src = r#"
+defmodule App.Site do
+  def new, do: %{}
+end
+
+defmodule App.Funnel do
+  def build, do: App.Site.new()
+end
+"#;
+    let r = extract::extract(src);
+    let site_refs: Vec<(EdgeKind, Option<&str>, u32)> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.target_name == "Site")
+        .map(|rf| (rf.kind, rf.module.as_deref(), rf.line))
+        .collect();
+    assert!(
+        site_refs.iter().all(|(_, _, line)| *line > 1),
+        "the `defmodule App.Site` header must emit no reference to App.Site: {site_refs:?}"
+    );
+    assert!(
+        site_refs
+            .iter()
+            .any(|(kind, module, _)| *kind == EdgeKind::TypeRef && *module == Some("App.Site")),
+        "the use in App.Funnel still refers to App.Site: {site_refs:?}"
+    );
+}

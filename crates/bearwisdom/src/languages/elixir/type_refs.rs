@@ -104,13 +104,42 @@ pub(super) fn extract_behaviour_target(node: &Node, src: &str) -> Option<String>
 /// This supplements the existing walker which only visits `alias` nodes that
 /// appear as direct children of the nodes it explicitly handles.
 ///
-/// No primitives to skip in Elixir — all alias nodes are module names.
+/// No primitives to skip in Elixir — all alias nodes are module names. The
+/// one alias that is not a reference is the name a module declaration
+/// declares: `defmodule App.Site do` names `App.Site`, it does not refer to it.
 pub(super) fn scan_all_type_refs(
     node: tree_sitter::Node<'_>,
     src: &str,
     refs: &mut Vec<ExtractedRef>,
 ) {
     scan_type_refs_inner(node, src, 0, refs);
+}
+
+/// Callees whose first argument is the name being declared.
+const MODULE_DECLARATION_CALLEES: &[&str] = &["defmodule", "defprotocol"];
+
+fn declares_module(node: &Node, src: &str) -> bool {
+    call_identifier(node, src)
+        .is_some_and(|callee| MODULE_DECLARATION_CALLEES.contains(&callee.as_str()))
+}
+
+/// The argument list of a module declaration: the leading `alias` is the
+/// declared name and emits nothing; everything after it is scanned as usual.
+fn scan_declaration_arguments(
+    arguments: tree_sitter::Node<'_>,
+    src: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut declared_name_seen = false;
+    let mut cursor = arguments.walk();
+    for child in arguments.children(&mut cursor) {
+        if !declared_name_seen && child.kind() == "alias" {
+            declared_name_seen = true;
+            continue;
+        }
+        scan_type_refs_inner(child, src, source_symbol_index, refs);
+    }
 }
 
 fn scan_type_refs_inner(
@@ -141,6 +170,16 @@ fn scan_type_refs_inner(
                 });
             }
             // alias is a leaf — no children to recurse into.
+        }
+        "call" if declares_module(&node, src) => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "arguments" {
+                    scan_declaration_arguments(child, src, source_symbol_index, refs);
+                } else {
+                    scan_type_refs_inner(child, src, source_symbol_index, refs);
+                }
+            }
         }
         "dot" => {
             // `dot` node represents `Module.function` — emit TypeRef for the receiver.
