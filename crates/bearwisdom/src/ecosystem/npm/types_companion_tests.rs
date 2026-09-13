@@ -6,7 +6,10 @@ use super::*;
 
 #[test]
 fn a_types_package_names_its_owner_scoped_or_not() {
-    assert_eq!(owner_of_types_package("@types/react").as_deref(), Some("react"));
+    assert_eq!(
+        owner_of_types_package("@types/react").as_deref(),
+        Some("react")
+    );
     assert_eq!(
         owner_of_types_package("@types/babel__core").as_deref(),
         Some("@babel/core")
@@ -20,7 +23,11 @@ fn a_types_package_names_its_owner_scoped_or_not() {
 #[test]
 fn a_companion_supplies_the_owner_entry_only_when_the_owner_has_none() {
     let mut entries = HashMap::new();
-    insert_package_entry(&mut entries, "@types/react", PathBuf::from("/nm/@types/react/index.d.ts"));
+    insert_package_entry(
+        &mut entries,
+        "@types/react",
+        PathBuf::from("/nm/@types/react/index.d.ts"),
+    );
     assert_eq!(
         entries.get("react"),
         Some(&PathBuf::from("/nm/@types/react/index.d.ts"))
@@ -32,7 +39,11 @@ fn a_companion_supplies_the_owner_entry_only_when_the_owner_has_none() {
 
     let mut entries = HashMap::new();
     insert_package_entry(&mut entries, "vue", PathBuf::from("/nm/vue/dist/vue.d.ts"));
-    insert_package_entry(&mut entries, "@types/vue", PathBuf::from("/nm/@types/vue/index.d.ts"));
+    insert_package_entry(
+        &mut entries,
+        "@types/vue",
+        PathBuf::from("/nm/@types/vue/index.d.ts"),
+    );
     assert_eq!(
         entries.get("vue"),
         Some(&PathBuf::from("/nm/vue/dist/vue.d.ts")),

@@ -10,6 +10,8 @@ pub mod ext_virtual_path;
 pub mod external_parse_cache;
 pub(crate) mod external_parse_payload;
 pub(crate) mod external_parse_types;
+pub(crate) mod external_root_dedup;
+pub(crate) mod external_root_demand;
 pub mod flow;
 pub(crate) mod flow_assignments;
 pub(crate) mod flow_bindings;

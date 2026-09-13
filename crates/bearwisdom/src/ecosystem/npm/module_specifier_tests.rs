@@ -65,7 +65,10 @@ fn npm_reexport_candidates_keep_js_family_suffixes_in_the_adapter() {
 
 #[test]
 fn a_definitely_typed_path_offers_its_owner_as_an_entry_alias() {
-    assert_eq!(entry_aliases("ext:ts:@types/react/index.d.ts"), vec!["react"]);
+    assert_eq!(
+        entry_aliases("ext:ts:@types/react/index.d.ts"),
+        vec!["react"]
+    );
     assert_eq!(
         entry_aliases("ext:ts:@types/babel__core/index.d.ts"),
         vec!["@babel/core"]

@@ -19,7 +19,7 @@
 // =============================================================================
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -38,6 +38,7 @@ use super::demand::DemandSet;
 use super::demand_symbol_index::build_demand_symbol_index;
 use super::ext_virtual_path::virtual_path_for_pulled;
 use super::project_context::ProjectContext;
+use super::{external_root_dedup, external_root_demand};
 
 // ---------------------------------------------------------------------------
 // External-source discovery + parse
@@ -54,28 +55,6 @@ pub(crate) struct ExternalParsingResult {
     /// loop can rescan / extend the symbol index on new demand.
     pub demand_driven_roots: Vec<ExternalDepRoot>,
     pub demand_driven_ecosystems: HashMap<&'static str, Arc<dyn Ecosystem>>,
-}
-
-/// Resolve `path` to the identity it should dedup on: the OS-canonical form
-/// when the path exists (so every symlink pointing at the same physical
-/// directory collapses to one value), falling back to `path` itself when
-/// canonicalization fails (broken symlink, permission error, or a path that
-/// doesn't exist on disk — dedup then degrades to per-path identity, same as
-/// before this existed).
-///
-/// Windows' `canonicalize` returns the `\\?\`-prefixed verbatim form, which
-/// does not compare equal to (or `strip_prefix` against) the plain paths used
-/// everywhere else in this codebase — stripped here so the key is a plain
-/// path like every other `PathBuf` this module handles.
-fn canonical_dedup_path(path: &Path) -> PathBuf {
-    let canon = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    match canon.to_str() {
-        Some(s) => match s.strip_prefix(r"\\?\") {
-            Some(stripped) => PathBuf::from(stripped),
-            None => canon,
-        },
-        None => canon,
-    }
 }
 
 /// Discover every dep root across active ecosystems, build a demand-driven
@@ -199,41 +178,13 @@ pub(crate) fn parse_external_sources(
 
     drop(_t_discover);
 
-    // Step 2 — deduplicate by (ecosystem, module_path, version, root_path).
-    // Root path is included so distinct package directories that represent
-    // the same module are treated as separate roots to walk.
-    //
-    // `root_path` is canonicalized for the KEY ONLY (the stored `ExternalDepRoot`
-    // keeps its original, un-canonicalized `root`, so every other consumer —
-    // relative-import resolution, virtual-path construction — is unaffected).
-    // A symlink-hoisted dependency can be reached through several package
-    // paths; each path is a distinct `PathBuf` even though all resolve to the same physical
-    // directory, so without canonicalizing, N symlinked copies of one
-    // package survive as N separate un-deduped roots — each gets its own
-    // independent symbol-index scan, and whichever one's scan happens to run
-    // first wins any first-writer-wins collision for a name the package
-    // re-exports through more than one file.
-    let mut deduped: Vec<(ExternalDepRoot, Vec<i64>)> = Vec::new();
-    let mut root_index: HashMap<(&'static str, String, String, PathBuf), usize> = HashMap::new();
-    for root in all_roots {
-        let key = (
-            root.ecosystem,
-            root.module_path.clone(),
-            root.version.clone(),
-            canonical_dedup_path(&root.root),
-        );
-        if let Some(&idx) = root_index.get(&key) {
-            if let Some(pid) = root.package_id {
-                if !deduped[idx].1.contains(&pid) {
-                    deduped[idx].1.push(pid);
-                }
-            }
-        } else {
-            root_index.insert(key, deduped.len());
-            let declaring = root.package_id.map(|p| vec![p]).unwrap_or_default();
-            deduped.push((root, declaring));
-        }
-    }
+    // Step 2 — widen demand to the module, then collapse the roots. A dep
+    // root is a physical directory shared across the workspace while the
+    // demand that reached it was collected per discovering package, so the
+    // widening must happen before the collapse discards all but the first
+    // discoverer's.
+    external_root_demand::union_module_demand(&mut all_roots);
+    let deduped = external_root_dedup::dedup_roots(all_roots);
 
     if !packages.is_empty() && !deduped.is_empty() {
         let total_declarations: usize = deduped.iter().map(|(_, pkgs)| pkgs.len()).sum();
@@ -456,7 +407,3 @@ pub(crate) fn make_walked_file(
         language,
     })
 }
-
-#[cfg(test)]
-#[path = "stage_link_tests.rs"]
-mod tests;
