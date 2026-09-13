@@ -35,48 +35,85 @@ fn content_hash_is_stable_and_distinct() {
 }
 
 #[test]
-fn cache_key_embeds_schema_version() {
-    use std::path::Path;
-    let key = cache_key(Path::new("/a/b.d.ts"), "deadbeef");
+fn cache_key_is_prefixed_by_the_extractor_digest() {
+    let key = cache_key(Path::new("/a/b.php"), "ff");
     assert!(
         key.starts_with(&format!("{EXTRACTOR_SCHEMA_VERSION}:")),
-        "schema version must prefix the key so a bump flushes all prior entries"
+        "the digest must prefix the key so an extractor change flushes every prior entry"
+    );
+    assert_eq!(EXTRACTOR_SCHEMA_VERSION.len(), 16);
+    assert!(EXTRACTOR_SCHEMA_VERSION
+        .chars()
+        .all(|c| c.is_ascii_hexdigit()));
+}
+
+#[test]
+fn cache_file_name_is_scoped_to_the_digest() {
+    assert_eq!(
+        cache_file_name(),
+        format!("externals-{EXTRACTOR_SCHEMA_VERSION}.db"),
+        "two binaries of different extractor vintages must not share a file"
     );
 }
 
 #[test]
-fn positional_rbi_proc_contracts_bypass_prior_cache_schema() {
-    use std::path::Path;
-
-    let path = Path::new("/source/catalog.rbi");
-    let hash = "unchanged";
-    assert_ne!(
-        cache_key(path, hash),
-        format!("83:{}:{hash}", normalize_path_key(path)),
-        "the positional RBI Proc signature marker needs a fresh extraction"
-    );
+fn cache_file_vintage_reads_tagged_tagless_and_companion_names() {
+    assert_eq!(cache_file_vintage("externals.db"), Some(""));
+    assert_eq!(cache_file_vintage("externals.db-wal"), Some(""));
+    assert_eq!(cache_file_vintage("externals-abc.db"), Some("abc"));
+    assert_eq!(cache_file_vintage("externals-abc.db-shm"), Some("abc"));
+    assert_eq!(cache_file_vintage("index.db"), None);
+    assert_eq!(cache_file_vintage("externalsabc.db"), None);
+    assert_eq!(cache_file_vintage("externals-abc.txt"), None);
 }
 
 #[test]
-fn c_include_identity_bypasses_prior_cache_schema() {
-    let path = Path::new("/sdk/include/stdio.h");
-    let hash = "unchanged";
-    assert_ne!(
-        cache_key(path, hash),
-        format!("84:{}:{hash}", normalize_path_key(path)),
-        "C headers cached before include identity was emitted must be reparsed"
-    );
-}
+fn sweep_removes_only_aged_foreign_vintage_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let now = SystemTime::now();
+    let aged = now - STALE_CACHE_AGE - Duration::from_secs(60);
+    let write = |name: &str, modified: SystemTime| {
+        let path = dir.path().join(name);
+        std::fs::write(&path, b"x").unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+    };
+    write("externals-deadbeefdeadbeef.db", aged);
+    write("externals-deadbeefdeadbeef.db-wal", aged);
+    write("externals.db", aged);
+    write("externals-cafebabecafebabe.db", now);
+    write(&cache_file_name(), aged);
+    write("index.db", aged);
 
-#[test]
-fn pre_scoped_owner_payloads_cannot_match_current_cache_keys() {
-    let current = cache_key(Path::new("/source/lib.rs"), "unchanged");
-    assert!(EXTRACTOR_SCHEMA_VERSION >= 84);
-    assert_ne!(
-        current,
-        format!(
-            "31:{}:unchanged",
-            normalize_path_key(Path::new("/source/lib.rs"))
-        )
+    sweep_stale_caches(dir.path(), now);
+
+    let exists = |name: &str| dir.path().join(name).exists();
+    assert!(
+        !exists("externals-deadbeefdeadbeef.db"),
+        "an aged foreign vintage is removed"
+    );
+    assert!(
+        !exists("externals-deadbeefdeadbeef.db-wal"),
+        "its journal goes with it"
+    );
+    assert!(
+        !exists("externals.db"),
+        "the tagless family is a foreign vintage too"
+    );
+    assert!(
+        exists("externals-cafebabecafebabe.db"),
+        "a young foreign file may still be in use"
+    );
+    assert!(
+        exists(&cache_file_name()),
+        "the current vintage is never swept, whatever its age"
+    );
+    assert!(
+        exists("index.db"),
+        "files outside the cache family are untouched"
     );
 }
