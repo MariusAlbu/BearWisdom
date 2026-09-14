@@ -110,37 +110,10 @@ async fn run_server(project_arg: Option<PathBuf>) -> Result<()> {
     let transport = rmcp::transport::io::stdio();
     let service = mcp_server.serve(transport).await?;
 
-    // Initial reindex runs on a background blocking task so it doesn't
-    // delay tool calls. The watcher started in `IndexService::open` keeps
-    // the DB fresh after this initial pass.
-    let bg_service = default_service.clone();
-    let _bg_handle = tokio::task::spawn_blocking(move || match bg_service.reindex_now() {
-        Ok(bearwisdom::ReindexStats::Full(stats)) => {
-            eprintln!(
-                "Full index: {} files, {} symbols, {} edges ({:.2}s){}",
-                stats.file_count,
-                stats.symbol_count,
-                stats.edge_count,
-                stats.duration_ms as f64 / 1000.0,
-                if stats.files_with_errors > 0 {
-                    format!(", {} with errors", stats.files_with_errors)
-                } else {
-                    String::new()
-                },
-            );
-        }
-        Ok(bearwisdom::ReindexStats::Incremental(inc)) => {
-            eprintln!(
-                "Incremental reindex: +{} added, ~{} modified, -{} deleted, {} unchanged ({:.2}s)",
-                inc.files_added,
-                inc.files_modified,
-                inc.files_deleted,
-                inc.files_unchanged,
-                inc.duration_ms as f64 / 1000.0,
-            );
-        }
-        Err(e) => eprintln!("Index error: {e:#}"),
-    });
+    // Use the service's in-flight gate for the initial refresh. The previous
+    // standalone task was invisible to that gate, so the first tool call could
+    // start a second reindex in the same process.
+    let _ = default_service.try_spawn_sweep(0);
 
     tokio::select! {
         result = service.waiting() => {

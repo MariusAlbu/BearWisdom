@@ -190,3 +190,38 @@ fn search_matches_in_signature() {
     // The FTS index includes the signature, so "CatalogItem" in the sig should match.
     assert!(!results.is_empty(), "Should match via signature");
 }
+
+#[test]
+fn search_multi_term_query_falls_back_to_any_matching_identifier() {
+    let db = Database::open_in_memory().unwrap();
+    insert_symbol(
+        &db,
+        "registry.rs",
+        "all_resolvers_with_workspace",
+        "module_resolution.all_resolvers_with_workspace",
+        "function",
+        None,
+        None,
+    );
+    insert_symbol(
+        &db,
+        "resolver.rs",
+        "ModuleResolver",
+        "module_resolution.ModuleResolver",
+        "trait",
+        None,
+        None,
+    );
+
+    let results = search_symbols(
+        &db,
+        "all_resolvers_with_workspace ModuleResolver",
+        10,
+        &crate::query::QueryOptions::full(),
+    )
+    .unwrap();
+    let names: Vec<&str> = results.iter().map(|r| r.name.as_str()).collect();
+
+    assert!(names.contains(&"all_resolvers_with_workspace"));
+    assert!(names.contains(&"ModuleResolver"));
+}

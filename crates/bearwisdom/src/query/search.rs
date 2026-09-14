@@ -50,6 +50,31 @@ pub struct SearchResult {
     pub score: f64,
 }
 
+/// Build a forgiving fallback for the way coding agents naturally phrase
+/// symbol searches. FTS5 treats whitespace-separated terms as AND, which is
+/// useful for deliberate FTS expressions but surprising for queries that list
+/// several candidate identifiers. When the exact query has no hits, retry the
+/// distinct plain terms as OR alternatives.
+fn fallback_or_query(query: &str) -> Option<String> {
+    let mut seen = std::collections::HashSet::new();
+    let terms: Vec<String> = query
+        .split_whitespace()
+        .filter_map(|raw| {
+            let term = raw
+                .trim_matches(|c: char| !c.is_alphanumeric() && c != '_' && c != ':' && c != '-');
+            if term.len() < 2
+                || matches!(term.to_ascii_uppercase().as_str(), "AND" | "OR" | "NOT")
+                || !seen.insert(term.to_ascii_lowercase())
+            {
+                return None;
+            }
+            Some(format!("\"{}\"", term.replace('"', "\"\"")))
+        })
+        .collect();
+
+    (terms.len() > 1).then(|| terms.join(" OR "))
+}
+
 // ---------------------------------------------------------------------------
 // Public function
 // ---------------------------------------------------------------------------
@@ -109,8 +134,8 @@ pub fn search_symbols(
         .prepare(&fts_sql)
         .context("Failed to prepare FTS5 search query")?;
 
-    let rows = stmt
-        .query_map([query], |row| {
+    let mut run_fts = |fts_query: &str| -> anyhow::Result<Vec<SearchResult>> {
+        let rows = stmt.query_map([fts_query], |row| {
             Ok(SearchResult {
                 name: row.get(0)?,
                 qualified_name: row.get(1)?,
@@ -120,20 +145,22 @@ pub fn search_symbols(
                 signature: row.get(5)?,
                 score: row.get(6)?,
             })
-        })
-        .context("Failed to execute FTS5 search query")?;
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .context("Failed to collect FTS5 search results")
+    };
 
-    let results: rusqlite::Result<Vec<SearchResult>> = rows.collect();
+    match run_fts(query) {
+        Ok(results) if !results.is_empty() => return Ok(results),
+        Ok(_) => {}
+        Err(e) => tracing::debug!("FTS5 search error: {e}"),
+    }
 
-    match results {
-        Ok(ref r) if !r.is_empty() => return Ok(results.unwrap()),
-        Err(e) => {
-            // If FTS5 returns an error (e.g. invalid query syntax), fall through
-            // to the LIKE fallback rather than hard-failing.
-            tracing::debug!("FTS5 search error, falling back to LIKE: {e}");
-        }
-        Ok(_) => {
-            // Zero FTS5 results — still try the LIKE fallback.
+    if let Some(or_query) = fallback_or_query(query) {
+        match run_fts(&or_query) {
+            Ok(results) if !results.is_empty() => return Ok(results),
+            Ok(_) => {}
+            Err(e) => tracing::debug!("FTS5 OR fallback error: {e}"),
         }
     }
 

@@ -409,3 +409,12 @@ must carry declaration/binding/type IDs, not re-find declarations by spelling.
 - [ ] Move URI schemes, package-short-name rules, module-leaf parsing, and relative module joining/normalization out of resolver rules into adapters.
 - [x] Move concrete receiver keywords and parent/enclosing receiver semantics out of generic resolver rules into language profiles.
 - [ ] Move source literal classification and concrete collection-literal type construction out of generic argument typing into language adapters.
+
+## MCP retrieval quality and token efficiency
+
+- [x] Run a controlled Terra A/B pilot against shell navigation; record gross/cache-adjusted tokens, calls, latency, and answer quality.
+- [x] Make compact bounded responses the default, retry empty multi-term symbol searches as alternatives, keep docs out of source grep, hide compatibility-only schema fields, and gate the initial in-process refresh.
+- [ ] Add an explicit freshness/status contract and one project-scoped watcher/reindex owner; make other MCP clients read-only and move verbose audit bodies out of the index DB.
+- [ ] Replace the 22-tool default surface with four agent-facing compound tools and defer administrative/specialized schemas.
+- [ ] Return stable symbol identities, resolved and unresolved/text occurrences, nearby tests, and bounded source excerpts in one evidence bundle.
+- [ ] Run the held-out quality/token/latency gate from docs/mcp-agent-efficiency-plan.md; require answer parity before MCP-only navigation.

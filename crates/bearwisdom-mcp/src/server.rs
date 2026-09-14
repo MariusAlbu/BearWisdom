@@ -58,16 +58,18 @@ fn incremental_stats_json(
 pub struct SearchParams {
     /// Search keywords (symbol names, words from signatures or doc comments)
     pub query: String,
-    /// Maximum results (default: 50)
+    /// Maximum results (default: 10)
     pub limit: Option<usize>,
     /// Include function/method signatures in results (default: false)
     pub include_signature: Option<bool>,
-    /// Output format: "json" (default) or "compact" (token-optimized text)
+    /// Output format: "compact" (default) or "json"
+    #[schemars(skip)]
     pub format: Option<String>,
     /// Absolute path to the project root. If omitted, the MCP's startup
     /// `--project` is used. Pass an absolute path to query a different
     /// project — the MCP keeps a small LRU cache of IndexService instances
     /// so the watcher and pool are reused across calls.
+    #[schemars(skip)]
     pub project: Option<String>,
 }
 
@@ -83,16 +85,20 @@ pub struct GrepParams {
     pub whole_word: Option<bool>,
     /// Filter by language tag (e.g. "rust", "typescript")
     pub language: Option<String>,
-    /// Maximum results (default: 50)
+    /// Maximum results (default: 10)
     pub limit: Option<usize>,
     /// Truncate lines longer than this (default: 120, 0 = unlimited)
     pub max_line_length: Option<u32>,
-    /// Output format: "json" (default) or "compact" (token-optimized text)
+    /// Include Markdown and HTML documentation (default: false)
+    pub include_docs: Option<bool>,
+    /// Output format: "compact" (default) or "json"
+    #[schemars(skip)]
     pub format: Option<String>,
     /// Absolute path to the project root. If omitted, the MCP's startup
     /// `--project` is used. Pass an absolute path to query a different
     /// project — the MCP keeps a small LRU cache of IndexService instances
     /// so the watcher and pool are reused across calls.
+    #[schemars(skip)]
     pub project: Option<String>,
 }
 
@@ -111,12 +117,14 @@ pub struct SymbolInfoParams {
     /// blocks) into one merged result. "split" keeps the historical multi-row
     /// shape. Omit for the merged default.
     pub mode: Option<String>,
-    /// Output format: "json" (default) or "compact" (token-optimized text)
+    /// Output format: "compact" (default) or "json"
+    #[schemars(skip)]
     pub format: Option<String>,
     /// Absolute path to the project root. If omitted, the MCP's startup
     /// `--project` is used. Pass an absolute path to query a different
     /// project — the MCP keeps a small LRU cache of IndexService instances
     /// so the watcher and pool are reused across calls.
+    #[schemars(skip)]
     pub project: Option<String>,
 }
 
@@ -124,14 +132,16 @@ pub struct SymbolInfoParams {
 pub struct FindReferencesParams {
     /// Symbol name to find references for
     pub name: String,
-    /// Maximum results (default: 50)
+    /// Maximum results (default: 20)
     pub limit: Option<usize>,
-    /// Output format: "json" (default) or "compact" (token-optimized text)
+    /// Output format: "compact" (default) or "json"
+    #[schemars(skip)]
     pub format: Option<String>,
     /// Absolute path to the project root. If omitted, the MCP's startup
     /// `--project` is used. Pass an absolute path to query a different
     /// project — the MCP keeps a small LRU cache of IndexService instances
     /// so the watcher and pool are reused across calls.
+    #[schemars(skip)]
     pub project: Option<String>,
 }
 
@@ -143,14 +153,16 @@ pub struct CallHierarchyParams {
     /// outgoing calls (default: "callers"). The `in`/`out` values are kept
     /// for backwards compatibility.
     pub direction: Option<String>,
-    /// Maximum results (default: 50)
+    /// Maximum results (default: 20)
     pub limit: Option<usize>,
-    /// Output format: "json" (default) or "compact" (token-optimized text)
+    /// Output format: "compact" (default) or "json"
+    #[schemars(skip)]
     pub format: Option<String>,
     /// Absolute path to the project root. If omitted, the MCP's startup
     /// `--project` is used. Pass an absolute path to query a different
     /// project — the MCP keeps a small LRU cache of IndexService instances
     /// so the watcher and pool are reused across calls.
+    #[schemars(skip)]
     pub project: Option<String>,
 }
 
@@ -160,12 +172,14 @@ pub struct FileSymbolsParams {
     pub file_path: String,
     /// Output mode: "names" (minimal), "outline" (default), "full" (all fields)
     pub mode: Option<String>,
-    /// Output format: "json" (default) or "compact" (token-optimized text)
+    /// Output format: "compact" (default) or "json"
+    #[schemars(skip)]
     pub format: Option<String>,
     /// Absolute path to the project root. If omitted, the MCP's startup
     /// `--project` is used. Pass an absolute path to query a different
     /// project — the MCP keeps a small LRU cache of IndexService instances
     /// so the watcher and pool are reused across calls.
+    #[schemars(skip)]
     pub project: Option<String>,
 }
 
@@ -178,12 +192,14 @@ pub struct BlastRadiusParams {
     /// Maximum number of affected symbols to return (default: 500, max: 5000).
     /// When the cap is hit the response includes ``truncated: true``.
     pub max_results: Option<u32>,
-    /// Output format: "json" (default) or "compact" (token-optimized text)
+    /// Output format: "compact" (default) or "json"
+    #[schemars(skip)]
     pub format: Option<String>,
     /// Absolute path to the project root. If omitted, the MCP's startup
     /// `--project` is used. Pass an absolute path to query a different
     /// project — the MCP keeps a small LRU cache of IndexService instances
     /// so the watcher and pool are reused across calls.
+    #[schemars(skip)]
     pub project: Option<String>,
 }
 
@@ -191,38 +207,44 @@ pub struct BlastRadiusParams {
 pub struct SmartContextParams {
     /// Natural-language task description (e.g. "add pagination to the catalog API")
     pub task: String,
-    /// Token budget for the context (default: 8000)
+    /// Token budget for the context (default: 1200)
     pub budget: Option<u32>,
-    /// Graph expansion depth (default: 2)
+    /// Graph expansion depth (default: 1)
     pub depth: Option<u32>,
-    /// Output format: "json" (default) or "compact" (token-optimized text)
+    /// Output format: "compact" (default) or "json"
+    #[schemars(skip)]
     pub format: Option<String>,
     /// Absolute path to the project root. If omitted, the MCP's startup
     /// `--project` is used. Pass an absolute path to query a different
     /// project — the MCP keeps a small LRU cache of IndexService instances
     /// so the watcher and pool are reused across calls.
+    #[schemars(skip)]
     pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct ArchitectureParams {
-    /// Output format: "json" (default) or "compact" (token-optimized text)
+    /// Output format: "compact" (default) or "json"
+    #[schemars(skip)]
     pub format: Option<String>,
     /// Absolute path to the project root. If omitted, the MCP's startup
     /// `--project` is used. Pass an absolute path to query a different
     /// project — the MCP keeps a small LRU cache of IndexService instances
     /// so the watcher and pool are reused across calls.
+    #[schemars(skip)]
     pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct PackagesParams {
-    /// Output format: "json" (default) or "compact" (token-optimized text)
+    /// Output format: "compact" (default) or "json"
+    #[schemars(skip)]
     pub format: Option<String>,
     /// Absolute path to the project root. If omitted, the MCP's startup
     /// `--project` is used. Pass an absolute path to query a different
     /// project — the MCP keeps a small LRU cache of IndexService instances
     /// so the watcher and pool are reused across calls.
+    #[schemars(skip)]
     pub project: Option<String>,
 }
 
@@ -230,34 +252,40 @@ pub struct PackagesParams {
 pub struct ReindexParams {
     /// Force a full re-index instead of git-aware incremental (default: false).
     pub force: Option<bool>,
-    /// Output format: "json" (default) or "compact" (token-optimized text)
+    /// Output format: "compact" (default) or "json"
+    #[schemars(skip)]
     pub format: Option<String>,
     /// Absolute path to the project root. If omitted, the MCP's startup
     /// `--project` is used. Pass an absolute path to query a different
     /// project — the MCP keeps a small LRU cache of IndexService instances
     /// so the watcher and pool are reused across calls.
+    #[schemars(skip)]
     pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct WorkspaceOverviewParams {
-    /// Output format: "json" (default) or "compact" (token-optimized text)
+    /// Output format: "compact" (default) or "json"
+    #[schemars(skip)]
     pub format: Option<String>,
     /// Absolute path to the project root. If omitted, the MCP's startup
     /// `--project` is used. Pass an absolute path to query a different
     /// project — the MCP keeps a small LRU cache of IndexService instances
     /// so the watcher and pool are reused across calls.
+    #[schemars(skip)]
     pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct WorkspaceGraphParams {
-    /// Output format: "json" (default) or "compact" (token-optimized text)
+    /// Output format: "compact" (default) or "json"
+    #[schemars(skip)]
     pub format: Option<String>,
     /// Absolute path to the project root. If omitted, the MCP's startup
     /// `--project` is used. Pass an absolute path to query a different
     /// project — the MCP keeps a small LRU cache of IndexService instances
     /// so the watcher and pool are reused across calls.
+    #[schemars(skip)]
     pub project: Option<String>,
 }
 
@@ -265,18 +293,20 @@ pub struct WorkspaceGraphParams {
 pub struct InvestigateParams {
     /// Symbol name or qualified name to investigate
     pub symbol: String,
-    /// Max callers to return (default: 10)
+    /// Max callers to return (default: 8)
     pub caller_limit: Option<usize>,
-    /// Max callees to return (default: 10)
+    /// Max callees to return (default: 8)
     pub callee_limit: Option<usize>,
     /// Blast radius depth (default: 1)
     pub blast_depth: Option<u32>,
-    /// Output format: "json" (default) or "compact" (token-optimized text)
+    /// Output format: "compact" (default) or "json"
+    #[schemars(skip)]
     pub format: Option<String>,
     /// Absolute path to the project root. If omitted, the MCP's startup
     /// `--project` is used. Pass an absolute path to query a different
     /// project — the MCP keeps a small LRU cache of IndexService instances
     /// so the watcher and pool are reused across calls.
+    #[schemars(skip)]
     pub project: Option<String>,
 }
 
@@ -292,12 +322,14 @@ pub struct DiagnosticsParams {
     /// In workspace mode, how many files to return in each ranking
     /// (default: 20).
     pub top_n: Option<u32>,
-    /// Output format: "json" (default) or "compact" (token-optimized text)
+    /// Output format: "compact" (default) or "json"
+    #[schemars(skip)]
     pub format: Option<String>,
     /// Absolute path to the project root. If omitted, the MCP's startup
     /// `--project` is used. Pass an absolute path to query a different
     /// project — the MCP keeps a small LRU cache of IndexService instances
     /// so the watcher and pool are reused across calls.
+    #[schemars(skip)]
     pub project: Option<String>,
 }
 
@@ -311,23 +343,27 @@ pub struct DeadCodeParams {
     pub include_tests: Option<bool>,
     /// Maximum results (default: 100)
     pub max_results: Option<usize>,
-    /// Output format: "json" (default) or "compact" (token-optimized text)
+    /// Output format: "compact" (default) or "json"
+    #[schemars(skip)]
     pub format: Option<String>,
     /// Absolute path to the project root. If omitted, the MCP's startup
     /// `--project` is used. Pass an absolute path to query a different
     /// project — the MCP keeps a small LRU cache of IndexService instances
     /// so the watcher and pool are reused across calls.
+    #[schemars(skip)]
     pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct EntryPointsParams {
-    /// Output format: "json" (default) or "compact" (token-optimized text)
+    /// Output format: "compact" (default) or "json"
+    #[schemars(skip)]
     pub format: Option<String>,
     /// Absolute path to the project root. If omitted, the MCP's startup
     /// `--project` is used. Pass an absolute path to query a different
     /// project — the MCP keeps a small LRU cache of IndexService instances
     /// so the watcher and pool are reused across calls.
+    #[schemars(skip)]
     pub project: Option<String>,
 }
 
@@ -342,17 +378,20 @@ pub struct ResolveDiffParams {
     /// `--project` is used. Pass an absolute path to query a different
     /// project — the MCP keeps a small LRU cache of IndexService instances
     /// so the watcher and pool are reused across calls.
+    #[schemars(skip)]
     pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct QualityCheckParams {
-    /// Output format: "json" (default) or "compact" (token-optimized text)
+    /// Output format: "compact" (default) or "json"
+    #[schemars(skip)]
     pub format: Option<String>,
     /// Absolute path to the project root. If omitted, the MCP's startup
     /// `--project` is used. Pass an absolute path to query a different
     /// project — the MCP keeps a small LRU cache of IndexService instances
     /// so the watcher and pool are reused across calls.
+    #[schemars(skip)]
     pub project: Option<String>,
 }
 
@@ -368,12 +407,14 @@ pub struct UnresolvedParams {
     /// Top-N cause groups returned when `by_cause` is set, ranked by
     /// ref_count desc (default: 20). Ignored otherwise.
     pub top: Option<usize>,
-    /// Output format: "json" (default) or "compact" (token-optimized text)
+    /// Output format: "compact" (default) or "json"
+    #[schemars(skip)]
     pub format: Option<String>,
     /// Absolute path to the project root. If omitted, the MCP's startup
     /// `--project` is used. Pass an absolute path to query a different
     /// project — the MCP keeps a small LRU cache of IndexService instances
     /// so the watcher and pool are reused across calls.
+    #[schemars(skip)]
     pub project: Option<String>,
 }
 
@@ -387,12 +428,14 @@ pub struct PatternSearchParams {
     pub language: String,
     /// Maximum matches to return (default: 50).
     pub max_results: Option<u32>,
-    /// Output format: "json" (default) or "compact" (token-optimized text)
+    /// Output format: "compact" (default) or "json"
+    #[schemars(skip)]
     pub format: Option<String>,
     /// Absolute path to the project root. If omitted, the MCP's startup
     /// `--project` is used. Pass an absolute path to query a different
     /// project — the MCP keeps a small LRU cache of IndexService instances
     /// so the watcher and pool are reused across calls.
+    #[schemars(skip)]
     pub project: Option<String>,
 }
 
@@ -408,12 +451,14 @@ pub struct CompleteAtParams {
     pub prefix: String,
     /// Include signatures in results (default: false)
     pub include_signature: Option<bool>,
-    /// Output format: "json" (default) or "compact" (token-optimized text)
+    /// Output format: "compact" (default) or "json"
+    #[schemars(skip)]
     pub format: Option<String>,
     /// Absolute path to the project root. If omitted, the MCP's startup
     /// `--project` is used. Pass an absolute path to query a different
     /// project — the MCP keeps a small LRU cache of IndexService instances
     /// so the watcher and pool are reused across calls.
+    #[schemars(skip)]
     pub project: Option<String>,
 }
 
@@ -685,7 +730,7 @@ impl BearWisdomServer {
 
     /// Returns true when the caller requested compact output format.
     fn is_compact(format: &Option<String>) -> bool {
-        matches!(format.as_deref(), Some("compact"))
+        !matches!(format.as_deref(), Some("json"))
     }
 
     /// Map a `QueryError` to a structured error response string.
@@ -719,27 +764,18 @@ impl BearWisdomServer {
 impl ServerHandler for BearWisdomServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
-            "BearWisdom code intelligence: search symbols, grep source, inspect call hierarchies, \
-             find references, analyze blast radius, and get architecture overviews for the indexed project. \
-             Use bw_investigate for a combined deep-dive into any symbol.\n\n\
-             Compact format spec (when format=\"compact\"): \
-             First line is `#format:compact-v1`. Sections are separated by blank lines and named \
-             via `#meta`, `#files`, `#results`, `#matches`, `#refs`, `#symbols`, `#packages`, etc. \
-             The `#files` section is a path registry: `F1:<path>`, `F2:<path>`, ... — subsequent \
-             rows reference paths via `F1:<line>`, `F2:<line>`. Single-result responses inline the \
-             path directly and omit the `#files` registry. Symbol rows use \
-             `<name>|<kind>|F<n>:<line>` with optional trailing fields (`in:N` = incoming edges, \
-             `out:N` = outgoing edges, `private`/`public` = visibility, `0.95` = confidence score). \
-             The header `count:N` in `#meta` reports total match count; `truncated:true` indicates \
-             results were capped by the request limit.",
+            "Use bw_context for a task, bw_search for identifiers, and bw_investigate for one symbol plus its graph. \
+             Use bw_grep only for exact source text after indexed lookup misses. Compact output is the default. \
+             Keep limits small; prefer one combined call over separate info, callers, callees, and impact calls. \
+             Treat an unknown or stale index header as incomplete evidence.",
         )
     }
 }
 
 #[tool_router]
 impl BearWisdomServer {
-    /// Search code symbols by keyword. Returns up to 50 results by default with name, kind, file, line.
-    /// Pass include_signature: true for full signatures. Use bw_grep for raw text search.
+    /// Search indexed code symbols by identifier or a few alternatives. Returns 10 compact results by default.
+    /// Multi-term queries retry as OR alternatives when no symbol matches every term. Use bw_grep only for exact text.
     #[tool(name = "bw_search")]
     fn search(&self, Parameters(params): Parameters<SearchParams>) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
@@ -747,7 +783,7 @@ impl BearWisdomServer {
             if params.query.trim().is_empty() {
                 return Self::invalid_input("Query cannot be empty");
             }
-            let limit = params.limit.unwrap_or(50);
+            let limit = params.limit.unwrap_or(10);
             let opts = QueryOptions {
                 include_signature: params.include_signature.unwrap_or(false),
                 ..QueryOptions::default()
@@ -764,7 +800,7 @@ impl BearWisdomServer {
         })
     }
 
-    /// Fast substring or regex search across source files. Returns up to 50 matching lines by default.
+    /// Exact substring or regex fallback across source files. Returns up to 10 matching lines by default.
     /// Lines truncated to 120 chars by default (pass max_line_length: 0 for full lines).
     /// Use bw_search for semantic symbol lookup.
     #[tool(name = "bw_grep")]
@@ -779,11 +815,18 @@ impl BearWisdomServer {
             if let Some(lang) = &params.language {
                 scope = scope.with_language(lang);
             }
+            if !params.include_docs.unwrap_or(false) {
+                scope = scope
+                    .with_exclude("**/*.md")
+                    .with_exclude("**/*.markdown")
+                    .with_exclude("**/*.html")
+                    .with_exclude("**/*.htm");
+            }
             let options = bearwisdom::search::grep::GrepOptions {
                 regex: params.regex.unwrap_or(false),
                 case_sensitive: !params.case_insensitive.unwrap_or(false),
                 whole_word: params.whole_word.unwrap_or(false),
-                max_results: params.limit.unwrap_or(50),
+                max_results: params.limit.unwrap_or(10),
                 scope,
                 context_lines: 0,
             };
@@ -837,7 +880,7 @@ impl BearWisdomServer {
         )
     }
 
-    /// Find all references to a symbol. Returns up to 50 results by default with file, line, edge kind.
+    /// Find references to a symbol. Returns up to 20 compact results by default.
     #[tool(name = "bw_find_references")]
     fn find_references(
         &self,
@@ -852,7 +895,7 @@ impl BearWisdomServer {
                 if params.name.is_empty() {
                     return Self::invalid_input("Symbol name cannot be empty");
                 }
-                let limit = params.limit.unwrap_or(50);
+                let limit = params.limit.unwrap_or(20);
                 if compact {
                     bearwisdom::query::references::find_references(db, &params.name, limit)
                         .map(|r| crate::compact::references(&r, limit))
@@ -881,7 +924,7 @@ impl BearWisdomServer {
                 if params.name.is_empty() {
                     return Self::invalid_input("Symbol name cannot be empty");
                 }
-                let limit = params.limit.unwrap_or(50);
+                let limit = params.limit.unwrap_or(20);
                 let query_result = match params.direction.as_deref() {
                     Some("out") | Some("callees") => {
                         bearwisdom::query::call_hierarchy::outgoing_calls(db, &params.name, limit)
@@ -1387,8 +1430,8 @@ impl BearWisdomServer {
             if params.task.trim().is_empty() {
                 return Self::invalid_input("Task description cannot be empty");
             }
-            let budget = params.budget.unwrap_or(8000);
-            let depth = params.depth.unwrap_or(2);
+            let budget = params.budget.unwrap_or(1200);
+            let depth = params.depth.unwrap_or(1);
             bearwisdom::query::context::smart_context(db, &params.task, budget, depth)
                 .map_err(Self::query_err)
                 .and_then(|r| {
@@ -1418,8 +1461,8 @@ impl BearWisdomServer {
                     return Self::invalid_input("Symbol name cannot be empty");
                 }
                 let opts = bearwisdom::query::investigate::InvestigateOptions {
-                    caller_limit: params.caller_limit.unwrap_or(10),
-                    callee_limit: params.callee_limit.unwrap_or(10),
+                    caller_limit: params.caller_limit.unwrap_or(8),
+                    callee_limit: params.callee_limit.unwrap_or(8),
                     blast_depth: params.blast_depth.unwrap_or(1),
                 };
                 bearwisdom::query::investigate::investigate(db, &params.symbol, &opts)
