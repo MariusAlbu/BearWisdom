@@ -95,8 +95,7 @@ pub(super) fn resolve(
 fn same_include_family(language: &str, source_language: &str) -> bool {
     use crate::languages::LanguagePlugin;
     let family = super::CLangPlugin.language_ids();
-    language == source_language
-        || (family.contains(&language) && family.contains(&source_language))
+    language == source_language || (family.contains(&language) && family.contains(&source_language))
 }
 
 /// The single file among `paths` whose normalized path equals `spec` or ends

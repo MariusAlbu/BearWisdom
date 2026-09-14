@@ -41,7 +41,13 @@ fn an_evaluable_declaration_in_the_package_takes_the_root_back() {
 
 #[test]
 fn a_same_named_value_in_another_package_stays_a_stranger() {
-    let value = sym(1, "P", "otherpkg.P", "variable", "ext:ts:otherpkg/index.d.ts");
+    let value = sym(
+        1,
+        "P",
+        "otherpkg.P",
+        "variable",
+        "ext:ts:otherpkg/index.d.ts",
+    );
     let shape = [sym(2, "P", "P", "interface", "ext:ts:somepkg/index.d.ts")];
     assert!(value_yields_to_type(&value, &set(&shape)));
 }

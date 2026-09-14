@@ -290,9 +290,7 @@ impl ModuleGraph {
                         | BindingResult::Entity {
                             namespace: target, ..
                         } => pending.push((target, name)),
-                        BindingResult::Ambiguous => {
-                            result = result.merge(BindingResult::Ambiguous)
-                        }
+                        BindingResult::Ambiguous => result = result.merge(BindingResult::Ambiguous),
                         BindingResult::Incomplete | BindingResult::Unconfigured => {
                             result = result.merge(BindingResult::Incomplete)
                         }

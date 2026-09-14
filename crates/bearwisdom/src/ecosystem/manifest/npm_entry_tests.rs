@@ -41,7 +41,10 @@ fn exports_dot_leaves_come_first_declarations_ahead_then_legacy_fields() {
 
 #[test]
 fn a_string_or_conditions_only_exports_field_is_the_dot_entry() {
-    assert_eq!(package_entries(r#"{"exports":"./index.js"}"#), vec!["index.js"]);
+    assert_eq!(
+        package_entries(r#"{"exports":"./index.js"}"#),
+        vec!["index.js"]
+    );
     assert_eq!(
         package_entries(r#"{"exports":{"types":"./dist/index.d.ts","default":"./dist/index.js"}}"#),
         vec!["dist/index.d.ts", "dist/index.js"]

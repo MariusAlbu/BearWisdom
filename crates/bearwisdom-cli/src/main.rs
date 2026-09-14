@@ -1163,6 +1163,7 @@ fn cmd_watch(project_path: &str, debounce_ms: u64) -> Result<String> {
         pool_size: 1,
         watch: true,
         debounce: Duration::from_millis(debounce_ms),
+        allow_refresh: true,
     };
     let service = bearwisdom::IndexService::open(&db_path, &root, opts)
         .with_context(|| format!("open index service at {}", root.display()))?;

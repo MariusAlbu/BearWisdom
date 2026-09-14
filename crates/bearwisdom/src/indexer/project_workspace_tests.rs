@@ -55,11 +55,13 @@ fn canonical_name_map_holds_only_the_owning_package_and_its_own_spelling() {
     ];
     let ws = indexes(&packages, &HashMap::new());
 
-    assert_eq!(ws.declared_name.get(&1).map(String::as_str), Some("core_client"));
+    assert_eq!(
+        ws.declared_name.get(&1).map(String::as_str),
+        Some("core_client")
+    );
     assert_eq!(ws.declared_name.get(&2), None);
     assert!(
-        !ws
-            .declared_name
+        !ws.declared_name
             .values()
             .any(|name| name.starts_with("package:")),
         "an ecosystem alias must never become a package's canonical name"

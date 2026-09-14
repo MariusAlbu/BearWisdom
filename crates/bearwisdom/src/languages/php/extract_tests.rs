@@ -764,7 +764,12 @@ class Stream {}
         .collect();
     assert_eq!(
         qnames,
-        ["Http.Client", "Http.Client.Curl", "Http.Encoding", "Http.Encoding.Stream"]
+        [
+            "Http.Client",
+            "Http.Client.Curl",
+            "Http.Encoding",
+            "Http.Encoding.Stream"
+        ]
     );
 }
 

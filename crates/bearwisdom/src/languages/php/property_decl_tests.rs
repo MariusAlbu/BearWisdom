@@ -10,7 +10,9 @@ struct Extraction {
 
 /// Extract a class body holding a single declaration under test.
 fn extract_class(body: &str) -> Extraction {
-    let result = extract::extract(&format!("<?php\nnamespace Fx;\nclass Host\n{{\n{body}\n}}\n"));
+    let result = extract::extract(&format!(
+        "<?php\nnamespace Fx;\nclass Host\n{{\n{body}\n}}\n"
+    ));
     Extraction {
         symbols: result.symbols,
         refs: result.refs,

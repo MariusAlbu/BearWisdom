@@ -207,7 +207,10 @@ fn sole_owner_is_the_only_symbol_and_owns_every_index_link() {
 #[test]
 fn sole_owner_declines_when_a_symbol_already_exists() {
     let mut result = seeded();
-    assert!(!materialize_as_sole_owner(&mut result, container(CONTAINER)));
+    assert!(!materialize_as_sole_owner(
+        &mut result,
+        container(CONTAINER)
+    ));
 
     assert_eq!(result.symbols.len(), 3);
     assert_eq!(result.symbols[0].name, "Inner");

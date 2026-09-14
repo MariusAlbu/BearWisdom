@@ -17,20 +17,64 @@ use crate::db::Database;
 /// One hop in a cross-language flow trace.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlowStep {
-    /// Distance from the start node (0 = origin).
+    /// Stable database identity of the flow edge represented by this hop.
+    pub edge_id: i64,
+    /// Edge that led to this hop. `None` marks a root edge from the requested
+    /// source/target location.
+    pub parent_edge_id: Option<i64>,
+    /// Distance from the requested location (0 = directly incident edge).
     pub depth: u32,
-    /// Absolute path of the file at this hop.
+    /// Source endpoint file.
     pub file_path: String,
-    /// Source line in that file, if known.
+    /// Source endpoint line, if known.
     pub line: Option<u32>,
-    /// Symbol name at this hop, if known.
+    /// Source endpoint symbol, if known.
     pub symbol: Option<String>,
-    /// Language tag (e.g. "typescript", "csharp").
+    /// Source endpoint language.
     pub language: String,
-    /// The kind of edge that led here (e.g. "http_call", "grpc_call").
+    /// Target endpoint file. Missing for a single-ended observation.
+    pub target_file_path: Option<String>,
+    /// Target endpoint line, if resolved.
+    pub target_line: Option<u32>,
+    /// Target endpoint symbol, if resolved.
+    pub target_symbol: Option<String>,
+    /// Target endpoint language, if resolved.
+    pub target_language: Option<String>,
+    /// Whether the observation has a concrete target file.
+    pub paired: bool,
+    /// Semantic kind of the edge (e.g. `http_call`, `rpc_call`).
     pub edge_type: String,
-    /// Transport protocol if applicable (e.g. "http", "grpc").
+    /// Transport protocol if applicable.
     pub protocol: Option<String>,
+    /// HTTP verb if applicable.
+    pub http_method: Option<String>,
+    /// Normalized route/channel key used to pair the endpoints.
+    pub url_pattern: Option<String>,
+    /// Resolver/pairer confidence retained as provenance.
+    pub confidence: f64,
+}
+
+fn flow_step_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FlowStep> {
+    let target_file_path = row.get::<_, Option<String>>(7)?;
+    Ok(FlowStep {
+        depth: row.get(0)?,
+        edge_id: row.get(1)?,
+        parent_edge_id: row.get(2)?,
+        file_path: row.get(3)?,
+        line: row.get(4)?,
+        symbol: row.get(5)?,
+        language: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
+        target_file_path: target_file_path.clone(),
+        target_line: row.get(8)?,
+        target_symbol: row.get(9)?,
+        target_language: row.get(10)?,
+        paired: target_file_path.is_some(),
+        edge_type: row.get(11)?,
+        protocol: row.get(12)?,
+        http_method: row.get(13)?,
+        url_pattern: row.get(14)?,
+        confidence: row.get(15)?,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -49,58 +93,94 @@ pub fn trace_flow(
 ) -> Result<Vec<FlowStep>> {
     let conn = db.conn();
 
-    // The recursive CTE fans out from every edge that originates at
-    // (start_file, start_line).  At each depth we follow all outbound edges
-    // from the current node set.
-    //
-    // Cycle prevention: SQLite recursive CTEs will loop forever on cyclic
-    // graphs unless we bound by depth.  The `WHERE ft.depth < ?3` bound in
-    // the recursive term is our guard.
+    // Each row is an edge, with both endpoints retained. Recursion advances
+    // only when the preceding target has an exact source location (preferred)
+    // or symbol identity. A file match alone is never enough: it would splice
+    // unrelated routes, jobs, or database operations from the same file into
+    // one apparent path.
     let sql = "
         WITH RECURSIVE flow_trace(
-            depth, file_id, line, symbol, language, edge_type, protocol
+            depth, edge_id, parent_edge_id,
+            source_file_id, source_line, source_symbol, source_language,
+            target_file_id, target_line, target_symbol, target_language,
+            edge_type, protocol, http_method, url_pattern, confidence,
+            edge_path
         ) AS (
-            -- Base: all edges that leave start_file at start_line.
             SELECT
                 0,
+                fe.id,
+                NULL,
                 fe.source_file_id,
                 fe.source_line,
                 fe.source_symbol,
                 fe.source_language,
-                fe.edge_type,
-                fe.protocol
-            FROM flow_edges fe
-            JOIN files f ON f.id = fe.source_file_id
-            WHERE f.path = ?1
-              AND (?2 = 0 OR fe.source_line = ?2 OR fe.source_line IS NULL)
-
-            UNION ALL
-
-            -- Recursive: follow all edges out of the current set of nodes.
-            SELECT
-                ft.depth + 1,
                 fe.target_file_id,
                 fe.target_line,
                 fe.target_symbol,
                 fe.target_language,
                 fe.edge_type,
-                fe.protocol
+                fe.protocol,
+                fe.http_method,
+                fe.url_pattern,
+                fe.confidence,
+                printf(',%d,', fe.id)
+            FROM flow_edges fe
+            JOIN files f ON f.id = fe.source_file_id
+            WHERE f.path = ?1
+              AND (?2 = 0 OR fe.source_line = ?2)
+
+            UNION ALL
+
+            SELECT
+                ft.depth + 1,
+                fe.id,
+                ft.edge_id,
+                fe.source_file_id,
+                fe.source_line,
+                fe.source_symbol,
+                fe.source_language,
+                fe.target_file_id,
+                fe.target_line,
+                fe.target_symbol,
+                fe.target_language,
+                fe.edge_type,
+                fe.protocol,
+                fe.http_method,
+                fe.url_pattern,
+                fe.confidence,
+                ft.edge_path || fe.id || ','
             FROM flow_trace ft
-            JOIN flow_edges fe ON fe.source_file_id = ft.file_id
+            JOIN flow_edges fe
+              ON fe.source_file_id = ft.target_file_id
+             AND (
+                    (ft.target_line IS NOT NULL AND fe.source_line = ft.target_line)
+                 OR (ft.target_line IS NULL AND ft.target_symbol IS NOT NULL
+                     AND fe.source_symbol = ft.target_symbol)
+            )
             WHERE ft.depth < ?3
-              AND fe.target_file_id IS NOT NULL
+              AND instr(ft.edge_path, printf(',%d,', fe.id)) = 0
         )
         SELECT DISTINCT
             ft.depth,
-            f.path,
-            ft.line,
-            ft.symbol,
-            ft.language,
+            ft.edge_id,
+            ft.parent_edge_id,
+            sf.path,
+            ft.source_line,
+            ft.source_symbol,
+            COALESCE(ft.source_language, sf.language),
+            tf.path,
+            ft.target_line,
+            ft.target_symbol,
+            COALESCE(ft.target_language, tf.language),
             ft.edge_type,
-            ft.protocol
+            ft.protocol,
+            ft.http_method,
+            ft.url_pattern,
+            ft.confidence
         FROM flow_trace ft
-        JOIN files f ON f.id = ft.file_id
-        ORDER BY ft.depth, f.path
+        JOIN files sf ON sf.id = ft.source_file_id
+        LEFT JOIN files tf ON tf.id = ft.target_file_id
+        ORDER BY ft.depth, ft.edge_id
     ";
 
     let mut stmt = conn
@@ -110,17 +190,7 @@ pub fn trace_flow(
     let steps = stmt
         .query_map(
             rusqlite::params![start_file, start_line, max_depth],
-            |row| {
-                Ok(FlowStep {
-                    depth: row.get::<_, u32>(0)?,
-                    file_path: row.get::<_, String>(1)?,
-                    line: row.get::<_, Option<u32>>(2)?,
-                    symbol: row.get::<_, Option<String>>(3)?,
-                    language: row.get::<_, String>(4).unwrap_or_default(),
-                    edge_type: row.get::<_, String>(5)?,
-                    protocol: row.get::<_, Option<String>>(6)?,
-                })
-            },
+            flow_step_from_row,
         )
         .context("Failed to execute trace_flow CTE")?
         .collect::<rusqlite::Result<Vec<_>>>()
@@ -153,51 +223,87 @@ pub fn trace_flow_reverse(
 
     let sql = "
         WITH RECURSIVE flow_trace(
-            depth, file_id, line, symbol, language, edge_type, protocol
+            depth, edge_id, parent_edge_id,
+            source_file_id, source_line, source_symbol, source_language,
+            target_file_id, target_line, target_symbol, target_language,
+            edge_type, protocol, http_method, url_pattern, confidence,
+            edge_path
         ) AS (
-            -- Base: edges arriving at start_file at start_line.
             SELECT
                 0,
-                fe.target_file_id,
-                fe.target_line,
-                fe.target_symbol,
-                COALESCE(fe.target_language, tf.language),
-                fe.edge_type,
-                fe.protocol
-            FROM flow_edges fe
-            JOIN files sf ON sf.id = fe.target_file_id
-            LEFT JOIN files tf ON tf.id = fe.target_file_id
-            WHERE sf.path = ?1
-              AND (fe.target_line = ?2 OR fe.target_line IS NULL)
-
-            UNION ALL
-
-            -- Recursive: follow edges arriving at current nodes (backward).
-            SELECT
-                ft.depth + 1,
+                fe.id,
+                NULL,
                 fe.source_file_id,
                 fe.source_line,
                 fe.source_symbol,
-                COALESCE(fe.source_language, sf.language),
+                fe.source_language,
+                fe.target_file_id,
+                fe.target_line,
+                fe.target_symbol,
+                fe.target_language,
                 fe.edge_type,
-                fe.protocol
+                fe.protocol,
+                fe.http_method,
+                fe.url_pattern,
+                fe.confidence,
+                printf(',%d,', fe.id)
+            FROM flow_edges fe
+            JOIN files tf ON tf.id = fe.target_file_id
+            WHERE tf.path = ?1
+              AND (?2 = 0 OR fe.target_line = ?2)
+
+            UNION ALL
+
+            SELECT
+                ft.depth + 1,
+                fe.id,
+                ft.edge_id,
+                fe.source_file_id,
+                fe.source_line,
+                fe.source_symbol,
+                fe.source_language,
+                fe.target_file_id,
+                fe.target_line,
+                fe.target_symbol,
+                fe.target_language,
+                fe.edge_type,
+                fe.protocol,
+                fe.http_method,
+                fe.url_pattern,
+                fe.confidence,
+                ft.edge_path || fe.id || ','
             FROM flow_trace ft
-            JOIN flow_edges fe ON fe.target_file_id = ft.file_id
-            LEFT JOIN files sf ON sf.id = fe.source_file_id
+            JOIN flow_edges fe
+              ON fe.target_file_id = ft.source_file_id
+             AND (
+                    (ft.source_line IS NOT NULL AND fe.target_line = ft.source_line)
+                 OR (ft.source_line IS NULL AND ft.source_symbol IS NOT NULL
+                     AND fe.target_symbol = ft.source_symbol)
+             )
             WHERE ft.depth < ?3
-              AND fe.source_file_id IS NOT NULL
+              AND instr(ft.edge_path, printf(',%d,', fe.id)) = 0
         )
         SELECT DISTINCT
             ft.depth,
-            f.path,
-            ft.line,
-            ft.symbol,
-            ft.language,
+            ft.edge_id,
+            ft.parent_edge_id,
+            sf.path,
+            ft.source_line,
+            ft.source_symbol,
+            COALESCE(ft.source_language, sf.language),
+            tf.path,
+            ft.target_line,
+            ft.target_symbol,
+            COALESCE(ft.target_language, tf.language),
             ft.edge_type,
-            ft.protocol
+            ft.protocol,
+            ft.http_method,
+            ft.url_pattern,
+            ft.confidence
         FROM flow_trace ft
-        JOIN files f ON f.id = ft.file_id
-        ORDER BY ft.depth, f.path
+        JOIN files sf ON sf.id = ft.source_file_id
+        LEFT JOIN files tf ON tf.id = ft.target_file_id
+        ORDER BY ft.depth, ft.edge_id
     ";
 
     let mut stmt = conn
@@ -207,17 +313,7 @@ pub fn trace_flow_reverse(
     let steps = stmt
         .query_map(
             rusqlite::params![start_file, start_line, max_depth],
-            |row| {
-                Ok(FlowStep {
-                    depth: row.get::<_, u32>(0)?,
-                    file_path: row.get::<_, String>(1)?,
-                    line: row.get::<_, Option<u32>>(2)?,
-                    symbol: row.get::<_, Option<String>>(3)?,
-                    language: row.get::<_, String>(4).unwrap_or_default(),
-                    edge_type: row.get::<_, String>(5)?,
-                    protocol: row.get::<_, Option<String>>(6)?,
-                })
-            },
+            flow_step_from_row,
         )
         .context("Failed to execute trace_flow_reverse CTE")?
         .collect::<rusqlite::Result<Vec<_>>>()
@@ -278,21 +374,25 @@ pub fn cross_language_paths(
     // Fetch direct cross-language edges.
     let sql = "
         SELECT
+            0,
             fe.id,
-            sf.path  AS source_path,
+            NULL,
+            sf.path,
             fe.source_line,
             fe.source_symbol,
-            fe.source_language,
-            fe.edge_type,
-            fe.protocol,
-            fe.url_pattern,
-            tf.path  AS target_path,
+            COALESCE(fe.source_language, sf.language),
+            tf.path,
             fe.target_line,
             fe.target_symbol,
-            fe.target_language
+            COALESCE(fe.target_language, tf.language),
+            fe.edge_type,
+            fe.protocol,
+            fe.http_method,
+            fe.url_pattern,
+            fe.confidence
         FROM flow_edges fe
         JOIN files sf ON sf.id = fe.source_file_id
-        LEFT JOIN files tf ON tf.id = fe.target_file_id
+        JOIN files tf ON tf.id = fe.target_file_id
         WHERE fe.source_language = ?1
           AND fe.target_language = ?2
         ORDER BY fe.url_pattern, fe.edge_type, sf.path
@@ -305,97 +405,29 @@ pub fn cross_language_paths(
         .prepare(sql)
         .context("Failed to prepare cross_language_paths query")?;
 
-    // Each row becomes a two-step path: [source node → target node].
-    #[allow(clippy::type_complexity)]
-    let rows: Vec<(
-        String, // source_path
-        Option<u32>,
-        Option<String>,
-        String,         // source_language
-        String,         // edge_type
-        Option<String>, // protocol
-        Option<String>, // url_pattern
-        Option<String>, // target_path
-        Option<u32>,
-        Option<String>,
-        String, // target_language
-    )> = stmt
+    let rows: Vec<FlowStep> = stmt
         .query_map(
             rusqlite::params![source_language, target_language, effective_limit as i64],
-            |row| {
-                Ok((
-                    row.get::<_, String>(1)?,
-                    row.get::<_, Option<u32>>(2)?,
-                    row.get::<_, Option<String>>(3)?,
-                    row.get::<_, String>(4)?,
-                    row.get::<_, String>(5)?,
-                    row.get::<_, Option<String>>(6)?,
-                    row.get::<_, Option<String>>(7)?,
-                    row.get::<_, Option<String>>(8)?,
-                    row.get::<_, Option<u32>>(9)?,
-                    row.get::<_, Option<String>>(10)?,
-                    row.get::<_, String>(11)?,
-                ))
-            },
+            flow_step_from_row,
         )
         .context("Failed to execute cross_language_paths query")?
         .collect::<rusqlite::Result<Vec<_>>>()
         .context("Failed to collect cross_language_paths rows")?;
 
-    // Build one two-step path per edge row.
-    // Group by (url_pattern, edge_type) to merge duplicate edges.
+    // Group direct paired hops by their channel key. Each FlowStep retains
+    // both endpoints; no synthetic target-only row is needed.
     use std::collections::HashMap;
 
     let mut groups: HashMap<String, Vec<FlowStep>> = HashMap::new();
 
-    for (
-        source_path,
-        source_line,
-        source_symbol,
-        source_language_val,
-        edge_type,
-        protocol,
-        url_pattern,
-        target_path,
-        target_line,
-        target_symbol,
-        target_language_val,
-    ) in rows
-    {
+    for step in rows {
         let group_key = format!(
             "{}::{}::{}",
-            edge_type,
-            url_pattern.as_deref().unwrap_or(""),
-            source_path
+            step.edge_type,
+            step.url_pattern.as_deref().unwrap_or(""),
+            step.file_path
         );
-
-        let entry = groups.entry(group_key).or_default();
-
-        // Only append the source step once per group.
-        if entry.is_empty() {
-            entry.push(FlowStep {
-                depth: 0,
-                file_path: source_path,
-                line: source_line,
-                symbol: source_symbol,
-                language: source_language_val,
-                edge_type: edge_type.clone(),
-                protocol: protocol.clone(),
-            });
-        }
-
-        // Always add the target step (there may be multiple targets per source).
-        if let Some(tp) = target_path {
-            entry.push(FlowStep {
-                depth: 1,
-                file_path: tp,
-                line: target_line,
-                symbol: target_symbol,
-                language: target_language_val,
-                edge_type: edge_type.clone(),
-                protocol,
-            });
-        }
+        groups.entry(group_key).or_default().push(step);
     }
 
     let mut paths: Vec<Vec<FlowStep>> = groups.into_values().collect();

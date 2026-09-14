@@ -58,7 +58,14 @@ fn shape_only_kinds_are_type_kinds_that_bind_no_value() {
     assert!(!is_shape_only_kind("class"));
     assert!(!is_shape_only_kind("enum"));
     assert!(!is_shape_only_kind("namespace"));
-    for kind in ["variable", "constant", "const", "field", "property", "parameter"] {
+    for kind in [
+        "variable",
+        "constant",
+        "const",
+        "field",
+        "property",
+        "parameter",
+    ] {
         assert!(!is_shape_only_kind(kind), "{kind} is a value kind");
     }
 }

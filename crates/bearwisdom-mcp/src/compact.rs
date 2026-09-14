@@ -139,15 +139,45 @@ fn fmt_call_item(f: &mut CompactFormatter, c: &CallHierarchyItem) -> String {
 fn fmt_flow_step(f: &mut CompactFormatter, step: &FlowStep) -> String {
     let fr = f.fref(&step.file_path);
     let line = step.line.map_or_else(|| "?".to_string(), |n| n.to_string());
+    let target = step.target_file_path.as_deref().map_or_else(
+        || "?".to_string(),
+        |path| {
+            let target_ref = f.fref(path);
+            let target_line = step
+                .target_line
+                .map_or_else(|| "?".to_string(), |n| n.to_string());
+            format!(
+                "{}:{}|{}|{}",
+                target_ref,
+                target_line,
+                step.target_symbol.as_deref().unwrap_or("?"),
+                step.target_language.as_deref().unwrap_or("?")
+            )
+        },
+    );
+    let parent = step
+        .parent_edge_id
+        .map_or_else(|| "-".to_string(), |id| format!("E{id}"));
     format!(
-        "d{}|{}:{}|{}|{}|{}|{}",
+        "E{}|{}|d{}|{}:{}|{}|{}->{}|{}|{}|{}|{}|confidence:{:.2}|{}",
+        step.edge_id,
+        parent,
         step.depth,
         fr,
         line,
         step.symbol.as_deref().unwrap_or("?"),
         step.language,
+        target,
         step.edge_type,
-        step.protocol.as_deref().unwrap_or("-")
+        step.protocol.as_deref().unwrap_or("-"),
+        step.http_method.as_deref().unwrap_or("-"),
+        step.url_pattern.as_deref().unwrap_or("-"),
+        step.confidence,
+        if step.paired {
+            "paired"
+        } else {
+            "single-ended"
+        }
     )
 }
 
@@ -488,6 +518,12 @@ pub fn flow_trace(
     max_steps: usize,
 ) -> String {
     let total = forward.len() + backward.len();
+    let paired = forward
+        .iter()
+        .chain(backward.iter())
+        .filter(|step| step.paired)
+        .count();
+    let single_ended = total.saturating_sub(paired);
     let mut f = CompactFormatter::for_count(total.min(max_steps));
     let mut body = String::with_capacity(4096);
     let mut shown = 0usize;
@@ -512,7 +548,7 @@ pub fn flow_trace(
     }
 
     let mut meta = format!(
-        "direction:{direction}|forward:{}|backward:{}|shown:{shown}|evidence:resolved_flow_edges",
+        "direction:{direction}|forward:{}|backward:{}|paired:{paired}|single_ended:{single_ended}|shown:{shown}|evidence:flow_edges",
         forward.len(),
         backward.len()
     );
@@ -521,6 +557,9 @@ pub fn flow_trace(
     }
     if total == 0 {
         meta.push_str("|empty_is_inconclusive:true");
+    }
+    if single_ended > 0 {
+        meta.push_str("|incomplete:true");
     }
     let mut out = start(&meta);
     f.write_files(&mut out);
@@ -559,16 +598,20 @@ pub fn full_trace(result: &FullTraceResult, max_nodes: usize) -> String {
         .map(|trace| trace.node_count as usize)
         .sum::<usize>();
     let mut meta = format!(
-        "traces:{}|symbols:{}|nodes:{available_nodes}|flow_jumps:{}|shown:{shown}|evidence:resolved_call_and_flow_edges",
+        "traces:{}|symbols:{}|nodes:{available_nodes}|flow_jumps:{}|incomplete_flow_edges:{}|shown:{shown}|evidence:call_and_flow_edges",
         result.traces.len(),
         result.total_symbols,
-        result.flow_jumps
+        result.flow_jumps,
+        result.incomplete_flow_edges
     );
     if available_nodes > shown {
         meta.push_str("|truncated:true");
     }
     if result.traces.is_empty() {
         meta.push_str("|empty_is_inconclusive:true");
+    }
+    if result.incomplete_flow_edges > 0 {
+        meta.push_str("|incomplete:true");
     }
     let mut out = start(&meta);
     f.write_files(&mut out);
@@ -589,7 +632,8 @@ pub fn investigate(result: &InvestigateResult) -> String {
     let fr = f.fref(&result.symbol.file_path);
     let _ = write!(
         body,
-        "{}|{}|{}|{}:{}",
+        "{}|{}|{}|{}|{}:{}",
+        result.symbol.symbol_id.as_deref().unwrap_or("id:unknown"),
         result.symbol.qualified_name,
         result.symbol.name,
         result.symbol.kind,
@@ -609,6 +653,26 @@ pub fn investigate(result: &InvestigateResult) -> String {
             "{}|{}|{}:{}|{}|confidence:{:.2}",
             r.referencing_symbol, r.referencing_kind, rfr, r.line, r.edge_kind, r.confidence
         );
+    }
+
+    if !result.source_attested_unresolved.is_empty() {
+        body.push_str("\n#source_attested_unresolved\n");
+        for occurrence in &result.source_attested_unresolved {
+            let rfr = f.fref(&occurrence.file_path);
+            let _ = writeln!(
+                body,
+                "{}|{}|{}:{}:{}|{}|{}|candidates:{}|evidence:{}",
+                occurrence.referencing_symbol,
+                occurrence.referencing_kind,
+                rfr,
+                occurrence.line,
+                occurrence.column,
+                occurrence.edge_kind,
+                occurrence.outcome,
+                occurrence.candidate_declaration_count,
+                occurrence.evidence_source,
+            );
+        }
     }
 
     // Callers
@@ -645,9 +709,32 @@ pub fn investigate(result: &InvestigateResult) -> String {
         }
     }
 
+    let coverage = match result.reference_coverage.occurrence_coverage {
+        bearwisdom::query::references::OccurrenceCoverage::Complete => "complete",
+        bearwisdom::query::references::OccurrenceCoverage::Partial => "partial",
+        bearwisdom::query::references::OccurrenceCoverage::Unknown => "unknown",
+    };
+    let resolved_source = match result.reference_coverage.resolved_source {
+        bearwisdom::query::references::ResolvedReferenceSource::RefResolutionLog => {
+            "ref_resolution_log"
+        }
+        bearwisdom::query::references::ResolvedReferenceSource::Mixed => {
+            "ref_resolution_log_and_legacy_edges"
+        }
+        bearwisdom::query::references::ResolvedReferenceSource::LegacyEdges => "legacy_edges",
+    };
     let mut out = start(&format!(
-        "references:{}|callers:{}|callees:{}|evidence:resolved_graph_only|empty_sections_inconclusive:true",
+        "references:{}|resolved_total:{}|resolved_source:{resolved_source}|resolved_truncated:{}|source_attested_unresolved:{}|source_attested_total:{}|source_attested_truncated:{}|reference_coverage:{coverage}|files_measured:{}/{}|missing_files:{}|stale_files:{}|callers:{}|callees:{}|evidence:source_attested_and_resolved_graph|empty_sections_inconclusive:true",
         result.references.len(),
+        result.reference_coverage.resolved_total,
+        result.reference_coverage.resolved_truncated,
+        result.source_attested_unresolved.len(),
+        result.reference_coverage.source_attested_total,
+        result.reference_coverage.source_attested_truncated,
+        result.reference_coverage.measured_files,
+        result.reference_coverage.internal_files,
+        result.reference_coverage.missing_files,
+        result.reference_coverage.stale_files,
         result.callers.len(),
         result.callees.len()
     ));

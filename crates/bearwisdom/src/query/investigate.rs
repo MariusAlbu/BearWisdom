@@ -9,7 +9,7 @@
 use crate::db::Database;
 use crate::query::blast_radius::{self, AffectedSymbol};
 use crate::query::call_hierarchy::{self, CallHierarchyItem};
-use crate::query::references;
+use crate::query::references::{self, ReferenceCoverage, SourceAttestedOccurrence};
 use crate::query::QueryResult;
 use crate::types::ReferenceResult;
 use anyhow::Context;
@@ -51,6 +51,11 @@ impl Default for InvestigateOptions {
 /// Slim symbol summary used as the center of an investigate result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SlimSymbol {
+    /// Stable index identity when this snapshot was written by the
+    /// symbol-identity pipeline.  Missing on legacy rows; consumers must not
+    /// substitute a qualified-name string for it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol_id: Option<String>,
     pub name: String,
     pub qualified_name: String,
     pub kind: String,
@@ -66,6 +71,15 @@ pub struct InvestigateResult {
     pub symbol: SlimSymbol,
     /// Resolved occurrences that point at the selected symbol identity.
     pub references: Vec<ReferenceResult>,
+    /// Source-attested unresolved or drained occurrences whose emitted name
+    /// matches the selected declaration's simple name. These are deliberately
+    /// separate from `references`: name-only evidence never proves a graph
+    /// relationship, especially when `candidate_declaration_count` is > 1.
+    pub source_attested_unresolved: Vec<SourceAttestedOccurrence>,
+    /// Counts and source provenance for both occurrence lists. An empty
+    /// `references` vector is only an empty resolved set; consult this field
+    /// before drawing any conclusion about coverage or source occurrences.
+    pub reference_coverage: ReferenceCoverage,
     /// Symbols that call this symbol (incoming call hierarchy).
     pub callers: Vec<CallHierarchyItem>,
     /// Symbols that this symbol calls (outgoing call hierarchy).
@@ -99,7 +113,8 @@ pub fn investigate(
     let conn = db.conn();
 
     // --- Resolve the symbol ---
-    let lookup_sql = "SELECT s.id, s.name, s.qualified_name, s.kind, f.path, s.line, s.signature
+    let lookup_sql =
+        "SELECT s.id, s.symbol_key, s.name, s.qualified_name, s.kind, f.path, s.line, s.signature
          FROM symbols s JOIN files f ON f.id = s.file_id
          WHERE (s.qualified_name = ?1 OR s.name = ?1)
            AND s.origin = 'internal'
@@ -111,22 +126,24 @@ pub fn investigate(
         .query_row(lookup_sql, [symbol_name], |row| {
             Ok((
                 row.get::<_, i64>(0)?,
-                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(1)?,
                 row.get::<_, String>(2)?,
                 row.get::<_, String>(3)?,
                 row.get::<_, String>(4)?,
-                row.get::<_, u32>(5)?,
-                row.get::<_, Option<String>>(6)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, u32>(6)?,
+                row.get::<_, Option<String>>(7)?,
             ))
         })
         .optional()
         .context("investigate: symbol lookup")?;
 
-    let Some((_id, name, qualified_name, kind, file_path, line, signature)) = row else {
+    let Some((id, symbol_id, name, qualified_name, kind, file_path, line, signature)) = row else {
         return Ok(None);
     };
 
     let symbol = SlimSymbol {
+        symbol_id,
         name: name.clone(),
         qualified_name: qualified_name.clone(),
         kind,
@@ -138,7 +155,8 @@ pub fn investigate(
     // --- Resolved graph evidence ---
     // Query failures must propagate: turning a busy/corrupt graph into an
     // empty section would make the evidence look complete when it is not.
-    let reference_results = references::find_references(db, &qualified_name, opts.reference_limit)?;
+    let reference_evidence =
+        references::evidence_for_declaration(db, id, &name, opts.reference_limit)?;
 
     // Use the selected qualified identity for all graph queries so namesakes
     // and overload groups do not leak into the evidence bundle.
@@ -158,7 +176,9 @@ pub fn investigate(
 
     Ok(Some(InvestigateResult {
         symbol,
-        references: reference_results,
+        references: reference_evidence.resolved,
+        source_attested_unresolved: reference_evidence.source_attested_unresolved,
+        reference_coverage: reference_evidence.coverage,
         callers,
         callees,
         blast_radius,
@@ -265,5 +285,57 @@ mod tests {
         assert!(a.callers.is_empty());
         assert_eq!(b.references.len(), 1);
         assert_eq!(b.callers.len(), 1);
+    }
+
+    #[test]
+    fn investigate_returns_source_attested_misses_without_calling_them_references() {
+        let db = Database::open_in_memory().unwrap();
+        let conn = db.conn();
+        conn.execute(
+            "INSERT INTO files (path, hash, language, last_indexed) VALUES ('lib.rs', 'h', 'rust', 0)",
+            [],
+        )
+        .unwrap();
+        let file_id = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, symbol_key)
+             VALUES (?1, 'target', 'module::target', 'function', 1, 0, 'rust:module::target')",
+            [file_id],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+             VALUES (?1, 'caller', 'module::caller', 'function', 10, 0)",
+            [file_id],
+        )
+        .unwrap();
+        let caller = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO ref_resolutions
+             (source_id, target_name, kind, source_line, source_col, outcome)
+             VALUES (?1, 'target', 'calls', 12, 7, 'unresolved')",
+            [caller],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO resolution_census (file_id, content_hash, counts_json) VALUES (?1, 'h', '[]')",
+            [file_id],
+        )
+        .unwrap();
+
+        let result = investigate(&db, "module::target", &InvestigateOptions::default())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            result.symbol.symbol_id.as_deref(),
+            Some("rust:module::target")
+        );
+        assert!(result.references.is_empty());
+        assert_eq!(result.source_attested_unresolved.len(), 1);
+        assert_eq!(result.source_attested_unresolved[0].line, 12);
+        assert_eq!(
+            result.reference_coverage.occurrence_coverage,
+            references::OccurrenceCoverage::Complete
+        );
     }
 }

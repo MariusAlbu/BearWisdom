@@ -46,7 +46,13 @@ fn same_source_namespace_outranks_same_workspace_package() {
     // Three declarations share the simple name. The caller's own namespace
     // names only the first; the second sits in the caller's BUILD unit and the
     // third is an external homonym. Source namespace must win.
-    let own = zqrepo(1, "app.Zqrepo", "src/main/java/app/Zqrepo.java", "app", None);
+    let own = zqrepo(
+        1,
+        "app.Zqrepo",
+        "src/main/java/app/Zqrepo.java",
+        "app",
+        None,
+    );
     let same_pkg = zqrepo(
         2,
         "other.Zqrepo",
@@ -85,7 +91,13 @@ fn two_candidates_in_the_caller_namespace_still_decline() {
 fn no_declared_namespace_leaves_scores_unchanged() {
     // A language whose extractor emits no namespace symbol scores exactly as
     // it did without the term: path proximity alone cannot clear the margin.
-    let near = zqrepo(1, "app.Zqrepo", "src/main/java/app/Zqrepo.java", "app", None);
+    let near = zqrepo(
+        1,
+        "app.Zqrepo",
+        "src/main/java/app/Zqrepo.java",
+        "app",
+        None,
+    );
     let far = zqrepo(
         2,
         "other.Zqrepo",

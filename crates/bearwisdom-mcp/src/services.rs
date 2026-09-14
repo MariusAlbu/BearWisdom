@@ -2,9 +2,10 @@
 // services.rs — per-project IndexService cache for the MCP server
 //
 // Lets a single MCP instance serve multiple projects. The first tool call for
-// a project lazily opens an `IndexService` (which spawns the file watcher and
-// owns the connection pool); subsequent calls reuse it. Eviction is LRU-bounded
-// so the watcher count stays predictable across long sessions.
+// a project lazily opens an `IndexService` and owns a connection pool;
+// subsequent calls reuse it. MCP passes query-only options, so a stdio
+// process never turns each cached project into a second watcher/refresh
+// owner. Eviction is LRU-bounded to keep connection state predictable.
 //
 // Failure modes:
 //   * `PROJECT_NOT_FOUND` — the path doesn't exist or isn't a directory.
@@ -23,8 +24,8 @@ use tracing::{debug, info, warn};
 use bearwisdom::{IndexService, IndexServiceOptions};
 
 /// Thread-safe cache of `IndexService` instances keyed by canonicalised
-/// project root. Lookups bump the LRU order; evicted services drop their
-/// watcher and pool when the cache releases its `Arc`.
+/// project root. Lookups bump the LRU order; evicted services drop their pool
+/// when the cache releases its `Arc`.
 pub struct ServiceCache {
     inner: Mutex<LruCache<PathBuf, Arc<IndexService>>>,
     options: IndexServiceOptions,
@@ -41,7 +42,7 @@ impl ServiceCache {
     }
 
     /// Insert a pre-built service under its project root. Used at startup to
-    /// seed the default project so the watcher is up before any tool call.
+    /// seed the default project before any tool call.
     /// The key is canonicalised to match the lookup path in `get_or_open`.
     pub fn insert(&self, project: PathBuf, service: Arc<IndexService>) {
         let canonical = project.canonicalize().unwrap_or(project);

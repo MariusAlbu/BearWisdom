@@ -49,7 +49,11 @@ pub(crate) fn score_candidate(
     let mut s: i32 = 0;
     // Exact equality only: an enclosing/parent namespace earns nothing, so a
     // language whose visibility reaches outward does not get a silent free win.
-    if let Some(ns) = file_ctx.file_namespace.as_deref().filter(|ns| !ns.is_empty()) {
+    if let Some(ns) = file_ctx
+        .file_namespace
+        .as_deref()
+        .filter(|ns| !ns.is_empty())
+    {
         if sym.scope_path.as_deref() == Some(ns) {
             s += SAME_SOURCE_NAMESPACE;
         }

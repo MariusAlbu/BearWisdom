@@ -31,7 +31,9 @@ fn return_type_ignores_colons_inside_parameter_attributes_and_defaults() {
 fn signature_without_result_type_yields_no_return_type() {
     assert_eq!(PhpPlugin.signature_return_type("function messages()"), None);
     assert_eq!(
-        PhpPlugin.signature_return_type("function setLenient(#[LanguageAware(['8.0' => 'bool'], default: '')] $lenient)"),
+        PhpPlugin.signature_return_type(
+            "function setLenient(#[LanguageAware(['8.0' => 'bool'], default: '')] $lenient)"
+        ),
         None
     );
 }
@@ -55,5 +57,8 @@ fn qualified_type_text_interns_as_the_canonical_declaration_qname() {
         let id = PhpPlugin.intern_type_text(&arena, text);
         assert_eq!(arena.format_type(id), expected, "type text {text:?}");
     }
-    assert_eq!(helpers::canonicalize_type_text("A\\B|\\C\\D|null"), "A.B|C.D|null");
+    assert_eq!(
+        helpers::canonicalize_type_text("A\\B|\\C\\D|null"),
+        "A.B|C.D|null"
+    );
 }

@@ -44,7 +44,9 @@ fn namespace_does_not_match_partial_segments_or_other_directories() {
 
 #[test]
 fn relative_candidates_are_never_produced() {
-    assert!((PHP_SOURCE_MODULE_PATH_POLICY.relative_candidate_paths)("Illuminate/Support").is_empty());
+    assert!(
+        (PHP_SOURCE_MODULE_PATH_POLICY.relative_candidate_paths)("Illuminate/Support").is_empty()
+    );
 }
 
 #[test]
@@ -53,7 +55,10 @@ fn external_match_terms_use_the_namespace_leaf() {
         external_import_match_terms("Illuminate\\Support"),
         vec!["support".to_string()]
     );
-    assert_eq!(external_import_match_terms("\\Carbon"), vec!["carbon".to_string()]);
+    assert_eq!(
+        external_import_match_terms("\\Carbon"),
+        vec!["carbon".to_string()]
+    );
     assert!(external_import_match_terms("").is_empty());
     assert!(external_import_match_terms("Illuminate\\").is_empty());
 }

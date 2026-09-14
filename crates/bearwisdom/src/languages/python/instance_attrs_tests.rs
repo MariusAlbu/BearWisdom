@@ -38,7 +38,12 @@ fn a_second_method_assigning_the_same_name_reuses_the_declaration() {
         "        self.repo = 2\n",
     );
     let r = extract::extract(source);
-    assert_eq!(members(&r.symbols, "Svc", "repo").len(), 1, "{:?}", r.symbols);
+    assert_eq!(
+        members(&r.symbols, "Svc", "repo").len(),
+        1,
+        "{:?}",
+        r.symbols
+    );
 }
 
 #[test]
@@ -50,7 +55,12 @@ fn a_class_body_attribute_absorbs_the_method_assignment() {
         "        self.repo = 1\n",
     );
     let r = extract::extract(source);
-    assert_eq!(members(&r.symbols, "Svc", "repo").len(), 1, "{:?}", r.symbols);
+    assert_eq!(
+        members(&r.symbols, "Svc", "repo").len(),
+        1,
+        "{:?}",
+        r.symbols
+    );
 }
 
 #[test]
@@ -60,9 +70,11 @@ fn a_constructor_initializer_types_the_declaration() {
     let found = members(&r.symbols, "Svc", "cache");
     assert_eq!(found.len(), 1, "{:?}", r.symbols);
     assert!(
-        r.refs.iter().any(|reference| reference.kind == EdgeKind::TypeRef
-            && reference.target_name == "Cache"
-            && reference.source_symbol_index == found[0]),
+        r.refs
+            .iter()
+            .any(|reference| reference.kind == EdgeKind::TypeRef
+                && reference.target_name == "Cache"
+                && reference.source_symbol_index == found[0]),
         "{:?}",
         r.refs
     );

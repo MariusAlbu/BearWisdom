@@ -276,12 +276,12 @@ impl LexicalBindings {
 
 #[path = "lexical_globals.rs"]
 pub(crate) mod globals;
+#[path = "lexical_module_completeness.rs"]
+pub(crate) mod module_completeness;
 #[path = "lexical_module_forms.rs"]
 pub(crate) mod module_forms;
 #[path = "lexical_modules.rs"]
 pub(crate) mod modules;
-#[path = "lexical_module_completeness.rs"]
-pub(crate) mod module_completeness;
 #[path = "lexical_selections.rs"]
 mod selections;
 #[path = "lexical_type_syntax.rs"]

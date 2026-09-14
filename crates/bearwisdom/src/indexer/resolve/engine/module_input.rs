@@ -14,10 +14,10 @@ use serde::{Deserialize, Serialize};
 /// across a change to the syntax binder's ID allocation or declaration policy.
 pub(super) const BINDING_EPOCH: u32 = 78;
 
-#[path = "module_scope_inputs.rs"]
-mod source_units;
 #[path = "module_input_lowering.rs"]
 mod lowering;
+#[path = "module_scope_inputs.rs"]
+mod source_units;
 use lowering::{assignments, exports, imported};
 
 pub(super) use crate::indexer::namespaces::{ExportDomain, SourceModuleId};
@@ -219,7 +219,6 @@ pub(super) fn capture(file: &ParsedFile, ids: &SymbolIds) -> Option<ModuleInput>
     input.assignments = assignments(&syntax.assignments, graph, &file.path, ids);
     Some(input)
 }
-
 
 /// Every captured type row is a fence, including singleton and invalid groups.
 /// The first row is the logical group's representative; prefer a runtime class

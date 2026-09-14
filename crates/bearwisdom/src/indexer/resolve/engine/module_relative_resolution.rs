@@ -25,9 +25,7 @@ impl ModuleGraph {
     ) -> Option<&str> {
         let input = self.inputs.get(&module_paths::normalize(source_file))?;
         module_paths::find(base, &input.paths, |path| {
-            self.paths
-                .get_key_value(path)
-                .map(|(key, _)| key.as_str())
+            self.paths.get_key_value(path).map(|(key, _)| key.as_str())
         })
     }
 }

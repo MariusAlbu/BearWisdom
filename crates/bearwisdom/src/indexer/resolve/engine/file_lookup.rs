@@ -569,7 +569,7 @@ impl<'a> SymbolLookup for FileLookup<'a> {
     }
 }
 
-#[path = "file_lookup_includes.rs"]
-mod includes;
 #[path = "file_lookup_flow.rs"]
 mod flow_cache;
+#[path = "file_lookup_includes.rs"]
+mod includes;

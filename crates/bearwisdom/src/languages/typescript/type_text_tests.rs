@@ -36,7 +36,10 @@ fn absence_spellings_intern_as_atoms_rather_than_nominals() {
     let plugin = TypeScriptPlugin;
     let arena = TypeArena::new();
 
-    for (spelling, atom) in [("null", Intrinsic::Null), ("undefined", Intrinsic::Undefined)] {
+    for (spelling, atom) in [
+        ("null", Intrinsic::Null),
+        ("undefined", Intrinsic::Undefined),
+    ] {
         let id = plugin.intern_type_text(&arena, spelling);
         assert_eq!(
             arena.get(id),

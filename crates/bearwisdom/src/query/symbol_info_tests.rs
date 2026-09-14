@@ -56,7 +56,7 @@ fn symbol_info_basic_lookup() {
 #[test]
 fn symbol_info_by_qualified_name() {
     let db = Database::open_in_memory().unwrap();
-    insert_symbol_full(
+    let id = insert_symbol_full(
         &db,
         "a.cs",
         "GetById",
@@ -67,6 +67,12 @@ fn symbol_info_by_qualified_name() {
         10,
         20,
     );
+    db.conn()
+        .execute(
+            "UPDATE symbols SET symbol_key = 'csharp:App.FooService.GetById#method' WHERE id = ?1",
+            [id],
+        )
+        .unwrap();
 
     let details = symbol_info(
         &db,
@@ -76,6 +82,10 @@ fn symbol_info_by_qualified_name() {
     .unwrap();
     assert_eq!(details.len(), 1);
     assert_eq!(details[0].qualified_name, "App.FooService.GetById");
+    assert_eq!(
+        details[0].symbol_id.as_deref(),
+        Some("csharp:App.FooService.GetById#method")
+    );
     assert_eq!(
         details[0].signature.as_deref(),
         Some("Task<Foo> GetById(int id)")

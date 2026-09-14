@@ -88,13 +88,18 @@ async fn run_server(project_arg: Option<PathBuf>) -> Result<()> {
     let project = project.canonicalize().unwrap_or(project);
     info!("Starting BearWisdom for project: {}", project.display());
 
-    // BW core owns indexing. The MCP server is just a query consumer:
-    // it opens an `IndexService` per project (lazily, via the cache), hands
-    // the pool to each request, and lets each service's file watcher keep
-    // the index fresh. The default project is opened eagerly so its
-    // watcher is up before any tool call.
+    // A stdio MCP server is a query client, not a project index daemon. More
+    // than one editor/agent commonly starts one, so giving every process a
+    // watcher and an initial sweep races writers and can expose a rebuilding
+    // index. This process reads the shared index and its last-complete
+    // metadata; a persistent project writer (CLI/watch or a future daemon)
+    // owns refreshes.
     let db_path = resolve_db_path(&project)?;
-    let default_options = bearwisdom::IndexServiceOptions::default();
+    let default_options = bearwisdom::IndexServiceOptions {
+        watch: false,
+        allow_refresh: false,
+        ..Default::default()
+    };
     let default_service = std::sync::Arc::new(
         bearwisdom::IndexService::open(&db_path, &project, default_options.clone())
             .with_context(|| format!("open index service for {}", project.display()))?,
@@ -109,11 +114,6 @@ async fn run_server(project_arg: Option<PathBuf>) -> Result<()> {
 
     let transport = rmcp::transport::io::stdio();
     let service = mcp_server.serve(transport).await?;
-
-    // Use the service's in-flight gate for the initial refresh. The previous
-    // standalone task was invisible to that gate, so the first tool call could
-    // start a second reindex in the same process.
-    let _ = default_service.try_spawn_sweep(0);
 
     tokio::select! {
         result = service.waiting() => {

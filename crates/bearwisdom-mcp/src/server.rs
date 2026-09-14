@@ -1,20 +1,15 @@
 use bearwisdom::query::QueryOptions;
-use bearwisdom::IndexService;
+use bearwisdom::{IndexFreshness, IndexService, RefreshState};
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
 use rmcp::model::{ServerCapabilities, ServerInfo};
 use rmcp::{schemars, tool, tool_handler, tool_router, ServerHandler};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
 
 use crate::services::ServiceCache;
-
-/// Throttle for the opportunistic stale-sweep called from every tool
-/// entry. 60s lets the file-watcher catch up on its own under burst
-/// loads while ensuring any miss surfaces within ~2 minutes of the
-/// next tool call. See `IndexService::try_spawn_sweep`.
-const STALE_SWEEP_THROTTLE_MS: i64 = 60_000;
 
 /// Format a structured JSON error response for MCP tool calls.
 fn error_response(code: &str, message: &str) -> String {
@@ -303,6 +298,17 @@ pub struct ReindexParams {
     pub project: Option<String>,
 }
 
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
+pub struct StatusParams {
+    /// Output format: "compact" (default) or "json"
+    #[schemars(skip)]
+    pub format: Option<String>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used.
+    #[schemars(skip)]
+    pub project: Option<String>,
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct WorkspaceOverviewParams {
     /// Output format: "compact" (default) or "json"
@@ -551,6 +557,12 @@ impl BearWisdomServer {
     /// wrapper cluttering the hot path.
     fn run_reindex(&self, force: bool, project: Option<&str>) -> Result<String, String> {
         let service = self.resolve_service(project)?;
+        if !service.refresh_enabled() {
+            return Err(error_response(
+                "INDEX_READ_ONLY",
+                "this MCP process is a query-only client; refresh the shared index through the project writer",
+            ));
+        }
         let pool = service.pool();
         let project_root = service.project_root();
         let ref_cache = pool.ref_cache().clone();
@@ -604,25 +616,18 @@ impl BearWisdomServer {
         Ok(response.to_string())
     }
 
-    /// Write one audit record.  Best-effort — a write failure must not propagate.
+    /// Emit bounded operational audit metadata. Query clients never write
+    /// parameters or response bodies into the shared semantic index.
     fn audit_call(&self, tool: &str, params_json: &str, result: &str, duration_ms: u64) {
-        // Audit records always go to the *default* project's DB so a single
-        // session's activity is queryable from one place, even when tool
-        // calls touched multiple projects. The tool name + params record
-        // the full context.
-        if let Ok(svc) = self.services.get_or_open(&self.default_project) {
-            if let Ok(db) = svc.pool().get() {
-                let token_estimate = (result.len() / 4) as i64;
-                let _ = db.write_audit_record(
-                    &self.session_id,
-                    tool,
-                    params_json,
-                    result,
-                    duration_ms,
-                    token_estimate,
-                );
-            }
-        }
+        tracing::debug!(
+            session_id = %self.session_id,
+            tool,
+            params_bytes = params_json.len(),
+            result_bytes = result.len(),
+            token_estimate = result.len() / 4,
+            duration_ms,
+            "MCP tool completed"
+        );
     }
 
     /// Shared dispatch helper for tools that acquire a db connection.
@@ -651,10 +656,7 @@ impl BearWisdomServer {
                 return Err(e);
             }
         };
-        // Safety net for missed file-watcher events: opportunistically kick
-        // off a catch-up reindex on a background thread (throttled, never
-        // blocks this call). See `IndexService::try_spawn_sweep`.
-        let _ = service.try_spawn_sweep(STALE_SWEEP_THROTTLE_MS);
+        let freshness = service.freshness().ok();
         let db = match service.pool().get() {
             Ok(d) => d,
             Err(e) => {
@@ -668,10 +670,9 @@ impl BearWisdomServer {
                 return Err(msg);
             }
         };
-        let last_indexed = bearwisdom::last_indexed_at_ms(&db);
         let inner = f(&db, service.project_root());
         let was_err = inner.is_err();
-        let unified = Self::with_freshness_header(inner.unwrap_or_else(|e| e), last_indexed);
+        let unified = Self::with_freshness_header(inner.unwrap_or_else(|e| e), freshness);
         self.audit_call(
             tool_name,
             &params_json,
@@ -709,16 +710,10 @@ impl BearWisdomServer {
                 return Err(e);
             }
         };
-        let _ = service.try_spawn_sweep(STALE_SWEEP_THROTTLE_MS);
-        // Best-effort freshness read; silently skip if pool unavailable.
-        let last_indexed = service
-            .pool()
-            .get()
-            .ok()
-            .and_then(|db| bearwisdom::last_indexed_at_ms(&db));
+        let freshness = service.freshness().ok();
         let inner = f(service.project_root());
         let was_err = inner.is_err();
-        let unified = Self::with_freshness_header(inner.unwrap_or_else(|e| e), last_indexed);
+        let unified = Self::with_freshness_header(inner.unwrap_or_else(|e| e), freshness);
         self.audit_call(
             tool_name,
             &params_json,
@@ -735,7 +730,10 @@ impl BearWisdomServer {
     /// Inject an `#index` section after the compact format header so callers
     /// can detect whether the underlying SQLite graph is in sync with the
     /// working tree. JSON-shaped responses are returned unchanged.
-    pub(crate) fn with_freshness_header(response: String, last_indexed_ms: Option<i64>) -> String {
+    pub(crate) fn with_freshness_header(
+        response: String,
+        freshness: Option<IndexFreshness>,
+    ) -> String {
         const HEADER: &str = "#format:compact-v1\n";
         if !response.starts_with(HEADER) {
             return response; // JSON or error path — leave untouched.
@@ -744,18 +742,123 @@ impl BearWisdomServer {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
             .unwrap_or_default();
-        let block = match last_indexed_ms {
-            Some(ts) => {
+        let block = match freshness {
+            Some(status) => {
+                let refresh_state = Self::refresh_state_label(status.refresh_state);
+                let mode = if status.refresh_enabled {
+                    "writer"
+                } else {
+                    "query_only"
+                };
+                let watching = if status.watching { "true" } else { "false" };
+                let Some(ts) = status.last_complete_at_ms else {
+                    return response.replacen(
+                        HEADER,
+                        &format!(
+                            "{HEADER}#index\nlast_complete_at_ms:unknown|refresh_state:{refresh_state}|mode:{mode}|watching:{watching}\n\n"
+                        ),
+                        1,
+                    );
+                };
                 let age = (now - ts).max(0);
-                format!("#index\nlast_indexed_at_ms:{ts}|age_ms:{age}\n\n")
+                format!(
+                    "#index\nlast_complete_at_ms:{ts}|age_ms:{age}|refresh_state:{refresh_state}|mode:{mode}|watching:{watching}\n\n"
+                )
             }
-            None => "#index\nlast_indexed_at_ms:unknown\n\n".to_string(),
+            None => "#index\nlast_complete_at_ms:unknown|refresh_state:unknown|mode:unknown|watching:unknown\n\n".to_string(),
         };
         let mut out = String::with_capacity(response.len() + block.len());
         out.push_str(HEADER);
         out.push_str(&block);
         out.push_str(&response[HEADER.len()..]);
         out
+    }
+
+    fn refresh_state_label(state: RefreshState) -> &'static str {
+        match state {
+            RefreshState::Disabled => "disabled",
+            RefreshState::Idle => "idle",
+            RefreshState::Refreshing => "refreshing",
+        }
+    }
+
+    fn run_status(&self, project: Option<&str>, compact: bool) -> Result<String, String> {
+        let service = self.resolve_service(project)?;
+        let freshness = service
+            .freshness()
+            .map_err(|e| error_response("INTERNAL_ERROR", &format!("freshness error: {e}")))?;
+        let db = service
+            .pool()
+            .get()
+            .map_err(|e| error_response("INTERNAL_ERROR", &format!("Pool error: {e}")))?;
+        let indexed_commit = bearwisdom::indexer::changeset::get_meta(&db, "indexed_commit");
+        let head_commit = Self::git_output(service.project_root(), &["rev-parse", "HEAD"]);
+        let working_tree = Command::new("git")
+            .args(["status", "--porcelain=v1", "--untracked-files=normal"])
+            .current_dir(service.project_root())
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| {
+                if output.stdout.is_empty() {
+                    "clean"
+                } else {
+                    "dirty"
+                }
+            })
+            .unwrap_or("unknown");
+        let state = if freshness.refresh_state == RefreshState::Refreshing {
+            "refreshing"
+        } else if indexed_commit.as_deref() == head_commit.as_deref() && working_tree == "clean" {
+            "fresh"
+        } else {
+            "stale"
+        };
+        let refresh_state = Self::refresh_state_label(freshness.refresh_state);
+        let owner = if freshness.refresh_enabled {
+            "this_process"
+        } else {
+            "external_or_none"
+        };
+
+        if !compact {
+            return Ok(serde_json::json!({
+                "state": state,
+                "indexed_commit": indexed_commit,
+                "head_commit": head_commit,
+                "working_tree": working_tree,
+                "refresh_state": refresh_state,
+                "index_owner": owner,
+                "last_complete_at_ms": freshness.last_complete_at_ms,
+                "watching": freshness.watching,
+                "query_only": !freshness.refresh_enabled,
+            })
+            .to_string());
+        }
+
+        Ok(format!(
+            "#format:compact-v1\n#status\nstate:{state}|indexed_commit:{}|head_commit:{}|working_tree:{working_tree}|refresh_state:{refresh_state}|index_owner:{owner}|last_complete_at_ms:{}|watching:{}|query_only:{}\n\n#meta\nevidence:index_metadata_and_git\n",
+            indexed_commit.as_deref().unwrap_or("unknown"),
+            head_commit.as_deref().unwrap_or("unknown"),
+            freshness
+                .last_complete_at_ms
+                .map_or_else(|| "unknown".to_string(), |value| value.to_string()),
+            freshness.watching,
+            !freshness.refresh_enabled,
+        ))
+    }
+
+    fn git_output(project_root: &Path, args: &[&str]) -> Option<String> {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(project_root)
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        (!value.is_empty()).then_some(value)
     }
 
     /// Return an `Err(error_response)` for a missing/empty required input field.
@@ -802,11 +905,51 @@ impl BearWisdomServer {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bearwisdom::IndexServiceOptions;
+
+    fn query_server() -> (tempfile::TempDir, BearWisdomServer) {
+        let project = tempfile::tempdir().unwrap();
+        let db_path = bearwisdom::resolve_db_path(project.path()).unwrap();
+        let options = IndexServiceOptions {
+            watch: false,
+            allow_refresh: false,
+            ..Default::default()
+        };
+        let service =
+            Arc::new(IndexService::open(&db_path, project.path(), options.clone()).unwrap());
+        let cache = Arc::new(ServiceCache::new(1, options));
+        cache.insert(project.path().to_path_buf(), service);
+        let server = BearWisdomServer::new(project.path().to_path_buf(), cache);
+        (project, server)
+    }
+
+    #[test]
+    fn status_is_explicit_about_query_only_unknown_snapshot() {
+        let (_project, server) = query_server();
+        let status = server.run_status(None, true).unwrap();
+        assert!(status.contains("state:stale"));
+        assert!(status.contains("indexed_commit:unknown"));
+        assert!(status.contains("refresh_state:disabled"));
+        assert!(status.contains("index_owner:external_or_none"));
+        assert!(status.contains("query_only:true"));
+    }
+
+    #[test]
+    fn query_client_rejects_explicit_reindex() {
+        let (_project, server) = query_server();
+        let error = server.run_reindex(false, None).unwrap_err();
+        assert!(error.contains("INDEX_READ_ONLY"));
+    }
+}
+
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for BearWisdomServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
-            "Use bw_context to identify symbols, bw_investigate for definitions plus resolved references/calls/impact, \
+            "Use bw_status once when response freshness is absent, bw_context to identify symbols, bw_investigate for definitions plus resolved references/calls/impact, \
              bw_trace_flow for file-and-line cross-service flow, and bw_full_trace for combined call and flow paths. \
              Compact output is the default. Keep limits small and treat unknown/stale index state or empty resolved-only \
              sections as incomplete evidence. Use the host's native text search for exact lexical fallback.",
@@ -816,6 +959,28 @@ impl ServerHandler for BearWisdomServer {
 
 #[tool_router]
 impl BearWisdomServer {
+    /// Report index freshness, indexed/current commits, working-tree relation,
+    /// refresh lifecycle, and whether this process owns indexing.
+    #[tool(name = "bw_status")]
+    fn status(&self, Parameters(params): Parameters<StatusParams>) -> Result<String, String> {
+        let t0 = std::time::Instant::now();
+        let params_json = serde_json::to_string(&params).unwrap_or_default();
+        let inner = self.run_status(params.project.as_deref(), Self::is_compact(&params.format));
+        let was_err = inner.is_err();
+        let unified = inner.unwrap_or_else(|error| error);
+        self.audit_call(
+            "bw_status",
+            &params_json,
+            &unified,
+            t0.elapsed().as_millis() as u64,
+        );
+        if was_err {
+            Err(unified)
+        } else {
+            Ok(unified)
+        }
+    }
+
     /// Search indexed code symbols by identifier or a few alternatives. Returns 10 compact results by default.
     /// Multi-term queries retry as OR alternatives when no symbol matches every term.
     /// Use the host's native text search for exact lexical fallback.

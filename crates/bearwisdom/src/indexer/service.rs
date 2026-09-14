@@ -76,6 +76,10 @@ pub struct IndexServiceOptions {
     pub watch: bool,
     /// Debounce window for batched watcher events.
     pub debounce: Duration,
+    /// Whether this process is allowed to change the index. Query consumers
+    /// must set this to false: they retain the last complete SQLite snapshot,
+    /// but neither start a watcher nor launch a catch-up sweep.
+    pub allow_refresh: bool,
 }
 
 impl Default for IndexServiceOptions {
@@ -84,8 +88,33 @@ impl Default for IndexServiceOptions {
             pool_size: 4,
             watch: true,
             debounce: Duration::from_millis(250),
+            allow_refresh: true,
         }
     }
+}
+
+/// The observable lifecycle of a project's index in this process.
+///
+/// `Disabled` means this is a query-only client. It deliberately does not
+/// imply that an external writer is absent; callers should surface it along
+/// with `last_complete_at_ms` instead of claiming that the snapshot is fresh.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RefreshState {
+    Disabled,
+    Idle,
+    Refreshing,
+}
+
+/// Freshness information that is safe to return while a writer is active.
+/// `last_complete_at_ms` is only advanced after an indexing operation has
+/// completed successfully, so it always identifies the last complete
+/// snapshot available to readers.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IndexFreshness {
+    pub last_complete_at_ms: Option<i64>,
+    pub refresh_state: RefreshState,
+    pub refresh_enabled: bool,
+    pub watching: bool,
 }
 
 /// Long-lived index service. Owns the pool and the file watcher.
@@ -107,6 +136,12 @@ pub struct IndexService {
     /// CAS-acquired flag so multiple tool calls in the same throttle
     /// window don't stack reindex threads on top of each other.
     sweep_in_flight: AtomicI64,
+    /// Query-only services never mutate the shared snapshot. This is kept on
+    /// the service rather than inferred from the watcher so an explicit
+    /// reindex command cannot accidentally turn a stdio query client into a
+    /// second writer.
+    allow_refresh: bool,
+    watching: bool,
 }
 
 /// Outcome of a `reindex_now` call. Carries the strategy chosen and the
@@ -127,7 +162,8 @@ impl IndexService {
         let pool = DbPool::new(db_path, opts.pool_size)
             .with_context(|| format!("create pool for {}", db_path.display()))?;
         let project_root = project_root.to_path_buf();
-        let watcher = if opts.watch {
+        let watching = opts.watch && opts.allow_refresh;
+        let watcher = if watching {
             Some(spawn_watcher(
                 pool.clone(),
                 project_root.clone(),
@@ -142,6 +178,8 @@ impl IndexService {
             _watcher: watcher,
             last_sweep_at_ms: AtomicI64::new(0),
             sweep_in_flight: AtomicI64::new(0),
+            allow_refresh: opts.allow_refresh,
+            watching,
         })
     }
 
@@ -154,15 +192,17 @@ impl IndexService {
     /// The current call **never blocks** on the sweep — the next tool
     /// invocation sees the fresh state.
     ///
-    /// Called from the MCP query path on every tool entry as a safety
-    /// net for missed file-watcher events (network drives, OS handle
-    /// caps, the watcher being paused). When the watcher is healthy and
-    /// nothing changed, `reindex_now` is cheap (a single git diff vs
-    /// the indexed commit).
+    /// A long-lived writer can call this as a safety net for missed
+    /// file-watcher events (network drives, OS handle caps, or a paused
+    /// watcher). When the watcher is healthy and nothing changed,
+    /// `reindex_now` is cheap (a single git diff vs the indexed commit).
     ///
     /// Requires `Arc<Self>` because the spawned thread needs to clone
     /// the service into its closure.
     pub fn try_spawn_sweep(self: &Arc<Self>, throttle_ms: i64) -> bool {
+        if !self.allow_refresh {
+            return false;
+        }
         let now = now_ms();
         let last = self.last_sweep_at_ms.load(Ordering::Relaxed);
         if now.saturating_sub(last) < throttle_ms {
@@ -222,6 +262,34 @@ impl IndexService {
         &self.project_root
     }
 
+    /// Whether this instance may mutate the project index.
+    pub fn refresh_enabled(&self) -> bool {
+        self.allow_refresh
+    }
+
+    /// Return a coherent lifecycle view for query clients. A refresh failure
+    /// leaves the timestamp untouched, preserving the previous complete
+    /// snapshot as the only advertised snapshot.
+    pub fn freshness(&self) -> Result<IndexFreshness> {
+        let db = self
+            .pool
+            .get()
+            .map_err(|e| anyhow::anyhow!("pool acquire: {e}"))?;
+        let refresh_state = if !self.allow_refresh {
+            RefreshState::Disabled
+        } else if self.sweep_in_flight.load(Ordering::Acquire) != 0 {
+            RefreshState::Refreshing
+        } else {
+            RefreshState::Idle
+        };
+        Ok(IndexFreshness {
+            last_complete_at_ms: last_indexed_at_ms(&db),
+            refresh_state,
+            refresh_enabled: self.allow_refresh,
+            watching: self.watching,
+        })
+    }
+
     /// Synchronously bring the index to current working-tree state.
     ///
     /// Strategy:
@@ -229,6 +297,10 @@ impl IndexService {
     ///   2. Existing DB with files but no commit metadata → hash-incremental.
     ///   3. Empty DB → full index.
     pub fn reindex_now(&self) -> Result<ReindexStats> {
+        anyhow::ensure!(
+            self.allow_refresh,
+            "index service is query-only; refresh belongs to the project writer"
+        );
         let ref_cache = self.pool.ref_cache().clone();
         let mut db = self
             .pool

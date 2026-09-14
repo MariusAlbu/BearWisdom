@@ -50,5 +50,8 @@ fn arrow_function_parameters_are_described_too() {
     let descriptor = describe(closure, source).expect("callback descriptor");
     assert_eq!(descriptor.parameters.len(), 1);
     assert_eq!(descriptor.parameters[0].name, "request");
-    assert_eq!(descriptor.parameters[0].annotation.as_deref(), Some("Request"));
+    assert_eq!(
+        descriptor.parameters[0].annotation.as_deref(),
+        Some("Request")
+    );
 }

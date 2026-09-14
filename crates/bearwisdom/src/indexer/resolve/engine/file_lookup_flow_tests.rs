@@ -1737,7 +1737,9 @@ fn php_annotated_closure_parameter_is_a_typed_local_the_walk_accepts() {
     let local = lookup
         .local_reference(root)
         .expect("closure parameter is a lexical local");
-    let ty = local.value_type.expect("annotation types the closure parameter");
+    let ty = local
+        .value_type
+        .expect("annotation types the closure parameter");
     let as_lookup: &dyn SymbolLookup = &lookup;
     assert!(
         arena.format_type(ty).ends_with("Blueprint"),
@@ -1775,27 +1777,41 @@ fn php_annotated_closure_parameter_is_a_typed_local_the_walk_accepts() {
         None,
     );
     lookup.set_cursor(reference.byte_offset);
-    crate::indexer::resolve::engine::trace::TRACE_ACTIVE.store(true, std::sync::atomic::Ordering::Relaxed);
+    crate::indexer::resolve::engine::trace::TRACE_ACTIVE
+        .store(true, std::sync::atomic::Ordering::Relaxed);
     crate::indexer::resolve::engine::trace::begin_ref();
-    let outcome = crate::indexer::resolve::engine::semantic_model::SemanticModel::production().get_symbol_info(
-        &context,
-        &file,
-        &lookup,
-        &crate::languages::php::PHP_PROFILE,
-    );
+    let outcome = crate::indexer::resolve::engine::semantic_model::SemanticModel::production()
+        .get_symbol_info(
+            &context,
+            &file,
+            &lookup,
+            &crate::languages::php::PHP_PROFILE,
+        );
     let lines = crate::indexer::resolve::engine::trace::take_ref();
-    crate::indexer::resolve::engine::trace::TRACE_ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
-    let crate::indexer::resolve::engine::semantic_model::SolveOutcome::Resolved(info) = outcome else {
-        panic!("primary must bind through the string() yield; trace:
-{}", lines.join("
-"));
+    crate::indexer::resolve::engine::trace::TRACE_ACTIVE
+        .store(false, std::sync::atomic::Ordering::Relaxed);
+    let crate::indexer::resolve::engine::semantic_model::SolveOutcome::Resolved(info) = outcome
+    else {
+        panic!(
+            "primary must bind through the string() yield; trace:
+{}",
+            lines.join(
+                "
+"
+            )
+        );
     };
     assert_eq!(
-        lookup.symbol_by_id(info.target_symbol_id).unwrap().qualified_name,
+        lookup
+            .symbol_by_id(info.target_symbol_id)
+            .unwrap()
+            .qualified_name,
         "App.Column.primary",
         "trace:
 {}",
-        lines.join("
-")
+        lines.join(
+            "
+"
+        )
     );
 }

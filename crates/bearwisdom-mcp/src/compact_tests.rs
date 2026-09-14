@@ -2,7 +2,7 @@ use super::*;
 use bearwisdom::query::full_trace::{FullTraceResult, TraceNode, TraceRoot};
 use bearwisdom::search::flow::FlowStep;
 use bearwisdom::search::grep::GrepMatch;
-use bearwisdom::SearchResult;
+use bearwisdom::{IndexFreshness, RefreshState, SearchResult};
 
 fn make_search_result(file: &str, line: u32) -> SearchResult {
     SearchResult {
@@ -66,19 +66,28 @@ fn search_multi_result_uses_files_registry() {
 #[test]
 fn with_freshness_header_injects_index_block_into_compact_response() {
     let response = format!("#format:compact-v1\n#meta\ncount:0\n");
-    let out =
-        crate::server::BearWisdomServer::with_freshness_header(response, Some(1_700_000_000_000));
+    let out = crate::server::BearWisdomServer::with_freshness_header(
+        response,
+        Some(IndexFreshness {
+            last_complete_at_ms: Some(1_700_000_000_000),
+            refresh_state: RefreshState::Disabled,
+            refresh_enabled: false,
+            watching: false,
+        }),
+    );
     assert!(out.starts_with("#format:compact-v1\n"));
     assert!(out.contains("#index"));
-    assert!(out.contains("last_indexed_at_ms:1700000000000"));
+    assert!(out.contains("last_complete_at_ms:1700000000000"));
     assert!(out.contains("age_ms:"));
+    assert!(out.contains("refresh_state:disabled"));
+    assert!(out.contains("mode:query_only"));
     assert!(out.contains("#meta"));
 }
 
 #[test]
 fn with_freshness_header_skips_non_compact_responses() {
     let response = r#"{"ok":true,"data":[]}"#.to_string();
-    let out = crate::server::BearWisdomServer::with_freshness_header(response, Some(123));
+    let out = crate::server::BearWisdomServer::with_freshness_header(response, None);
     assert_eq!(out, r#"{"ok":true,"data":[]}"#);
 }
 
@@ -86,7 +95,7 @@ fn with_freshness_header_skips_non_compact_responses() {
 fn with_freshness_header_handles_unknown_index_time() {
     let response = format!("#format:compact-v1\n#meta\ncount:0\n");
     let out = crate::server::BearWisdomServer::with_freshness_header(response, None);
-    assert!(out.contains("last_indexed_at_ms:unknown"));
+    assert!(out.contains("last_complete_at_ms:unknown"));
 }
 
 #[test]
@@ -134,30 +143,53 @@ fn search_under_limit_omits_truncated_flag() {
 fn flow_trace_preserves_direction_edge_provenance_and_file_registry() {
     let forward = vec![
         FlowStep {
+            edge_id: 10,
+            parent_edge_id: None,
             depth: 0,
             file_path: "web/client.ts".to_string(),
             line: Some(12),
             symbol: Some("loadUser".to_string()),
             language: "typescript".to_string(),
+            target_file_path: Some("api/user.rs".to_string()),
+            target_line: Some(44),
+            target_symbol: Some("get_user".to_string()),
+            target_language: Some("rust".to_string()),
+            paired: true,
             edge_type: "http_call".to_string(),
             protocol: Some("http".to_string()),
+            http_method: Some("GET".to_string()),
+            url_pattern: Some("/users/{id}".to_string()),
+            confidence: 0.95,
         },
         FlowStep {
+            edge_id: 11,
+            parent_edge_id: Some(10),
             depth: 1,
             file_path: "api/user.rs".to_string(),
             line: Some(44),
             symbol: Some("get_user".to_string()),
             language: "rust".to_string(),
+            target_file_path: None,
+            target_line: None,
+            target_symbol: None,
+            target_language: None,
+            paired: false,
             edge_type: "route_handler".to_string(),
             protocol: Some("http".to_string()),
+            http_method: None,
+            url_pattern: Some("/users/{id}".to_string()),
+            confidence: 0.7,
         },
     ];
     let out = flow_trace("both", &forward, &[], 80);
 
-    assert!(out.contains("evidence:resolved_flow_edges"));
+    assert!(out.contains("evidence:flow_edges"));
+    assert!(out.contains("paired:1|single_ended:1"));
+    assert!(out.contains("incomplete:true"));
     assert!(out.contains("#forward"));
     assert!(out.contains("F1:web/client.ts"));
     assert!(out.contains("F2:api/user.rs"));
+    assert!(out.contains("E11|E10|d1"));
     assert!(out.contains("http_call|http"));
 }
 
@@ -196,10 +228,69 @@ fn full_trace_encodes_parent_links_and_flow_jumps() {
         }],
         total_symbols: 2,
         flow_jumps: 1,
+        incomplete_flow_edges: 1,
     };
     let out = full_trace(&result, 100);
 
     assert!(out.contains("flow_jumps:1"));
+    assert!(out.contains("incomplete_flow_edges:1"));
+    assert!(out.contains("incomplete:true"));
     assert!(out.contains("N1|-|d0|entry_point|api::handle"));
     assert!(out.contains("N2|N1|d1|http_call|repo::save"));
+}
+
+#[test]
+fn investigate_keeps_resolved_and_unresolved_occurrences_distinct() {
+    use bearwisdom::query::investigate::{InvestigateResult, SlimSymbol};
+    use bearwisdom::query::references::{
+        OccurrenceCoverage, ReferenceCoverage, ResolvedReferenceSource, SourceAttestedOccurrence,
+    };
+
+    let result = InvestigateResult {
+        symbol: SlimSymbol {
+            symbol_id: Some("rust:module::target".to_string()),
+            name: "target".to_string(),
+            qualified_name: "module::target".to_string(),
+            kind: "function".to_string(),
+            file_path: "lib.rs".to_string(),
+            line: 1,
+            signature: None,
+        },
+        references: vec![],
+        source_attested_unresolved: vec![SourceAttestedOccurrence {
+            referencing_symbol: "module::caller".to_string(),
+            referencing_kind: "function".to_string(),
+            file_path: "lib.rs".to_string(),
+            line: 12,
+            column: 7,
+            target_name: "target".to_string(),
+            edge_kind: "calls".to_string(),
+            outcome: "unresolved".to_string(),
+            candidate_declaration_count: 1,
+            evidence_source: "ref_resolution_log".to_string(),
+        }],
+        reference_coverage: ReferenceCoverage {
+            occurrence_coverage: OccurrenceCoverage::Complete,
+            internal_files: 1,
+            measured_files: 1,
+            missing_files: 0,
+            stale_files: 0,
+            resolved_source: ResolvedReferenceSource::RefResolutionLog,
+            resolved_total: 0,
+            resolved_truncated: false,
+            source_attested_total: 1,
+            source_attested_truncated: false,
+        },
+        callers: vec![],
+        callees: vec![],
+        blast_radius: None,
+    };
+    let out = investigate(&result);
+
+    assert!(out.contains("rust:module::target|module::target"));
+    assert!(out.contains("references:0|resolved_total:0"));
+    assert!(out.contains("source_attested_unresolved:1"));
+    assert!(out.contains("reference_coverage:complete"));
+    assert!(out.contains("#source_attested_unresolved"));
+    assert!(out.contains("12:7|calls|unresolved|candidates:1"));
 }

@@ -101,9 +101,7 @@ fn extract_assignment_node(
                     if let Some(rhs) = node.child_by_field_name("right") {
                         infer_python_variable_type(&rhs, source, sym_idx, refs);
                         if declared.is_some() {
-                            param_type_refs::emit_for_identifier_rhs(
-                                &rhs, source, sym_idx, refs,
-                            );
+                            param_type_refs::emit_for_identifier_rhs(&rhs, source, sym_idx, refs);
                         }
                     }
                 }

@@ -28,6 +28,7 @@ fn open_no_watch(root: &std::path::Path) -> IndexService {
         pool_size: 1,
         watch: false,
         debounce: Duration::from_millis(100),
+        allow_refresh: true,
     };
     IndexService::open(&db_path, root, opts).unwrap()
 }
@@ -85,6 +86,96 @@ fn open_does_not_run_initial_reindex_implicitly() {
 }
 
 #[test]
+fn query_only_service_never_starts_refresh_or_watcher() {
+    use std::sync::Arc;
+
+    let dir = make_minimal_project();
+    let db_path = bearwisdom::resolve_db_path(dir.path()).unwrap();
+    let service = Arc::new(
+        IndexService::open(
+            &db_path,
+            dir.path(),
+            IndexServiceOptions {
+                pool_size: 1,
+                watch: true,
+                debounce: Duration::from_millis(10),
+                allow_refresh: false,
+            },
+        )
+        .expect("open query-only service"),
+    );
+
+    assert!(!service.refresh_enabled());
+    assert!(
+        !service.try_spawn_sweep(0),
+        "query-only client must not start a background refresh"
+    );
+    let freshness = service.freshness().expect("freshness");
+    assert_eq!(
+        freshness.refresh_state,
+        super::service::RefreshState::Disabled
+    );
+    assert!(!freshness.watching);
+    assert!(freshness.last_complete_at_ms.is_none());
+    assert!(
+        service.reindex_now().is_err(),
+        "query-only client must not mutate the shared index"
+    );
+}
+
+#[test]
+fn query_only_service_retains_the_last_complete_snapshot() {
+    let dir = make_minimal_project();
+    let db_path = bearwisdom::resolve_db_path(dir.path()).unwrap();
+
+    let writer = IndexService::open(
+        &db_path,
+        dir.path(),
+        IndexServiceOptions {
+            pool_size: 1,
+            watch: false,
+            debounce: Duration::from_millis(10),
+            allow_refresh: true,
+        },
+    )
+    .expect("open writer");
+    writer.reindex_now().expect("seed complete snapshot");
+    let (file_count, completed_at) = {
+        let db = writer.pool().get().expect("writer pool");
+        let file_count = db
+            .query_row("SELECT COUNT(*) FROM files", [], |row| row.get::<_, i64>(0))
+            .expect("count files");
+        (file_count, bearwisdom::last_indexed_at_ms(&db))
+    };
+    drop(writer);
+
+    let reader = IndexService::open(
+        &db_path,
+        dir.path(),
+        IndexServiceOptions {
+            pool_size: 1,
+            watch: false,
+            debounce: Duration::from_millis(10),
+            allow_refresh: false,
+        },
+    )
+    .expect("open reader");
+
+    assert!(reader.reindex_now().is_err());
+    let db = reader.pool().get().expect("reader pool");
+    let retained_count = db
+        .query_row("SELECT COUNT(*) FROM files", [], |row| row.get::<_, i64>(0))
+        .expect("count retained files");
+    assert_eq!(retained_count, file_count);
+    let freshness = reader.freshness().expect("reader freshness");
+    assert_eq!(freshness.last_complete_at_ms, completed_at);
+    assert_eq!(
+        freshness.refresh_state,
+        super::service::RefreshState::Disabled
+    );
+}
+
+#[test]
 fn reindex_now_writes_last_indexed_at_meta() {
     let dir = make_minimal_project();
     let service = open_no_watch(dir.path());
@@ -121,6 +212,7 @@ fn watcher_thread_starts_and_stops_cleanly() {
         pool_size: 1,
         watch: true,
         debounce: Duration::from_millis(100),
+        allow_refresh: true,
     };
     let service = IndexService::open(&db_path, dir.path(), opts).expect("open with watch");
     // Drop the service; the watcher thread should exit on its own (channel

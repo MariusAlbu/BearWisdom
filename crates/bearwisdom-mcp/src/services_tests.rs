@@ -10,6 +10,7 @@ fn opts() -> IndexServiceOptions {
         pool_size: 1,
         watch: false, // tests don't need a watcher; spawning many is slow + flaky on CI
         debounce: Duration::from_millis(50),
+        allow_refresh: true,
     }
 }
 
@@ -45,6 +46,28 @@ fn get_or_open_reuses_cached_service() {
     let b = cache.get_or_open(dir.path()).expect("second");
     assert!(Arc::ptr_eq(&a, &b), "second call must reuse first service");
     assert_eq!(cache.len(), 1, "no new entry on hit");
+}
+
+#[test]
+fn query_only_cache_opens_projects_without_a_refresh_owner() {
+    let cache = ServiceCache::new(
+        4,
+        IndexServiceOptions {
+            pool_size: 1,
+            watch: true,
+            debounce: Duration::from_millis(50),
+            allow_refresh: false,
+        },
+    );
+    let dir = make_project_dir();
+
+    let service = cache.get_or_open(dir.path()).expect("open query client");
+    assert!(!service.refresh_enabled());
+    assert!(!service.try_spawn_sweep(0));
+    assert_eq!(
+        service.freshness().expect("freshness").refresh_state,
+        bearwisdom::RefreshState::Disabled
+    );
 }
 
 #[test]

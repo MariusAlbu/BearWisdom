@@ -67,6 +67,8 @@ pub struct FullTraceResult {
     pub total_symbols: u32,
     /// Summary: how many flow-edge jumps occurred.
     pub flow_jumps: u32,
+    /// Flow observations encountered without a resolvable concrete endpoint.
+    pub incomplete_flow_edges: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -86,60 +88,104 @@ struct SymRow {
 // Internal: flow-edge jump map
 // ---------------------------------------------------------------------------
 
-/// Preloaded flow_edges indexed by symbol name for quick lookup.
+#[derive(Clone)]
+struct FlowJumpTarget {
+    edge_id: i64,
+    file_path: Option<String>,
+    line: Option<u32>,
+    symbol: Option<String>,
+    edge_type: String,
+    reverse: bool,
+}
+
+/// Preloaded, endpoint-scoped flow edges. Keys include the endpoint file so
+/// same-named handlers in unrelated services cannot be joined accidentally.
 struct FlowJumpMap {
-    /// source_symbol → [(target_symbol, edge_type)]
-    by_source: HashMap<String, Vec<(String, String)>>,
-    /// target_symbol → [(source_symbol, edge_type)]  (reverse for DI: interface→impl)
-    by_target: HashMap<String, Vec<(String, String)>>,
+    by_source: HashMap<(String, String), Vec<FlowJumpTarget>>,
+    /// DI rows are stored as implementation → interface observations, while
+    /// execution proceeds from the requested interface to the implementation.
+    by_di_target: HashMap<(String, String), Vec<FlowJumpTarget>>,
 }
 
 impl FlowJumpMap {
     fn load(db: &Database) -> QueryResult<Self> {
         let _timer = db.timer("flow_jump_map_load");
         let conn = db.conn();
-        let mut by_source: HashMap<String, Vec<(String, String)>> = HashMap::new();
-        let mut by_target: HashMap<String, Vec<(String, String)>> = HashMap::new();
+        let mut by_source = HashMap::new();
+        let mut by_di_target = HashMap::new();
 
         let mut stmt = conn.prepare(
-            "SELECT source_symbol, target_symbol, edge_type
-             FROM flow_edges
-             WHERE source_symbol IS NOT NULL
-               AND target_symbol IS NOT NULL",
+            "SELECT fe.id, sf.path, fe.source_line, fe.source_symbol,
+                    tf.path, fe.target_line, fe.target_symbol, fe.edge_type
+             FROM flow_edges fe
+             JOIN files sf ON sf.id = fe.source_file_id
+             LEFT JOIN files tf ON tf.id = fe.target_file_id
+             WHERE fe.source_symbol IS NOT NULL OR fe.target_symbol IS NOT NULL",
         )?;
 
         let mut rows = stmt.query([])?;
         while let Some(row) = rows.next()? {
-            let src: String = row.get(0)?;
-            let tgt: String = row.get(1)?;
-            let et: String = row.get(2)?;
+            let edge_id = row.get(0)?;
+            let source_file: String = row.get(1)?;
+            let source_line = row.get(2)?;
+            let source_symbol: Option<String> = row.get(3)?;
+            let target_file: Option<String> = row.get(4)?;
+            let target_line = row.get(5)?;
+            let target_symbol: Option<String> = row.get(6)?;
+            let edge_type: String = row.get(7)?;
 
-            by_source
-                .entry(src.clone())
-                .or_default()
-                .push((tgt.clone(), et.clone()));
-            by_target.entry(tgt).or_default().push((src, et));
+            if let Some(source_symbol) = source_symbol.as_ref() {
+                by_source
+                    .entry((source_file.clone(), source_symbol.clone()))
+                    .or_insert_with(Vec::new)
+                    .push(FlowJumpTarget {
+                        edge_id,
+                        file_path: target_file.clone(),
+                        line: target_line,
+                        symbol: target_symbol.clone(),
+                        edge_type: edge_type.clone(),
+                        reverse: false,
+                    });
+            }
+
+            if edge_type == "di_binding" {
+                if let (Some(target_file), Some(target_symbol)) =
+                    (target_file.as_ref(), target_symbol.as_ref())
+                {
+                    by_di_target
+                        .entry((target_file.clone(), target_symbol.clone()))
+                        .or_insert_with(Vec::new)
+                        .push(FlowJumpTarget {
+                            edge_id,
+                            file_path: Some(source_file.clone()),
+                            line: source_line,
+                            symbol: source_symbol.clone(),
+                            edge_type: edge_type.clone(),
+                            reverse: true,
+                        });
+                }
+            }
         }
 
         Ok(Self {
             by_source,
-            by_target,
+            by_di_target,
         })
     }
 
-    /// Get jump targets for a symbol (check both directions).
-    fn jumps_for(&self, symbol: &str) -> Vec<(String, String)> {
+    fn jumps_for(&self, symbol: &SymRow) -> Vec<FlowJumpTarget> {
         let mut result = Vec::new();
-        // Forward: this symbol is a source (e.g., HTTP client → API controller)
-        if let Some(targets) = self.by_source.get(symbol) {
-            result.extend(targets.iter().cloned());
+        for identity in [&symbol.qualified_name, &symbol.name] {
+            let key = (symbol.file_path.clone(), identity.clone());
+            if let Some(targets) = self.by_source.get(&key) {
+                result.extend(targets.iter().cloned());
+            }
+            if let Some(sources) = self.by_di_target.get(&key) {
+                result.extend(sources.iter().cloned());
+            }
         }
-        // Reverse: this symbol is a target (e.g., interface → check if there's an implementation)
-        // For DI: the flow_edge goes impl→interface, so if we're at the interface,
-        // the source is the implementation we should jump to.
-        if let Some(sources) = self.by_target.get(symbol) {
-            result.extend(sources.iter().cloned());
-        }
+        result.sort_by_key(|jump| (jump.edge_id, jump.reverse));
+        result.dedup_by_key(|jump| (jump.edge_id, jump.reverse));
         result
     }
 }
@@ -162,6 +208,7 @@ pub fn trace_from_symbol(
     let jumps = FlowJumpMap::load(db)?;
     let mut visited_global = HashSet::new();
     let mut flow_jump_count = 0u32;
+    let mut incomplete_flow_edges = 0u32;
 
     // Resolve the starting symbol.
     let starts = resolve_symbol_rows(conn, symbol_name)?;
@@ -170,6 +217,7 @@ pub fn trace_from_symbol(
             traces: vec![],
             total_symbols: 0,
             flow_jumps: 0,
+            incomplete_flow_edges: 0,
         });
     }
 
@@ -188,6 +236,7 @@ pub fn trace_from_symbol(
             &jumps,
             &mut visited,
             &mut flow_jump_count,
+            &mut incomplete_flow_edges,
         )?;
 
         let node_count = count_nodes(&entry);
@@ -200,6 +249,7 @@ pub fn trace_from_symbol(
         traces,
         total_symbols: visited_global.len() as u32,
         flow_jumps: flow_jump_count,
+        incomplete_flow_edges,
     })
 }
 
@@ -294,6 +344,7 @@ pub fn trace_from_entry_points(
 
     let mut visited_global = HashSet::new();
     let mut flow_jump_count = 0u32;
+    let mut incomplete_flow_edges = 0u32;
     let mut traces = Vec::new();
 
     for start in &roots {
@@ -317,6 +368,7 @@ pub fn trace_from_entry_points(
             &jumps,
             &mut visited,
             &mut flow_jump_count,
+            &mut incomplete_flow_edges,
         )?;
 
         let node_count = count_nodes(&entry);
@@ -333,6 +385,7 @@ pub fn trace_from_entry_points(
         traces,
         total_symbols: visited_global.len() as u32,
         flow_jumps: flow_jump_count,
+        incomplete_flow_edges,
     })
 }
 
@@ -349,6 +402,7 @@ fn build_trace_node(
     jumps: &FlowJumpMap,
     visited: &mut HashSet<i64>,
     flow_jump_count: &mut u32,
+    incomplete_flow_edges: &mut u32,
 ) -> QueryResult<TraceNode> {
     let mut children = Vec::new();
 
@@ -399,8 +453,7 @@ fn build_trace_node(
 
                 if !has_outgoing {
                     // Also check flow_edge jumps for this member.
-                    let has_flow = !jumps.jumps_for(&member.qualified_name).is_empty()
-                        || !jumps.jumps_for(&member.name).is_empty();
+                    let has_flow = !jumps.jumps_for(member).is_empty();
                     if !has_flow {
                         continue;
                     }
@@ -415,6 +468,7 @@ fn build_trace_node(
                     jumps,
                     visited,
                     flow_jump_count,
+                    incomplete_flow_edges,
                 )?;
                 children.push(child);
             }
@@ -463,34 +517,42 @@ fn build_trace_node(
                 jumps,
                 visited,
                 flow_jump_count,
+                incomplete_flow_edges,
             )?;
             children.push(child);
         }
 
         // 2. Follow flow_edge jumps.
-        let flow_targets = jumps.jumps_for(&sym.qualified_name);
-        // Also check simple name (flow_edges often store just the short name).
-        let mut all_targets = flow_targets;
-        if sym.name != sym.qualified_name {
-            all_targets.extend(jumps.jumps_for(&sym.name));
-        }
-
-        for (target_name, flow_type) in &all_targets {
-            let target_rows = resolve_symbol_rows(conn, target_name)?;
+        for jump in jumps.jumps_for(sym) {
+            if jump.file_path.is_none() || (jump.symbol.is_none() && jump.line.is_none()) {
+                *incomplete_flow_edges += 1;
+                continue;
+            }
+            let target_rows = resolve_flow_endpoint(conn, &jump)?;
+            if target_rows.is_empty() {
+                *incomplete_flow_edges += 1;
+                continue;
+            }
             for target_sym in &target_rows {
                 if !visited.insert(target_sym.id) {
                     continue;
                 }
                 *flow_jump_count += 1;
+                let flow_kind = if jump.reverse {
+                    format!("{}:reverse", jump.edge_type)
+                } else {
+                    jump.edge_type.clone()
+                };
                 let child = build_trace_node(
                     conn,
                     target_sym,
-                    flow_type,
+                    &flow_kind,
                     depth + 1,
                     max_depth,
                     jumps,
                     visited,
                     flow_jump_count,
+                    incomplete_flow_edges,
                 )?;
                 children.push(child);
             }
@@ -512,6 +574,73 @@ fn build_trace_node(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+fn resolve_flow_endpoint(
+    conn: &rusqlite::Connection,
+    jump: &FlowJumpTarget,
+) -> QueryResult<Vec<SymRow>> {
+    let Some(file_path) = jump.file_path.as_deref() else {
+        return Ok(Vec::new());
+    };
+
+    if let Some(symbol) = jump.symbol.as_deref() {
+        let mut stmt = conn.prepare_cached(
+            "SELECT s.id, s.name, s.qualified_name, s.kind, f.path, s.line
+             FROM symbols s
+             JOIN files f ON f.id = s.file_id
+             WHERE f.path = ?1
+               AND (s.qualified_name = ?2 OR s.name = ?2)
+               AND s.origin = 'internal'
+             ORDER BY CASE WHEN s.qualified_name = ?2 AND s.name <> ?2 THEN 0 ELSE 1 END,
+                      CASE WHEN s.line = ?3 THEN 0 ELSE 1 END,
+                      s.line
+             LIMIT 5",
+        )?;
+        let mut rows = stmt.query(rusqlite::params![file_path, symbol, jump.line])?;
+        let mut results = Vec::new();
+        while let Some(row) = rows.next()? {
+            results.push(SymRow {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                qualified_name: row.get(2)?,
+                kind: row.get(3)?,
+                file_path: row.get(4)?,
+                line: row.get(5)?,
+            });
+        }
+        if !results.is_empty() {
+            return Ok(results);
+        }
+    }
+
+    let Some(line) = jump.line else {
+        return Ok(Vec::new());
+    };
+    let mut stmt = conn.prepare_cached(
+        "SELECT s.id, s.name, s.qualified_name, s.kind, f.path, s.line
+         FROM symbols s
+         JOIN files f ON f.id = s.file_id
+         WHERE f.path = ?1
+           AND s.origin = 'internal'
+           AND s.line <= ?2
+           AND COALESCE(s.end_line, s.line) >= ?2
+         ORDER BY (COALESCE(s.end_line, s.line) - s.line), s.line DESC
+         LIMIT 5",
+    )?;
+    let mut rows = stmt.query(rusqlite::params![file_path, line])?;
+    let mut results = Vec::new();
+    while let Some(row) = rows.next()? {
+        results.push(SymRow {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            qualified_name: row.get(2)?,
+            kind: row.get(3)?,
+            file_path: row.get(4)?,
+            line: row.get(5)?,
+        });
+    }
+    Ok(results)
+}
 
 fn resolve_symbol_rows(conn: &rusqlite::Connection, name: &str) -> QueryResult<Vec<SymRow>> {
     // Try qualified name first, then simple name.
@@ -687,5 +816,166 @@ mod tests {
             "Expected at least 1 flow jump, got {}",
             result.flow_jumps
         );
+        assert_eq!(result.incomplete_flow_edges, 0);
+    }
+
+    #[test]
+    fn flow_jump_uses_the_exact_target_file() {
+        let db = Database::open_in_memory().unwrap();
+        let conn = db.conn();
+        for (path, language) in [
+            ("src/client.ts", "typescript"),
+            ("src/api.rs", "rust"),
+            ("other/api.rs", "rust"),
+        ] {
+            conn.execute(
+                "INSERT INTO files (path, hash, language, last_indexed) VALUES (?1, 'h', ?2, 0)",
+                rusqlite::params![path, language],
+            )
+            .unwrap();
+        }
+        let client_file: i64 = conn
+            .query_row(
+                "SELECT id FROM files WHERE path = 'src/client.ts'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let api_file: i64 = conn
+            .query_row(
+                "SELECT id FROM files WHERE path = 'src/api.rs'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let other_file: i64 = conn
+            .query_row(
+                "SELECT id FROM files WHERE path = 'other/api.rs'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        conn.execute(
+            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+             VALUES (?1, 'load', 'client.load', 'function', 5, 0)",
+            [client_file],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+             VALUES (?1, 'handle', 'api.handle', 'function', 20, 0)",
+            [api_file],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+             VALUES (?1, 'handle', 'api.handle', 'function', 20, 0)",
+            [other_file],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO flow_edges (
+                source_file_id, source_line, source_symbol, source_language,
+                target_file_id, target_line, target_symbol, target_language,
+                edge_type, confidence
+             ) VALUES (?1, 5, 'client.load', 'typescript',
+                       ?2, 20, 'api.handle', 'rust', 'http_call', 1.0)",
+            rusqlite::params![client_file, api_file],
+        )
+        .unwrap();
+
+        let result = trace_from_symbol(&db, "client.load", 3).unwrap();
+        let children = &result.traces[0].entry.children;
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].file_path, "src/api.rs");
+        assert_eq!(result.flow_jumps, 1);
+        assert_eq!(result.incomplete_flow_edges, 0);
+    }
+
+    #[test]
+    fn single_ended_flow_is_reported_as_incomplete() {
+        let db = Database::open_in_memory().unwrap();
+        let conn = db.conn();
+        conn.execute(
+            "INSERT INTO files (path, hash, language, last_indexed)
+             VALUES ('src/client.ts', 'h', 'typescript', 0)",
+            [],
+        )
+        .unwrap();
+        let file_id = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+             VALUES (?1, 'load', 'client.load', 'function', 5, 0)",
+            [file_id],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO flow_edges (
+                source_file_id, source_line, source_symbol, source_language,
+                edge_type, protocol, url_pattern, confidence
+             ) VALUES (?1, 5, 'client.load', 'typescript',
+                       'http_call', 'http', '/missing', 0.4)",
+            [file_id],
+        )
+        .unwrap();
+
+        let result = trace_from_symbol(&db, "client.load", 3).unwrap();
+        assert_eq!(result.flow_jumps, 0);
+        assert_eq!(result.incomplete_flow_edges, 1);
+        assert!(result.traces[0].entry.children.is_empty());
+    }
+
+    #[test]
+    fn http_flow_is_not_followed_in_reverse() {
+        let db = Database::open_in_memory().unwrap();
+        let conn = db.conn();
+        for (path, language) in [("src/client.ts", "typescript"), ("src/api.rs", "rust")] {
+            conn.execute(
+                "INSERT INTO files (path, hash, language, last_indexed) VALUES (?1, 'h', ?2, 0)",
+                rusqlite::params![path, language],
+            )
+            .unwrap();
+        }
+        let client_file: i64 = conn
+            .query_row(
+                "SELECT id FROM files WHERE path = 'src/client.ts'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let api_file: i64 = conn
+            .query_row(
+                "SELECT id FROM files WHERE path = 'src/api.rs'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        conn.execute(
+            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+             VALUES (?1, 'load', 'client.load', 'function', 5, 0)",
+            [client_file],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+             VALUES (?1, 'handle', 'api.handle', 'function', 20, 0)",
+            [api_file],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO flow_edges (
+                source_file_id, source_line, source_symbol, source_language,
+                target_file_id, target_line, target_symbol, target_language,
+                edge_type, confidence
+             ) VALUES (?1, 5, 'client.load', 'typescript',
+                       ?2, 20, 'api.handle', 'rust', 'http_call', 1.0)",
+            rusqlite::params![client_file, api_file],
+        )
+        .unwrap();
+
+        let result = trace_from_symbol(&db, "api.handle", 3).unwrap();
+        assert_eq!(result.flow_jumps, 0);
+        assert_eq!(result.traces[0].node_count, 1);
     }
 }

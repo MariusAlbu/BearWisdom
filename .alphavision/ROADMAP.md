@@ -388,6 +388,7 @@ must carry declaration/binding/type IDs, not re-find declarations by spelling.
   - [x] Prevent disabled trace macros from evaluating diagnostic operands, including cloned type structures and formatted aliases; add a failing-before/passing-after operand-evaluation regression (2026-09-07; removes known instrumentation overhead, not a wall-time/token benchmark result).
   - [ ] Amortize file binding environments across sequential initializer candidates without losing prior-declaration updates; measure prelude cost on large source files.
 - [ ] Rebuild UI → service → database flows on bound call/data-flow edges plus explicit route, message, DI and database-mapping evidence; preserve uncertainty across dynamic boundaries.
+  - [x] Return each persisted flow observation with both endpoints and edge provenance; chain forward/reverse paths only across exact endpoint locations, fence cycles and namesake files, and label single-ended observations plus unresolved full-trace jumps as incomplete (2026-09-14; 18 focused flow/full-trace tests).
 - [ ] Validate IDE navigation, change-impact analysis and AI context retrieval against the same semantic snapshots.
 
 ## Generic resolver boundary
@@ -415,7 +416,9 @@ must carry declaration/binding/type IDs, not re-find declarations by spelling.
 - [x] Run a controlled Terra A/B pilot against shell navigation; record gross/cache-adjusted tokens, calls, latency, and answer quality.
 - [x] Make compact bounded responses the default, retry empty multi-term symbol searches as alternatives, keep docs out of source grep, hide compatibility-only schema fields, and gate the initial in-process refresh.
 - [ ] Add an explicit freshness/status contract and one project-scoped watcher/reindex owner; make other MCP clients read-only and move verbose audit bodies out of the index DB.
+  - [x] Make stdio MCP processes query-only, expose last-complete/refresh lifecycle plus `bw_status` commit and working-tree evidence, reject reader reindex requests, and retain only bounded audit metrics outside the semantic DB (2026-09-14; persistent writer election remains open).
 - [ ] Replace the 22-tool default surface with four agent-facing compound tools and defer administrative/specialized schemas.
 - [ ] Return stable symbol identities, resolved and unresolved/text occurrences, nearby tests, and bounded source excerpts in one evidence bundle.
+  - [x] Expose stored symbol identities and declaration-ID reference evidence from per-site resolution logs, preserve same-line sites, separate unresolved/drained name evidence with coverage metadata, and merge labelled legacy rows when the census is partial (2026-09-14; nearby tests and bounded excerpts remain open).
 - [ ] Run the held-out quality/token/latency gate from docs/mcp-agent-efficiency-plan.md; require answer parity before MCP-only navigation.
 - [x] Make references, call hierarchy, blast radius, and cross-service flow the default agent path; keep exact lexical fallback in native `rg` instead of proxying it through MCP grep.

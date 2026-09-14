@@ -124,11 +124,6 @@ fn declared_type(
     if !is_value_kind(&declaration.kind) {
         return None;
     }
-    field_type_of(
-        lookup,
-        arena,
-        declaration.id,
-        &declaration.qualified_name,
-    )
-    .filter(|&ty| !matches!(arena.get(ty), Type::Unknown))
+    field_type_of(lookup, arena, declaration.id, &declaration.qualified_name)
+        .filter(|&ty| !matches!(arena.get(ty), Type::Unknown))
 }

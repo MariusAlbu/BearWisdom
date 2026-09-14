@@ -44,7 +44,10 @@ fn parent_relative_sibling_and_directory_entry_specifiers_resolve_by_the_source_
         graph.resolve_relative(from, "../user/user.entity"),
         Some("src/user/user.entity.ts")
     );
-    assert_eq!(graph.resolve_relative(from, "../tag"), Some("src/tag/index.ts"));
+    assert_eq!(
+        graph.resolve_relative(from, "../tag"),
+        Some("src/tag/index.ts")
+    );
     assert_eq!(
         graph.resolve_relative(from, "../store.js"),
         Some("src/store.ts"),
@@ -69,7 +72,10 @@ fn bare_specifiers_unknown_sources_and_unspelled_bases_resolve_to_nothing() {
 fn an_alias_target_resolves_as_a_project_relative_base() {
     let graph = graph();
     let from = "src/article/article.entity.ts";
-    assert_eq!(graph.resolve_base(from, "src/tag"), Some("src/tag/index.ts"));
+    assert_eq!(
+        graph.resolve_base(from, "src/tag"),
+        Some("src/tag/index.ts")
+    );
     assert_eq!(graph.resolve_base(from, "src/store"), Some("src/store.ts"));
     assert_eq!(graph.resolve_base(from, "src/missing"), None);
 }

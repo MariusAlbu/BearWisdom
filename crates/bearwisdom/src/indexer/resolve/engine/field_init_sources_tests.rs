@@ -76,7 +76,10 @@ fn parsed(symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile 
 #[test]
 fn a_member_initializer_overrides_the_leftmost_call_attribution() {
     let mut pf = parsed(
-        vec![sym("factory", SymbolKind::Property), sym("setUp", SymbolKind::Method)],
+        vec![
+            sym("factory", SymbolKind::Property),
+            sym("setUp", SymbolKind::Method),
+        ],
         vec![
             reference("legacy", EdgeKind::Calls, 0, 5),
             reference("Factory", EdgeKind::Instantiates, 1, 40),
@@ -92,7 +95,10 @@ fn a_member_initializer_overrides_the_leftmost_call_attribution() {
 #[test]
 fn the_lexical_slot_path_is_unchanged_for_a_lexical_file() {
     let mut pf = parsed(
-        vec![sym("a", SymbolKind::Property), sym("b", SymbolKind::Property)],
+        vec![
+            sym("a", SymbolKind::Property),
+            sym("b", SymbolKind::Property),
+        ],
         vec![
             reference("make", EdgeKind::Calls, 0, 10),
             reference("other", EdgeKind::Calls, 1, 20),

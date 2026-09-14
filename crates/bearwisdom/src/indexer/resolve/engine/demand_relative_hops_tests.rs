@@ -43,7 +43,11 @@ fn seed_package() -> (tempfile::TempDir, PathBuf) {
     fs::create_dir_all(pkg.join("dist")).unwrap();
     fs::write(pkg.join("index.d.ts"), "export * from './dist';\n").unwrap();
     fs::write(pkg.join("dist").join("index.d.ts"), "export {};\n").unwrap();
-    fs::write(pkg.join("baz.d.ts"), "export declare function Baz(): void;\n").unwrap();
+    fs::write(
+        pkg.join("baz.d.ts"),
+        "export declare function Baz(): void;\n",
+    )
+    .unwrap();
     fs::write(pkg.join("types.d.ts"), "export type T = string;\n").unwrap();
     let entry = pkg.join("index.d.ts");
     (root, entry)
@@ -142,5 +146,8 @@ fn a_language_without_a_relative_module_policy_contributes_nothing() {
         &mut seen,
         &mut out,
     );
-    assert!(out.is_empty(), "no ecosystem owns the language: fail closed");
+    assert!(
+        out.is_empty(),
+        "no ecosystem owns the language: fail closed"
+    );
 }

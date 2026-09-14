@@ -12,8 +12,8 @@
 // =============================================================================
 
 use super::compilation::Compilation;
-use super::contract::TypeInfo;
 use super::contract::is_type_like_kind;
+use super::contract::TypeInfo;
 use crate::type_checker::core::types::{Type, TypeId};
 
 /// Write each `(qname, id, declared type)` into the compilation's field-type

@@ -9,14 +9,11 @@
 // implement.
 // =============================================================================
 
-
 use crate::indexer::resolve::engine::cause::{Cause, CauseKind};
 use crate::indexer::resolve::engine::contract::{
     FileContext, RefContext, SymbolInfo, SymbolLookup,
 };
-use crate::type_checker::profile::language_profile::{
-    KindTable, LanguageProfile,
-};
+use crate::type_checker::profile::language_profile::{KindTable, LanguageProfile};
 use crate::types::EdgeKind;
 
 use super::{BindOutcome, Binder, BinderContext};
@@ -231,7 +228,6 @@ impl SemanticModel {
         BindOutcome::Unresolved
     }
 }
-
 
 /// Profile-table-driven kind compatibility. An unrecognised symbol-kind string
 /// defaults permissive so an extractor typo doesn't silently hide a real symbol.

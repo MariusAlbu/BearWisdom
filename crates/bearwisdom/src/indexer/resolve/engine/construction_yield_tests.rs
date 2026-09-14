@@ -108,7 +108,10 @@ fn record_return_type_is_first_writer_wins() {
 
     let mut by_qname: FxHashMap<String, TypeInfo> = FxHashMap::default();
     let mut by_id: FxHashMap<i64, TypeInfo> = FxHashMap::default();
-    by_qname.entry("Foo.Foo".to_string()).or_default().return_type_id = Some(extractor_set);
+    by_qname
+        .entry("Foo.Foo".to_string())
+        .or_default()
+        .return_type_id = Some(extractor_set);
     by_id.entry(7).or_default().return_type_id = Some(extractor_set);
 
     record_return_type("Foo.Foo", Some(7), derived, &mut by_qname, &mut by_id);
@@ -197,7 +200,8 @@ fn constructor_symbol_returns_its_class_type() {
         "a constructor with no signature return still yields its declaring class"
     );
     assert_eq!(
-        tree.return_type_id("Foo.Foo").map(|id| arena.format_type(id)),
+        tree.return_type_id("Foo.Foo")
+            .map(|id| arena.format_type(id)),
         Some("Foo".to_string()),
         "the qname-keyed slot carries the same yield for name-only readers"
     );
@@ -207,7 +211,8 @@ fn constructor_symbol_returns_its_class_type() {
 fn method_return_inference_is_unchanged_by_the_constructor_split() {
     let (tree, arena) = build_class_with_constructor();
     assert_eq!(
-        tree.return_type_id("Foo.bar").map(|id| arena.format_type(id)),
+        tree.return_type_id("Foo.bar")
+            .map(|id| arena.format_type(id)),
         Some("User".to_string()),
         "splitting Constructor out of the inference arm must leave methods inferring"
     );

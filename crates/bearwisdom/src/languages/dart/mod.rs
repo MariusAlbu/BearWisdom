@@ -1,18 +1,18 @@
 //! dart language plugin.
 mod callback_lexical;
 
+mod call_args;
+mod call_sites;
 mod calls;
 pub(crate) mod decorators;
 mod external_virtual_path;
 pub mod extract;
-mod call_args;
-mod call_sites;
-mod member_chain;
 pub(crate) mod flow;
 mod helpers;
 mod heritage;
 mod imports;
 pub(crate) mod keywords;
+mod member_chain;
 pub(crate) mod package_specifier;
 mod predicates;
 pub(crate) mod profile;

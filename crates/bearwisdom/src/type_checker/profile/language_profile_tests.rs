@@ -209,5 +209,8 @@ fn root_anchored_source_names_drop_the_leading_separator() {
     assert_eq!(php.index_qname_from_source("App\\Column"), "App.Column");
     assert_eq!(php.index_qname_from_source("Column"), "Column");
     let rust = crate::languages::rust_lang::RUST_PROFILE;
-    assert_eq!(rust.index_qname_from_source("::std::io::Write"), "std.io.Write");
+    assert_eq!(
+        rust.index_qname_from_source("::std::io::Write"),
+        "std.io.Write"
+    );
 }

@@ -23,7 +23,11 @@ fn contains_suffix(paths: &[std::path::PathBuf], suffix: &str) -> bool {
 /// An included build that publishes Gradle plugins: its `src/main` holds
 /// convention-plugin classes.
 fn seed_plugin_development_build(root: &Path) {
-    write(root, "settings.gradle.kts", "includeBuild(\"build-logic\")\n");
+    write(
+        root,
+        "settings.gradle.kts",
+        "includeBuild(\"build-logic\")\n",
+    );
     write(
         root,
         "build-logic/build.gradle.kts",
@@ -155,7 +159,9 @@ kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-c
     let hit = coords
         .iter()
         .find(|c| c.artifact_id == "kotlinx-coroutines-core")
-        .unwrap_or_else(|| panic!("catalog ref in a convention plugin yielded no coord: {coords:?}"));
+        .unwrap_or_else(|| {
+            panic!("catalog ref in a convention plugin yielded no coord: {coords:?}")
+        });
     assert_eq!(hit.group_id, "org.jetbrains.kotlinx");
     assert_eq!(hit.version.as_deref(), Some("1.10.2"));
 
@@ -163,7 +169,9 @@ kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-c
     fs::remove_file(root.join("build-logic/src/main/kotlin/conv/CommonConfig.kt")).unwrap();
     let coords = collect_gradle_coords(root);
     assert!(
-        !coords.iter().any(|c| c.artifact_id == "kotlinx-coroutines-core"),
+        !coords
+            .iter()
+            .any(|c| c.artifact_id == "kotlinx-coroutines-core"),
         "coord survived removal of its only declaration: {coords:?}"
     );
 }

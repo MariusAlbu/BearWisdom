@@ -258,13 +258,22 @@ fn a_named_import_from_an_export_assignment_reads_the_assigned_namespace() {
         module_input::{InputBinding, InputExport, InputUnit},
         testkit::{sym, Lookup},
     };
-    let lookup = Lookup::new().with(sym(71, "useState", "React.useState", "function", "react.d.ts"));
+    let lookup = Lookup::new().with(sym(
+        71,
+        "useState",
+        "React.useState",
+        "function",
+        "react.d.ts",
+    ));
     let mut graph = ModuleGraph::default();
     graph.inputs.insert(
         "react.d.ts".into(),
         ModuleInput {
             path: "react.d.ts".into(),
-            assignments: vec![(InputTarget::LocalNamespace(SourceModuleId(1)), ExportDomain::Value)],
+            assignments: vec![(
+                InputTarget::LocalNamespace(SourceModuleId(1)),
+                ExportDomain::Value,
+            )],
             units: vec![InputUnit {
                 id: SourceModuleId(1),
                 parent: SourceModuleId(0),
@@ -310,11 +319,20 @@ fn a_workspace_package_import_links_through_its_first_indexed_entry_candidate() 
         testkit::{sym, Lookup},
     };
     let lookup = Lookup::new()
-        .with(sym(71, "sleep", "sleep", "function", "packages/utils/src/index.ts"))
+        .with(sym(
+            71,
+            "sleep",
+            "sleep",
+            "function",
+            "packages/utils/src/index.ts",
+        ))
         .with_workspace_pkg("@acme/utils", 7)
         .with_workspace_entries(
             "@acme/utils",
-            &["packages/utils/build/index.d.ts", "packages/utils/src/index.ts"],
+            &[
+                "packages/utils/build/index.d.ts",
+                "packages/utils/src/index.ts",
+            ],
         );
     let mut graph = ModuleGraph::default();
     for (path, exports) in [
@@ -366,7 +384,13 @@ fn a_workspace_package_subpath_does_not_claim_the_root_entry() {
         testkit::{sym, Lookup},
     };
     let lookup = Lookup::new()
-        .with(sym(71, "sleep", "sleep", "function", "packages/utils/src/index.ts"))
+        .with(sym(
+            71,
+            "sleep",
+            "sleep",
+            "function",
+            "packages/utils/src/index.ts",
+        ))
         .with_workspace_pkg("@acme/utils", 7)
         .with_workspace_entries("@acme/utils", &["packages/utils/src/index.ts"]);
     let mut graph = ModuleGraph::default();

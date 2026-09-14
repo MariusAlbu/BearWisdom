@@ -60,7 +60,12 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
         // the name it introduces.
         "instance_variable" => {
             let at = node.start_byte() as u32;
-            segments.push(segment("self".to_string(), "self", SegmentKind::SelfRef, at));
+            segments.push(segment(
+                "self".to_string(),
+                "self",
+                SegmentKind::SelfRef,
+                at,
+            ));
             segments.push(segment(
                 node_text(node, src),
                 "instance_variable",

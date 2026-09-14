@@ -55,9 +55,11 @@ impl LexicalCache<'_> {
                 if !rows.is_empty() {
                     self.import_overloads.insert(binding, rows.to_vec());
                 }
-                if let Some(ty) = crate::indexer::resolve::engine::lexical_value::imported_overload_type(
-                    lookup, self.arena, path, binding,
-                ) {
+                if let Some(ty) =
+                    crate::indexer::resolve::engine::lexical_value::imported_overload_type(
+                        lookup, self.arena, path, binding,
+                    )
+                {
                     self.initial_types.insert(binding, ty);
                 }
             }
@@ -74,7 +76,10 @@ impl LexicalCache<'_> {
 
     /// The overload rows the import binding referenced at `byte` names, when
     /// that import bound a group rather than one declaration.
-    pub(in crate::indexer::resolve::engine) fn import_overloads_at(&self, byte: u32) -> Option<&[i64]> {
+    pub(in crate::indexer::resolve::engine) fn import_overloads_at(
+        &self,
+        byte: u32,
+    ) -> Option<&[i64]> {
         let binding: BindingId = *self.bindings.references.get(&byte)?;
         self.import_overloads.get(&binding).map(Vec::as_slice)
     }

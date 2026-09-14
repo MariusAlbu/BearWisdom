@@ -157,5 +157,8 @@ declare namespace React {
     .unwrap();
     assert!(graph.module.complete, "{}", tree.root_node().to_sexp());
     assert_eq!(graph.module.assignments.len(), 1);
-    assert!(graph.module.exports.is_empty(), "a global alias exports nothing itself");
+    assert!(
+        graph.module.exports.is_empty(),
+        "a global alias exports nothing itself"
+    );
 }

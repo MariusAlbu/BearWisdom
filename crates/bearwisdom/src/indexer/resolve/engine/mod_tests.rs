@@ -315,5 +315,8 @@ fn ladder_never_binds_an_inheritance_target_to_the_declaring_symbol() {
         LookupResult::Resolved(ref res) if res.target_symbol_id == 10
     ));
     let binder = Binder::new(vec![Box::new(SameFileRule)]);
-    assert!(matches!(binder.bind(&ctx), crate::indexer::resolve::engine::BindOutcome::Unresolved));
+    assert!(matches!(
+        binder.bind(&ctx),
+        crate::indexer::resolve::engine::BindOutcome::Unresolved
+    ));
 }

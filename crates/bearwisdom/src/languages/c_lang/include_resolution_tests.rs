@@ -91,8 +91,12 @@ fn undelimited_spelling_places_only_a_unique_external_file() {
     assert_eq!(resolve("src/main.c", "stdio.h", &files), None);
     assert_eq!(resolve("src/main.c", "main.h", &files), None);
     assert_eq!(
-        resolve("src/main.c", "unistd.h", &[("src/main.c", "c"), ("ext:idx:/sdk/unistd.h", "c")])
-            .as_deref(),
+        resolve(
+            "src/main.c",
+            "unistd.h",
+            &[("src/main.c", "c"), ("ext:idx:/sdk/unistd.h", "c")]
+        )
+        .as_deref(),
         Some("ext:idx:/sdk/unistd.h")
     );
     assert_eq!(resolve("src/main.c", "\"main.c\"", &files), None);
@@ -114,5 +118,12 @@ fn c_sources_include_headers_the_detector_tags_as_cpp() {
         resolve("lib/url.c", "\"curl/curl.h\"", &files).as_deref(),
         Some("include/curl/curl.h")
     );
-    assert_eq!(resolve("docs/a.py", "<curl/curl.h>", &[("docs/a.py", "python"), ("include/curl/curl.h", "cpp")]), None);
+    assert_eq!(
+        resolve(
+            "docs/a.py",
+            "<curl/curl.h>",
+            &[("docs/a.py", "python"), ("include/curl/curl.h", "cpp")]
+        ),
+        None
+    );
 }

@@ -1106,11 +1106,11 @@ pub(crate) use super::stage_discover::{
 // Single-file parsing helpers live in `parse_file.rs`; the source-admission
 // predicates they share live in `source_admission.rs`. Both surfaces are
 // re-exported under the `crate::indexer::full::*` import path.
+#[cfg(test)]
+pub(super) use super::parse_file::is_generated_source_file;
 pub(crate) use super::parse_file::{
     is_vendored_source_file, parse_file, parse_file_with_arena_and_demand, parse_file_with_demand,
 };
-#[cfg(test)]
-pub(super) use super::parse_file::is_generated_source_file;
 
 // External-source discovery and external virtual-path plumbing live in
 // `stage_link.rs`.

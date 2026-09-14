@@ -75,7 +75,13 @@ fn resolve(lookup: &Lookup, target: &str, ns: Option<&str>) -> Option<i64> {
 fn binds_bare_call_to_root_function_from_namespaced_file() {
     // The file declares a namespace of its own; the callee owns no prefix, so
     // its stored qname IS the bare target.
-    let lookup = Lookup::new().with(sym(10, "data_get", "data_get", "function", "src/helpers.php"));
+    let lookup = Lookup::new().with(sym(
+        10,
+        "data_get",
+        "data_get",
+        "function",
+        "src/helpers.php",
+    ));
     assert_eq!(
         resolve(&lookup, "data_get", Some("Illuminate\\Support")),
         Some(10)
@@ -85,7 +91,13 @@ fn binds_bare_call_to_root_function_from_namespaced_file() {
 #[test]
 fn binds_when_file_has_no_namespace() {
     // A root-namespace caller: the same-namespace rung declines it outright.
-    let lookup = Lookup::new().with(sym(10, "data_get", "data_get", "function", "src/helpers.php"));
+    let lookup = Lookup::new().with(sym(
+        10,
+        "data_get",
+        "data_get",
+        "function",
+        "src/helpers.php",
+    ));
     assert_eq!(resolve(&lookup, "data_get", None), Some(10));
 }
 
@@ -114,7 +126,13 @@ fn declines_qualified_target() {
 
 #[test]
 fn declines_when_axis_empty() {
-    let lookup = Lookup::new().with(sym(10, "data_get", "data_get", "function", "src/helpers.php"));
+    let lookup = Lookup::new().with(sym(
+        10,
+        "data_get",
+        "data_get",
+        "function",
+        "src/helpers.php",
+    ));
     let r = call_ref("data_get");
     assert_eq!(
         resolve_with(&lookup, &r, None, &DEFAULT_PROFILE, &accept_any),
@@ -125,7 +143,13 @@ fn declines_when_axis_empty() {
 #[test]
 fn declines_when_kind_table_rejects() {
     // The edge→kind gate still applies on top of the axis.
-    let lookup = Lookup::new().with(sym(10, "data_get", "data_get", "function", "src/helpers.php"));
+    let lookup = Lookup::new().with(sym(
+        10,
+        "data_get",
+        "data_get",
+        "function",
+        "src/helpers.php",
+    ));
     let r = call_ref("data_get");
     assert_eq!(
         resolve_with(

@@ -55,7 +55,10 @@ fn longest_declared_name_claims_the_specifier() {
 #[test]
 fn undeclared_package_head_matches_nothing() {
     let names = declared(&[("package:core_client", 1)]);
-    assert_eq!(workspace_package_sub_path("package:other/x.dart", &names), None);
+    assert_eq!(
+        workspace_package_sub_path("package:other/x.dart", &names),
+        None
+    );
     assert_eq!(workspace_package_id("package:other/x.dart", &names), None);
 }
 

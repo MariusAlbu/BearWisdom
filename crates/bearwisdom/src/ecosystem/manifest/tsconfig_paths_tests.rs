@@ -27,7 +27,10 @@ fn wildcard_entries_are_prefixes_and_exact_entries_are_exact() {
         aliases.prefixes,
         vec![
             ("@/".to_string(), "./src/".to_string()),
-            ("e2e-utils/".to_string(), "./test/lib/e2e-utils/".to_string()),
+            (
+                "e2e-utils/".to_string(),
+                "./test/lib/e2e-utils/".to_string()
+            ),
         ],
         "an empty alias prefix and a non-trailing wildcard are skipped"
     );
@@ -38,7 +41,10 @@ fn wildcard_entries_are_prefixes_and_exact_entries_are_exact() {
                 "next-test-utils".to_string(),
                 "./test/lib/next-test-utils".to_string()
             ),
-            ("router-act".to_string(), "./test/lib/router-act".to_string()),
+            (
+                "router-act".to_string(),
+                "./test/lib/router-act".to_string()
+            ),
         ],
         "the first target wins"
     );
@@ -46,10 +52,8 @@ fn wildcard_entries_are_prefixes_and_exact_entries_are_exact() {
 }
 
 fn aliases_via(start: &Path, files: Vec<(PathBuf, &str)>) -> TsconfigAliases {
-    let map: HashMap<PathBuf, String> = files
-        .into_iter()
-        .map(|(p, c)| (p, c.to_string()))
-        .collect();
+    let map: HashMap<PathBuf, String> =
+        files.into_iter().map(|(p, c)| (p, c.to_string())).collect();
     let mut out = TsconfigAliases::default();
     let mut seen = std::collections::HashSet::new();
     collect_tsconfig_paths(start, &|p| map.get(p).cloned(), &mut out, &mut seen, 0);

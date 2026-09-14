@@ -24,6 +24,11 @@ use crate::query::architecture::SymbolSummary;
 /// Full detail for a single symbol.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SymbolDetail {
+    /// Stable symbol identity when available. Legacy rows may not have a
+    /// symbol key, so callers must retain the declaration location instead of
+    /// inventing an identity from a qualified name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol_id: Option<String>,
     pub name: String,
     pub qualified_name: String,
     /// Symbol kind string, e.g. "class", "method", "interface".
@@ -79,6 +84,7 @@ pub fn symbol_info(
     // We resolve a list of IDs, then fetch full detail for each.
     let symbol_rows: Vec<(
         i64,
+        Option<String>,
         String,
         String,
         String,
@@ -89,7 +95,7 @@ pub fn symbol_info(
         Option<String>,
         Option<String>,
     )> = {
-        let sql = "SELECT s.id, s.name, s.qualified_name, s.kind, f.path,
+        let sql = "SELECT s.id, s.symbol_key, s.name, s.qualified_name, s.kind, f.path,
                     s.line, COALESCE(s.end_line, s.line),
                     s.signature, s.doc_comment, s.visibility
              FROM symbols s
@@ -106,16 +112,17 @@ pub fn symbol_info(
         let rows = stmt
             .query_map([query], |row| {
                 Ok((
-                    row.get::<_, i64>(0)?,            // id
-                    row.get::<_, String>(1)?,         // name
-                    row.get::<_, String>(2)?,         // qualified_name
-                    row.get::<_, String>(3)?,         // kind
-                    row.get::<_, String>(4)?,         // file_path
-                    row.get::<_, u32>(5)?,            // start_line
-                    row.get::<_, u32>(6)?,            // end_line
-                    row.get::<_, Option<String>>(7)?, // signature
-                    row.get::<_, Option<String>>(8)?, // doc_comment
-                    row.get::<_, Option<String>>(9)?, // visibility
+                    row.get::<_, i64>(0)?,             // id
+                    row.get::<_, Option<String>>(1)?,  // symbol_id
+                    row.get::<_, String>(2)?,          // name
+                    row.get::<_, String>(3)?,          // qualified_name
+                    row.get::<_, String>(4)?,          // kind
+                    row.get::<_, String>(5)?,          // file_path
+                    row.get::<_, u32>(6)?,             // start_line
+                    row.get::<_, u32>(7)?,             // end_line
+                    row.get::<_, Option<String>>(8)?,  // signature
+                    row.get::<_, Option<String>>(9)?,  // doc_comment
+                    row.get::<_, Option<String>>(10)?, // visibility
                 ))
             })
             .context("Failed to execute symbol_info lookup")?;
@@ -133,6 +140,7 @@ pub fn symbol_info(
 
     for (
         id,
+        symbol_id,
         name,
         qualified_name,
         kind,
@@ -195,6 +203,7 @@ pub fn symbol_info(
         };
 
         details.push(SymbolDetail {
+            symbol_id,
             name,
             qualified_name,
             kind,

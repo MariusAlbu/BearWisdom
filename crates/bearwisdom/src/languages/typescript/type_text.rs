@@ -18,8 +18,10 @@ use crate::type_checker::core::types::Intrinsic;
 /// their instance members come from the wrapper declarations
 /// [`primitive_member_head`] names, which the member walk reaches through the
 /// nominal head.
-const ABSENCE_ATOMS: &[(&str, Intrinsic)] =
-    &[("null", Intrinsic::Null), ("undefined", Intrinsic::Undefined)];
+const ABSENCE_ATOMS: &[(&str, Intrinsic)] = &[
+    ("null", Intrinsic::Null),
+    ("undefined", Intrinsic::Undefined),
+];
 
 /// The surface forms a TypeScript type expression may use. Every form is opted
 /// into explicitly; anything outside the list stays an opaque nominal.

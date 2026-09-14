@@ -9,7 +9,10 @@ const DEPTH: usize = 6;
 fn widget() -> Lookup {
     Lookup::new()
         .with(sym(3, "Widget", "Widget", "interface", "pkg/w.ts"))
-        .with_member("Widget", sym(99, "spin", "Widget.spin", "method", "pkg/w.ts"))
+        .with_member(
+            "Widget",
+            sym(99, "spin", "Widget.spin", "method", "pkg/w.ts"),
+        )
 }
 
 fn union_member(lookup: &Lookup, head: &str, member: &str) -> Option<Symbol> {
@@ -52,7 +55,10 @@ fn union_alias_member_resolves_past_an_absent_arm() {
             "Maybe",
             AliasTarget::Union(vec!["Widget".into(), "null".into()]),
         );
-    assert_eq!(union_member(&lookup, "Maybe", "spin").map(|m| m.id), Some(99));
+    assert_eq!(
+        union_member(&lookup, "Maybe", "spin").map(|m| m.id),
+        Some(99)
+    );
 }
 
 #[test]
@@ -65,7 +71,10 @@ fn union_alias_member_resolves_past_an_undefined_arm() {
             "Maybe",
             AliasTarget::Union(vec!["Widget".into(), "undefined".into()]),
         );
-    assert_eq!(union_member(&lookup, "Maybe", "spin").map(|m| m.id), Some(99));
+    assert_eq!(
+        union_member(&lookup, "Maybe", "spin").map(|m| m.id),
+        Some(99)
+    );
 }
 
 #[test]

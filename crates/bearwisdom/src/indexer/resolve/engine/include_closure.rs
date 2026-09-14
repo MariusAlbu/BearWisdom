@@ -124,7 +124,10 @@ impl IncludeClosure {
                 for spec in specs {
                     if let Some(target) = self.resolve_unique(source, spec) {
                         targets.push(target);
-                        placed.entry(source.clone()).or_default().insert(spec.clone());
+                        placed
+                            .entry(source.clone())
+                            .or_default()
+                            .insert(spec.clone());
                     }
                 }
                 (source.clone(), targets)

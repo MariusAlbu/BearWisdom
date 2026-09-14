@@ -117,4 +117,3 @@ fn normalize_name_is_identity_for_none() {
     assert_eq!(out, "FooBar");
     assert!(matches!(out, std::borrow::Cow::Borrowed(_)));
 }
-

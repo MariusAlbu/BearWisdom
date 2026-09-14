@@ -229,3 +229,211 @@ fn qualified_name_lookup_does_not_assume_a_dot_separator() {
     assert_eq!(refs.len(), 1);
     assert_eq!(refs[0].referencing_symbol, "caller");
 }
+
+#[test]
+fn source_attested_log_keeps_same_line_sites_and_unresolved_evidence_separate() {
+    let db = Database::open_in_memory().unwrap();
+    let conn = db.conn();
+    conn.execute(
+        "INSERT INTO files (path, hash, language, last_indexed) VALUES ('lib.rs', 'h', 'rust', 0)",
+        [],
+    )
+    .unwrap();
+    let file_id = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, symbol_key)
+         VALUES (?1, 'callee', 'module::callee', 'function', 1, 0, 'rust:module::callee')",
+        [file_id],
+    )
+    .unwrap();
+    let callee = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+         VALUES (?1, 'caller', 'module::caller', 'function', 10, 0)",
+        [file_id],
+    )
+    .unwrap();
+    let caller = conn.last_insert_rowid();
+
+    // `edges` would collapse these source sites because they share a source,
+    // target, kind and line. The resolution log must retain both columns.
+    for column in [4_i64, 18] {
+        conn.execute(
+            "INSERT INTO ref_resolutions
+             (source_id, target_name, kind, source_line, source_col, outcome, target_id, confidence)
+             VALUES (?1, 'callee', 'calls', 12, ?2, 'resolved', ?3, 1.0)",
+            rusqlite::params![caller, column, callee],
+        )
+        .unwrap();
+    }
+    conn.execute(
+        "INSERT INTO ref_resolutions
+         (source_id, target_name, kind, source_line, source_col, outcome)
+         VALUES (?1, 'callee', 'calls', 13, 4, 'unresolved')",
+        [caller],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO resolution_census (file_id, content_hash, counts_json) VALUES (?1, 'h', '[]')",
+        [file_id],
+    )
+    .unwrap();
+
+    let evidence = evidence_for_declaration(&db, callee, "callee", 0).unwrap();
+    assert_eq!(
+        evidence.resolved.len(),
+        2,
+        "same-line sites must not collapse"
+    );
+    assert_eq!(
+        evidence.coverage.resolved_source,
+        ResolvedReferenceSource::RefResolutionLog
+    );
+    assert_eq!(
+        evidence.coverage.occurrence_coverage,
+        OccurrenceCoverage::Complete
+    );
+    assert_eq!(evidence.source_attested_unresolved.len(), 1);
+    assert_eq!(
+        evidence.source_attested_unresolved[0].evidence_source,
+        "ref_resolution_log"
+    );
+    assert_eq!(
+        evidence.source_attested_unresolved[0].candidate_declaration_count,
+        1
+    );
+}
+
+#[test]
+fn legacy_unresolved_rows_are_evidence_without_claiming_graph_completeness() {
+    let db = Database::open_in_memory().unwrap();
+    let (caller, callee) = setup(&db);
+    db.conn()
+        .execute(
+            "INSERT INTO unresolved_refs (source_id, target_name, kind, source_line)
+             VALUES (?1, 'Callee', 'calls', 14)",
+            [caller],
+        )
+        .unwrap();
+
+    let evidence = evidence_for_declaration(&db, callee, "Callee", 0).unwrap();
+    assert_eq!(
+        evidence.coverage.resolved_source,
+        ResolvedReferenceSource::LegacyEdges
+    );
+    assert_eq!(
+        evidence.coverage.occurrence_coverage,
+        OccurrenceCoverage::Unknown
+    );
+    assert_eq!(evidence.source_attested_unresolved.len(), 1);
+    assert_eq!(
+        evidence.source_attested_unresolved[0].evidence_source,
+        "legacy_unresolved_ref"
+    );
+}
+
+#[test]
+fn partial_census_merges_source_log_with_legacy_evidence() {
+    let db = Database::open_in_memory().unwrap();
+    let conn = db.conn();
+    for (path, hash) in [("measured.rs", "h1"), ("legacy.rs", "h2")] {
+        conn.execute(
+            "INSERT INTO files (path, hash, language, last_indexed)
+             VALUES (?1, ?2, 'rust', 0)",
+            rusqlite::params![path, hash],
+        )
+        .unwrap();
+    }
+    let measured_file: i64 = conn
+        .query_row("SELECT id FROM files WHERE path='measured.rs'", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    let legacy_file: i64 = conn
+        .query_row("SELECT id FROM files WHERE path='legacy.rs'", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    conn.execute(
+        "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+         VALUES (?1, 'callee', 'module::callee', 'function', 1, 0)",
+        [measured_file],
+    )
+    .unwrap();
+    let callee = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+         VALUES (?1, 'measured_caller', 'module::measured_caller', 'function', 10, 0)",
+        [measured_file],
+    )
+    .unwrap();
+    let measured_caller = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+         VALUES (?1, 'legacy_caller', 'module::legacy_caller', 'function', 20, 0)",
+        [legacy_file],
+    )
+    .unwrap();
+    let legacy_caller = conn.last_insert_rowid();
+
+    conn.execute(
+        "INSERT INTO ref_resolutions
+         (source_id, target_name, kind, source_line, source_col, outcome, target_id, confidence)
+         VALUES (?1, 'callee', 'calls', 12, 4, 'resolved', ?2, 1.0)",
+        rusqlite::params![measured_caller, callee],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO ref_resolutions
+         (source_id, target_name, kind, source_line, source_col, outcome)
+         VALUES (?1, 'callee', 'calls', 13, 4, 'unresolved')",
+        [measured_caller],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO edges (source_id, target_id, kind, source_line, confidence)
+         VALUES (?1, ?2, 'calls', 22, 1.0)",
+        rusqlite::params![legacy_caller, callee],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO unresolved_refs (source_id, target_name, kind, source_line)
+         VALUES (?1, 'callee', 'calls', 23)",
+        [legacy_caller],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO resolution_census (file_id, content_hash, counts_json)
+         VALUES (?1, 'h1', '[]')",
+        [measured_file],
+    )
+    .unwrap();
+
+    let evidence = evidence_for_declaration(&db, callee, "callee", 0).unwrap();
+    assert_eq!(
+        evidence.coverage.occurrence_coverage,
+        OccurrenceCoverage::Partial
+    );
+    assert_eq!(
+        evidence.coverage.resolved_source,
+        ResolvedReferenceSource::Mixed
+    );
+    assert_eq!(evidence.resolved.len(), 2);
+    assert!(evidence
+        .resolved
+        .iter()
+        .any(|reference| reference.referencing_symbol == "measured_caller"));
+    assert!(evidence
+        .resolved
+        .iter()
+        .any(|reference| reference.referencing_symbol == "legacy_caller"));
+    assert_eq!(evidence.source_attested_unresolved.len(), 2);
+    assert!(evidence
+        .source_attested_unresolved
+        .iter()
+        .any(|occurrence| occurrence.evidence_source == "ref_resolution_log"));
+    assert!(evidence
+        .source_attested_unresolved
+        .iter()
+        .any(|occurrence| occurrence.evidence_source == "legacy_unresolved_ref"));
+}

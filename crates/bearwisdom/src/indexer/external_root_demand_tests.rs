@@ -25,7 +25,12 @@ fn root(
 #[test]
 fn demand_reaches_every_copy_of_a_module() {
     let mut roots = vec![
-        root("typescript", "pkg", "/a/node_modules/pkg", &["pkg/link", "pkg/legacy/image"]),
+        root(
+            "typescript",
+            "pkg",
+            "/a/node_modules/pkg",
+            &["pkg/link", "pkg/legacy/image"],
+        ),
         root("typescript", "pkg", "/b/node_modules/pkg", &[]),
     ];
     union_module_demand(&mut roots);
@@ -40,7 +45,12 @@ fn demand_reaches_every_copy_of_a_module() {
 #[test]
 fn unrelated_modules_do_not_bleed() {
     let mut roots = vec![
-        root("typescript", "pkg-extra", "/a/node_modules/pkg-extra", &["pkg-extra/x"]),
+        root(
+            "typescript",
+            "pkg-extra",
+            "/a/node_modules/pkg-extra",
+            &["pkg-extra/x"],
+        ),
         root("typescript", "pkg", "/a/node_modules/pkg", &[]),
     ];
     union_module_demand(&mut roots);
@@ -77,14 +87,23 @@ fn foreign_namespace_demand_is_not_propagated() {
 #[test]
 fn union_is_sorted_and_idempotent() {
     let mut roots = vec![
-        root("typescript", "pkg", "/a/node_modules/pkg", &["pkg/z", "pkg/a"]),
+        root(
+            "typescript",
+            "pkg",
+            "/a/node_modules/pkg",
+            &["pkg/z", "pkg/a"],
+        ),
         root("typescript", "pkg", "/b/node_modules/pkg", &["pkg/m"]),
     ];
     union_module_demand(&mut roots);
     let once: Vec<Vec<String>> = roots.iter().map(|r| r.requested_imports.clone()).collect();
     assert_eq!(
         once[0],
-        vec!["pkg/a".to_string(), "pkg/m".to_string(), "pkg/z".to_string()]
+        vec![
+            "pkg/a".to_string(),
+            "pkg/m".to_string(),
+            "pkg/z".to_string()
+        ]
     );
 
     union_module_demand(&mut roots);
