@@ -262,10 +262,19 @@ impl IndexService {
                         s.duration_ms, s.file_count, s.symbol_count
                     ),
                     Ok(ReindexStats::Incremental(s)) => {
-                        if s.files_added + s.files_modified + s.files_deleted > 0 {
+                        if s.files_added
+                            + s.files_modified
+                            + s.files_deleted
+                            + s.files_census_backfilled
+                            > 0
+                        {
                             info!(
-                                "stale-sweep: caught watcher miss — +{} ~{} -{} files reindexed in {}ms",
-                                s.files_added, s.files_modified, s.files_deleted, s.duration_ms
+                                "stale-sweep: updated +{} ~{} -{} files and backfilled {} census file(s) in {}ms",
+                                s.files_added,
+                                s.files_modified,
+                                s.files_deleted,
+                                s.files_census_backfilled,
+                                s.duration_ms
                             );
                         } else {
                             debug!(

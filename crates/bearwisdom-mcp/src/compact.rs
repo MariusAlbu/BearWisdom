@@ -296,9 +296,29 @@ pub fn architecture(overview: &ArchitectureOverview) -> String {
 
 /// `bw_search`
 pub fn search(results: &[SearchResult], requested_limit: usize) -> String {
+    search_with_contract(results, requested_limit, false)
+}
+
+/// `bw_search` when the caller explicitly requests regression-test evidence.
+/// The reporting contract prevents agents from treating one test as a
+/// representative substitute for the rest of a returned behavior matrix.
+pub fn test_search(results: &[SearchResult], requested_limit: usize) -> String {
+    search_with_contract(results, requested_limit, true)
+}
+
+fn search_with_contract(
+    results: &[SearchResult],
+    requested_limit: usize,
+    require_complete_test_groups: bool,
+) -> String {
     let mut f = CompactFormatter::for_count(results.len());
     let mut body = String::with_capacity(2048);
 
+    if require_complete_test_groups {
+        body.push_str(
+            "#reporting_contract\nmatching_complete_set:report_every_test_name_and_file;omission_is_incomplete\n\n",
+        );
+    }
     body.push_str("#results\n");
     for r in results {
         let fr = f.fref(&r.file_path);
@@ -307,6 +327,39 @@ pub fn search(results: &[SearchResult], requested_limit: usize) -> String {
             "{}|{}|{}:{}|{:.2}",
             r.name, r.kind, fr, r.start_line, r.score
         );
+    }
+
+    let mut related_test_groups: Vec<(&str, Vec<&str>)> = Vec::new();
+    let mut index = 0;
+    while index < results.len() {
+        if results[index].kind != "test" {
+            index += 1;
+            continue;
+        }
+        let path = results[index].file_path.as_str();
+        let start = index;
+        while index < results.len()
+            && results[index].kind == "test"
+            && results[index].file_path == path
+        {
+            index += 1;
+        }
+        if index - start >= 2 {
+            related_test_groups.push((
+                path,
+                results[start..index]
+                    .iter()
+                    .map(|result| result.name.as_str())
+                    .collect(),
+            ));
+        }
+    }
+    if !related_test_groups.is_empty() {
+        body.push_str("\n#related_test_groups\n");
+        for (path, names) in related_test_groups {
+            let fr = f.fref(path);
+            let _ = writeln!(body, "{}|complete_set:{}", fr, names.join(","));
+        }
     }
 
     let meta = meta_with_truncation(
@@ -645,6 +698,31 @@ pub fn investigate(result: &InvestigateResult) -> String {
     }
     body.push('\n');
 
+    if let Some(excerpt) = &result.source_excerpt {
+        body.push_str("\n#source_excerpt\n");
+        let efr = f.fref(&excerpt.file_path);
+        let _ = writeln!(
+            body,
+            "{}:{}-{}|truncated:{}",
+            efr, excerpt.start_line, excerpt.end_line, excerpt.truncated
+        );
+        for line in excerpt.content.lines() {
+            let _ = writeln!(body, "  {line}");
+        }
+    }
+
+    if !result.nearby_tests.is_empty() {
+        body.push_str("\n#nearby_tests\n");
+        for test in &result.nearby_tests {
+            let tfr = f.fref(&test.file_path);
+            let _ = writeln!(
+                body,
+                "{}|{}|{}:{}",
+                test.name, test.qualified_name, tfr, test.line
+            );
+        }
+    }
+
     body.push_str("\n#references\n");
     for r in &result.references {
         let rfr = f.fref(&r.file_path);
@@ -655,9 +733,40 @@ pub fn investigate(result: &InvestigateResult) -> String {
         );
     }
 
-    if !result.source_attested_unresolved.is_empty() {
-        body.push_str("\n#source_attested_unresolved\n");
-        for occurrence in &result.source_attested_unresolved {
+    let unique_name_call_sites: Vec<_> = result
+        .source_attested_unresolved
+        .iter()
+        .filter(|occurrence| {
+            occurrence.edge_kind == "calls" && occurrence.candidate_declaration_count == 1
+        })
+        .collect();
+    if !unique_name_call_sites.is_empty() {
+        body.push_str("\n#unique_name_call_sites\n");
+        for occurrence in &unique_name_call_sites {
+            let rfr = f.fref(&occurrence.file_path);
+            let _ = writeln!(
+                body,
+                "{}|{}|{}:{}:{}|calls|target_name_unique|evidence:{}",
+                occurrence.referencing_symbol,
+                occurrence.referencing_kind,
+                rfr,
+                occurrence.line,
+                occurrence.column,
+                occurrence.evidence_source,
+            );
+        }
+    }
+
+    let unresolved: Vec<_> = result
+        .source_attested_unresolved
+        .iter()
+        .filter(|occurrence| {
+            occurrence.edge_kind != "calls" || occurrence.candidate_declaration_count != 1
+        })
+        .collect();
+    if !unresolved.is_empty() {
+        body.push_str("\n#unresolved_or_ambiguous_occurrences\n");
+        for occurrence in &unresolved {
             let rfr = f.fref(&occurrence.file_path);
             let _ = writeln!(
                 body,
@@ -724,11 +833,12 @@ pub fn investigate(result: &InvestigateResult) -> String {
         bearwisdom::query::references::ResolvedReferenceSource::LegacyEdges => "legacy_edges",
     };
     let mut out = start(&format!(
-        "references:{}|resolved_total:{}|resolved_source:{resolved_source}|resolved_truncated:{}|source_attested_unresolved:{}|source_attested_total:{}|source_attested_truncated:{}|reference_coverage:{coverage}|files_measured:{}/{}|missing_files:{}|stale_files:{}|callers:{}|callees:{}|evidence:source_attested_and_resolved_graph|empty_sections_inconclusive:true",
+        "references:{}|resolved_total:{}|resolved_source:{resolved_source}|resolved_truncated:{}|unique_name_call_sites:{}|unresolved_or_ambiguous:{}|source_attested_total:{}|source_attested_truncated:{}|reference_coverage:{coverage}|files_measured:{}/{}|missing_files:{}|stale_files:{}|callers:{}|callees:{}|nearby_tests:{}|source_excerpt:{}|evidence:resolved_graph_and_source_attested_unique_names|empty_sections_inconclusive:true",
         result.references.len(),
         result.reference_coverage.resolved_total,
         result.reference_coverage.resolved_truncated,
-        result.source_attested_unresolved.len(),
+        unique_name_call_sites.len(),
+        unresolved.len(),
         result.reference_coverage.source_attested_total,
         result.reference_coverage.source_attested_truncated,
         result.reference_coverage.measured_files,
@@ -736,7 +846,9 @@ pub fn investigate(result: &InvestigateResult) -> String {
         result.reference_coverage.missing_files,
         result.reference_coverage.stale_files,
         result.callers.len(),
-        result.callees.len()
+        result.callees.len(),
+        result.nearby_tests.len(),
+        result.source_excerpt.is_some(),
     ));
     f.write_files(&mut out);
     if !f.files.is_empty() {

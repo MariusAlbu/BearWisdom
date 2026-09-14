@@ -13,6 +13,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use tracing::{debug, info};
 
 use crate::ecosystem::manifest::{self, ManifestData, ManifestKind, PackageManifest};
@@ -290,6 +291,65 @@ impl ProjectContext {
         )
     }
 
+    /// Reuse the manifest-derived base context across watcher saves in the
+    /// same writer process. Manifest readers may recursively inspect a large
+    /// workspace, so rebuilding all of them for every one-file event turns
+    /// automatic refresh into minutes of unrelated filesystem work.
+    ///
+    /// The cache is invalidated when a manifest path changed, the package
+    /// inventory changed, or the set of indexed project languages changed.
+    /// Cloning intentionally clears `plugin_state`; incremental indexing
+    /// repopulates that per-pass state after this call.
+    pub fn initialize_incremental_cached<I>(
+        project_root: &Path,
+        packages: &[PackageInfo],
+        language_ids: I,
+        ecosystems: &EcosystemRegistry,
+        manifest_changed: bool,
+    ) -> Self
+    where
+        I: IntoIterator<Item = String>,
+    {
+        let language_presence: HashSet<String> = language_ids.into_iter().collect();
+        let package_key = package_cache_key(packages);
+        let root_key =
+            std::fs::canonicalize(project_root).unwrap_or_else(|_| project_root.to_path_buf());
+        let cache = INCREMENTAL_CONTEXT_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+
+        if !manifest_changed {
+            let guard = cache
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if let Some(entry) = guard.get(&root_key) {
+                if entry.language_presence == language_presence && entry.package_key == package_key
+                {
+                    debug!(
+                        "ProjectContext: reused cached manifests for {}",
+                        project_root.display()
+                    );
+                    return entry.context.clone();
+                }
+            }
+        }
+
+        let context = Self::initialize(
+            project_root,
+            packages,
+            language_presence.iter().cloned(),
+            ecosystems,
+        );
+        let entry = CachedProjectContext {
+            package_key,
+            language_presence,
+            context: context.clone(),
+        };
+        cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(root_key, entry);
+        context
+    }
+
     /// Phase 5 entry point. Same as `initialize` but takes an explicit
     /// per-package language map so `LanguagePresent` clauses narrow per
     /// package. Callers without parsed-file context (incremental
@@ -380,6 +440,45 @@ impl ProjectContext {
         }
         vis
     }
+}
+
+type PackageCacheKey = Vec<(
+    Option<i64>,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    bool,
+)>;
+
+#[derive(Clone)]
+struct CachedProjectContext {
+    package_key: PackageCacheKey,
+    language_presence: HashSet<String>,
+    context: ProjectContext,
+}
+
+static INCREMENTAL_CONTEXT_CACHE: OnceLock<Mutex<HashMap<PathBuf, CachedProjectContext>>> =
+    OnceLock::new();
+
+fn package_cache_key(packages: &[PackageInfo]) -> PackageCacheKey {
+    let mut key: PackageCacheKey = packages
+        .iter()
+        .map(|package| {
+            (
+                package.id,
+                package.name.clone(),
+                package.path.clone(),
+                package.kind.clone(),
+                package.manifest.clone(),
+                package.declared_name.clone(),
+                package.is_publishable,
+            )
+        })
+        .collect();
+    key.sort();
+    key
 }
 
 /// Walk every registered ecosystem, evaluate its `activation()` predicate

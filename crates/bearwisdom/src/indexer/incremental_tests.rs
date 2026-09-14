@@ -3,6 +3,53 @@ use std::fs;
 use tempfile::TempDir;
 
 #[test]
+fn incremental_activation_uses_all_indexed_project_languages() {
+    let db = Database::open_in_memory().unwrap();
+    for (path, language, origin) in [
+        ("src/lib.rs", "rust", "internal"),
+        ("web/index.ts", "typescript", "internal"),
+        ("/sdk/runtime.py", "python", "external"),
+    ] {
+        db.conn()
+            .execute(
+                "INSERT INTO files (path, hash, language, origin, last_indexed)
+                 VALUES (?1, 'h', ?2, ?3, 0)",
+                rusqlite::params![path, language, origin],
+            )
+            .unwrap();
+    }
+
+    let languages = internal_languages(&db).unwrap();
+    assert_eq!(languages.len(), 2);
+    assert!(languages.contains("rust"));
+    assert!(languages.contains("typescript"));
+    assert!(!languages.contains("python"));
+}
+
+#[test]
+fn idle_incremental_sweep_backfills_missing_occurrence_census() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("lib.rs"), "fn target() {}\n").unwrap();
+    let mut db = Database::open_in_memory().unwrap();
+    crate::indexer::full::full_index(&mut db, dir.path(), None, None, None).unwrap();
+    db.conn()
+        .execute("DELETE FROM resolution_census", [])
+        .unwrap();
+
+    let stats = incremental_index(&mut db, dir.path(), None).unwrap();
+    assert_eq!(stats.files_added, 0);
+    assert_eq!(stats.files_modified, 0);
+    assert_eq!(stats.files_census_backfilled, 1);
+    let measured: i64 = db
+        .conn()
+        .query_row("SELECT COUNT(*) FROM resolution_census", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(measured, 1);
+}
+
+#[test]
 fn incremental_detects_new_file() {
     let dir = TempDir::new().unwrap();
     fs::write(dir.path().join("a.cs"), "namespace App { class Foo {} }").unwrap();

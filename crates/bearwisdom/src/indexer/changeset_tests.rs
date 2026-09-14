@@ -134,6 +134,100 @@ fn apply_diff_line_drops_missing_files() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
+#[test]
+fn git_candidates_already_matching_the_index_are_pruned() {
+    let tmp = std::env::temp_dir().join("bw-test-changeset-prune-indexed");
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let content = b"fn current() {}\n";
+    std::fs::write(tmp.join("lib.rs"), content).unwrap();
+
+    let db = crate::db::Database::open_in_memory().unwrap();
+    let mut hasher = Sha256::new();
+    hasher.update(content);
+    let hash = format!("{:x}", hasher.finalize());
+    db.conn()
+        .execute(
+            "INSERT INTO files (path, hash, language, origin, last_indexed)
+             VALUES ('lib.rs', ?1, 'rust', 'internal', 0)",
+            [hash],
+        )
+        .unwrap();
+
+    let mut cs = ChangeSet::default();
+    cs.modified.push(touch("lib.rs", "rust", &tmp));
+    prune_indexed_content_matches(&db, &mut cs).unwrap();
+
+    assert!(cs.modified.is_empty());
+    assert_eq!(cs.unchanged, 1);
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn clean_git_state_falls_back_to_hash_reconciliation_for_index_drift() {
+    use std::process::Command;
+
+    let git_ok = Command::new("git")
+        .arg("--version")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false);
+    if !git_ok {
+        eprintln!(
+            "clean_git_state_falls_back_to_hash_reconciliation_for_index_drift: git unavailable"
+        );
+        return;
+    }
+
+    let tmp = std::env::temp_dir().join("bw-test-changeset-hash-reconcile");
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let run = |args: &[&str]| {
+        Command::new("git")
+            .args(args)
+            .current_dir(&tmp)
+            .output()
+            .unwrap()
+    };
+    run(&["init", "-q", "-b", "main"]);
+    run(&["config", "user.email", "test@example.com"]);
+    run(&["config", "user.name", "Test"]);
+    run(&["config", "commit.gpgsign", "false"]);
+    std::fs::write(tmp.join("lib.rs"), "fn current() {}\n").unwrap();
+    run(&["add", "lib.rs"]);
+    let commit = run(&["commit", "-q", "-m", "seed"]);
+    assert!(commit.status.success());
+    let head = String::from_utf8_lossy(&run(&["rev-parse", "HEAD"]).stdout)
+        .trim()
+        .to_owned();
+
+    let db = crate::db::Database::open(&tmp.join("index.db")).unwrap();
+    set_meta(&db, "indexed_commit", &head).unwrap();
+    db.conn()
+        .execute(
+            "INSERT INTO files (path, hash, language, origin, last_indexed)
+             VALUES ('lib.rs', 'stale-hash', 'rust', 'internal', 0),
+                    ('.claude/worktrees/old/lib.rs', 'old-hash', 'rust', 'internal', 0)",
+            [],
+        )
+        .unwrap();
+
+    let cs = git_diff(&db, &tmp).unwrap();
+    assert_eq!(
+        cs.modified
+            .iter()
+            .map(|file| file.relative_path.as_str())
+            .collect::<Vec<_>>(),
+        vec!["lib.rs"]
+    );
+    assert_eq!(cs.deleted, vec![".claude/worktrees/old/lib.rs".to_owned()]);
+    assert!(cs.added.is_empty());
+    assert_eq!(cs.commit.as_deref(), Some(head.as_str()));
+
+    drop(db);
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
 // ---------------------------------------------------------------------------
 // Integration: working-tree pass picks up uncommitted modifications
 // ---------------------------------------------------------------------------

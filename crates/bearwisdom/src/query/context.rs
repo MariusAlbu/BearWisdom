@@ -18,7 +18,6 @@ use crate::db::Database;
 use crate::query::QueryResult;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::sync::LazyLock;
 
 // ---------------------------------------------------------------------------
 // Result types
@@ -101,25 +100,15 @@ fn estimate_tokens(kind: &str) -> u32 {
 // Seed helpers
 // ---------------------------------------------------------------------------
 
-/// Common English stop words that are useless as FTS5 symbol search terms.
-static STOP_WORDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
-    [
-        "a", "an", "the", "is", "are", "to", "from", "with", "for", "of", "in", "on", "by", "and",
-        "or", "not", "this", "that", "it", "be", "do", "if", "at", "as", "no", "has", "have",
-        "was", "were", "will", "can", "new", "all", "get", "set", "add", "make", "find", "what",
-        "how", "where", "which", "when", "why", "who",
-    ]
-    .into_iter()
-    .collect()
-});
-
 /// Multi-strategy seed collection.
 ///
 /// 1. Try FTS5 with the raw task string — works when the task contains symbol names.
-/// 2. If empty, extract keywords (strip stop words) and try each individually.
-/// 3. Also try LIKE-based fallback on `symbols.name` for words ≥ 4 chars.
+/// 2. Search adjacent concept pairs so one noisy non-empty raw result cannot
+///    suppress the other concepts or separate phrases such as `module
+///    resolution` and `chain root`.
 ///
-/// Results are deduplicated by `qualified_name`, keeping the highest score.
+/// Results are deduplicated by `qualified_name`, then reranked by distinct task
+/// concepts across the symbol name and file path.
 /// The returned list is capped at `limit`.
 fn seed_symbols(db: &Database, task: &str, limit: usize) -> Vec<super::search::SearchResult> {
     use super::search::SearchResult;
@@ -137,72 +126,41 @@ fn seed_symbols(db: &Database, task: &str, limit: usize) -> Vec<super::search::S
         }
     }
 
-    // --- Strategy 2: per-keyword FTS5 ---
-    if by_qn.is_empty() {
-        let keywords: Vec<&str> = task
-            .split_whitespace()
-            .filter(|w| {
-                let lower = w.to_lowercase();
-                !STOP_WORDS.contains(lower.as_str())
-            })
-            .collect();
-
-        for kw in &keywords {
-            if let Ok(results) = super::search::search_symbols(db, kw, limit, &opts) {
-                for r in results {
-                    let entry = by_qn.entry(r.qualified_name.clone());
-                    entry
-                        .and_modify(|existing| {
-                            if r.score > existing.score {
-                                *existing = r.clone();
-                            }
-                        })
-                        .or_insert(r);
+    // --- Strategy 2: focused concept-pair search ---
+    let terms = super::search::ranking_terms(task);
+    let per_term_limit = limit.clamp(8, 20);
+    let focused_queries: Vec<String> = if terms.len() == 1 {
+        vec![format!("{}*", terms[0])]
+    } else {
+        terms
+            .windows(2)
+            .map(|pair| format!("{} {}", pair[0], pair[1]))
+            .collect()
+    };
+    for query in focused_queries {
+        if let Ok(results) = super::search::search_symbols(db, &query, per_term_limit, &opts) {
+            for result in results {
+                if super::search::useful_result_kind(&result.kind) {
+                    by_qn.entry(result.qualified_name.clone()).or_insert(result);
                 }
             }
         }
     }
 
-    // --- Strategy 3: LIKE-based fallback ---
-    {
-        let words: Vec<&str> = task.split_whitespace().filter(|w| w.len() >= 4).collect();
-
-        for word in &words {
-            let pattern = format!("%{}%", word.to_lowercase());
-            let sql = "SELECT s.name, s.qualified_name, s.kind, f.path, s.line
-                       FROM symbols s JOIN files f ON f.id = s.file_id
-                       WHERE lower(s.name) LIKE ?1
-                         AND s.origin = 'internal'
-                       LIMIT 20";
-            if let Ok(rows) = db.conn().prepare(sql).and_then(|mut stmt| {
-                stmt.query_map([&pattern], |r| {
-                    Ok((
-                        r.get::<_, String>(0)?,
-                        r.get::<_, String>(1)?,
-                        r.get::<_, String>(2)?,
-                        r.get::<_, String>(3)?,
-                        r.get::<_, u32>(4)?,
-                    ))
-                })
-                .map(|mapped| mapped.filter_map(|r| r.ok()).collect::<Vec<_>>())
-            }) {
-                for (name, qn, kind, fp, line) in rows {
-                    by_qn.entry(qn.clone()).or_insert(SearchResult {
-                        name,
-                        qualified_name: qn,
-                        kind,
-                        file_path: fp,
-                        start_line: line,
-                        signature: None,
-                        score: 0.5,
-                    });
-                }
+    // Recompute every candidate on the same task-wide scale. Raw BM25 and exact
+    // anchor scores are not comparable and previously let common exact words
+    // dominate the seed set.
+    let mut results: Vec<SearchResult> = by_qn
+        .into_values()
+        .filter_map(|mut result| {
+            let relevance = super::search::rank_for_task(&result, &terms);
+            if relevance < 100.0 {
+                return None;
             }
-        }
-    }
-
-    // Sort by score descending, cap at limit.
-    let mut results: Vec<SearchResult> = by_qn.into_values().collect();
+            result.score = relevance;
+            Some(result)
+        })
+        .collect();
     results.sort_by(|a, b| {
         b.score
             .partial_cmp(&a.score)
@@ -648,5 +606,81 @@ mod tests {
         assert!(!result.files.is_empty());
         // First result should be the direct match.
         assert_eq!(result.symbols[0].name, "CatalogService");
+    }
+
+    #[test]
+    fn seed_symbols_preserves_distinct_concepts_when_common_words_are_noisy() {
+        let db = Database::open_in_memory().unwrap();
+        for index in 0..40 {
+            let path = format!("src/noise_{index}.rs");
+            db.conn()
+                .execute(
+                    "INSERT INTO files (path, hash, language, last_indexed)
+                     VALUES (?1, 'h', 'rust', 0)",
+                    [&path],
+                )
+                .unwrap();
+            let file_id = db.conn().last_insert_rowid();
+            db.conn()
+                .execute(
+                    "INSERT INTO symbols
+                        (file_id, name, qualified_name, kind, line, col)
+                     VALUES (?1, 'source', ?2, 'field', 1, 0)",
+                    rusqlite::params![file_id, format!("Noise{index}.source")],
+                )
+                .unwrap();
+        }
+
+        for (path, name, kind) in [
+            (
+                "src/type_checker/profile/name_spelling.rs",
+                "index_qname_from_source",
+                "method",
+            ),
+            (
+                "src/indexer/resolve/engine/module_specifier.rs",
+                "resolve_via_module_resolver",
+                "function",
+            ),
+            (
+                "src/indexer/resolve/engine/chain_root_binding_tests.rs",
+                "aliased_import_root_binds_the_original_not_a_same_named_stranger",
+                "test",
+            ),
+            (
+                "src/languages/php/profile_tests.rs",
+                "php_qualified_import_candidates_keep_namespace_and_containment_boundaries",
+                "test",
+            ),
+        ] {
+            db.conn()
+                .execute(
+                    "INSERT INTO files (path, hash, language, last_indexed)
+                     VALUES (?1, 'h', 'rust', 0)",
+                    [path],
+                )
+                .unwrap();
+            let file_id = db.conn().last_insert_rowid();
+            db.conn()
+                .execute(
+                    "INSERT INTO symbols
+                        (file_id, name, qualified_name, kind, line, col)
+                     VALUES (?1, ?2, ?2, ?3, 1, 0)",
+                    rusqlite::params![file_id, name, kind],
+                )
+                .unwrap();
+        }
+
+        let seeds = seed_symbols(
+            &db,
+            "source qualified index conversion module resolution registry php chain root regression tests",
+            20,
+        );
+        let names: HashSet<&str> = seeds.iter().map(|seed| seed.name.as_str()).collect();
+        assert!(names.contains("index_qname_from_source"));
+        assert!(names.contains("resolve_via_module_resolver"));
+        assert!(names.contains("aliased_import_root_binds_the_original_not_a_same_named_stranger"));
+        assert!(names
+            .contains("php_qualified_import_candidates_keep_namespace_and_containment_boundaries"));
     }
 }

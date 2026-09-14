@@ -64,6 +64,39 @@ fn search_multi_result_uses_files_registry() {
 }
 
 #[test]
+fn search_labels_consecutive_test_results_as_a_complete_related_group() {
+    let mut first = make_search_result("src/behavior_tests.rs", 10);
+    first.name = "alias_root_binds_original".to_string();
+    first.kind = "test".to_string();
+    let mut second = make_search_result("src/behavior_tests.rs", 20);
+    second.name = "alias_root_without_declaration_is_a_miss".to_string();
+    second.kind = "test".to_string();
+    let out = search(&[first, second], 10);
+
+    assert!(out.contains("#related_test_groups"));
+    assert!(out.contains(
+        "F1|complete_set:alias_root_binds_original,alias_root_without_declaration_is_a_miss"
+    ));
+}
+
+#[test]
+fn test_search_requires_every_member_of_a_matching_complete_set() {
+    let mut first = make_search_result("src/behavior_tests.rs", 10);
+    first.name = "alias_root_binds_original".to_string();
+    first.kind = "test".to_string();
+    let mut second = make_search_result("src/behavior_tests.rs", 20);
+    second.name = "alias_root_without_declaration_is_a_miss".to_string();
+    second.kind = "test".to_string();
+    let out = test_search(&[first, second], 10);
+
+    let contract = out.find("#reporting_contract").unwrap();
+    let results = out.find("#results").unwrap();
+    assert!(contract < results);
+    assert!(out
+        .contains("matching_complete_set:report_every_test_name_and_file;omission_is_incomplete"));
+}
+
+#[test]
 fn with_freshness_header_injects_index_block_into_compact_response() {
     let response = format!("#format:compact-v1\n#meta\ncount:0\n");
     let out = crate::server::BearWisdomServer::with_freshness_header(
@@ -241,7 +274,9 @@ fn full_trace_encodes_parent_links_and_flow_jumps() {
 
 #[test]
 fn investigate_keeps_resolved_and_unresolved_occurrences_distinct() {
-    use bearwisdom::query::investigate::{InvestigateResult, SlimSymbol};
+    use bearwisdom::query::investigate::{
+        InvestigateResult, NearbyTest, SlimSymbol, SourceExcerpt,
+    };
     use bearwisdom::query::references::{
         OccurrenceCoverage, ReferenceCoverage, ResolvedReferenceSource, SourceAttestedOccurrence,
     };
@@ -256,6 +291,19 @@ fn investigate_keeps_resolved_and_unresolved_occurrences_distinct() {
             line: 1,
             signature: None,
         },
+        source_excerpt: Some(SourceExcerpt {
+            file_path: "lib.rs".to_string(),
+            start_line: 1,
+            end_line: 3,
+            content: "fn target() {}".to_string(),
+            truncated: false,
+        }),
+        nearby_tests: vec![NearbyTest {
+            name: "target_works".to_string(),
+            qualified_name: "tests::target_works".to_string(),
+            file_path: "lib.rs".to_string(),
+            line: 20,
+        }],
         references: vec![],
         source_attested_unresolved: vec![SourceAttestedOccurrence {
             referencing_symbol: "module::caller".to_string(),
@@ -289,8 +337,12 @@ fn investigate_keeps_resolved_and_unresolved_occurrences_distinct() {
 
     assert!(out.contains("rust:module::target|module::target"));
     assert!(out.contains("references:0|resolved_total:0"));
-    assert!(out.contains("source_attested_unresolved:1"));
+    assert!(out.contains("unique_name_call_sites:1"));
     assert!(out.contains("reference_coverage:complete"));
-    assert!(out.contains("#source_attested_unresolved"));
-    assert!(out.contains("12:7|calls|unresolved|candidates:1"));
+    assert!(out.contains("#unique_name_call_sites"));
+    assert!(out.contains("12:7|calls|target_name_unique"));
+    assert!(out.contains("#source_excerpt"));
+    assert!(out.contains("fn target() {}"));
+    assert!(out.contains("#nearby_tests"));
+    assert!(out.contains("target_works|tests::target_works"));
 }

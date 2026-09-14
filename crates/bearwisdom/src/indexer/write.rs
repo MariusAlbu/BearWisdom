@@ -9,7 +9,7 @@
 use crate::db::Database;
 use crate::symbol_key::{is_mergeable, symbol_key};
 use crate::type_checker::core::types::TypeArena;
-use crate::types::ParsedFile;
+use crate::types::{ParsedFile, SymbolKind};
 use anyhow::{Context, Result};
 use rusqlite::types::Value;
 use rusqlite::OptionalExtension;
@@ -254,9 +254,45 @@ pub struct SurvivorReport {
     /// Paths of files holding an edge INTO a symbol that vanished in this write.
     /// Excludes the rewritten files themselves (they re-resolve regardless).
     pub vanished_dependent_paths: HashSet<String>,
-    /// Names of symbols inserted under a brand-new key. A file with an
-    /// unresolved ref to one of these names may now bind.
+    /// Names of symbols inserted under a brand-new key that can be referenced
+    /// from another file. A file with an unresolved ref to one of these names
+    /// may now bind.
     pub new_symbol_names: HashSet<String>,
+}
+
+/// Whether a declaration can make a previously unresolved reference in a
+/// different file bind. Declarations nested under a callable are lexical to
+/// that callable in the languages BearWisdom indexes. Parameters are lexical
+/// even when an extractor could not attach their parent. Keep declarations at
+/// file or type scope: module variables and type members can be cross-file API.
+fn can_satisfy_cross_file_reference(
+    symbol_index: usize,
+    symbols: &[crate::types::ExtractedSymbol],
+) -> bool {
+    let symbol = &symbols[symbol_index];
+    if symbol.kind == SymbolKind::Parameter {
+        return false;
+    }
+
+    let mut parent_index = symbol.parent_index;
+    let mut remaining = symbols.len();
+    while let Some(index) = parent_index {
+        let Some(parent) = symbols.get(index) else {
+            return true;
+        };
+        if matches!(
+            parent.kind,
+            SymbolKind::Function | SymbolKind::Method | SymbolKind::Constructor | SymbolKind::Test
+        ) {
+            return false;
+        }
+        if remaining == 0 {
+            return true;
+        }
+        remaining -= 1;
+        parent_index = parent.parent_index;
+    }
+    true
 }
 
 /// Incremental write with stable identity (SYMBOL-IDENTITY.md §4).
@@ -483,7 +519,9 @@ fn survivor_match_file(
             _ => {
                 let new_id = insert_one_symbol(tx, file_id, pf, idx, origin, arena)?;
                 upsert_location(tx, new_id, file_id, sym)?;
-                report.new_symbol_names.insert(sym.name.clone());
+                if can_satisfy_cross_file_reference(idx, &pf.symbols) {
+                    report.new_symbol_names.insert(sym.name.clone());
+                }
                 if mergeable {
                     mergeable_still_in_f.insert(new_id);
                 }

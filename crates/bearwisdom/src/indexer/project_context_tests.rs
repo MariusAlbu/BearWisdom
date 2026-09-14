@@ -1,6 +1,52 @@
 use super::*;
 
 #[test]
+fn incremental_context_cache_refreshes_when_manifest_changes() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let manifest = dir.path().join("package.json");
+    std::fs::write(&manifest, r#"{"dependencies":{"first":"1"}}"#).unwrap();
+    let registry = ecosystem::default_registry();
+
+    let first = ProjectContext::initialize_incremental_cached(
+        dir.path(),
+        &[],
+        vec!["typescript".to_string()],
+        registry,
+        true,
+    );
+    assert!(first
+        .manifest(ManifestKind::Npm)
+        .unwrap()
+        .dependencies
+        .contains("first"));
+
+    std::fs::write(&manifest, r#"{"dependencies":{"second":"1"}}"#).unwrap();
+    let cached = ProjectContext::initialize_incremental_cached(
+        dir.path(),
+        &[],
+        vec!["typescript".to_string()],
+        registry,
+        false,
+    );
+    assert!(cached
+        .manifest(ManifestKind::Npm)
+        .unwrap()
+        .dependencies
+        .contains("first"));
+
+    let refreshed = ProjectContext::initialize_incremental_cached(
+        dir.path(),
+        &[],
+        vec!["typescript".to_string()],
+        registry,
+        true,
+    );
+    let npm = refreshed.manifest(ManifestKind::Npm).unwrap();
+    assert!(npm.dependencies.contains("second"));
+    assert!(!npm.dependencies.contains("first"));
+}
+
+#[test]
 fn workspace_package_lookup_accepts_only_neutral_slash_paths() {
     let mut ctx = ProjectContext::default();
     ctx.workspace

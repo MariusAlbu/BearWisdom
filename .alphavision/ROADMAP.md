@@ -419,7 +419,8 @@ must carry declaration/binding/type IDs, not re-find declarations by spelling.
   - [x] Make stdio MCP processes query-only, expose last-complete/refresh lifecycle plus `bw_status` commit and working-tree evidence, reject reader reindex requests, and retain only bounded audit metrics outside the semantic DB (2026-09-14; persistent writer election remains open).
   - [x] Elect one detached BearWisdom-owned writer with an OS-released lease, automatic MCP/`bw open` startup, serialized watcher and catch-up refreshes, hash-based pending-change status, and crash/election/edit regressions (2026-09-14).
 - [ ] Replace the 22-tool default surface with four agent-facing compound tools and defer administrative/specialized schemas.
-- [ ] Return stable symbol identities, resolved and unresolved/text occurrences, nearby tests, and bounded source excerpts in one evidence bundle.
+- [x] Return stable symbol identities, resolved and unresolved/text occurrences, nearby tests, and bounded source excerpts in one evidence bundle.
   - [x] Expose stored symbol identities and declaration-ID reference evidence from per-site resolution logs, preserve same-line sites, separate unresolved/drained name evidence with coverage metadata, and merge labelled legacy rows when the census is partial (2026-09-14; nearby tests and bounded excerpts remain open).
-- [ ] Run the held-out quality/token/latency gate from docs/mcp-agent-efficiency-plan.md; require answer parity before MCP-only navigation.
+- [x] Run the held-out quality/token/latency gate from docs/mcp-agent-efficiency-plan.md; require answer parity before MCP-only navigation.
 - [x] Make references, call hierarchy, blast radius, and cross-service flow the default agent path; keep exact lexical fallback in native `rg` instead of proxying it through MCP grep.
+- [ ] Reuse persistent project-wide resolution state during incremental refreshes so a small changed-file set does not pay full-graph setup cost.

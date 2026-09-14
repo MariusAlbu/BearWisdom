@@ -186,6 +186,48 @@ fn pfile(path: &str, lang: &str, symbols: Vec<ExtractedSymbol>) -> crate::types:
 }
 
 #[test]
+fn new_local_declarations_do_not_expand_the_cross_file_blast_radius() {
+    let db = Database::open_in_memory().unwrap();
+    let arena = TypeArena::new();
+
+    let container = esym("Container", SymbolKind::Struct, None, 1);
+    let mut method = esym("Container.run", SymbolKind::Method, None, 2);
+    method.parent_index = Some(0);
+    let mut local = esym("Container.run.local_value", SymbolKind::Variable, None, 3);
+    local.parent_index = Some(1);
+    let mut parameter = esym("Container.run.input", SymbolKind::Parameter, None, 2);
+    parameter.parent_index = Some(1);
+    let mut nested = esym("Container.run.local_helper", SymbolKind::Function, None, 4);
+    nested.parent_index = Some(1);
+    let mut type_member = esym("Container.SHARED", SymbolKind::Variable, None, 5);
+    type_member.parent_index = Some(0);
+    let global = esym("GLOBAL", SymbolKind::Variable, None, 6);
+
+    let file = pfile(
+        "scope.rs",
+        "rust",
+        vec![
+            container,
+            method,
+            local,
+            parameter,
+            nested,
+            type_member,
+            global,
+        ],
+    );
+    let (_, _, report) = write_parsed_files_incremental(&db, &[file], Some(&arena)).unwrap();
+
+    assert!(report.new_symbol_names.contains("Container"));
+    assert!(report.new_symbol_names.contains("run"));
+    assert!(report.new_symbol_names.contains("SHARED"));
+    assert!(report.new_symbol_names.contains("GLOBAL"));
+    assert!(!report.new_symbol_names.contains("local_value"));
+    assert!(!report.new_symbol_names.contains("input"));
+    assert!(!report.new_symbol_names.contains("local_helper"));
+}
+
+#[test]
 fn lexical_visibility_is_replaced_on_full_and_survivor_writes() {
     use crate::indexer::lexical::LexicalBindings;
     let db = Database::open_in_memory().unwrap();

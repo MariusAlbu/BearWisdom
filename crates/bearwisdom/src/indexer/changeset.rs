@@ -390,6 +390,8 @@ pub fn from_file_events(project_root: &Path, changes: &[FileChangeEvent]) -> Res
 ///   - Not a git repository
 ///   - The indexed commit is unreachable (force push, rebase)
 ///   - git CLI is unavailable
+///   - Git reports no live changes after hash pruning, so an inexpensive
+///     mtime/hash reconciliation can repair historical index drift
 ///
 /// This is the preferred strategy for subsequent reindexes in git repos —
 /// it avoids reading and hashing every file.
@@ -474,6 +476,28 @@ pub fn git_diff(db: &Database, project_root: &Path) -> Result<ChangeSet> {
     apply_working_tree_changes(project_root, &mut changeset)?;
 
     deduplicate_changeset(&mut changeset);
+    prune_indexed_content_matches(db, &mut changeset)?;
+
+    // Git can only report changes relative to repository history. It cannot
+    // discover an indexed file from an excluded/deleted worktree, a file that
+    // was skipped by an older indexer, or a stored hash that drifted while HEAD
+    // remained unchanged. Once Git's candidates are fully caught up, reconcile
+    // the filesystem snapshot before declaring the index idle. HashDiff uses
+    // mtime+size as its fast path, so this is bounded to a tree walk and stats
+    // for the steady-state case.
+    if changeset.is_empty() {
+        let mut drift = hash_diff(db, project_root)?;
+        if !drift.is_empty() {
+            info!(
+                "GitDiff: hash reconciliation found {} added, {} modified, {} deleted files",
+                drift.added.len(),
+                drift.modified.len(),
+                drift.deleted.len()
+            );
+            drift.commit = Some(head);
+            return Ok(drift);
+        }
+    }
 
     info!(
         "GitDiff: {} added, {} modified, {} deleted ({}..{}) + working tree",
@@ -489,6 +513,62 @@ pub fn git_diff(db: &Database, project_root: &Path) -> Result<ChangeSet> {
     );
 
     Ok(changeset)
+}
+
+/// Git reports working-tree paths relative to HEAD, so a dirty file remains
+/// in every later `git diff HEAD` even after the watcher has indexed its
+/// current bytes. Compare only those reported paths with the stored content
+/// hash and drop repeats. This keeps the periodic safety sweep proportional
+/// to actual missed events while retaining GitDiff's cheap path discovery.
+fn prune_indexed_content_matches(db: &Database, cs: &mut ChangeSet) -> Result<()> {
+    let mut indexed_hashes = HashMap::new();
+    {
+        let mut stmt = db
+            .prepare("SELECT path, hash FROM files WHERE origin = 'internal'")
+            .context("GitDiff: prepare indexed hashes")?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .context("GitDiff: read indexed hashes")?;
+        for row in rows {
+            let (path, hash) = row?;
+            indexed_hashes.insert(path, hash);
+        }
+    }
+
+    let mut pruned = 0u32;
+    let mut retain_live = |file: &WalkedFile| -> bool {
+        let Some(indexed_hash) = indexed_hashes.get(&file.relative_path) else {
+            return true;
+        };
+        let bytes = match std::fs::read(&file.absolute_path) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                debug!(
+                    "GitDiff: cannot verify {} against index: {error}",
+                    file.relative_path
+                );
+                return true;
+            }
+        };
+        let mut hasher = Sha256::new();
+        hasher.update(&bytes);
+        let disk_hash = format!("{:x}", hasher.finalize());
+        if disk_hash == *indexed_hash {
+            pruned += 1;
+            false
+        } else {
+            true
+        }
+    };
+
+    cs.added.retain(&mut retain_live);
+    cs.modified.retain(&mut retain_live);
+    cs.unchanged += pruned;
+    cs.deleted
+        .retain(|path| indexed_hashes.contains_key(path.as_str()));
+    Ok(())
 }
 
 /// Parse one `git diff --name-status` output line ("M\tpath", "A\tpath", …)

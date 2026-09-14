@@ -43,6 +43,9 @@ pub struct IncrementalStats {
     pub files_modified: u32,
     pub files_deleted: u32,
     pub files_unchanged: u32,
+    /// Legacy/current files resolved solely to populate a missing/stale
+    /// occurrence census during an idle periodic sweep.
+    pub files_census_backfilled: u32,
     pub symbols_written: u32,
     pub edges_written: u32,
     pub files_reresolved: u32,
@@ -70,7 +73,7 @@ pub fn incremental_index(
     );
 
     let cs = changeset::hash_diff(db, project_root)?;
-    run_incremental_pipeline(db, project_root, cs, start, ref_cache)
+    run_incremental_pipeline(db, project_root, cs, start, ref_cache, true)
 }
 
 /// Incrementally update the index using git diff change detection.
@@ -90,7 +93,7 @@ pub fn git_reindex(
     );
 
     let cs = changeset::git_diff(db, project_root)?;
-    run_incremental_pipeline(db, project_root, cs, start, ref_cache)
+    run_incremental_pipeline(db, project_root, cs, start, ref_cache, true)
 }
 
 /// Re-index specific files from IDE/watcher events.
@@ -112,7 +115,7 @@ pub fn reindex_files(
     info!("Targeted reindex: {} file changes", changes.len());
 
     let cs = changeset::from_file_events(project_root, changes)?;
-    run_incremental_pipeline(db, project_root, cs, start, ref_cache)
+    run_incremental_pipeline(db, project_root, cs, start, ref_cache, false)
 }
 
 // ---------------------------------------------------------------------------
@@ -137,15 +140,25 @@ pub fn reindex_files(
 fn run_incremental_pipeline(
     db: &mut Database,
     project_root: &Path,
-    cs: ChangeSet,
+    mut cs: ChangeSet,
     start: Instant,
     ref_cache: Option<&Arc<Mutex<RefCache>>>,
+    allow_census_backfill: bool,
 ) -> Result<IncrementalStats> {
+    // Historical indexes predate the per-file occurrence census. Once real
+    // source changes are caught up, periodic writer sweeps migrate a bounded
+    // batch without making interactive watcher saves absorb that old work.
+    let files_census_backfilled = if allow_census_backfill && cs.is_empty() {
+        enqueue_census_backfill(db, project_root, &mut cs, 16)? as u32
+    } else {
+        0
+    };
     let mut stats = IncrementalStats {
         files_added: cs.added.len() as u32,
-        files_modified: cs.modified.len() as u32,
+        files_modified: cs.modified.len() as u32 - files_census_backfilled,
         files_deleted: cs.deleted.len() as u32,
         files_unchanged: cs.unchanged,
+        files_census_backfilled,
         ..Default::default()
     };
 
@@ -432,12 +445,19 @@ fn run_incremental_pipeline(
     // lookup, declared-name workspace map, alias resolution) need this to
     // produce the same answers as the full pipeline; passing an empty slice
     // silently strips sibling-package resolution.
-    let distinct_langs: HashSet<String> = parsed.iter().map(|pf| pf.language.clone()).collect();
-    let mut project_ctx = super::project_context::ProjectContext::initialize(
+    // Activation belongs to the whole indexed project. Using only the files
+    // touched by this save can silently turn off every other language's
+    // ecosystem during an incremental pass (for example, editing Rust in a
+    // Rust + TypeScript workspace disabled npm resolution). Seed from the
+    // current DB and union newly parsed languages that are not persisted yet.
+    let mut distinct_langs = internal_languages(db)?;
+    distinct_langs.extend(parsed.iter().map(|pf| pf.language.clone()));
+    let mut project_ctx = super::project_context::ProjectContext::initialize_incremental_cached(
         project_root,
         &packages,
         distinct_langs,
         crate::ecosystem::default_registry(),
+        manifest_changed,
     );
 
     // --- Step 11a: Plugin-owned cross-file state ---
@@ -505,17 +525,77 @@ fn run_incremental_pipeline(
 
     stats.duration_ms = start.elapsed().as_millis() as u64;
     info!(
-        "Incremental index complete in {:.2}s: +{} ~{} -{} re-resolved:{} symbols:{} edges:{}",
+        "Incremental index complete in {:.2}s: +{} ~{} -{} census-backfill:{} re-resolved:{} symbols:{} edges:{}",
         stats.duration_ms as f64 / 1000.0,
         stats.files_added,
         stats.files_modified,
         stats.files_deleted,
+        stats.files_census_backfilled,
         stats.files_reresolved,
         stats.symbols_written,
         stats.edges_written,
     );
 
     Ok(stats)
+}
+
+fn internal_languages(db: &Database) -> Result<HashSet<String>> {
+    let mut stmt = db
+        .prepare("SELECT DISTINCT language FROM files WHERE origin = 'internal'")
+        .context("Failed to prepare indexed language query")?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .context("Failed to read indexed languages")?;
+    Ok(rows.collect::<rusqlite::Result<HashSet<_>>>()?)
+}
+
+fn enqueue_census_backfill(
+    db: &Database,
+    project_root: &Path,
+    cs: &mut ChangeSet,
+    limit: usize,
+) -> Result<usize> {
+    if limit == 0 {
+        return Ok(0);
+    }
+    let mut stmt = db
+        .prepare(
+            "SELECT f.path
+             FROM files f
+             LEFT JOIN resolution_census c ON c.file_id = f.id
+             WHERE f.origin = 'internal'
+               AND (c.file_id IS NULL OR c.content_hash <> f.hash)
+             ORDER BY CASE WHEN c.file_id IS NULL THEN 0 ELSE 1 END, f.path",
+        )
+        .context("Failed to prepare occurrence-census backfill query")?;
+    let paths = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .context("Failed to read occurrence-census backfill paths")?;
+
+    let mut queued = 0;
+    for path in paths {
+        if queued >= limit {
+            break;
+        }
+        let relative_path = path?;
+        let absolute_path = project_root.join(&relative_path);
+        if !absolute_path.is_file() {
+            continue;
+        }
+        let Some(language) = crate::walker::detect_language(&absolute_path) else {
+            continue;
+        };
+        cs.modified.push(crate::walker::WalkedFile {
+            relative_path,
+            absolute_path,
+            language,
+        });
+        queued += 1;
+    }
+    if queued > 0 {
+        info!("Queued {queued} file(s) for occurrence-census backfill");
+    }
+    Ok(queued)
 }
 
 // ---------------------------------------------------------------------------

@@ -49,6 +49,14 @@ fn incremental_stats_json(
 // MCP tool parameter types (schemars generates JSON Schema for Claude Code)
 // =============================================================================
 
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchResultType {
+    Definitions,
+    Tests,
+    All,
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct SearchParams {
     /// Search keywords (symbol names, words from signatures or doc comments)
@@ -57,6 +65,10 @@ pub struct SearchParams {
     pub limit: Option<usize>,
     /// Include function/method signatures in results (default: false)
     pub include_signature: Option<bool>,
+    /// Evidence lane: use "tests" when asked for test names or regression
+    /// behavior, "definitions" for production symbols and architecture, or
+    /// "all" for a deliberate mixed search (default: all).
+    pub result_type: Option<SearchResultType>,
     /// Output format: "compact" (default) or "json"
     #[schemars(skip)]
     pub format: Option<String>,
@@ -338,6 +350,7 @@ pub struct WorkspaceGraphParams {
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct InvestigateParams {
     /// Symbol name or qualified name to investigate
+    #[serde(alias = "query")]
     pub symbol: String,
     /// Max resolved reference occurrences to return (default: 20)
     pub reference_limit: Option<usize>,
@@ -962,6 +975,27 @@ mod tests {
     }
 
     #[test]
+    fn investigate_params_accept_query_alias() {
+        let params: InvestigateParams = serde_json::from_value(serde_json::json!({
+            "query": "LanguageProfile::index_qname_from_source"
+        }))
+        .unwrap();
+
+        assert_eq!(params.symbol, "LanguageProfile::index_qname_from_source");
+    }
+
+    #[test]
+    fn search_params_accept_a_typed_test_evidence_lane() {
+        let params: SearchParams = serde_json::from_value(serde_json::json!({
+            "query": "aliased import chain root",
+            "result_type": "tests"
+        }))
+        .unwrap();
+
+        assert!(matches!(params.result_type, Some(SearchResultType::Tests)));
+    }
+
+    #[test]
     fn status_is_explicit_about_query_only_unknown_snapshot() {
         let (_project, server) = query_server();
         let status = server.run_status(None, true).unwrap();
@@ -1003,7 +1037,8 @@ mod tests {
 impl ServerHandler for BearWisdomServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
-            "Use bw_status once when response freshness is absent, bw_context to identify symbols, bw_investigate for definitions plus resolved references/calls/impact, \
+            "Use bw_status once when response freshness is absent. For multiple unrelated repository questions, skip broad combined context and allocate focused bw_search calls to each question, preserving its distinctive behavioral phrases. Set bw_search result_type to tests whenever the task asks for exact test names or regression behavior; use definitions for production symbols and architecture. A matching complete_set in test output is a reporting requirement: include every listed test name and file, because one representative is incomplete. Avoid generic query filler such as code, source, function, or files. When a question asks for registry, factory, and dispatcher boundaries, report the distinct high-ranked symbol for each role instead of collapsing them into one. Use exact identifiers and test-file stems when known, then bw_investigate on a selected exact symbol for its indexed source excerpt, resolved references/calls, unique-name call sites, nearby tests, and impact. \
+             Use bw_context for one cohesive task that has no known identifier, \
              bw_trace_flow for file-and-line cross-service flow, and bw_full_trace for combined call and flow paths. \
              Compact output is the default. Keep limits small and treat unknown/stale index state or empty resolved-only \
              sections as incomplete evidence. Use the host's native text search for exact lexical fallback.",
@@ -1035,8 +1070,8 @@ impl BearWisdomServer {
         }
     }
 
-    /// Search indexed code symbols by identifier or a few alternatives. Returns 10 compact results by default.
-    /// Multi-term queries retry as OR alternatives when no symbol matches every term.
+    /// Search indexed code by identifier, qualified name, or source-file stem. Set result_type="tests" for exact test names or regression behavior and result_type="definitions" for production symbols or architecture. Returns 10 compact results by default.
+    /// Multi-term queries are alternatives: exact anchors are merged with FTS matches.
     /// Use the host's native text search for exact lexical fallback.
     #[tool(name = "bw_search")]
     fn search(&self, Parameters(params): Parameters<SearchParams>) -> Result<String, String> {
@@ -1050,15 +1085,32 @@ impl BearWisdomServer {
                 include_signature: params.include_signature.unwrap_or(false),
                 ..QueryOptions::default()
             };
-            bearwisdom::query::search::search_symbols(db, &params.query, limit, &opts)
-                .map_err(Self::query_err)
-                .and_then(|r| {
-                    if compact {
-                        Ok(crate::compact::search(&r, limit))
+            let filter = match params.result_type.unwrap_or(SearchResultType::All) {
+                SearchResultType::Definitions => {
+                    bearwisdom::query::search::SearchResultFilter::Definitions
+                }
+                SearchResultType::Tests => bearwisdom::query::search::SearchResultFilter::Tests,
+                SearchResultType::All => bearwisdom::query::search::SearchResultFilter::All,
+            };
+            bearwisdom::query::search::search_symbols_filtered(
+                db,
+                &params.query,
+                limit,
+                &opts,
+                filter,
+            )
+            .map_err(Self::query_err)
+            .and_then(|r| {
+                if compact {
+                    if filter == bearwisdom::query::search::SearchResultFilter::Tests {
+                        Ok(crate::compact::test_search(&r, limit))
                     } else {
-                        Self::to_json(&r)
+                        Ok(crate::compact::search(&r, limit))
                     }
-                })
+                } else {
+                    Self::to_json(&r)
+                }
+            })
         })
     }
 
@@ -1813,8 +1865,11 @@ impl BearWisdomServer {
         })
     }
 
-    /// Inspect one selected symbol identity: definition + resolved references,
-    /// callers, callees, and blast radius in one call.
+    /// Inspect one selected symbol identity: indexed declaration source, nearby
+    /// tests, resolved references, unique-name source call sites, callers,
+    /// callees, and blast radius in one call. A unique-name call site is
+    /// source-attested and has one internal declaration candidate even when a
+    /// resolved graph edge is unavailable.
     #[tool(name = "bw_investigate")]
     fn investigate(
         &self,
