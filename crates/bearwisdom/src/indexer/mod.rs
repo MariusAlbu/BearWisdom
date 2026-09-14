@@ -50,6 +50,7 @@ mod source_admission;
 pub mod stage_discover;
 pub mod stage_link;
 mod watch_filter;
+pub mod writer_lease;
 pub use plugin_state::PluginStateBag;
 pub mod programs;
 pub mod project_context;

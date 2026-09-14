@@ -415,8 +415,9 @@ must carry declaration/binding/type IDs, not re-find declarations by spelling.
 
 - [x] Run a controlled Terra A/B pilot against shell navigation; record gross/cache-adjusted tokens, calls, latency, and answer quality.
 - [x] Make compact bounded responses the default, retry empty multi-term symbol searches as alternatives, keep docs out of source grep, hide compatibility-only schema fields, and gate the initial in-process refresh.
-- [ ] Add an explicit freshness/status contract and one project-scoped watcher/reindex owner; make other MCP clients read-only and move verbose audit bodies out of the index DB.
+- [x] Add an explicit freshness/status contract and one project-scoped watcher/reindex owner; make other MCP clients read-only and move verbose audit bodies out of the index DB.
   - [x] Make stdio MCP processes query-only, expose last-complete/refresh lifecycle plus `bw_status` commit and working-tree evidence, reject reader reindex requests, and retain only bounded audit metrics outside the semantic DB (2026-09-14; persistent writer election remains open).
+  - [x] Elect one detached BearWisdom-owned writer with an OS-released lease, automatic MCP/`bw open` startup, serialized watcher and catch-up refreshes, hash-based pending-change status, and crash/election/edit regressions (2026-09-14).
 - [ ] Replace the 22-tool default surface with four agent-facing compound tools and defer administrative/specialized schemas.
 - [ ] Return stable symbol identities, resolved and unresolved/text occurrences, nearby tests, and bounded source excerpts in one evidence bundle.
   - [x] Expose stored symbol identities and declaration-ID reference evidence from per-site resolution logs, preserve same-line sites, separate unresolved/drained name evidence with coverage metadata, and merge labelled legacy rows when the census is partial (2026-09-14; nearby tests and bounded excerpts remain open).

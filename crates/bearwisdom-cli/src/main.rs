@@ -703,6 +703,23 @@ fn main() {
         .build_global()
         .ok();
 
+    // Keep the internal daemon route out of the already-large clap command
+    // tree. On Windows, constructing one more derived subcommand can exhaust
+    // the default main-thread stack before clap returns.
+    if let Some(result) = internal_daemon_command() {
+        match result {
+            Ok(json) => println!("{json}"),
+            Err(error) => {
+                println!(
+                    "{}",
+                    serde_json::json!({"ok": false, "error": format!("{error:#}")})
+                );
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
     let cli = Cli::parse();
 
     let result = run(cli.command, cli.full);
@@ -932,6 +949,37 @@ fn cmd_open(project_path: &str, no_embed: bool, force: bool) -> Result<String> {
     let root = PathBuf::from(project_path);
     let db_path = resolve_db_path(&root)?;
 
+    // One-shot indexing participates in the same ownership protocol as the
+    // daemon. This closes the race where a later `bw open` could rebuild the
+    // database while the automatic watcher was applying an edit.
+    let writer_lease = match bearwisdom::IndexWriterLease::try_acquire(&db_path, false)? {
+        Some(lease) => lease,
+        None => {
+            anyhow::ensure!(
+                !force,
+                "cannot force a rebuild while the automatic project writer is active"
+            );
+            let db = Database::open(&db_path)
+                .with_context(|| format!("Failed to open database at {}", db_path.display()))?;
+            let stats = bearwisdom::index_stats(&db)?;
+            let writer = bearwisdom::index_writer_status(&db_path)?;
+            return ok_json(serde_json::json!({
+                "db_path": db_path.display().to_string(),
+                "mode": "automatic-writer",
+                "automatic_writer": "already_running",
+                "writer_pid": writer.info.as_ref().map(|info| info.pid),
+                "file_count": stats.file_count,
+                "symbol_count": stats.symbol_count,
+                "edge_count": stats.edge_count,
+                "unresolved_ref_count": stats.unresolved_ref_count,
+                "unresolved_ref_count_external": stats.unresolved_ref_count_external,
+                "chunks_embedded": 0,
+                "duration_ms": 0,
+            }));
+        }
+    };
+    writer_lease.update(bearwisdom::IndexWriterState::Refreshing, false)?;
+
     eprintln!("Opening database at {}", db_path.display());
 
     let mut db = Database::open(&db_path)
@@ -970,6 +1018,9 @@ fn cmd_open(project_path: &str, no_embed: bool, force: bool) -> Result<String> {
         }
     }
 
+    drop(writer_lease);
+    let automatic_writer = ensure_automatic_writer(&root)?;
+
     ok_json(serde_json::json!({
         "db_path": db_path.display().to_string(),
         "mode": mode.label(),
@@ -980,6 +1031,7 @@ fn cmd_open(project_path: &str, no_embed: bool, force: bool) -> Result<String> {
         "unresolved_ref_count_external": stats.unresolved_ref_count_external,
         "chunks_embedded": chunks_embedded,
         "duration_ms": stats.duration_ms,
+        "automatic_writer": automatic_writer,
     }))
 }
 
@@ -1133,11 +1185,41 @@ fn cmd_import_scip(project_path: &str, scip_path: &str) -> Result<String> {
 
 /// Report the current index status without re-indexing.
 fn cmd_status(project_path: &str) -> Result<String> {
+    let root = PathBuf::from(project_path)
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from(project_path));
     let db = open_existing_db(project_path)?;
     let stats = bearwisdom::index_stats(&db)?;
+    let db_path = resolve_db_path(&root)?;
+    let writer = bearwisdom::index_writer_status(&db_path)?;
+    let pending_file_count = bearwisdom::pending_index_change_count(&db_path, &root).ok();
+    let indexed_commit = bearwisdom::indexer::changeset::get_meta(&db, "indexed_commit");
+    let last_complete_at_ms = bearwisdom::last_indexed_at_ms(&db);
+    let initialized =
+        last_complete_at_ms.is_some() || indexed_commit.is_some() || stats.file_count > 0;
+    let state = match pending_file_count {
+        Some(0) if initialized => "fresh",
+        Some(0) => "stale",
+        Some(_) if writer.active => "refreshing",
+        None if writer.active => "refreshing",
+        _ => "stale",
+    };
+    let writer_state = writer.info.as_ref().map(|info| match info.state {
+        bearwisdom::IndexWriterState::Starting => "starting",
+        bearwisdom::IndexWriterState::Refreshing => "refreshing",
+        bearwisdom::IndexWriterState::Watching => "watching",
+        bearwisdom::IndexWriterState::Idle => "idle",
+    });
 
     ok_json(serde_json::json!({
-        "state": "ready",
+        "state": state,
+        "indexed_commit": indexed_commit,
+        "last_complete_at_ms": last_complete_at_ms,
+        "pending_file_count": pending_file_count,
+        "writer_active": writer.active,
+        "writer_pid": writer.info.as_ref().map(|info| info.pid),
+        "writer_state": writer_state,
+        "watching": writer.info.as_ref().map(|info| info.watching).unwrap_or(false),
         "file_count": stats.file_count,
         "symbol_count": stats.symbol_count,
         "edge_count": stats.edge_count,
@@ -1205,6 +1287,49 @@ fn cmd_watch(project_path: &str, debounce_ms: u64) -> Result<String> {
     loop {
         std::thread::sleep(Duration::from_secs(60));
     }
+}
+
+fn ensure_automatic_writer(project_root: &Path) -> Result<&'static str> {
+    if std::env::var_os("BEARWISDOM_DISABLE_AUTO_WRITER").is_some() {
+        return Ok("disabled");
+    }
+    let executable = std::env::current_exe().context("resolve bw executable")?;
+    let project = project_root
+        .canonicalize()
+        .unwrap_or_else(|_| project_root.to_path_buf());
+    let args = vec![
+        std::ffi::OsString::from("index-daemon"),
+        project.as_os_str().to_owned(),
+    ];
+    match bearwisdom::ensure_index_writer_process(&project, &executable, &args)? {
+        bearwisdom::IndexWriterLaunch::AlreadyRunning => Ok("already_running"),
+        bearwisdom::IndexWriterLaunch::Started => Ok("started"),
+    }
+}
+
+fn internal_daemon_command() -> Option<Result<String>> {
+    let mut args = std::env::args_os().skip(1);
+    if args.next().as_deref() != Some(std::ffi::OsStr::new("index-daemon")) {
+        return None;
+    }
+    let Some(path) = args.next() else {
+        return Some(Err(anyhow::anyhow!(
+            "internal index-daemon requires a project path"
+        )));
+    };
+    let mut debounce_ms = 250;
+    while let Some(arg) = args.next() {
+        if arg == "--debounce-ms" {
+            let Some(value) = args.next() else {
+                return Some(Err(anyhow::anyhow!("--debounce-ms requires a value")));
+            };
+            match value.to_string_lossy().parse::<u64>() {
+                Ok(value) => debounce_ms = value,
+                Err(error) => return Some(Err(error).context("parse --debounce-ms")),
+            }
+        }
+    }
+    Some(cmd_watch(&path.to_string_lossy(), debounce_ms))
 }
 
 // ---------------------------------------------------------------------------

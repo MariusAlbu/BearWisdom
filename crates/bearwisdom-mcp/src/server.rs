@@ -807,19 +807,51 @@ impl BearWisdomServer {
                 }
             })
             .unwrap_or("unknown");
-        let state = if freshness.refresh_state == RefreshState::Refreshing {
-            "refreshing"
-        } else if indexed_commit.as_deref() == head_commit.as_deref() && working_tree == "clean" {
-            "fresh"
-        } else {
-            "stale"
+        // Commit equality alone cannot classify a dirty working tree: the
+        // watcher may already have indexed those uncommitted bytes. Compare
+        // the filesystem to stored file hashes so "fresh" means no pending
+        // source changes, regardless of git cleanliness.
+        let pending_file_count = service.pending_change_count().ok();
+        let indexed_file_count: i64 = db
+            .query_row("SELECT COUNT(*) FROM files", [], |row| row.get(0))
+            .unwrap_or(0);
+        let initialized = freshness.last_complete_at_ms.is_some()
+            || indexed_commit.is_some()
+            || indexed_file_count > 0;
+        let db_path = bearwisdom::resolve_db_path(service.project_root())
+            .map_err(|e| error_response("INTERNAL_ERROR", &format!("DB path error: {e}")))?;
+        let writer = bearwisdom::index_writer_status(&db_path)
+            .map_err(|e| error_response("INTERNAL_ERROR", &format!("writer status error: {e}")))?;
+        let state = match pending_file_count {
+            Some(0) if initialized => "fresh",
+            Some(0) => "stale",
+            Some(_) if writer.active => "refreshing",
+            None if writer.active => "refreshing",
+            _ => "stale",
         };
-        let refresh_state = Self::refresh_state_label(freshness.refresh_state);
-        let owner = if freshness.refresh_enabled {
+        let refresh_state = writer
+            .info
+            .as_ref()
+            .map(|info| match info.state {
+                bearwisdom::IndexWriterState::Starting => "starting",
+                bearwisdom::IndexWriterState::Refreshing => "refreshing",
+                bearwisdom::IndexWriterState::Watching => "watching",
+                bearwisdom::IndexWriterState::Idle => "idle",
+            })
+            .unwrap_or_else(|| Self::refresh_state_label(freshness.refresh_state));
+        let owner = if writer.active {
+            "bearwisdom_writer"
+        } else if freshness.refresh_enabled {
             "this_process"
         } else {
-            "external_or_none"
+            "none"
         };
+        let watching = writer
+            .info
+            .as_ref()
+            .map(|info| info.watching)
+            .unwrap_or(freshness.watching);
+        let writer_pid = writer.info.as_ref().map(|info| info.pid);
 
         if !compact {
             return Ok(serde_json::json!({
@@ -829,21 +861,24 @@ impl BearWisdomServer {
                 "working_tree": working_tree,
                 "refresh_state": refresh_state,
                 "index_owner": owner,
+                "writer_pid": writer_pid,
                 "last_complete_at_ms": freshness.last_complete_at_ms,
-                "watching": freshness.watching,
+                "pending_file_count": pending_file_count,
+                "watching": watching,
                 "query_only": !freshness.refresh_enabled,
             })
             .to_string());
         }
 
         Ok(format!(
-            "#format:compact-v1\n#status\nstate:{state}|indexed_commit:{}|head_commit:{}|working_tree:{working_tree}|refresh_state:{refresh_state}|index_owner:{owner}|last_complete_at_ms:{}|watching:{}|query_only:{}\n\n#meta\nevidence:index_metadata_and_git\n",
+            "#format:compact-v1\n#status\nstate:{state}|indexed_commit:{}|head_commit:{}|working_tree:{working_tree}|pending_file_count:{}|refresh_state:{refresh_state}|index_owner:{owner}|writer_pid:{}|last_complete_at_ms:{}|watching:{watching}|query_only:{}\n\n#meta\nevidence:index_metadata_hashes_and_writer_lease\n",
             indexed_commit.as_deref().unwrap_or("unknown"),
             head_commit.as_deref().unwrap_or("unknown"),
+            pending_file_count.map_or_else(|| "unknown".to_string(), |value| value.to_string()),
+            writer_pid.map_or_else(|| "unknown".to_string(), |value| value.to_string()),
             freshness
                 .last_complete_at_ms
                 .map_or_else(|| "unknown".to_string(), |value| value.to_string()),
-            freshness.watching,
             !freshness.refresh_enabled,
         ))
     }
@@ -933,8 +968,27 @@ mod tests {
         assert!(status.contains("state:stale"));
         assert!(status.contains("indexed_commit:unknown"));
         assert!(status.contains("refresh_state:disabled"));
-        assert!(status.contains("index_owner:external_or_none"));
+        assert!(status.contains("index_owner:none"));
+        assert!(status.contains("pending_file_count:0"));
         assert!(status.contains("query_only:true"));
+    }
+
+    #[test]
+    fn status_reports_the_external_writer_lease() {
+        let (project, server) = query_server();
+        let db_path = bearwisdom::resolve_db_path(project.path()).unwrap();
+        let lease = bearwisdom::IndexWriterLease::try_acquire(&db_path, true)
+            .unwrap()
+            .expect("writer lease");
+        lease
+            .update(bearwisdom::IndexWriterState::Watching, true)
+            .unwrap();
+
+        let status = server.run_status(None, true).unwrap();
+        assert!(status.contains("index_owner:bearwisdom_writer"));
+        assert!(status.contains(&format!("writer_pid:{}", std::process::id())));
+        assert!(status.contains("refresh_state:watching"));
+        assert!(status.contains("watching:true"));
     }
 
     #[test]

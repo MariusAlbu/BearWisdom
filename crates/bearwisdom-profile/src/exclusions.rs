@@ -12,6 +12,7 @@ pub static COMMON_EXCLUDE_DIRS: &[&str] = &[
     ".idea",
     ".vscode",
     ".claude",
+    ".bearwisdom",
     ".DS_Store",
     "__MACOSX",
     "node_modules",

@@ -17,7 +17,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -32,6 +32,7 @@ use crate::indexer::incremental::{
     git_reindex, incremental_index, reindex_files, IncrementalStats,
 };
 use crate::indexer::watch_filter::WatchFilter;
+use crate::indexer::writer_lease::{IndexWriterLease, IndexWriterState};
 use crate::types::IndexStats;
 
 /// `_bearwisdom_meta` key used to record the wall-clock time of the most
@@ -128,6 +129,14 @@ pub struct IndexService {
     project_root: PathBuf,
     /// Watcher handle. Drop stops the watcher and joins the worker thread.
     _watcher: Option<WatcherHandle>,
+    /// Cross-process ownership of index mutations. Present for every writer,
+    /// including non-watching one-shot services, and released by the OS if the
+    /// process exits unexpectedly.
+    _writer_lease: Option<Arc<IndexWriterLease>>,
+    /// Serialises watcher work and catch-up/manual refreshes inside the writer.
+    refresh_gate: Arc<Mutex<()>>,
+    /// `1` while any refresh path is mutating the index.
+    refresh_in_flight: Arc<AtomicI64>,
     /// Wall-clock unix-ms of the last completed opportunistic sweep.
     /// `0` until the first sweep finishes. Read/written by
     /// `try_spawn_sweep`; the watcher path doesn't touch it.
@@ -159,23 +168,51 @@ impl IndexService {
     /// the caller should invoke `reindex_now` (synchronously or on a background
     /// thread) if it wants the index brought up to current state.
     pub fn open(db_path: &Path, project_root: &Path, opts: IndexServiceOptions) -> Result<Self> {
+        let watching = opts.watch && opts.allow_refresh;
+        let writer_lease = if opts.allow_refresh {
+            Some(Arc::new(
+                IndexWriterLease::try_acquire(db_path, watching)?.ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "another BearWisdom writer already owns {}",
+                        project_root.display()
+                    )
+                })?,
+            ))
+        } else {
+            None
+        };
         let pool = DbPool::new(db_path, opts.pool_size)
             .with_context(|| format!("create pool for {}", db_path.display()))?;
         let project_root = project_root.to_path_buf();
-        let watching = opts.watch && opts.allow_refresh;
+        let refresh_gate = Arc::new(Mutex::new(()));
+        let refresh_in_flight = Arc::new(AtomicI64::new(0));
         let watcher = if watching {
             Some(spawn_watcher(
                 pool.clone(),
                 project_root.clone(),
                 opts.debounce,
+                refresh_gate.clone(),
+                refresh_in_flight.clone(),
+                writer_lease.clone(),
             )?)
         } else {
             None
         };
+        if let Some(lease) = &writer_lease {
+            let state = if watching {
+                IndexWriterState::Watching
+            } else {
+                IndexWriterState::Idle
+            };
+            lease.update(state, watching)?;
+        }
         Ok(Self {
             pool,
             project_root,
             _watcher: watcher,
+            _writer_lease: writer_lease,
+            refresh_gate,
+            refresh_in_flight,
             last_sweep_at_ms: AtomicI64::new(0),
             sweep_in_flight: AtomicI64::new(0),
             allow_refresh: opts.allow_refresh,
@@ -277,7 +314,7 @@ impl IndexService {
             .map_err(|e| anyhow::anyhow!("pool acquire: {e}"))?;
         let refresh_state = if !self.allow_refresh {
             RefreshState::Disabled
-        } else if self.sweep_in_flight.load(Ordering::Acquire) != 0 {
+        } else if self.refresh_in_flight.load(Ordering::Acquire) != 0 {
             RefreshState::Refreshing
         } else {
             RefreshState::Idle
@@ -288,6 +325,27 @@ impl IndexService {
             refresh_enabled: self.allow_refresh,
             watching: self.watching,
         })
+    }
+
+    /// Count source files whose current bytes are not represented by the
+    /// shared index. The walker/parser setup needs more than Windows' default
+    /// main-thread stack, so status checks use the same 8 MiB worker stack as
+    /// indexing without mutating the database.
+    pub fn pending_change_count(&self) -> Result<usize> {
+        let pool = self.pool.clone();
+        let project_root = self.project_root.clone();
+        thread::Builder::new()
+            .name("bw-freshness-check".into())
+            .stack_size(8 * 1024 * 1024)
+            .spawn(move || {
+                let db = pool
+                    .get()
+                    .map_err(|e| anyhow::anyhow!("pool acquire: {e}"))?;
+                Ok(changeset::hash_diff(&db, &project_root)?.change_count())
+            })
+            .context("spawn freshness check")?
+            .join()
+            .map_err(|_| anyhow::anyhow!("freshness check panicked"))?
     }
 
     /// Synchronously bring the index to current working-tree state.
@@ -301,31 +359,76 @@ impl IndexService {
             self.allow_refresh,
             "index service is query-only; refresh belongs to the project writer"
         );
-        let ref_cache = self.pool.ref_cache().clone();
-        let mut db = self
-            .pool
-            .get()
-            .map_err(|e| anyhow::anyhow!("pool acquire: {e}"))?;
+        let _refresh_guard = self
+            .refresh_gate
+            .lock()
+            .map_err(|_| anyhow::anyhow!("index refresh mutex poisoned"))?;
+        self.refresh_in_flight.store(1, Ordering::Release);
+        if let Some(lease) = &self._writer_lease {
+            let _ = lease.update(IndexWriterState::Refreshing, self.watching);
+        }
 
-        let prior_commit = changeset::get_meta(&db, "indexed_commit");
-        let result = if prior_commit.is_some() {
-            let inc = git_reindex(&mut db, &self.project_root, Some(&ref_cache))?;
-            ReindexStats::Incremental(inc)
-        } else {
-            let file_count: i64 = db
-                .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
-                .unwrap_or(0);
-            if file_count > 0 {
-                let inc = incremental_index(&mut db, &self.project_root, Some(&ref_cache))?;
+        let result = (|| {
+            let ref_cache = self.pool.ref_cache().clone();
+            let mut db = self
+                .pool
+                .get()
+                .map_err(|e| anyhow::anyhow!("pool acquire: {e}"))?;
+
+            let prior_commit = changeset::get_meta(&db, "indexed_commit");
+            let result = if prior_commit.is_some() {
+                let inc = git_reindex(&mut db, &self.project_root, Some(&ref_cache))?;
                 ReindexStats::Incremental(inc)
             } else {
-                let stats = full_index(&mut db, &self.project_root, None, None, Some(&ref_cache))?;
-                ReindexStats::Full(stats)
-            }
-        };
-        touch_last_indexed_at(&db);
-        Ok(result)
+                let file_count: i64 = db
+                    .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
+                    .unwrap_or(0);
+                if file_count > 0 {
+                    let inc = incremental_index(&mut db, &self.project_root, Some(&ref_cache))?;
+                    ReindexStats::Incremental(inc)
+                } else {
+                    let stats =
+                        full_index(&mut db, &self.project_root, None, None, Some(&ref_cache))?;
+                    ReindexStats::Full(stats)
+                }
+            };
+            touch_last_indexed_at(&db);
+            Ok(result)
+        })();
+
+        self.refresh_in_flight.store(0, Ordering::Release);
+        if result.is_ok() {
+            self.last_sweep_at_ms.store(now_ms(), Ordering::Relaxed);
+        }
+        if let Some(lease) = &self._writer_lease {
+            let state = if self.watching {
+                IndexWriterState::Watching
+            } else {
+                IndexWriterState::Idle
+            };
+            let _ = lease.update(state, self.watching);
+        }
+        result
     }
+}
+
+/// Standalone freshness check used by CLI status before an `IndexService`
+/// exists. It opens the existing database on a sufficiently large worker
+/// stack and compares stored hashes/metadata to the current source tree.
+pub fn pending_index_change_count(db_path: &Path, project_root: &Path) -> Result<usize> {
+    let db_path = db_path.to_path_buf();
+    let project_root = project_root.to_path_buf();
+    thread::Builder::new()
+        .name("bw-freshness-check".into())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(move || {
+            let db = Database::open(&db_path)
+                .with_context(|| format!("open index for freshness at {}", db_path.display()))?;
+            Ok(changeset::hash_diff(&db, &project_root)?.change_count())
+        })
+        .context("spawn freshness check")?
+        .join()
+        .map_err(|_| anyhow::anyhow!("freshness check panicked"))?
 }
 
 // ---------------------------------------------------------------------------
@@ -351,7 +454,14 @@ impl Drop for WatcherHandle {
     }
 }
 
-fn spawn_watcher(pool: DbPool, project_root: PathBuf, debounce: Duration) -> Result<WatcherHandle> {
+fn spawn_watcher(
+    pool: DbPool,
+    project_root: PathBuf,
+    debounce: Duration,
+    refresh_gate: Arc<Mutex<()>>,
+    refresh_in_flight: Arc<AtomicI64>,
+    writer_lease: Option<Arc<IndexWriterLease>>,
+) -> Result<WatcherHandle> {
     let (event_tx, event_rx) = mpsc::channel::<Event>();
 
     let mut watcher = RecommendedWatcher::new(
@@ -376,7 +486,17 @@ fn spawn_watcher(pool: DbPool, project_root: PathBuf, debounce: Duration) -> Res
 
     let join_handle = thread::Builder::new()
         .name("bw-index-watcher".into())
-        .spawn(move || run_watcher_loop(event_rx, pool, project_root, debounce))
+        .spawn(move || {
+            run_watcher_loop(
+                event_rx,
+                pool,
+                project_root,
+                debounce,
+                refresh_gate,
+                refresh_in_flight,
+                writer_lease,
+            )
+        })
         .context("spawn watcher thread")?;
 
     Ok(WatcherHandle {
@@ -390,6 +510,9 @@ fn run_watcher_loop(
     pool: DbPool,
     project_root: PathBuf,
     debounce: Duration,
+    refresh_gate: Arc<Mutex<()>>,
+    refresh_in_flight: Arc<AtomicI64>,
+    writer_lease: Option<Arc<IndexWriterLease>>,
 ) {
     let filter = WatchFilter::new(project_root.clone());
 
@@ -417,11 +540,27 @@ fn run_watcher_loop(
             continue;
         }
 
+        let _refresh_guard = match refresh_gate.lock() {
+            Ok(guard) => guard,
+            Err(_) => {
+                warn!("IndexService watcher: refresh mutex poisoned");
+                return;
+            }
+        };
+        refresh_in_flight.store(1, Ordering::Release);
+        if let Some(lease) = &writer_lease {
+            let _ = lease.update(IndexWriterState::Refreshing, true);
+        }
+
         let ref_cache = pool.ref_cache().clone();
         let mut db = match pool.get() {
             Ok(g) => g,
             Err(e) => {
                 warn!("IndexService watcher: pool acquire failed: {e}");
+                refresh_in_flight.store(0, Ordering::Release);
+                if let Some(lease) = &writer_lease {
+                    let _ = lease.update(IndexWriterState::Watching, true);
+                }
                 continue;
             }
         };
@@ -434,6 +573,10 @@ fn run_watcher_loop(
                 );
             }
             Err(e) => warn!("IndexService watcher: reindex error: {e:#}"),
+        }
+        refresh_in_flight.store(0, Ordering::Release);
+        if let Some(lease) = &writer_lease {
+            let _ = lease.update(IndexWriterState::Watching, true);
         }
     }
 }

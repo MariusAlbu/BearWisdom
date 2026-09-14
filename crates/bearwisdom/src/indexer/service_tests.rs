@@ -124,6 +124,81 @@ fn query_only_service_never_starts_refresh_or_watcher() {
 }
 
 #[test]
+fn writer_lease_allows_many_readers_but_only_one_writer() {
+    let dir = make_minimal_project();
+    let db_path = bearwisdom::resolve_db_path(dir.path()).unwrap();
+    let writer_options = IndexServiceOptions {
+        pool_size: 1,
+        watch: false,
+        debounce: Duration::from_millis(10),
+        allow_refresh: true,
+    };
+    let reader_options = IndexServiceOptions {
+        allow_refresh: false,
+        ..writer_options.clone()
+    };
+
+    let writer = IndexService::open(&db_path, dir.path(), writer_options.clone())
+        .expect("first writer owns lease");
+    assert!(IndexService::open(&db_path, dir.path(), writer_options.clone()).is_err());
+    let reader = IndexService::open(&db_path, dir.path(), reader_options)
+        .expect("query reader does not contend for writer lease");
+
+    drop(reader);
+    drop(writer);
+    IndexService::open(&db_path, dir.path(), writer_options)
+        .expect("writer lease released with owner");
+}
+
+#[test]
+fn watcher_refreshes_an_edited_file_without_a_reindex_call() {
+    let dir = tempfile::tempdir().unwrap();
+    write_rust_file(dir.path(), "sample.py", "def alpha_function():\n    pass\n");
+    let db_path = bearwisdom::resolve_db_path(dir.path()).unwrap();
+    let service = IndexService::open(
+        &db_path,
+        dir.path(),
+        IndexServiceOptions {
+            pool_size: 2,
+            watch: true,
+            debounce: Duration::from_millis(25),
+            allow_refresh: true,
+        },
+    )
+    .expect("watching writer");
+    service.reindex_now().expect("initial index");
+
+    write_rust_file(dir.path(), "sample.py", "def beta_function():\n    pass\n");
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let db = service.pool().get().expect("query watcher result");
+        let alpha: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM symbols WHERE name = 'alpha_function'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let beta: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM symbols WHERE name = 'beta_function'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        drop(db);
+        if alpha == 0 && beta == 1 {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "watcher did not replace alpha_function with beta_function"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+
+#[test]
 fn query_only_service_retains_the_last_complete_snapshot() {
     let dir = make_minimal_project();
     let db_path = bearwisdom::resolve_db_path(dir.path()).unwrap();

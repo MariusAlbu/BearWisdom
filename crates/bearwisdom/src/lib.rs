@@ -52,8 +52,12 @@ pub use indexer::post_index::embed_chunks;
 pub use indexer::resolve::engine::trace;
 pub use indexer::resolve_diff::{resolve_diff, EdgeKey, ResolveDiff};
 pub use indexer::service::{
-    last_indexed_at_ms, IndexFreshness, IndexService, IndexServiceOptions, RefreshState,
-    ReindexStats, LAST_INDEXED_AT_MS_KEY,
+    last_indexed_at_ms, pending_index_change_count, IndexFreshness, IndexService,
+    IndexServiceOptions, RefreshState, ReindexStats, LAST_INDEXED_AT_MS_KEY,
+};
+pub use indexer::writer_lease::{
+    ensure_index_writer_process, index_writer_status, IndexWriterInfo, IndexWriterLaunch,
+    IndexWriterLease, IndexWriterState, IndexWriterStatus,
 };
 pub use query::stats::{
     concept_count, flow_diagnostics, flow_edge_breakdown, flow_edge_count_by_type, flow_edges_data,

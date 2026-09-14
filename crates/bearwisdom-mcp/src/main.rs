@@ -1,6 +1,7 @@
 extern crate sqlite_vec;
 
 mod compact;
+mod daemon;
 mod register;
 mod server;
 mod services;
@@ -41,6 +42,16 @@ enum Commands {
         #[arg(long)]
         project: PathBuf,
     },
+    /// Internal detached writer process. Started and supervised by BearWisdom.
+    #[command(name = "index-daemon", hide = true)]
+    IndexDaemon {
+        /// Path to the project root.
+        #[arg(long)]
+        project: PathBuf,
+        /// Debounce delay for filesystem changes.
+        #[arg(long, default_value = "250")]
+        debounce_ms: u64,
+    },
 }
 
 /// Resolve the database path for a project root: `<project>/.bearwisdom/index.db`.
@@ -73,12 +84,18 @@ async fn main() -> Result<()> {
     match cli.command {
         Some(Commands::Register { project }) => {
             let project = project.canonicalize().unwrap_or(project);
-            register::register(&project)
+            register::register(&project)?;
+            daemon::ensure_running(&project)?;
+            Ok(())
         }
         Some(Commands::Unregister { project }) => {
             let project = project.canonicalize().unwrap_or(project);
             register::unregister(&project)
         }
+        Some(Commands::IndexDaemon {
+            project,
+            debounce_ms,
+        }) => daemon::run(&project, debounce_ms),
         None => run_server(cli.project).await,
     }
 }
@@ -88,12 +105,24 @@ async fn run_server(project_arg: Option<PathBuf>) -> Result<()> {
     let project = project.canonicalize().unwrap_or(project);
     info!("Starting BearWisdom for project: {}", project.display());
 
-    // A stdio MCP server is a query client, not a project index daemon. More
-    // than one editor/agent commonly starts one, so giving every process a
-    // watcher and an initial sweep races writers and can expose a rebuilding
-    // index. This process reads the shared index and its last-complete
-    // metadata; a persistent project writer (CLI/watch or a future daemon)
-    // owns refreshes.
+    // The writer is a detached BearWisdom process with an OS-backed
+    // single-owner lease. It outlives this MCP client and refreshes the shared
+    // index from filesystem events without tool calls or AI participation.
+    match daemon::ensure_running(&project) {
+        Ok(daemon::EnsureWriterResult::Started) => {
+            info!("started automatic project index writer")
+        }
+        Ok(daemon::EnsureWriterResult::AlreadyRunning) => {
+            info!("automatic project index writer already active")
+        }
+        Ok(daemon::EnsureWriterResult::Disabled) => {
+            tracing::warn!("automatic index writer disabled by environment")
+        }
+        Err(error) => tracing::warn!("automatic index writer unavailable: {error:#}"),
+    }
+
+    // Stdio processes stay query-only. The elected detached writer above owns
+    // refreshes, so multiple editor/agent clients can safely share one index.
     let db_path = resolve_db_path(&project)?;
     let default_options = bearwisdom::IndexServiceOptions {
         watch: false,

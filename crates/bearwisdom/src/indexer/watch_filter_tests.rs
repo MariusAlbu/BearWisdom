@@ -38,6 +38,7 @@ fn file_under_an_excluded_directory_is_dropped() {
     let filter = WatchFilter::new(root.clone());
     let changes = filter.changes(&[
         created(&root, ".claude/worktrees/agent-x/crates/bw/src/lib.rs"),
+        modified(&root, ".bearwisdom/index-writer.json"),
         created(&root, "node_modules/pkg/index.js"),
     ]);
     assert!(changes.is_empty(), "got {changes:?}");
