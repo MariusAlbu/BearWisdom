@@ -298,12 +298,15 @@ enum Commands {
         symbol: String,
     },
 
-    /// Deep-dive: symbol info + callers + callees + blast radius in one call.
+    /// Deep-dive: symbol identity + references + callers + callees + blast radius.
     Investigate {
         /// Absolute path to the project root.
         path: String,
         /// Symbol name or qualified name.
         symbol: String,
+        /// Max resolved reference occurrences (default: 20).
+        #[arg(long, default_value = "20")]
+        reference_limit: usize,
         /// Max callers (default: 10).
         #[arg(long, default_value = "10")]
         caller_limit: usize,
@@ -822,10 +825,18 @@ fn run(command: Commands, full: bool) -> Result<String> {
         Commands::Investigate {
             path,
             symbol,
+            reference_limit,
             caller_limit,
             callee_limit,
             blast_depth,
-        } => cmd_investigate(&path, &symbol, caller_limit, callee_limit, blast_depth),
+        } => cmd_investigate(
+            &path,
+            &symbol,
+            reference_limit,
+            caller_limit,
+            callee_limit,
+            blast_depth,
+        ),
 
         Commands::Concepts { path } => cmd_concepts(&path),
         Commands::DiscoverConcepts { path } => cmd_discover_concepts(&path),
@@ -1428,6 +1439,7 @@ fn cmd_symbol_info(project_path: &str, symbol: &str, full: bool) -> Result<Strin
 fn cmd_investigate(
     project_path: &str,
     symbol: &str,
+    reference_limit: usize,
     caller_limit: usize,
     callee_limit: usize,
     blast_depth: u32,
@@ -1438,6 +1450,7 @@ fn cmd_investigate(
         .with_context(|| format!("Failed to open database at {}", db_path.display()))?;
 
     let opts = bearwisdom::query::investigate::InvestigateOptions {
+        reference_limit,
         caller_limit,
         callee_limit,
         blast_depth,

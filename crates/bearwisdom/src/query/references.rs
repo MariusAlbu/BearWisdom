@@ -13,6 +13,10 @@ use crate::query::QueryResult;
 use crate::types::ReferenceResult;
 use anyhow::Context;
 
+fn cache_key(target_name: &str, limit: usize) -> String {
+    format!("{target_name}\u{1f}{limit}")
+}
+
 /// Find all symbols that reference `target_name`.
 ///
 /// `target_name` may be a simple name or a fully qualified name.
@@ -26,10 +30,11 @@ pub fn find_references(
     limit: usize,
 ) -> QueryResult<Vec<ReferenceResult>> {
     let _timer = db.timer("find_references");
+    let cache_key = cache_key(target_name, limit);
 
     // Check cache first.
     if let Some(ref cache) = db.query_cache {
-        if let Some(cached) = cache.get_references(target_name) {
+        if let Some(cached) = cache.get_references(&cache_key) {
             if let Ok(result) = serde_json::from_str::<Vec<ReferenceResult>>(&cached) {
                 return Ok(result);
             }
@@ -38,26 +43,34 @@ pub fn find_references(
 
     let conn = db.conn();
 
-    // Resolve the target name to one or more symbol IDs.
+    // Resolve exact qualified identities first, regardless of the language's
+    // qualified-name separator (`.`, `::`, `\\`, or something else). Only
+    // fall back to the potentially ambiguous simple name when no exact
+    // qualified identity exists.
     let target_ids: Vec<i64> = {
-        if target_name.contains('.') {
-            // Qualified name — exact match.
-            let mut stmt = conn
-                .prepare("SELECT id FROM symbols WHERE qualified_name = ?1 AND origin = 'internal'")
-                .context("Failed to prepare qualified target lookup")?;
-            let rows = stmt
-                .query_map([target_name], |r| r.get(0))
-                .context("Failed to query qualified target")?;
-            rows.filter_map(|r| r.ok()).collect()
+        let mut qualified = conn
+            .prepare(
+                "SELECT id FROM symbols
+                 WHERE qualified_name = ?1 AND name <> ?1 AND origin = 'internal'",
+            )
+            .context("Failed to prepare qualified target lookup")?;
+        let rows = qualified
+            .query_map([target_name], |r| r.get(0))
+            .context("Failed to query qualified target")?;
+        let exact = rows
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .context("Failed to collect qualified target ids")?;
+        if !exact.is_empty() {
+            exact
         } else {
-            // Simple name — all symbols with that name.
-            let mut stmt = conn
+            let mut simple = conn
                 .prepare("SELECT id FROM symbols WHERE name = ?1 AND origin = 'internal'")
                 .context("Failed to prepare simple target lookup")?;
-            let rows = stmt
+            let rows = simple
                 .query_map([target_name], |r| r.get(0))
                 .context("Failed to query simple target")?;
-            rows.filter_map(|r| r.ok()).collect()
+            rows.collect::<rusqlite::Result<Vec<_>>>()
+                .context("Failed to collect simple target ids")?
         }
     };
 
@@ -114,7 +127,7 @@ pub fn find_references(
     // Store in cache.
     if let Some(ref cache) = db.query_cache {
         if let Ok(json) = serde_json::to_string(&results) {
-            cache.put_references(target_name.to_string(), json);
+            cache.put_references(cache_key, json);
         }
     }
 
@@ -131,9 +144,10 @@ pub fn find_references_json(
     target_name: &str,
     limit: usize,
 ) -> super::QueryResult<String> {
+    let cache_key = cache_key(target_name, limit);
     // Raw cache hit: return JSON directly without deserializing.
     if let Some(ref cache) = db.query_cache {
-        if let Some(raw) = cache.get_references_raw(target_name) {
+        if let Some(raw) = cache.get_references_raw(&cache_key) {
             return Ok(raw);
         }
     }

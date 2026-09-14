@@ -26,9 +26,11 @@ The trace showed four failures:
 
 ## Current shape
 
-The server exposes 22 flat tools. Generated schemas repeat `project` 22 times
-and `format` 21 times. Previous defaults returned 50 search/grep rows and an
-8,000-token context at depth two.
+Before the flow tools were added, the server exposed 22 flat tools. The MCP
+still has a broad compatibility surface, while Codex now allowlists the
+semantic subset. Previous schemas repeated `project` and `format` across
+nearly every tool, returned 50 search/grep rows, and offered an 8,000-token
+context at depth two.
 
 Each MCP process opens a watcher and launches an initial reindex. Previously,
 the first call could launch another sweep in that process because the initial
@@ -41,13 +43,13 @@ and contend with refresh writes.
 
 ## Target surface
 
-Expose four small agent operations by default:
+Expose a small semantic surface by default:
 
 1. `bw_context`: a task to a ranked, bounded evidence bundle.
-2. `bw_inspect`: definition, references, callers, callees, tests, and a short
-   source excerpt for one stable symbol identity.
-3. `bw_text`: exact source fallback with source-only scope and code-first
-   ranking.
+2. `bw_investigate`: one selected identity with definition, resolved references,
+   callers, callees, impact, nearby tests, and a short source excerpt.
+3. `bw_flow`: bounded forward/reverse cross-service flow and combined
+   call/flow traces with edge provenance.
 4. `bw_status`: freshness, indexed commit, working-tree relation, refresh
    state, and index owner.
 
@@ -66,7 +68,7 @@ S1:<stable-id>|<name>|<kind>|F1:<line>|score:<n>
 
 #occurrences
 S1|F2:<line>|resolved-call|confidence:0.98
-S1|F3:<line>|text-fallback|confidence:0.45
+S1|F3:<line>|unresolved-occurrence|confidence:0.45
 
 #tests
 <test-name>|F4:<line>
@@ -78,9 +80,15 @@ F1:<start>-<end>|<bounded excerpt>
 tokens:<estimate>|truncated:<bool>|next:<suggested operation>
 ```
 
-Resolved graph evidence and text fallback evidence must stay distinct. An
-empty caller list is not proof of no callers when unresolved occurrences
-exist. Method and overload lookup must use stable symbol IDs and source spans.
+Resolved graph evidence and unresolved occurrence evidence must stay distinct.
+An empty caller or flow list is not proof that no relationship exists when
+coverage is incomplete. Method and overload lookup must use stable symbol IDs
+and source spans.
+
+Exact lexical lookup remains a native host operation (`rg` in Codex). The MCP
+does not need to proxy repository grep to save tokens. `bw_grep` remains a
+specialized diagnostic/API compatibility tool and is excluded from the
+default agent allowlist.
 
 ## Index ownership
 
@@ -98,7 +106,7 @@ bodies should be opt-in debug data with retention limits outside the index DB.
 1. Get status once when freshness is absent.
 2. Request context with a 600-1,200 token budget and depth one.
 3. Inspect at most three candidate symbol IDs in one compound request.
-4. Use exact text search only for missing occurrences or tests.
+4. Use native exact text search only for missing occurrences or tests.
 5. Read source directly only for edit spans and compiler/test failures.
 
 Stop when evidence names the definition, affected callers, tests, and current
@@ -111,7 +119,7 @@ a compact evidence bundle and a fresh context instead of the full transcript.
 
 - Compact bounded output by default.
 - Retry empty multi-term symbol searches as OR alternatives.
-- Keep documentation out of source grep unless requested.
+- Keep documentation out of the legacy MCP source grep unless requested.
 - Route initial refresh through the in-process sweep gate.
 - Hide compatibility-only project and format fields from schemas.
 
@@ -127,6 +135,7 @@ a compact evidence bundle and a fresh context instead of the full transcript.
 - Boost exact identifiers and retrieve file/test names.
 - Inspect by stable symbol ID.
 - Return resolved callers plus labelled unresolved/text occurrences.
+- Expose bounded forward/reverse flow and combined call/flow traces.
 - Include bounded source and nearby tests.
 
 ### P3 — smaller surface

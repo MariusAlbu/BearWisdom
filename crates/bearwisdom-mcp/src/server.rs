@@ -204,6 +204,46 @@ pub struct BlastRadiusParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct TraceFlowParams {
+    /// Relative source file path containing the flow origin
+    pub file_path: String,
+    /// One-based source line at the flow origin
+    pub line: u32,
+    /// Direction: "forward", "backward", or "both" (default: "both")
+    pub direction: Option<String>,
+    /// Maximum flow-edge depth (default: 3, max: 8)
+    pub depth: Option<u32>,
+    /// Maximum compact rows to return (default: 80, max: 500)
+    pub max_steps: Option<usize>,
+    /// Output format: "compact" (default) or "json"
+    #[schemars(skip)]
+    pub format: Option<String>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used.
+    #[schemars(skip)]
+    pub project: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct FullTraceParams {
+    /// Symbol name or qualified name. Omit to trace graph entry points.
+    pub symbol: Option<String>,
+    /// Maximum call + flow traversal depth (default: 3, max: 8)
+    pub depth: Option<u32>,
+    /// Maximum entry-point traces when symbol is omitted (default: 3, max: 20)
+    pub max_traces: Option<usize>,
+    /// Maximum compact nodes to return (default: 100, max: 500)
+    pub max_nodes: Option<usize>,
+    /// Output format: "compact" (default) or "json"
+    #[schemars(skip)]
+    pub format: Option<String>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used.
+    #[schemars(skip)]
+    pub project: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct SmartContextParams {
     /// Natural-language task description (e.g. "add pagination to the catalog API")
     pub task: String,
@@ -293,6 +333,8 @@ pub struct WorkspaceGraphParams {
 pub struct InvestigateParams {
     /// Symbol name or qualified name to investigate
     pub symbol: String,
+    /// Max resolved reference occurrences to return (default: 20)
+    pub reference_limit: Option<usize>,
     /// Max callers to return (default: 8)
     pub caller_limit: Option<usize>,
     /// Max callees to return (default: 8)
@@ -764,10 +806,10 @@ impl BearWisdomServer {
 impl ServerHandler for BearWisdomServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
-            "Use bw_context for a task, bw_search for identifiers, and bw_investigate for one symbol plus its graph. \
-             Use bw_grep only for exact source text after indexed lookup misses. Compact output is the default. \
-             Keep limits small; prefer one combined call over separate info, callers, callees, and impact calls. \
-             Treat an unknown or stale index header as incomplete evidence.",
+            "Use bw_context to identify symbols, bw_investigate for definitions plus resolved references/calls/impact, \
+             bw_trace_flow for file-and-line cross-service flow, and bw_full_trace for combined call and flow paths. \
+             Compact output is the default. Keep limits small and treat unknown/stale index state or empty resolved-only \
+             sections as incomplete evidence. Use the host's native text search for exact lexical fallback.",
         )
     }
 }
@@ -775,7 +817,8 @@ impl ServerHandler for BearWisdomServer {
 #[tool_router]
 impl BearWisdomServer {
     /// Search indexed code symbols by identifier or a few alternatives. Returns 10 compact results by default.
-    /// Multi-term queries retry as OR alternatives when no symbol matches every term. Use bw_grep only for exact text.
+    /// Multi-term queries retry as OR alternatives when no symbol matches every term.
+    /// Use the host's native text search for exact lexical fallback.
     #[tool(name = "bw_search")]
     fn search(&self, Parameters(params): Parameters<SearchParams>) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
@@ -1003,6 +1046,113 @@ impl BearWisdomServer {
                             Self::to_json(&r)
                         }
                     })
+            },
+        )
+    }
+
+    /// Trace resolved cross-service flow edges from a source file and line.
+    #[tool(name = "bw_trace_flow")]
+    fn trace_flow(
+        &self,
+        Parameters(params): Parameters<TraceFlowParams>,
+    ) -> Result<String, String> {
+        let compact = Self::is_compact(&params.format);
+        self.run_tool(
+            "bw_trace_flow",
+            &params,
+            params.project.as_deref(),
+            |db, _| {
+                if params.file_path.trim().is_empty() {
+                    return Self::invalid_input("file_path is required");
+                }
+                if params.line == 0 {
+                    return Self::invalid_input("line must be one-based");
+                }
+                let depth = params.depth.unwrap_or(3).clamp(1, 8);
+                let max_steps = params.max_steps.unwrap_or(80).clamp(1, 500);
+                let direction = params.direction.as_deref().unwrap_or("both");
+                let (forward, backward) = match direction {
+                    "forward" => (
+                        bearwisdom::search::flow::trace_flow(
+                            db,
+                            &params.file_path,
+                            params.line,
+                            depth,
+                        )
+                        .map_err(|e| error_response("QUERY_ERROR", &format!("{e}")))?,
+                        Vec::new(),
+                    ),
+                    "backward" | "reverse" => (
+                        Vec::new(),
+                        bearwisdom::search::flow::trace_flow_reverse(
+                            db,
+                            &params.file_path,
+                            params.line,
+                            depth,
+                        )
+                        .map_err(|e| error_response("QUERY_ERROR", &format!("{e}")))?,
+                    ),
+                    "both" | "bidirectional" => {
+                        let result = bearwisdom::search::flow::trace_flow_bidirectional(
+                            db,
+                            &params.file_path,
+                            params.line,
+                            depth,
+                        )
+                        .map_err(|e| error_response("QUERY_ERROR", &format!("{e}")))?;
+                        (result.forward, result.backward)
+                    }
+                    _ => {
+                        return Self::invalid_input("direction must be forward, backward, or both")
+                    }
+                };
+                if compact {
+                    Ok(crate::compact::flow_trace(
+                        direction, &forward, &backward, max_steps,
+                    ))
+                } else {
+                    Self::to_json(&serde_json::json!({
+                        "direction": direction,
+                        "forward": forward,
+                        "backward": backward,
+                    }))
+                }
+            },
+        )
+    }
+
+    /// Trace resolved call edges and cross-service flow jumps from a symbol or entry points.
+    #[tool(name = "bw_full_trace")]
+    fn full_trace(
+        &self,
+        Parameters(params): Parameters<FullTraceParams>,
+    ) -> Result<String, String> {
+        let compact = Self::is_compact(&params.format);
+        self.run_tool(
+            "bw_full_trace",
+            &params,
+            params.project.as_deref(),
+            |db, _| {
+                let depth = params.depth.unwrap_or(3).clamp(1, 8);
+                let max_traces = params.max_traces.unwrap_or(3).clamp(1, 20);
+                let max_nodes = params.max_nodes.unwrap_or(100).clamp(1, 500);
+                let symbol = params
+                    .symbol
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty());
+                let result = match symbol {
+                    Some(name) => bearwisdom::query::full_trace::trace_from_symbol(db, name, depth),
+                    None => bearwisdom::query::full_trace::trace_from_entry_points(
+                        db, depth, max_traces,
+                    ),
+                }
+                .map_err(Self::query_err)?;
+                if compact {
+                    Ok(crate::compact::full_trace(&result, max_nodes))
+                } else {
+                    Self::to_json(&result)
+                }
             },
         )
     }
@@ -1444,8 +1594,8 @@ impl BearWisdomServer {
         })
     }
 
-    /// Deep-dive a symbol in one call: info + callers + callees + blast radius.
-    /// Use this instead of calling bw_symbol_info + bw_call_hierarchy + bw_blast_radius separately.
+    /// Inspect one selected symbol identity: definition + resolved references,
+    /// callers, callees, and blast radius in one call.
     #[tool(name = "bw_investigate")]
     fn investigate(
         &self,
@@ -1461,6 +1611,7 @@ impl BearWisdomServer {
                     return Self::invalid_input("Symbol name cannot be empty");
                 }
                 let opts = bearwisdom::query::investigate::InvestigateOptions {
+                    reference_limit: params.reference_limit.unwrap_or(20),
                     caller_limit: params.caller_limit.unwrap_or(8),
                     callee_limit: params.callee_limit.unwrap_or(8),
                     blast_depth: params.blast_depth.unwrap_or(1),

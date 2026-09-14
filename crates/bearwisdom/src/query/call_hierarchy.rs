@@ -47,25 +47,30 @@ pub struct CallHierarchyItem {
 /// Returns an empty vec if no match is found.
 fn resolve_ids(db: &Database, symbol_name: &str) -> QueryResult<Vec<i64>> {
     let conn = db.conn();
-    let ids = if symbol_name.contains('.') {
-        // Qualified name: expect exactly one match.
-        let mut stmt = conn
-            .prepare("SELECT id FROM symbols WHERE qualified_name = ?1 AND origin = 'internal'")
-            .context("Failed to prepare qualified lookup")?;
-        let rows = stmt
-            .query_map([symbol_name], |r| r.get(0))
-            .context("Failed to query qualified lookup")?;
-        rows.filter_map(|r| r.ok()).collect()
-    } else {
-        // Simple name: may be ambiguous — return all matches.
-        let mut stmt = conn
-            .prepare("SELECT id FROM symbols WHERE name = ?1 AND origin = 'internal'")
-            .context("Failed to prepare simple lookup")?;
-        let rows = stmt
-            .query_map([symbol_name], |r| r.get(0))
-            .context("Failed to query simple lookup")?;
-        rows.filter_map(|r| r.ok()).collect()
-    };
+    let mut qualified = conn
+        .prepare(
+            "SELECT id FROM symbols
+             WHERE qualified_name = ?1 AND name <> ?1 AND origin = 'internal'",
+        )
+        .context("Failed to prepare qualified lookup")?;
+    let exact = qualified
+        .query_map([symbol_name], |r| r.get(0))
+        .context("Failed to query qualified lookup")?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("Failed to collect qualified symbol ids")?;
+    if !exact.is_empty() {
+        return Ok(exact);
+    }
+
+    // A simple name may be ambiguous, so return all matching identities.
+    let mut simple = conn
+        .prepare("SELECT id FROM symbols WHERE name = ?1 AND origin = 'internal'")
+        .context("Failed to prepare simple lookup")?;
+    let ids = simple
+        .query_map([symbol_name], |r| r.get(0))
+        .context("Failed to query simple lookup")?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("Failed to collect simple symbol ids")?;
     Ok(ids)
 }
 

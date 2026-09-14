@@ -104,6 +104,11 @@ fn find_references_respects_limit() {
 
     let refs = find_references(&db, "Target", 3).unwrap();
     assert_eq!(refs.len(), 3, "Expected limit to be respected");
+
+    // The cache key includes the requested limit. A small preview must not
+    // poison a later, larger evidence request.
+    let refs = find_references(&db, "Target", 5).unwrap();
+    assert_eq!(refs.len(), 5, "Expected a distinct cache entry per limit");
 }
 
 /// Regression test for the Handle-method bug (Issue 5).
@@ -178,4 +183,49 @@ fn qualified_name_lookup_isolates_specific_handle_method() {
     // Confirm that using the simple name (old behavior) returns refs to
     // both symbols — this documents why a simple-name lookup was wrong.
     let _ = handle_b; // suppress unused warning
+}
+
+#[test]
+fn qualified_name_lookup_does_not_assume_a_dot_separator() {
+    let db = Database::open_in_memory().unwrap();
+    let conn = db.conn();
+    conn.execute(
+        "INSERT INTO files (path, hash, language, last_indexed) VALUES ('lib.rs', 'h', 'rust', 0)",
+        [],
+    )
+    .unwrap();
+    let file_id = conn.last_insert_rowid();
+
+    for qname in ["a::run", "b::run"] {
+        conn.execute(
+            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+             VALUES (?1, 'run', ?2, 'function', 1, 0)",
+            rusqlite::params![file_id, qname],
+        )
+        .unwrap();
+    }
+    conn.execute(
+        "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+         VALUES (?1, 'caller', 'main::caller', 'function', 5, 0)",
+        [file_id],
+    )
+    .unwrap();
+    let caller = conn.last_insert_rowid();
+    let target: i64 = conn
+        .query_row(
+            "SELECT id FROM symbols WHERE qualified_name = 'a::run'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    conn.execute(
+        "INSERT INTO edges (source_id, target_id, kind, source_line, confidence)
+         VALUES (?1, ?2, 'calls', 7, 1.0)",
+        rusqlite::params![caller, target],
+    )
+    .unwrap();
+
+    let refs = find_references(&db, "a::run", 0).unwrap();
+    assert_eq!(refs.len(), 1);
+    assert_eq!(refs[0].referencing_symbol, "caller");
 }

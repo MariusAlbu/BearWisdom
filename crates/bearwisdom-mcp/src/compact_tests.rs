@@ -1,4 +1,6 @@
 use super::*;
+use bearwisdom::query::full_trace::{FullTraceResult, TraceNode, TraceRoot};
+use bearwisdom::search::flow::FlowStep;
 use bearwisdom::search::grep::GrepMatch;
 use bearwisdom::SearchResult;
 
@@ -126,4 +128,78 @@ fn search_under_limit_omits_truncated_flag() {
         !out.contains("truncated:true"),
         "should not flag truncation when under limit, got:\n{out}"
     );
+}
+
+#[test]
+fn flow_trace_preserves_direction_edge_provenance_and_file_registry() {
+    let forward = vec![
+        FlowStep {
+            depth: 0,
+            file_path: "web/client.ts".to_string(),
+            line: Some(12),
+            symbol: Some("loadUser".to_string()),
+            language: "typescript".to_string(),
+            edge_type: "http_call".to_string(),
+            protocol: Some("http".to_string()),
+        },
+        FlowStep {
+            depth: 1,
+            file_path: "api/user.rs".to_string(),
+            line: Some(44),
+            symbol: Some("get_user".to_string()),
+            language: "rust".to_string(),
+            edge_type: "route_handler".to_string(),
+            protocol: Some("http".to_string()),
+        },
+    ];
+    let out = flow_trace("both", &forward, &[], 80);
+
+    assert!(out.contains("evidence:resolved_flow_edges"));
+    assert!(out.contains("#forward"));
+    assert!(out.contains("F1:web/client.ts"));
+    assert!(out.contains("F2:api/user.rs"));
+    assert!(out.contains("http_call|http"));
+}
+
+#[test]
+fn empty_flow_trace_is_explicitly_inconclusive() {
+    let out = flow_trace("both", &[], &[], 80);
+    assert!(out.contains("empty_is_inconclusive:true"));
+}
+
+#[test]
+fn full_trace_encodes_parent_links_and_flow_jumps() {
+    let child = TraceNode {
+        name: "save".to_string(),
+        qualified_name: "repo::save".to_string(),
+        kind: "function".to_string(),
+        file_path: "src/repo.rs".to_string(),
+        line: 20,
+        edge_kind: "http_call".to_string(),
+        depth: 1,
+        children: vec![],
+    };
+    let entry = TraceNode {
+        name: "handle".to_string(),
+        qualified_name: "api::handle".to_string(),
+        kind: "function".to_string(),
+        file_path: "src/api.rs".to_string(),
+        line: 10,
+        edge_kind: "entry_point".to_string(),
+        depth: 0,
+        children: vec![child],
+    };
+    let result = FullTraceResult {
+        traces: vec![TraceRoot {
+            entry,
+            node_count: 2,
+        }],
+        total_symbols: 2,
+        flow_jumps: 1,
+    };
+    let out = full_trace(&result, 100);
+
+    assert!(out.contains("flow_jumps:1"));
+    assert!(out.contains("N1|-|d0|entry_point|api::handle"));
+    assert!(out.contains("N2|N1|d1|http_call|repo::save"));
 }

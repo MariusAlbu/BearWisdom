@@ -198,3 +198,53 @@ fn structural_edges_excluded_from_call_hierarchy() {
         "inherits edges should not appear in call hierarchy"
     );
 }
+
+#[test]
+fn qualified_call_lookup_does_not_assume_a_dot_separator() {
+    let db = Database::open_in_memory().unwrap();
+    let conn = db.conn();
+    conn.execute(
+        "INSERT INTO files (path, hash, language, last_indexed) VALUES ('lib.rs', 'h', 'rust', 0)",
+        [],
+    )
+    .unwrap();
+    let fid = conn.last_insert_rowid();
+
+    for (name, qname) in [
+        ("caller", "main::caller"),
+        ("run", "a::run"),
+        ("run", "b::run"),
+    ] {
+        conn.execute(
+            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+             VALUES (?1, ?2, ?3, 'function', 1, 0)",
+            rusqlite::params![fid, name, qname],
+        )
+        .unwrap();
+    }
+    let caller: i64 = conn
+        .query_row(
+            "SELECT id FROM symbols WHERE qualified_name='main::caller'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let target: i64 = conn
+        .query_row(
+            "SELECT id FROM symbols WHERE qualified_name='a::run'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    conn.execute(
+        "INSERT INTO edges (source_id, target_id, kind, source_line, confidence)
+         VALUES (?1, ?2, 'calls', 9, 1.0)",
+        rusqlite::params![caller, target],
+    )
+    .unwrap();
+
+    let calls = incoming_calls(&db, "a::run", 0).unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].qualified_name, "main::caller");
+    assert!(incoming_calls(&db, "b::run", 0).unwrap().is_empty());
+}

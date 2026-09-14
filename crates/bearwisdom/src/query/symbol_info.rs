@@ -89,38 +89,22 @@ pub fn symbol_info(
         Option<String>,
         Option<String>,
     )> = {
-        let (sql, param) = if query.contains('.') {
-            (
-                "SELECT s.id, s.name, s.qualified_name, s.kind, f.path,
-                        s.line, COALESCE(s.end_line, s.line),
-                        s.signature, s.doc_comment, s.visibility
-                 FROM symbols s
-                 JOIN files f ON f.id = s.file_id
-                 WHERE s.qualified_name = ?1
-                   AND s.origin = 'internal'
-                 ORDER BY s.line",
-                query,
-            )
-        } else {
-            (
-                "SELECT s.id, s.name, s.qualified_name, s.kind, f.path,
-                        s.line, COALESCE(s.end_line, s.line),
-                        s.signature, s.doc_comment, s.visibility
-                 FROM symbols s
-                 JOIN files f ON f.id = s.file_id
-                 WHERE s.name = ?1
-                   AND s.origin = 'internal'
-                 ORDER BY s.qualified_name",
-                query,
-            )
-        };
+        let sql = "SELECT s.id, s.name, s.qualified_name, s.kind, f.path,
+                    s.line, COALESCE(s.end_line, s.line),
+                    s.signature, s.doc_comment, s.visibility
+             FROM symbols s
+             JOIN files f ON f.id = s.file_id
+             WHERE (s.qualified_name = ?1 OR s.name = ?1)
+               AND s.origin = 'internal'
+             ORDER BY CASE WHEN s.qualified_name = ?1 AND s.name <> ?1 THEN 0 ELSE 1 END,
+                      s.qualified_name, s.line";
 
         let mut stmt = conn
             .prepare(sql)
             .context("Failed to prepare symbol_info lookup")?;
 
         let rows = stmt
-            .query_map([param], |row| {
+            .query_map([query], |row| {
                 Ok((
                     row.get::<_, i64>(0)?,            // id
                     row.get::<_, String>(1)?,         // name

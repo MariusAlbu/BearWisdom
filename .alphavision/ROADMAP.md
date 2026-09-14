@@ -418,3 +418,4 @@ must carry declaration/binding/type IDs, not re-find declarations by spelling.
 - [ ] Replace the 22-tool default surface with four agent-facing compound tools and defer administrative/specialized schemas.
 - [ ] Return stable symbol identities, resolved and unresolved/text occurrences, nearby tests, and bounded source excerpts in one evidence bundle.
 - [ ] Run the held-out quality/token/latency gate from docs/mcp-agent-efficiency-plan.md; require answer parity before MCP-only navigation.
+- [x] Make references, call hierarchy, blast radius, and cross-service flow the default agent path; keep exact lexical fallback in native `rg` instead of proxying it through MCP grep.

@@ -13,7 +13,9 @@ use bearwisdom::query::completion::CompletionItem;
 use bearwisdom::query::context::SmartContextResult;
 use bearwisdom::query::dead_code::{DeadCodeReport, EntryPointKind, EntryPointsReport};
 use bearwisdom::query::diagnostics::{FileDiagnostics, WorkspaceDiagnostics};
+use bearwisdom::query::full_trace::{FullTraceResult, TraceNode};
 use bearwisdom::query::unresolved_classify::ClassificationReport;
+use bearwisdom::search::flow::FlowStep;
 use bearwisdom::search::grep::GrepMatch;
 use bearwisdom::types::ReferenceResult;
 use bearwisdom::{
@@ -132,6 +134,56 @@ fn fmt_summary(f: &mut CompactFormatter, s: &SymbolSummary) -> String {
 fn fmt_call_item(f: &mut CompactFormatter, c: &CallHierarchyItem) -> String {
     let fr = f.fref(&c.file_path);
     format!("{}|{}|{}:{}", c.name, c.kind, fr, c.line)
+}
+
+fn fmt_flow_step(f: &mut CompactFormatter, step: &FlowStep) -> String {
+    let fr = f.fref(&step.file_path);
+    let line = step.line.map_or_else(|| "?".to_string(), |n| n.to_string());
+    format!(
+        "d{}|{}:{}|{}|{}|{}|{}",
+        step.depth,
+        fr,
+        line,
+        step.symbol.as_deref().unwrap_or("?"),
+        step.language,
+        step.edge_type,
+        step.protocol.as_deref().unwrap_or("-")
+    )
+}
+
+fn fmt_trace_node(
+    f: &mut CompactFormatter,
+    body: &mut String,
+    node: &TraceNode,
+    parent: Option<usize>,
+    next_id: &mut usize,
+    shown: &mut usize,
+    max_nodes: usize,
+) {
+    if *shown >= max_nodes {
+        return;
+    }
+    let id = *next_id;
+    *next_id += 1;
+    *shown += 1;
+    let fr = f.fref(&node.file_path);
+    let parent = parent.map_or_else(|| "-".to_string(), |p| format!("N{p}"));
+    let identity = if node.qualified_name.is_empty() {
+        &node.name
+    } else {
+        &node.qualified_name
+    };
+    let _ = writeln!(
+        body,
+        "N{id}|{parent}|d{}|{}|{}|{}|{}:{}",
+        node.depth, node.edge_kind, identity, node.kind, fr, node.line
+    );
+    for child in &node.children {
+        fmt_trace_node(f, body, child, Some(id), next_id, shown, max_nodes);
+        if *shown >= max_nodes {
+            break;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -428,6 +480,105 @@ pub fn blast_radius(result: &BlastRadiusResult) -> String {
     out
 }
 
+/// `bw_trace_flow`
+pub fn flow_trace(
+    direction: &str,
+    forward: &[FlowStep],
+    backward: &[FlowStep],
+    max_steps: usize,
+) -> String {
+    let total = forward.len() + backward.len();
+    let mut f = CompactFormatter::for_count(total.min(max_steps));
+    let mut body = String::with_capacity(4096);
+    let mut shown = 0usize;
+
+    if !forward.is_empty() {
+        body.push_str("#forward\n");
+        for step in forward.iter().take(max_steps) {
+            let _ = writeln!(body, "{}", fmt_flow_step(&mut f, step));
+            shown += 1;
+        }
+    }
+    let remaining = max_steps.saturating_sub(shown);
+    if !backward.is_empty() && remaining > 0 {
+        if !body.is_empty() {
+            body.push('\n');
+        }
+        body.push_str("#backward\n");
+        for step in backward.iter().take(remaining) {
+            let _ = writeln!(body, "{}", fmt_flow_step(&mut f, step));
+            shown += 1;
+        }
+    }
+
+    let mut meta = format!(
+        "direction:{direction}|forward:{}|backward:{}|shown:{shown}|evidence:resolved_flow_edges",
+        forward.len(),
+        backward.len()
+    );
+    if total > shown {
+        meta.push_str("|truncated:true");
+    }
+    if total == 0 {
+        meta.push_str("|empty_is_inconclusive:true");
+    }
+    let mut out = start(&meta);
+    f.write_files(&mut out);
+    if !f.files.is_empty() {
+        out.push('\n');
+    }
+    out.push_str(&body);
+    out
+}
+
+/// `bw_full_trace`
+pub fn full_trace(result: &FullTraceResult, max_nodes: usize) -> String {
+    let mut f = CompactFormatter::new();
+    let mut body = String::with_capacity(8192);
+    let mut next_id = 1usize;
+    let mut shown = 0usize;
+    body.push_str("#nodes\n");
+    for trace in &result.traces {
+        fmt_trace_node(
+            &mut f,
+            &mut body,
+            &trace.entry,
+            None,
+            &mut next_id,
+            &mut shown,
+            max_nodes,
+        );
+        if shown >= max_nodes {
+            break;
+        }
+    }
+
+    let available_nodes = result
+        .traces
+        .iter()
+        .map(|trace| trace.node_count as usize)
+        .sum::<usize>();
+    let mut meta = format!(
+        "traces:{}|symbols:{}|nodes:{available_nodes}|flow_jumps:{}|shown:{shown}|evidence:resolved_call_and_flow_edges",
+        result.traces.len(),
+        result.total_symbols,
+        result.flow_jumps
+    );
+    if available_nodes > shown {
+        meta.push_str("|truncated:true");
+    }
+    if result.traces.is_empty() {
+        meta.push_str("|empty_is_inconclusive:true");
+    }
+    let mut out = start(&meta);
+    f.write_files(&mut out);
+    if !f.files.is_empty() {
+        out.push('\n');
+    }
+    out.push_str(&body);
+    out
+}
+
 /// `bw_investigate`
 pub fn investigate(result: &InvestigateResult) -> String {
     let mut f = CompactFormatter::new();
@@ -438,13 +589,27 @@ pub fn investigate(result: &InvestigateResult) -> String {
     let fr = f.fref(&result.symbol.file_path);
     let _ = write!(
         body,
-        "{}|{}|{}:{}",
-        result.symbol.name, result.symbol.kind, fr, result.symbol.line
+        "{}|{}|{}|{}:{}",
+        result.symbol.qualified_name,
+        result.symbol.name,
+        result.symbol.kind,
+        fr,
+        result.symbol.line
     );
     if let Some(sig) = &result.symbol.signature {
         let _ = write!(body, "\n  sig: {sig}");
     }
     body.push('\n');
+
+    body.push_str("\n#references\n");
+    for r in &result.references {
+        let rfr = f.fref(&r.file_path);
+        let _ = writeln!(
+            body,
+            "{}|{}|{}:{}|{}|confidence:{:.2}",
+            r.referencing_symbol, r.referencing_kind, rfr, r.line, r.edge_kind, r.confidence
+        );
+    }
 
     // Callers
     if !result.callers.is_empty() {
@@ -481,7 +646,8 @@ pub fn investigate(result: &InvestigateResult) -> String {
     }
 
     let mut out = start(&format!(
-        "callers:{}|callees:{}",
+        "references:{}|callers:{}|callees:{}|evidence:resolved_graph_only|empty_sections_inconclusive:true",
+        result.references.len(),
         result.callers.len(),
         result.callees.len()
     ));
